@@ -31,3 +31,5 @@ taina-*.tar
 # Nix files
 /.nix-mix/
 result
+
+/.claude/
