@@ -3,9 +3,6 @@ defmodule Taina.Repo.Migrations.CreateGuaraSchema do
 
   def change do
     execute "CREATE SCHEMA IF NOT EXISTS guara", "DROP SCHEMA IF EXISTS guara CASCADE"
-    execute "ALTER TABLE guara.chats ENABLE ROW LEVEL SECURITY"
-    execute "ALTER TABLE guara.participants ENABLE ROW LEVEL SECURITY"
-    execute "ALTER TABLE guara.messages ENABLE ROW LEVEL SECURITY"
 
     create table(:chats, prefix: "guara") do
       add :tekoa_id, references(:tekoas, on_delete: :delete_all, prefix: "maraca"), null: false
@@ -53,10 +50,14 @@ defmodule Taina.Repo.Migrations.CreateGuaraSchema do
       timestamps()
     end
 
-    create index(:messages, [:chat_id, :inserted_at], prefix: "guara")
+    create index(:messages, [:chat_id, {:desc, "inserted_at"}], prefix: "guara")
     create index(:messages, [:sender_id], prefix: "guara")
     create index(:messages, [:parent_id], prefix: "guara")
     create index(:messages, [:file_id], prefix: "guara")
     create unique_index(:messages, [:public_id], prefix: "guara")
+
+    execute "ALTER TABLE guara.chats ENABLE ROW LEVEL SECURITY"
+    execute "ALTER TABLE guara.participants ENABLE ROW LEVEL SECURITY"
+    execute "ALTER TABLE guara.messages ENABLE ROW LEVEL SECURITY"
   end
 end

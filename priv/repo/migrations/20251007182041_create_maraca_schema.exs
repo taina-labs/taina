@@ -3,8 +3,6 @@ defmodule Taina.Repo.Migrations.CreateMaracaSchema do
 
   def change do
     execute "CREATE SCHEMA IF NOT EXISTS maraca", "DROP SCHEMA IF EXISTS maraca CASCADE"
-    execute "ALTER TABLE maraca.tekoas ENABLE ROW LEVEL SECURITY"
-    execute "ALTER TABLE maraca.avas ENABLE ROW LEVEL SECURITY"
 
     create table(:tekoas, prefix: "maraca") do
       add :name, :string, null: false
@@ -43,5 +41,8 @@ defmodule Taina.Repo.Migrations.CreateMaracaSchema do
            )
 
     create unique_index(:avas, [:public_id], prefix: "maraca")
+
+    execute "ALTER TABLE maraca.tekoas ENABLE ROW LEVEL SECURITY"
+    execute "ALTER TABLE maraca.avas ENABLE ROW LEVEL SECURITY"
   end
 end
