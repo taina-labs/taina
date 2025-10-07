@@ -21,11 +21,11 @@ ARG RUNNER_IMAGE="debian:${DEBIAN_VERSION}"
 FROM ${BUILDER_IMAGE} as builder
 
 # Install build dependencies
-RUN apt-get update -y && apt-get install -y build-essential git curl \
+RUN apt-get update -y && apt-get install --no-install-recommends -y build-essential git curl \
     && apt-get clean && rm -f /var/lib/apt/lists/*_*
 
 # Install Node.js for asset building
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+RUN set -o pipefail && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs \
     && apt-get clean && rm -f /var/lib/apt/lists/*_*
 
