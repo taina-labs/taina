@@ -57,5 +57,6 @@ defmodule Taina.Ybira.Folder do
     |> foreign_key_constraint(:ava_id)
     |> foreign_key_constraint(:tekoa_id)
     |> foreign_key_constraint(:folder_id)
+    |> unique_constraint(:public_id)
   end
 end

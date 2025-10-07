@@ -86,5 +86,6 @@ defmodule Taina.Guara.Chat do
     |> validate_length(:name, max: 255)
     |> foreign_key_constraint(:tekoa_id)
     |> foreign_key_constraint(:created_by_id)
+    |> unique_constraint(:public_id)
   end
 end

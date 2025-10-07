@@ -65,5 +65,6 @@ defmodule Taina.Maraca.Ava do
     |> unique_constraint(:email, name: :avas_tekoa_id_email_index)
     |> unique_constraint(:username, name: :avas_tekoa_id_username_index)
     |> validate_inclusion(:role, ~w(admin member)a)
+    |> unique_constraint(:public_id)
   end
 end

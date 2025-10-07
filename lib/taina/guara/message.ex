@@ -92,6 +92,7 @@ defmodule Taina.Guara.Message do
     |> foreign_key_constraint(:sender_id)
     |> foreign_key_constraint(:parent_id)
     |> foreign_key_constraint(:file_id)
+    |> unique_constraint(:public_id)
   end
 
   defp validate_content_or_file(changeset) do
