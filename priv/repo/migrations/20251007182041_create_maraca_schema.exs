@@ -2,12 +2,9 @@ defmodule Taina.Repo.Migrations.CreateMaracaSchema do
   use Ecto.Migration
 
   def change do
-    # Criar schema maraca
     execute "CREATE SCHEMA IF NOT EXISTS maraca", "DROP SCHEMA IF EXISTS maraca CASCADE"
 
-    # Tabela de comunidades (Tekoas)
-    create table(:tekoas, prefix: "maraca", primary_key: false) do
-      add :id, :bigserial, primary_key: true
+    create table(:tekoas, prefix: "maraca") do
       add :name, :string, null: false
       add :public_id, :string
       add :settings, :map, default: %{}
@@ -20,9 +17,7 @@ defmodule Taina.Repo.Migrations.CreateMaracaSchema do
     create unique_index(:tekoas, [:name], prefix: "maraca")
     create unique_index(:tekoas, [:public_id], prefix: "maraca")
 
-    # Tabela de pessoas/usuários (Avas)
-    create table(:avas, prefix: "maraca", primary_key: false) do
-      add :id, :bigserial, primary_key: true
+    create table(:avas, prefix: "maraca") do
       add :tekoa_id, references(:tekoas, on_delete: :delete_all, prefix: "maraca"), null: false
       add :username, :string, null: false
       add :email, :string, null: false
@@ -33,7 +28,6 @@ defmodule Taina.Repo.Migrations.CreateMaracaSchema do
       timestamps()
     end
 
-    # Índices para Avas
     create index(:avas, [:tekoa_id], prefix: "maraca")
 
     create unique_index(:avas, [:tekoa_id, :email],
