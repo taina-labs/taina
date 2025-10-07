@@ -34,9 +34,6 @@ defmodule Taina.Repo.Migrations.CreateGuaraSchema do
       timestamps()
     end
 
-    create index(:participants, [:chat_id], prefix: "guara")
-    create index(:participants, [:ava_id], prefix: "guara")
-
     create table(:messages, prefix: "guara") do
       add :chat_id, references(:chats, on_delete: :delete_all, prefix: "guara"), null: false
       add :sender_id, references(:avas, on_delete: :restrict, prefix: "maraca"), null: false
