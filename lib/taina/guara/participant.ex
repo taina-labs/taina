@@ -82,6 +82,5 @@ defmodule Taina.Guara.Participant do
     |> validate_inclusion(:role, ~w(admin member)a)
     |> foreign_key_constraint(:chat_id)
     |> foreign_key_constraint(:ava_id)
-    |> unique_constraint([:chat_id, :ava_id], name: :participants_chat_id_ava_id_index)
   end
 end

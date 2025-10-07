@@ -96,6 +96,7 @@ defmodule Taina.Ybira.File do
       :filename,
       :original_filename,
       :filepath,
+      :filehash,
       :mime_type,
       :file_size_bytes,
       :ava_id,
