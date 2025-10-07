@@ -52,4 +52,4 @@ Veja o [Guia de Contribuição](https://github.com/taina-labs/tekoa/blob/main/CO
 
 ## Licença
 
-Este projeto é licenciado sob [GNU Affero General Public License](LICENSE).
+Este projeto é licenciado sob [GNU Affero General Public License](../../../LICENSE).
