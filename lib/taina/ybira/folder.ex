@@ -10,7 +10,7 @@ defmodule Taina.Ybira.Folder do
 
     * `name` - Nome da pasta (ex: "Documentos", "Fotos de Família")
     * `public_id` - Identificador público seguro
-    * `folder_id` - Pasta pai (quando esta pasta está dentro de outra)
+    * `parent_id` - Pasta pai (quando esta pasta está dentro de outra)
   """
 
   use Ecto.Schema
@@ -51,12 +51,12 @@ defmodule Taina.Ybira.Folder do
   """
   def changeset(folder, attrs) do
     folder
-    |> cast(attrs, [:name, :public_id, :ava_id, :tekoa_id, :folder_id])
+    |> cast(attrs, [:name, :public_id, :ava_id, :tekoa_id, :parent_id])
     |> validate_required([:name, :ava_id, :tekoa_id])
     |> validate_length(:name, min: 1, max: 255)
     |> foreign_key_constraint(:ava_id)
     |> foreign_key_constraint(:tekoa_id)
-    |> foreign_key_constraint(:folder_id)
+    |> foreign_key_constraint(:parent_id)
     |> unique_constraint(:public_id)
   end
 end

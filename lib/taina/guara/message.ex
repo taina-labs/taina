@@ -87,22 +87,10 @@ defmodule Taina.Guara.Message do
     ])
     |> validate_required([:chat_id, :sender_id])
     |> validate_inclusion(:message_type, ~w(text image video audio file)a)
-    |> validate_content_or_file()
     |> foreign_key_constraint(:chat_id)
     |> foreign_key_constraint(:sender_id)
     |> foreign_key_constraint(:parent_id)
     |> foreign_key_constraint(:file_id)
     |> unique_constraint(:public_id)
-  end
-
-  defp validate_content_or_file(changeset) do
-    content = get_field(changeset, :content)
-    file_id = get_field(changeset, :file_id)
-
-    if is_nil(content) and is_nil(file_id) do
-      add_error(changeset, :content, "mensagem deve ter texto ou arquivo anexado")
-    else
-      changeset
-    end
   end
 end

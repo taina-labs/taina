@@ -3,6 +3,9 @@ defmodule Taina.Repo.Migrations.CreateGuaraSchema do
 
   def change do
     execute "CREATE SCHEMA IF NOT EXISTS guara", "DROP SCHEMA IF EXISTS guara CASCADE"
+    execute "ALTER TABLE guara.chats ENABLE ROW LEVEL SECURITY"
+    execute "ALTER TABLE guara.participants ENABLE ROW LEVEL SECURITY"
+    execute "ALTER TABLE guara.messages ENABLE ROW LEVEL SECURITY"
 
     create table(:chats, prefix: "guara") do
       add :tekoa_id, references(:tekoas, on_delete: :delete_all, prefix: "maraca"), null: false
@@ -37,11 +40,6 @@ defmodule Taina.Repo.Migrations.CreateGuaraSchema do
     create index(:participants, [:chat_id], prefix: "guara")
     create index(:participants, [:ava_id], prefix: "guara")
 
-    create unique_index(:participants, [:chat_id, :ava_id],
-             prefix: "guara",
-             name: :participants_chat_id_ava_id_index
-           )
-
     create table(:messages, prefix: "guara") do
       add :chat_id, references(:chats, on_delete: :delete_all, prefix: "guara"), null: false
       add :sender_id, references(:avas, on_delete: :restrict, prefix: "maraca"), null: false
@@ -60,10 +58,5 @@ defmodule Taina.Repo.Migrations.CreateGuaraSchema do
     create index(:messages, [:parent_id], prefix: "guara")
     create index(:messages, [:file_id], prefix: "guara")
     create unique_index(:messages, [:public_id], prefix: "guara")
-
-    create constraint(:messages, :must_have_content_or_file,
-             prefix: "guara",
-             check: "(content IS NOT NULL AND content != '') OR file_id IS NOT NULL"
-           )
   end
 end

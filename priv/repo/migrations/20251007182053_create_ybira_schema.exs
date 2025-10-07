@@ -3,11 +3,13 @@ defmodule Taina.Repo.Migrations.CreateYbiraSchema do
 
   def change do
     execute "CREATE SCHEMA IF NOT EXISTS ybira", "DROP SCHEMA IF EXISTS ybira CASCADE"
+    execute "ALTER TABLE ybira.folders ENABLE ROW LEVEL SECURITY"
+    execute "ALTER TABLE ybira.files ENABLE ROW LEVEL SECURITY"
 
     create table(:folders, prefix: "ybira") do
       add :ava_id, references(:avas, on_delete: :delete_all, prefix: "maraca"), null: false
       add :tekoa_id, references(:tekoas, on_delete: :delete_all, prefix: "maraca"), null: false
-      add :folder_id, references(:folders, on_delete: :delete_all, prefix: "ybira")
+      add :parent_id, references(:folders, on_delete: :delete_all, prefix: "ybira")
       add :name, :string, null: false
       add :public_id, :string
 
@@ -16,7 +18,7 @@ defmodule Taina.Repo.Migrations.CreateYbiraSchema do
 
     create index(:folders, [:ava_id], prefix: "ybira")
     create index(:folders, [:tekoa_id], prefix: "ybira")
-    create index(:folders, [:folder_id], prefix: "ybira", name: :folders_parent_id_index)
+    create index(:folders, [:parent_id], prefix: "ybira", name: :folders_parent_id_index)
     create unique_index(:folders, [:public_id], prefix: "ybira")
 
     create table(:files, prefix: "ybira") do
