@@ -85,6 +85,9 @@ ENV LC_ALL en_US.UTF-8
 WORKDIR "/app"
 RUN chown nobody /app
 
+# Create directory for uploads (Ybira file storage)
+RUN mkdir -p /app/storage && chown nobody:nogroup /app/storage
+
 # Set runner ENV
 ENV MIX_ENV="prod"
 
@@ -92,10 +95,6 @@ ENV MIX_ENV="prod"
 COPY --from=builder --chown=nobody:root /app/_build/${MIX_ENV}/rel/taina ./
 
 USER nobody
-
-# Create directory for uploads (Ybira file storage)
-RUN mkdir -p /app/storage
-
 # If using an environment that doesn't automatically reap zombie processes, it is
 # advised to add an init process such as tini via `apt-get install`
 # above and adding an entrypoint. See https://github.com/krallin/tini for details
