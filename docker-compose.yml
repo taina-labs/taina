@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: taina_dev
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # Database
+      DATABASE_URL: ecto://postgres:postgres@db/taina_dev
+
+      # Phoenix
+      PHX_HOST: localhost
+      PHX_SERVER: "true"
+      SECRET_KEY_BASE: "change_me_in_production_please_generate_with_mix_phx_gen_secret"
+
+      # Ports
+      PORT: 4000
+
+      # Storage (Ybira file uploads)
+      STORAGE_PATH: /app/storage
+    ports:
+      - "4000:4000"
+    volumes:
+      # Mount storage for file uploads (persistent across restarts)
+      - storage_data:/app/storage
+
+      # Development: mount code for live reloading (comment out for production)
+      # - .:/app
+      # - /app/_build
+      # - /app/deps
+      # - /app/assets/node_modules
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  postgres_data:
+    driver: local
+  storage_data:
+    driver: local
+
+networks:
+  default:
+    name: taina_network

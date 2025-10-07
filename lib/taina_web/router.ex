@@ -4,8 +4,4 @@ defmodule TainaWeb.Router do
   pipeline :api do
     plug :accepts, ["json"]
   end
-
-  scope "/api", TainaWeb do
-    pipe_through :api
-  end
 end

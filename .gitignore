@@ -33,3 +33,8 @@ taina-*.tar
 result
 
 /.claude/
+
+# LSP
+/.expert/
+/.lexical/
+/.elixir-tools/

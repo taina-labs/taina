@@ -34,6 +34,16 @@ Este projeto está em desenvolvimento ativo. A documentação completa e guias d
 - Arquitetura de monolito modular
 - Interface via APIs XRPC e eventos
 
+## Patrocinadores
+
+Agradeço imensamente aos nossos patrocinadores por apoiar esse projeto!
+
+<p align="center">
+  <a href="https://www.coderabbit.ai/?utm_source=oss&utm_medium=github&utm_campaign=zoedsoupe">
+    <img src="https://victorious-bubble-f69a016683.media.strapiapp.com/Frame_1686552887_8d2a26b476.svg" alt="Coderabbit Sponsor Logo" height="80"/>
+  </a>
+</p>
+
 ## Contribuindo
 
 Veja o [Guia de Contribuição](https://github.com/taina-labs/tekoa/blob/main/CONTRIBUTING.md) e o [Código de Conduta](https://github.com/taina-labs/tekoa/blob/main/CODE_OF_CONDUCT.md) para saber como participar.
