@@ -21,7 +21,7 @@ defmodule Taina.Repo.Migrations.CreateMaracaSchema do
       add :tekoa_id, references(:tekoas, on_delete: :delete_all, prefix: "maraca"), null: false
       add :username, :string, null: false
       add :email, :string, null: false
-      add :confirmed_at, :naive_datetime
+      add :confirmed_at, :utc_datetime_usec
       add :public_id, :string
       add :role, :string, default: "member"
 

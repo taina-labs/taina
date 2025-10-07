@@ -27,8 +27,8 @@ defmodule Taina.Repo.Migrations.CreateGuaraSchema do
         null: false,
         primary_key: true
 
-      add :joined_at, :naive_datetime, null: false
-      add :last_read_at, :naive_datetime
+      add :joined_at, :utc_datetime_usec, null: false
+      add :last_read_at, :utc_datetime_usec
       add :role, :string, default: "member"
 
       timestamps()

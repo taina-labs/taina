@@ -37,7 +37,7 @@ defmodule Taina.Ybira.File do
     field :file_hash, :string
     field :metadata, :map, default: %{}
     field :public_id, :string
-    field :deleted_at, :naive_datetime
+    field :deleted_at, :utc_datetime_usec
 
     belongs_to :ava, Ava
     belongs_to :tekoa, Tekoa

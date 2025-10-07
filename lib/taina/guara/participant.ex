@@ -46,8 +46,8 @@ defmodule Taina.Guara.Participant do
     belongs_to :chat, Chat, primary_key: true
     belongs_to :ava, Ava, primary_key: true
 
-    field :joined_at, :naive_datetime
-    field :last_read_at, :naive_datetime
+    field :joined_at, :utc_datetime_usec
+    field :last_read_at, :utc_datetime_usec
     field :role, Ecto.Enum, values: ~w(admin member)a, default: :member
 
     timestamps()

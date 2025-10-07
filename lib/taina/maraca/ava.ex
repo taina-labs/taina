@@ -27,7 +27,7 @@ defmodule Taina.Maraca.Ava do
   schema "avas" do
     field :username, :string
     field :email, :string
-    field :confirmed_at, :naive_datetime
+    field :confirmed_at, :utc_datetime_usec
     field :public_id, :string
     field :role, Ecto.Enum, values: ~w(admin member)a, default: :member
 

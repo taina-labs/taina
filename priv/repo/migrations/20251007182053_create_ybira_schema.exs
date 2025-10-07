@@ -31,7 +31,7 @@ defmodule Taina.Repo.Migrations.CreateYbiraSchema do
       add :file_hash, :string
       add :metadata, :map, default: %{}
       add :public_id, :string
-      add :deleted_at, :naive_datetime
+      add :deleted_at, :utc_datetime_usec
 
       timestamps()
     end
