@@ -1,0 +1,275 @@
+@import "tailwindcss/base";
+@import "tailwindcss/components";
+@import "tailwindcss/utilities";
+
+/* Tainá Design System - Custom CSS */
+
+/* Base Styles */
+@layer base {
+  :root {
+    /* Service Colors */
+    --color-ybira: #1B5E20;
+    --color-jaci: #F9A825;
+    --color-guara: #C62828;
+
+    /* Functional Colors */
+    --color-success: #4CAF50;
+    --color-warning: #FF9800;
+    --color-error: #F44336;
+    --color-info: #2196F3;
+  }
+
+  html {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply bg-neutral-900 text-neutral-50;
+  }
+}
+
+/* Component Layer - Composable utility classes */
+@layer components {
+  /* Typography Helpers */
+  .text-display {
+    @apply text-[32px] font-bold leading-[40px];
+  }
+
+  .text-headline {
+    @apply text-2xl font-semibold leading-8;
+  }
+
+  .text-title {
+    @apply text-xl font-semibold leading-7;
+  }
+
+  .text-body-lg {
+    @apply text-base font-normal leading-6;
+  }
+
+  .text-body-md {
+    @apply text-sm font-normal leading-5;
+  }
+
+  .text-body-sm {
+    @apply text-[13px] font-normal leading-[18px];
+  }
+
+  .text-caption {
+    @apply text-xs font-normal leading-4;
+  }
+
+  /* Spacing Helpers */
+  .spacing-xs { @apply gap-1; }
+  .spacing-sm { @apply gap-2; }
+  .spacing-md { @apply gap-4; }
+  .spacing-lg { @apply gap-6; }
+  .spacing-xl { @apply gap-8; }
+  .spacing-2xl { @apply gap-12; }
+
+  /* Service Card Component */
+  .service-card {
+    @apply flex items-center h-24 rounded-xl bg-neutral-800 shadow-md;
+    @apply px-4 cursor-pointer transition-transform duration-150;
+    @apply hover:scale-[0.98] active:scale-[0.98];
+  }
+
+  .service-card-icon {
+    @apply w-12 h-12 flex-shrink-0;
+  }
+
+  .service-card-content {
+    @apply flex-1 ml-4;
+  }
+
+  .service-card-badge {
+    @apply w-6 h-6 rounded-full flex items-center justify-center;
+    @apply text-xs font-semibold text-white;
+  }
+
+  /* Activity Feed Item */
+  .activity-item {
+    @apply flex items-start py-3 px-4 cursor-pointer;
+    @apply hover:bg-neutral-800/50 transition-colors;
+  }
+
+  .activity-icon {
+    @apply w-10 h-10 rounded-full flex items-center justify-center;
+    @apply flex-shrink-0;
+  }
+
+  .activity-content {
+    @apply flex-1 ml-3;
+  }
+
+  /* Search Bar */
+  .search-bar {
+    @apply h-12 rounded-full bg-neutral-800 shadow-lg;
+    @apply px-4 flex items-center gap-3;
+  }
+
+  .search-bar-expanded {
+    @apply h-14 px-2 rounded-lg;
+  }
+
+  /* Quota Banner */
+  .quota-banner {
+    @apply px-4 py-3 bg-neutral-800 rounded-lg;
+  }
+
+  .quota-progress-bar {
+    @apply h-2 rounded-full bg-neutral-700 overflow-hidden;
+  }
+
+  .quota-progress-fill {
+    @apply h-full rounded-full bg-green-700 transition-all duration-500;
+  }
+
+  .quota-progress-fill-warning {
+    @apply bg-amber-500;
+  }
+
+  .quota-progress-fill-error {
+    @apply bg-red-600;
+  }
+
+  /* Bottom Navigation */
+  .bottom-nav {
+    @apply fixed bottom-0 left-0 right-0;
+    @apply h-14 bg-neutral-800 shadow-2xl;
+    @apply flex items-center justify-around;
+    @apply border-t border-neutral-700;
+  }
+
+  .bottom-nav-item {
+    @apply flex flex-col items-center justify-center;
+    @apply min-w-[56px] h-14 cursor-pointer;
+    @apply transition-colors relative;
+  }
+
+  .bottom-nav-badge {
+    @apply absolute top-2 right-2;
+    @apply w-[18px] h-[18px] rounded-full;
+    @apply bg-red-600 text-white text-[10px] font-semibold;
+    @apply flex items-center justify-center;
+  }
+
+  /* Buttons */
+  .btn {
+    @apply px-4 py-2 rounded-lg font-medium transition-all;
+    @apply focus:outline-none focus:ring-2 focus:ring-offset-2;
+  }
+
+  .btn-primary {
+    @apply bg-neutral-700 text-white hover:bg-neutral-600;
+    @apply focus:ring-neutral-500;
+  }
+
+  .btn-secondary {
+    @apply bg-transparent border border-neutral-600 text-neutral-300;
+    @apply hover:bg-neutral-800 focus:ring-neutral-500;
+  }
+
+  .btn-text {
+    @apply bg-transparent text-neutral-400 hover:text-neutral-200;
+  }
+
+  /* Cards */
+  .card {
+    @apply bg-neutral-800 rounded-xl shadow-md;
+  }
+
+  .card-elevated {
+    @apply shadow-xl;
+  }
+
+  /* Modal */
+  .modal-backdrop {
+    @apply fixed inset-0 bg-black/60 backdrop-blur-sm z-40;
+  }
+
+  .modal-content {
+    @apply fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2;
+    @apply w-11/12 max-w-lg bg-neutral-800 rounded-2xl shadow-2xl z-50;
+  }
+
+  /* Toast */
+  .toast {
+    @apply fixed bottom-20 left-4 right-4 px-4 py-3 rounded-lg;
+    @apply bg-neutral-800 text-white shadow-lg;
+    @apply animate-slide-up;
+  }
+
+  .toast-success {
+    @apply bg-green-800 border-l-4 border-green-500;
+  }
+
+  .toast-error {
+    @apply bg-red-800 border-l-4 border-red-500;
+  }
+
+  .toast-info {
+    @apply bg-blue-800 border-l-4 border-blue-500;
+  }
+}
+
+/* Animations */
+@layer utilities {
+  @keyframes slide-up {
+    from {
+      transform: translateY(100%);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
+  .animate-slide-up {
+    animation: slide-up 0.3s ease-out;
+  }
+
+  @keyframes shimmer {
+    0% {
+      background-position: -1000px 0;
+    }
+    100% {
+      background-position: 1000px 0;
+    }
+  }
+
+  .skeleton {
+    @apply bg-gradient-to-r from-neutral-800 via-neutral-700 to-neutral-800;
+    @apply bg-[length:1000px_100%];
+    animation: shimmer 1.5s infinite linear;
+  }
+}
+
+/* LiveView specific styles */
+.phx-no-feedback.invalid-feedback,
+.phx-no-feedback .invalid-feedback {
+  display: none;
+}
+
+.phx-click-loading {
+  @apply opacity-50 transition-opacity;
+}
+
+.phx-submit-loading {
+  @apply opacity-75;
+}
+
+.phx-disconnected {
+  @apply cursor-wait;
+}
+
+.phx-error {
+  @apply hidden;
+}
+
+.phx-connected .phx-error {
+  @apply block;
+}

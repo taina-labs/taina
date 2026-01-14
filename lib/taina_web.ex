@@ -17,13 +17,14 @@ defmodule TainaWeb do
   those modules here.
   """
 
-  def static_paths, do: ~w(assets robots.txt)
+  def static_paths, do: ~w(assets fonts images robots.txt favicon.ico)
 
   def router do
     quote do
       use Phoenix.Router, helpers: false
 
       import Phoenix.Controller
+      import Phoenix.LiveView.Router
 
       # Import common connection and controller functions to use in pipelines
       import Plug.Conn
@@ -41,6 +42,47 @@ defmodule TainaWeb do
       use Phoenix.Controller, formats: [:html, :json]
 
       import Plug.Conn
+
+      unquote(verified_routes())
+    end
+  end
+
+  def live_view do
+    quote do
+      use Phoenix.LiveView,
+        layout: {TainaWeb.Layouts, :app}
+
+      unquote(html_helpers())
+    end
+  end
+
+  def live_component do
+    quote do
+      use Phoenix.LiveComponent
+
+      unquote(html_helpers())
+    end
+  end
+
+  def html do
+    quote do
+      use Phoenix.Component
+
+      import Phoenix.Controller,
+        only: [get_csrf_token: 0, view_module: 1, view_template: 1]
+
+      unquote(html_helpers())
+    end
+  end
+
+  defp html_helpers do
+    quote do
+      import Phoenix.HTML
+      import TainaWeb.Components.Home
+      import TainaWeb.Components.UI
+      import TainaWeb.Gettext
+
+      alias Phoenix.LiveView.JS
 
       unquote(verified_routes())
     end
