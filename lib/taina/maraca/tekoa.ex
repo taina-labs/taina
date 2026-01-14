@@ -23,7 +23,8 @@ defmodule Taina.Maraca.Tekoa do
     field :name, :string
     field :public_id, :string
     field :settings, :map, default: %{}
-    field :storage_quota_gb, :integer, default: 100
+    field :storage_quota, :integer, default: 100
+    field :used_storage, :integer, default: 0
 
     has_many :avas, Taina.Maraca.Ava
 

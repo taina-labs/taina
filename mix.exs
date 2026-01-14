@@ -53,7 +53,9 @@ defmodule Taina.MixProject do
       {:dns_cluster, "~> 0.2.0"},
       {:bandit, "~> 1.5"},
       {:nanoid, "~> 2.1"},
+      {:mime, "~> 2.0"},
       # dev
+      {:tidewave, "~> 0.5", only: :dev},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:styler, "~> 1.5", only: [:dev, :test], runtime: false}
