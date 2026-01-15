@@ -1,7 +1,5 @@
 // Tailwind CSS configuration for Tainá
 const plugin = require("tailwindcss/plugin")
-const fs = require("fs")
-const path = require("path")
 
 module.exports = {
   content: [
@@ -89,9 +87,6 @@ module.exports = {
     },
   },
   plugins: [
-    // Forms plugin for better form styling
-    require("@tailwindcss/forms"),
-
     // Custom plugin for Tainá-specific utilities
     plugin(({addVariant}) => addVariant("phx-no-feedback", [".phx-no-feedback&", ".phx-no-feedback &"])),
     plugin(({addVariant}) => addVariant("phx-click-loading", [".phx-click-loading&", ".phx-click-loading &"])),

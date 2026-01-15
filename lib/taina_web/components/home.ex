@@ -151,10 +151,17 @@ defmodule TainaWeb.Components.Home do
   attr :on_dismiss, :string, default: nil
 
   def quota_banner(assigns) do
+    percentage =
+      if assigns.total_gb > 0 do
+        assigns.used_gb / assigns.total_gb * 100
+      else
+        0.0
+      end
+
     assigns =
       assigns
-      |> assign(:percentage, Float.round(assigns.used_gb / assigns.total_gb * 100, 1))
-      |> assign(:warning_level, quota_warning_level(assigns.used_gb / assigns.total_gb * 100))
+      |> assign(:percentage, Float.round(percentage, 1))
+      |> assign(:warning_level, quota_warning_level(percentage))
 
     ~H"""
     <div class="quota-banner mx-4">
@@ -313,12 +320,26 @@ defmodule TainaWeb.Components.Home do
     diff = NaiveDateTime.diff(now, timestamp, :second)
 
     cond do
-      diff < 60 -> "há #{diff} segundos"
-      diff < 3600 -> "há #{div(diff, 60)} minutos"
-      diff < 86_400 -> "há #{div(diff, 3600)} horas"
-      diff < 172_800 -> "ontem"
-      diff < 604_800 -> "há #{div(diff, 86_400)} dias"
-      true -> Calendar.strftime(timestamp, "%d/%m/%Y")
+      diff < 60 ->
+        if diff == 1, do: "há 1 segundo", else: "há #{diff} segundos"
+
+      diff < 3600 ->
+        minutes = div(diff, 60)
+        if minutes == 1, do: "há 1 minuto", else: "há #{minutes} minutos"
+
+      diff < 86_400 ->
+        hours = div(diff, 3600)
+        if hours == 1, do: "há 1 hora", else: "há #{hours} horas"
+
+      diff < 172_800 ->
+        "ontem"
+
+      diff < 604_800 ->
+        days = div(diff, 86_400)
+        if days == 1, do: "há 1 dia", else: "há #{days} dias"
+
+      true ->
+        Calendar.strftime(timestamp, "%d/%m/%Y")
     end
   end
 end

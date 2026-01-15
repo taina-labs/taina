@@ -217,34 +217,9 @@
 
 /* Animations */
 @layer utilities {
-  @keyframes slide-up {
-    from {
-      transform: translateY(100%);
-      opacity: 0;
-    }
-    to {
-      transform: translateY(0);
-      opacity: 1;
-    }
-  }
-
-  .animate-slide-up {
-    animation: slide-up 0.3s ease-out;
-  }
-
-  @keyframes shimmer {
-    0% {
-      background-position: -1000px 0;
-    }
-    100% {
-      background-position: 1000px 0;
-    }
-  }
-
   .skeleton {
     @apply bg-gradient-to-r from-neutral-800 via-neutral-700 to-neutral-800;
-    @apply bg-[length:1000px_100%];
-    animation: shimmer 1.5s infinite linear;
+    @apply bg-[length:1000px_100%] animate-shimmer;
   }
 }
 

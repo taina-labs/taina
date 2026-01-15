@@ -27,7 +27,7 @@ defmodule TainaWeb.Components.UI do
   Renders flash notices with Tainá styling.
   """
   attr :flash, :map, required: true
-  attr :kind, :atom, values: [:info, :error, :success]
+  attr :kind, :atom, values: [:info, :error, :success], default: :info
 
   def flash(assigns) do
     ~H"""
