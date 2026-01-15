@@ -25,6 +25,9 @@ erl_crash.dump
 # Local PLT
 /priv/plts/
 
+# Generated assets (esbuild and tailwind outputs)
+/priv/static/assets/
+
 # Ignore package tarball (built via "mix hex.build").
 taina-*.tar
 

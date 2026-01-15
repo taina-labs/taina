@@ -26,7 +26,10 @@ config :taina, TainaWeb.Endpoint,
   code_reloader: true,
   debug_errors: true,
   secret_key_base: "318cH01aO0gWN9FThKaSqgINCNwdQL1PkE5zPLns0FQDdgKzFDfBj+VoM8OtCme/",
-  watchers: []
+  watchers: [
+    esbuild: {Esbuild, :install_and_run, [:default, ~w(--sourcemap=inline --watch)]},
+    tailwind: {Tailwind, :install_and_run, [:default, ~w(--watch)]}
+  ]
 
 # Enable dev routes for dashboard and mailbox
 config :taina, dev_routes: true
