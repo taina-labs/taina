@@ -18,13 +18,15 @@ defmodule Taina.Maraca.Tekoa do
 
   import Ecto.Changeset
 
+  alias Taina.Repo.PublicId
+
   @schema_prefix "maraca"
   schema "tekoas" do
     field :name, :string
-    field :public_id, :string
+    field :public_id, PublicId, autogenerate: true
     field :settings, :map, default: %{}
-    field :storage_quota, :integer, default: 100
-    field :used_storage, :integer, default: 0
+    field :storage_quota_bytes, :integer
+    field :storage_used_bytes, :integer, default: 0
 
     has_many :avas, Taina.Maraca.Ava
 
@@ -40,7 +42,7 @@ defmodule Taina.Maraca.Tekoa do
 
   ## Exemplos
 
-      iex> changeset(%Tekoa{}, %{name: "Minha Comunidade", storage_quota_gb: 500})
+      iex> changeset(%Tekoa{}, %{name: "Minha Comunidade", storage_quota: 500})
       %Ecto.Changeset{valid?: true}
 
       iex> changeset(%Tekoa{}, %{name: "ab"})
@@ -48,10 +50,10 @@ defmodule Taina.Maraca.Tekoa do
   """
   def changeset(tekoa, attrs) do
     tekoa
-    |> cast(attrs, [:name, :public_id, :settings, :storage_quota_gb])
-    |> validate_required([:name])
+    |> cast(attrs, [:name, :settings, :storage_quota_bytes])
+    |> validate_required([:name, :storage_quota_bytes])
     |> validate_length(:name, min: 3, max: 100)
-    |> validate_number(:storage_quota_gb, greater_than: 0)
+    |> validate_number(:storage_quota_bytes, greater_than: 0)
     |> unique_constraint(:name)
     |> unique_constraint(:public_id)
   end

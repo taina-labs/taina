@@ -8,7 +8,7 @@ defmodule Taina.Ybira do
   alias Taina.Repo
   alias Taina.Ybira
 
-  @root_path "/var/taina/storage/communities"
+  # @root_path "/var/taina/storage/communities"
 
   @spec get_file(binary) :: {:ok, Ybira.File.t()} | {:error, :not_found}
   def get_file(file_id) when is_binary(file_id) do
@@ -43,7 +43,7 @@ defmodule Taina.Ybira do
 
   @spec upload(String.t(), Path.t()) :: {:ok, Ybira.File.t()} | {:error, any}
   def upload(user_id, tmp_file_path) do
-    mime_type = MIME.from_path(tmp_file_path)
+    # mime_type = MIME.from_path(tmp_file_path)
 
     with {:ok, stat} <- File.stat(tmp_file_path),
          :ok <- check_capacity(user_id, stat.size) do

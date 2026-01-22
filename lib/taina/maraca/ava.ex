@@ -19,28 +19,24 @@ defmodule Taina.Maraca.Ava do
 
   import Ecto.Changeset
 
-  alias Taina.Guara.Chat
-  alias Taina.Guara.Participant
   alias Taina.Maraca.Tekoa
+  alias Taina.Repo.PublicId
 
   @schema_prefix "maraca"
   schema "avas" do
     field :username, :string
     field :email, :string
     field :confirmed_at, :utc_datetime_usec
-    field :public_id, :string
+    field :public_id, PublicId, autogenerate: true
     field :role, Ecto.Enum, values: ~w(admin member)a, default: :member
 
     belongs_to :tekoa, Tekoa
-
-    has_many :participants, Participant
-    many_to_many :chats, Chat, join_through: Participant
 
     timestamps()
   end
 
   @doc """
-  Cria ou atualiza um Ava com as informações fornecidas.
+  Valida um Ava com as informações fornecidas.
 
   ## Campos obrigatórios
 
