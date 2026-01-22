@@ -27,13 +27,23 @@ defmodule Taina.Repo.Migrations.CreateMaracaSchema do
       add :password_hash, :string
       add :email_confirmation_token, :string
       add :email_confirmation_sent_at, :utc_datetime_usec
+      add :reset_token, :string
+      add :reset_token_sent_at, :utc_datetime_usec
+      add :invited_by_id, references(:avas, on_delete: :nilify_all, prefix: "maraca")
+      add :invited_at, :utc_datetime_usec
 
       timestamps()
     end
 
     create index(:avas, [:tekoa_id], prefix: "maraca")
+    create index(:avas, [:invited_by_id], prefix: "maraca")
 
     create unique_index(:avas, [:email_confirmation_token], prefix: "maraca")
+
+    create unique_index(:avas, [:reset_token],
+             prefix: "maraca",
+             where: "reset_token IS NOT NULL"
+           )
 
     create unique_index(:avas, [:tekoa_id, :email],
              prefix: "maraca",
