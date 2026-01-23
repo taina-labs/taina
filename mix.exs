@@ -54,6 +54,7 @@ defmodule Taina.MixProject do
       {:bandit, "~> 1.5"},
       {:nanoid, "~> 2.1"},
       {:mime, "~> 2.0"},
+      {:bcrypt_elixir, "~> 3.3"},
       # dev
       {:tidewave, "~> 0.5", only: :dev},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},

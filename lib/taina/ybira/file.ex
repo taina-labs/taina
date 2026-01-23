@@ -23,9 +23,31 @@ defmodule Taina.Ybira.File do
 
   import Ecto.Changeset
 
+  alias Ecto.Association.NotLoaded
   alias Taina.Maraca.Ava
   alias Taina.Maraca.Tekoa
   alias Taina.Ybira.Folder
+
+  @type t :: %__MODULE__{
+          id: integer() | nil,
+          filename: String.t(),
+          original_filename: String.t(),
+          filepath: String.t(),
+          mime_type: String.t(),
+          file_size_bytes: integer(),
+          file_hash: String.t(),
+          metadata: map(),
+          public_id: String.t() | nil,
+          deleted_at: DateTime.t() | nil,
+          ava_id: integer(),
+          ava: Ava.t() | NotLoaded.t() | nil,
+          tekoa_id: integer(),
+          tekoa: Tekoa.t() | NotLoaded.t() | nil,
+          folder_id: integer() | nil,
+          folder: Folder.t() | NotLoaded.t() | nil,
+          inserted_at: NaiveDateTime.t() | nil,
+          updated_at: NaiveDateTime.t() | nil
+        }
 
   @schema_prefix "ybira"
   schema "files" do

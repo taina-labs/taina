@@ -8,8 +8,8 @@ defmodule Taina.Repo.Migrations.CreateMaracaSchema do
       add :name, :string, null: false
       add :public_id, :string
       add :settings, :map, default: %{}
-      add :storage_quota_gb, :integer, default: 100
-      add :storage_used_bytes, :bigint, default: 0
+      add :storage_quota_bytes, :bigint
+      add :storage_used_bytes, :bigint
 
       timestamps()
     end
@@ -23,12 +23,27 @@ defmodule Taina.Repo.Migrations.CreateMaracaSchema do
       add :email, :string, null: false
       add :confirmed_at, :utc_datetime_usec
       add :public_id, :string
-      add :role, :string, default: "member"
+      add :role, :string
+      add :password_hash, :string
+      add :email_confirmation_token_hash, :string
+      add :email_confirmation_sent_at, :utc_datetime_usec
+      add :reset_token_hash, :string
+      add :reset_token_sent_at, :utc_datetime_usec
+      add :invited_by_id, references(:avas, on_delete: :nilify_all, prefix: "maraca")
+      add :invited_at, :utc_datetime_usec
 
       timestamps()
     end
 
     create index(:avas, [:tekoa_id], prefix: "maraca")
+    create index(:avas, [:invited_by_id], prefix: "maraca")
+
+    create unique_index(:avas, [:email_confirmation_token_hash], prefix: "maraca")
+
+    create unique_index(:avas, [:reset_token_hash],
+             prefix: "maraca",
+             where: "reset_token_hash IS NOT NULL"
+           )
 
     create unique_index(:avas, [:tekoa_id, :email],
              prefix: "maraca",
@@ -42,7 +57,44 @@ defmodule Taina.Repo.Migrations.CreateMaracaSchema do
 
     create unique_index(:avas, [:public_id], prefix: "maraca")
 
+    create table(:permissions, prefix: "maraca") do
+      add :resource_type, :string, null: false
+      add :resource_id, :string, null: false
+      add :action, :string, null: false
+      add :ava_id, references(:avas, on_delete: :delete_all, prefix: "maraca"), null: false
+
+      add :granted_by_id,
+          references(:avas, on_delete: {:nilify, [:granted_by_id]}, prefix: "maraca")
+
+      add :tekoa_id, references(:tekoas, on_delete: :delete_all, prefix: "maraca"), null: false
+
+      timestamps()
+    end
+
+    create index(:permissions, [:tekoa_id], prefix: "maraca")
+
+    create unique_index(:permissions, [:ava_id, :resource_type, :resource_id, :action],
+             prefix: "maraca",
+             name: "permissions_unique_grant"
+           )
+
+    create table(:access_requests, prefix: "maraca") do
+      add :resource_type, :string
+      add :resource_id, :string
+      add :reason, :text
+      add :status, :string
+      add :requester_id, references(:avas, on_delete: :delete_all, prefix: "maraca"), null: false
+      add :owner_id, references(:avas, on_delete: :delete_all, prefix: "maraca"), null: false
+      add :tekoa_id, references(:tekoas, on_delete: :delete_all, prefix: "maraca"), null: false
+
+      timestamps()
+    end
+
+    create index(:access_requests, [:tekoa_id], prefix: "maraca")
+
     execute "ALTER TABLE maraca.tekoas ENABLE ROW LEVEL SECURITY"
     execute "ALTER TABLE maraca.avas ENABLE ROW LEVEL SECURITY"
+    execute "ALTER TABLE maraca.permissions ENABLE ROW LEVEL SECURITY"
+    execute "ALTER TABLE maraca.access_requests ENABLE ROW LEVEL SECURITY"
   end
 end

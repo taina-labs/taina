@@ -17,8 +17,23 @@ defmodule Taina.Ybira.Folder do
 
   import Ecto.Changeset
 
+  alias Ecto.Association.NotLoaded
   alias Taina.Maraca.Ava
   alias Taina.Maraca.Tekoa
+
+  @type t :: %__MODULE__{
+          id: integer() | nil,
+          name: String.t(),
+          public_id: String.t() | nil,
+          ava_id: integer(),
+          ava: Ava.t() | NotLoaded.t() | nil,
+          tekoa_id: integer(),
+          tekoa: Tekoa.t() | NotLoaded.t() | nil,
+          folder_id: integer() | nil,
+          folder: t() | NotLoaded.t() | nil,
+          inserted_at: NaiveDateTime.t() | nil,
+          updated_at: NaiveDateTime.t() | nil
+        }
 
   @schema_prefix "ybira"
   schema "folders" do
