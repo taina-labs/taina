@@ -18,7 +18,20 @@ defmodule Taina.Maraca.Tekoa do
 
   import Ecto.Changeset
 
+  alias Taina.Maraca.Ava
   alias Taina.Repo.PublicId
+
+  @type t :: %__MODULE__{
+          id: integer() | nil,
+          name: String.t(),
+          public_id: String.t() | nil,
+          settings: map(),
+          storage_quota_bytes: integer() | nil,
+          storage_used_bytes: integer(),
+          avas: [Ava.t()] | Ecto.Association.NotLoaded.t(),
+          inserted_at: NaiveDateTime.t() | nil,
+          updated_at: NaiveDateTime.t() | nil
+        }
 
   @schema_prefix "maraca"
   schema "tekoas" do
@@ -28,7 +41,7 @@ defmodule Taina.Maraca.Tekoa do
     field :storage_quota_bytes, :integer
     field :storage_used_bytes, :integer, default: 0
 
-    has_many :avas, Taina.Maraca.Ava
+    has_many :avas, Ava
 
     timestamps()
   end

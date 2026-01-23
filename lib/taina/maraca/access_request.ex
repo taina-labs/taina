@@ -30,10 +30,17 @@ defmodule Taina.Maraca.AccessRequest do
     * `:approved` - Dono concedeu acesso (cria Permission automaticamente)
     * `:denied` - Dono negou acesso
 
+  ## Changesets
+
+  Este schema possui dois changesets para diferentes fluxos:
+
+  - **`create_changeset/2`** - Para criar novas solicitações. Status é SEMPRE :pending.
+  - **`changeset/2`** - Para atualizar solicitações existentes (aprovação/negação).
+
   ## Exemplos de uso
 
-      # Admin solicita acesso a arquivo de usuário
-      iex> changeset(%AccessRequest{}, %{
+      # Admin solicita acesso a arquivo de usuário (criação)
+      iex> create_changeset(%AccessRequest{}, %{
       ...>   requester_id: admin.id,
       ...>   owner_id: user.id,
       ...>   resource_type: "ybira_file",
@@ -41,10 +48,14 @@ defmodule Taina.Maraca.AccessRequest do
       ...>   reason: "Investigação de bug reportado no ticket #456",
       ...>   tekoa_id: tekoa.id
       ...> })
+      %Ecto.Changeset{valid?: true, changes: %{status: :pending}}
+
+      # Owner aprova solicitação (atualização)
+      iex> changeset(request, %{status: :approved})
       %Ecto.Changeset{valid?: true}
 
       # Solicitação sem justificativa é inválida
-      iex> changeset(%AccessRequest{}, %{reason: nil})
+      iex> create_changeset(%AccessRequest{}, %{reason: nil})
       %Ecto.Changeset{valid?: false}
 
   ## Segurança
@@ -64,9 +75,26 @@ defmodule Taina.Maraca.AccessRequest do
 
   import Ecto.Changeset
 
+  alias Ecto.Association.NotLoaded
   alias Taina.Maraca
 
   @statuses ~w(pending approved denied)a
+
+  @type t :: %__MODULE__{
+          id: integer() | nil,
+          reason: String.t(),
+          resource_id: String.t(),
+          resource_type: String.t(),
+          status: :pending | :approved | :denied,
+          owner_id: integer(),
+          owner: Maraca.Ava.t() | NotLoaded.t() | nil,
+          requester_id: integer(),
+          requester: Maraca.Ava.t() | NotLoaded.t() | nil,
+          tekoa_id: integer(),
+          tekoa: Maraca.Tekoa.t() | NotLoaded.t() | nil,
+          inserted_at: NaiveDateTime.t() | nil,
+          updated_at: NaiveDateTime.t() | nil
+        }
 
   @schema_prefix "maraca"
   schema "access_requests" do
@@ -83,13 +111,16 @@ defmodule Taina.Maraca.AccessRequest do
   end
 
   @doc """
-  Valida uma AccessRequest com as informações fornecidas.
+  Changeset para criar uma nova AccessRequest.
+
+  Este changeset é usado quando um admin solicita acesso a um recurso.
+  O status é SEMPRE definido como :pending - não pode ser controlado pelo solicitante.
 
   ## Campos obrigatórios
 
     * `requester_id` - Ava que está solicitando acesso
     * `owner_id` - Ava dono do recurso (quem pode aprovar)
-      * `resource_type` - Tipo do recurso (ex: "ybira_file")
+    * `resource_type` - Tipo do recurso (ex: "ybira_file")
     * `resource_id` - ID público do recurso
     * `reason` - Justificativa da solicitação (máximo 250 caracteres)
     * `tekoa_id` - Comunidade onde a solicitação ocorre
@@ -97,12 +128,15 @@ defmodule Taina.Maraca.AccessRequest do
   ## Validações
 
     * `reason` deve ter no máximo 250 caracteres
-    * `status` deve estar na lista: #{inspect(@statuses)}
     * `requester_id` e `owner_id` devem ser diferentes (não pode solicitar acesso a próprio recurso)
+
+  ## Efeitos
+
+    * `status` é automaticamente definido como :pending
 
   ## Exemplos
 
-      iex> changeset(%AccessRequest{}, %{
+      iex> create_changeset(%AccessRequest{}, %{
       ...>   requester_id: admin.id,
       ...>   owner_id: user.id,
       ...>   resource_type: "ybira_file",
@@ -110,10 +144,44 @@ defmodule Taina.Maraca.AccessRequest do
       ...>   reason: "Suporte ticket #123",
       ...>   tekoa_id: tekoa.id
       ...> })
+      %Ecto.Changeset{valid?: true, changes: %{status: :pending}}
+
+      iex> create_changeset(%AccessRequest{}, %{reason: String.duplicate("a", 300)})
+      %Ecto.Changeset{valid?: false}
+  """
+  def create_changeset(%__MODULE__{} = request, %{} = attrs) do
+    request
+    |> cast(attrs, [:reason, :resource_id, :resource_type, :owner_id, :requester_id, :tekoa_id])
+    |> validate_required([:reason, :resource_id, :resource_type, :owner_id, :requester_id, :tekoa_id])
+    |> validate_length(:reason, max: 250)
+    |> validate_different_avas()
+    |> put_change(:status, :pending)
+  end
+
+  @doc """
+  Changeset para atualizar uma AccessRequest existente.
+
+  Este changeset é usado quando um owner aprova/nega uma solicitação,
+  permitindo a atualização do campo :status.
+
+  ## Campos atualizáveis
+
+    * `status` - Pode ser atualizado para :approved ou :denied
+    * Outros campos também podem ser atualizados se necessário
+
+  ## Validações
+
+    * `reason` deve ter no máximo 250 caracteres (se fornecido)
+    * `status` deve estar na lista: #{inspect(@statuses)}
+    * `requester_id` e `owner_id` devem ser diferentes
+
+  ## Exemplos
+
+      iex> changeset(request, %{status: :approved})
       %Ecto.Changeset{valid?: true}
 
-      iex> changeset(%AccessRequest{}, %{reason: String.duplicate("a", 300)})
-      %Ecto.Changeset{valid?: false}
+      iex> changeset(request, %{status: :denied})
+      %Ecto.Changeset{valid?: true}
   """
   def changeset(%__MODULE__{} = request, %{} = attrs) do
     request
