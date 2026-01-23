@@ -160,8 +160,8 @@ defmodule Taina.Maraca.Permission do
   """
   def changeset(%__MODULE__{} = permission, %{} = attrs) do
     permission
-    |> cast(attrs, [:resource_id, :resource_type, :action, :ava_id])
-    |> validate_required([:resource_id, :resource_type, :action, :ava_id])
+    |> cast(attrs, [:resource_id, :resource_type, :action, :ava_id, :granted_by_id, :tekoa_id])
+    |> validate_required([:resource_id, :resource_type, :action, :ava_id, :granted_by_id, :tekoa_id])
     |> unique_constraint(:action,
       name: "permissions_unique_grant",
       message: "já existe permissão para esta combinação de ava, recurso e ação"

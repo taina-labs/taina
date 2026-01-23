@@ -58,9 +58,9 @@ defmodule Taina.Repo.Migrations.CreateMaracaSchema do
     create unique_index(:avas, [:public_id], prefix: "maraca")
 
     create table(:permissions, prefix: "maraca") do
-      add :resource_type, :string
-      add :resource_id, :string
-      add :action, :string
+      add :resource_type, :string, null: false
+      add :resource_id, :string, null: false
+      add :action, :string, null: false
       add :ava_id, references(:avas, on_delete: :delete_all, prefix: "maraca"), null: false
 
       add :granted_by_id,
@@ -70,6 +70,8 @@ defmodule Taina.Repo.Migrations.CreateMaracaSchema do
 
       timestamps()
     end
+
+    create index(:permissions, [:tekoa_id], prefix: "maraca")
 
     create unique_index(:permissions, [:ava_id, :resource_type, :resource_id, :action],
              prefix: "maraca",
@@ -87,6 +89,8 @@ defmodule Taina.Repo.Migrations.CreateMaracaSchema do
 
       timestamps()
     end
+
+    create index(:access_requests, [:tekoa_id], prefix: "maraca")
 
     execute "ALTER TABLE maraca.tekoas ENABLE ROW LEVEL SECURITY"
     execute "ALTER TABLE maraca.avas ENABLE ROW LEVEL SECURITY"
