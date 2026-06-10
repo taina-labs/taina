@@ -40,6 +40,31 @@ defmodule Taina.Fixtures do
     |> Repo.insert!()
   end
 
+  def confirmed_ava_fixture(%Tekoa{} = tekoa, attrs \\ %{}) do
+    n = System.unique_integer([:positive])
+    password = Map.get(attrs, :password, "senhasegura123")
+
+    base = %{
+      username: Map.get(attrs, :username, "ava#{n}"),
+      email: Map.get(attrs, :email, "ava#{n}@example.com"),
+      role: Map.get(attrs, :role, :member),
+      tekoa_id: tekoa.id
+    }
+
+    %Ava{}
+    |> Ava.changeset(base)
+    |> Ava.confirmation_changeset(%{
+      username: base.username,
+      password: password,
+      password_confirmation: password
+    })
+    |> Repo.insert!()
+  end
+
+  def admin_fixture(%Tekoa{} = tekoa, attrs \\ %{}) do
+    confirmed_ava_fixture(tekoa, Map.put(attrs, :role, :admin))
+  end
+
   def scope_fixture(attrs \\ %{}) do
     tekoa = tekoa_fixture(attrs)
     ava = ava_fixture(tekoa)

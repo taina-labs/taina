@@ -2,6 +2,9 @@ import Config
 
 alias Ecto.Adapters.SQL.Sandbox
 
+# Fast password hashing in tests
+config :bcrypt_elixir, log_rounds: 4
+
 # Print only warnings and errors during test
 config :logger, level: :warning
 

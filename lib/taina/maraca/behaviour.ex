@@ -138,23 +138,50 @@ defmodule Taina.Maraca.Behaviour do
 
   ## Regras de Negócio
 
-  - Remove dados da sessão Phoenix
-  - Pode receber Plug.Conn ou Phoenix.LiveView.Socket
+  - Remove dados da sessão Phoenix (drop completo, previne fixation)
+  - Retorna a conexão atualizada (Plug.Conn é imutável)
 
   ## Parâmetros
 
-    * `conn_or_socket` - Conexão ou socket com sessão
+    * `conn` - Conexão com sessão
 
   ## Retorno
 
-    * `:ok` - Sessão destruída
+    * `%Plug.Conn{}` - Conexão com sessão descartada
 
   ## Exemplos
 
       iex> destroy_session(conn)
-      :ok
+      %Plug.Conn{}
   """
-  @callback destroy_session(Plug.Conn.t()) :: :ok
+  @callback destroy_session(Plug.Conn.t()) :: Plug.Conn.t()
+
+  @doc """
+  Bootstrap de primeira inicialização: cria a Tekoa única e o admin inicial.
+
+  ## Regras de Negócio
+
+  - Só funciona em instância vazia — se já existe Tekoa, retorna
+    `{:error, :already_bootstrapped}` (reforçado pelo índice único
+    `single_tekoa_enforcement` no banco; ver RFC 002, D2)
+  - Admin é criado já confirmado (`confirmed_at`), com senha definida e
+    `role: :admin`
+  - Tekoa + admin na mesma transação
+
+  ## Parâmetros
+
+    * `tekoa_attrs` - `%{name: ..., storage_quota_bytes: ...}`
+    * `admin_attrs` - `%{username: ..., email: ..., password: ..., password_confirmation: ...}`
+
+  ## Retorno
+
+    * `{:ok, %{tekoa: %Tekoa{}, ava: %Ava{}}}` - Instância inicializada
+    * `{:error, :already_bootstrapped}` - Já existe Tekoa
+    * `{:error, %Ecto.Changeset{}}` - Validação falhou
+  """
+  @callback bootstrap(map(), map()) ::
+              {:ok, %{tekoa: Tekoa.t(), ava: Ava.t()}}
+              | {:error, :already_bootstrapped | Ecto.Changeset.t()}
 
   @doc """
   Obtém Ava da sessão atual.

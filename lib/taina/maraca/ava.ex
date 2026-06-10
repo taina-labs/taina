@@ -360,7 +360,13 @@ defmodule Taina.Maraca.Ava do
     Nanoid.generate(32)
   end
 
-  defp hash_token(raw_token) do
+  @doc """
+  Hash SHA256 de um token cru, no mesmo formato persistido no banco.
+
+  Usado pelo contexto Maraca para localizar Avas por token
+  (`email_confirmation_token_hash` / `reset_token_hash`).
+  """
+  def hash_token(raw_token) do
     :sha256 |> :crypto.hash(raw_token) |> Base.encode64(padding: false)
   end
 end
