@@ -38,6 +38,7 @@ defmodule Taina.Maraca do
   alias Taina.Maraca.Tekoa
   alias Taina.Maraca.UnauthorizedError
   alias Taina.Repo
+  alias Taina.Scope
 
   @invitation_max_age_seconds 7 * 24 * 60 * 60
   @reset_max_age_seconds 60 * 60
@@ -168,6 +169,22 @@ defmodule Taina.Maraca do
       {:ok, %{ava | tekoa: tekoa}}
     else
       _ -> {:error, :not_authenticated}
+    end
+  end
+
+  ## Gestão da Tekoa
+
+  @impl true
+  def update_tekoa_quota(%Scope{} = scope, quota_bytes) when is_integer(quota_bytes) do
+    if admin?(scope.ava) do
+      Repo.with_tekoa(scope.tekoa.public_id, fn ->
+        Tekoa
+        |> Repo.get!(scope.tekoa.id)
+        |> Tekoa.changeset(%{storage_quota_bytes: quota_bytes})
+        |> Repo.update()
+      end)
+    else
+      {:error, :unauthorized}
     end
   end
 

@@ -1,14 +1,14 @@
 ---
 name: Design
 about: Design visual e UX (Logo, mockups, identidade visual)
-title: ''
+title: ""
 labels: design
-assignees: ''
-
+assignees: ""
 ---
 
 **Descrição**
 descreva aqui sua sugestão/requisito
 
 **Tarefas**
+
 - [ ] checklist das tarefas contidas nessa issue

@@ -14,6 +14,14 @@ defmodule Taina.Repo do
 
   @tekoa_context_key :taina_current_tekoa_id
 
+  # Tabelas de infraestrutura (schema `public`, sem RLS) que rodam fora de
+  # qualquer Tekoa por natureza — hoje, a fila do Oban. O guard isenta SÓ estas:
+  # qualquer outra tabela é tratada como dado de Tekoa e exige contexto. Assim,
+  # schemas novos de fases futuras ficam protegidos por padrão, e esquecer de
+  # isentar uma nova tabela de infra causa um erro barulhento, nunca um
+  # vazamento silencioso.
+  @infra_table_prefixes ~w(oban_)
+
   @doc """
   Executa uma função dentro do contexto de uma Tekoa específica.
 
@@ -102,6 +110,10 @@ defmodule Taina.Repo do
   vazios silenciosamente — esquecer o contexto vira erro de desenvolvimento,
   não vazamento ou comportamento fantasma em produção.
 
+  A única isenção automática são as tabelas de infraestrutura listadas em
+  `@infra_table_prefixes` (a fila do Oban): elas não guardam dado de Tekoa.
+  Tudo o mais raiseia por padrão — o lado seguro.
+
   Inserts/updates/deletes de structs não passam por este callback; para eles a
   proteção é o RLS no banco (`WITH CHECK` das policies + `FORCE ROW LEVEL
   SECURITY`).
@@ -115,6 +127,9 @@ defmodule Taina.Repo do
       is_binary(Process.get(@tekoa_context_key)) ->
         {query, opts}
 
+      infra_query?(query) ->
+        {query, opts}
+
       true ->
         raise """
         query executada fora do contexto de Tekoa: #{inspect(query)}
@@ -125,6 +140,15 @@ defmodule Taina.Repo do
         """
     end
   end
+
+  # Isenta apenas tabelas de infraestrutura, identificadas pelo nome (ex.:
+  # `oban_jobs`, `oban_peers`). Lê só o nome da tabela na cláusula `from` — sem
+  # introspecção de schema — e, no que não reconhecer, raiseia (lado seguro).
+  defp infra_query?(%Ecto.Query{from: %{source: {table, _schema}}}) when is_binary(table) do
+    String.starts_with?(table, @infra_table_prefixes)
+  end
+
+  defp infra_query?(_query), do: false
 
   @doc """
   Busca uma entidade por ID e retorna `{:ok, entity}` ou `{:error, :not_found}`.

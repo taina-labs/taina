@@ -2,49 +2,77 @@ defmodule Taina.Ybira do
   @moduledoc """
   Ybira — sistema de arquivos da comunidade.
 
+  Implementa `Taina.Ybira.Behaviour` — as regras de negócio de cada função estão
+  documentadas lá, nos `@callback`.
+
   Todas as funções públicas recebem um `Taina.Scope` (quem + qual Tekoa) e
-  executam dentro de `Repo.with_tekoa/2`, ativando o isolamento RLS.
+  executam dentro de `Repo.with_tekoa/2`, ativando o isolamento RLS. A exceção é
+  `purge_deleted_files/1`, operação de sistema que atravessa todas as Tekoas.
 
   Os bytes ficam no disco em
   `{storage_root}/{tekoa_public_id}/files/{ano}/{mes}/{nome}.{ext}`;
   o banco guarda apenas metadados. `storage_root` vem de
   `config :taina, :storage_root`.
+
+  ## Lixeira (soft delete)
+
+  Deletar um arquivo ou pasta só preenche `deleted_at` — os bytes ficam no disco
+  e a cota não é devolvida na hora. O worker `Taina.Ybira.Workers.PurgeTrash`
+  apaga de vez o que está na lixeira há mais de 30 dias e só então recupera a
+  cota. Até lá, `restore_file/2` traz o arquivo de volta.
+
+  ## Paginação
+
+  Listagens usam cursor por keyset (`id` decrescente, equivalente a
+  `inserted_at DESC, id DESC` já que o `id` é serial monótono). O cursor é opaco
+  (`Base.url_encode64`); passe-o de volta em `:after_cursor` para a próxima
+  página.
   """
+
+  @behaviour Taina.Ybira.Behaviour
 
   import Ecto.Query
 
+  alias Taina.Maraca.Ava
   alias Taina.Maraca.Tekoa
   alias Taina.Repo
   alias Taina.Scope
   alias Taina.Ybira
+  alias Taina.Ybira.MimeDetector
+
+  require Logger
 
   @hash_chunk_bytes 1024 * 1024
+  @default_limit 50
 
-  @doc """
-  Faz upload de um arquivo a partir de um caminho temporário.
+  # Tipos MIME aceitos no upload. Detectados pelos magic bytes (não pela
+  # extensão); `application/octet-stream` cobre binários desconhecidos, mas
+  # executáveis são detectados e ficam de fora — logo, rejeitados.
+  @allowed_mime_types ~w[
+    image/jpeg image/png image/gif image/webp image/heic image/heif
+    video/mp4 video/quicktime video/webm video/avi
+    audio/mpeg audio/ogg audio/wav audio/flac
+    application/pdf application/zip application/octet-stream
+    text/plain
+  ]
 
-  ## Opções
+  ## Upload
 
-    * `:filename` - nome original do arquivo (default: basename do caminho)
-    * `:folder_id` - id interno da pasta de destino (default: raiz)
-
-  Verifica a cota da Tekoa, copia os bytes para o storage definitivo e insere
-  o registro — cota e inserção na mesma transação. Em caso de erro, o arquivo
-  copiado é removido do disco.
-  """
-  @spec upload(Scope.t(), Path.t(), keyword) :: {:ok, Ybira.File.t()} | {:error, term}
+  @impl true
   def upload(%Scope{} = scope, tmp_path, opts \\ []) do
     original_filename = Keyword.get(opts, :filename, Path.basename(tmp_path))
     folder_id = Keyword.get(opts, :folder_id)
+    mime_type = MimeDetector.detect(tmp_path)
 
     with {:ok, %{size: size}} <- Elixir.File.stat(tmp_path),
+         :ok <- validate_mime(mime_type),
          {:ok, hash} <- hash_file(tmp_path),
          {:ok, dest} <- copy_to_storage(scope, tmp_path, original_filename) do
       attrs = %{
         filename: Path.basename(dest),
         original_filename: original_filename,
         filepath: dest,
-        mime_type: MIME.from_path(original_filename),
+        mime_type: mime_type,
         file_size_bytes: size,
         file_hash: hash,
         ava_id: scope.ava.id,
@@ -63,6 +91,9 @@ defmodule Taina.Ybira do
     end
   end
 
+  defp validate_mime(mime) when mime in @allowed_mime_types, do: :ok
+  defp validate_mime(_mime), do: {:error, :mime_not_allowed}
+
   defp insert_within_quota(%Scope{} = scope, attrs, size) do
     Repo.with_tekoa(scope.tekoa.public_id, fn ->
       with :ok <- quota_check(scope.tekoa.id, size),
@@ -73,24 +104,24 @@ defmodule Taina.Ybira do
     end)
   end
 
-  @doc """
-  Busca um arquivo pelo `public_id`, dentro da Tekoa do scope.
-  """
-  @spec get_file(Scope.t(), String.t()) :: {:ok, Ybira.File.t()} | {:error, :not_found}
+  ## Arquivos
+
+  @impl true
   def get_file(%Scope{} = scope, file_public_id) when is_binary(file_public_id) do
     Repo.with_tekoa(scope.tekoa.public_id, fn ->
-      case Repo.get_by(Ybira.File, public_id: file_public_id) do
+      query =
+        from f in Ybira.File,
+          where: f.public_id == ^file_public_id and is_nil(f.deleted_at)
+
+      case Repo.one(query) do
         nil -> {:error, :not_found}
         file -> {:ok, file}
       end
     end)
   end
 
-  @doc """
-  Lista arquivos não-deletados de uma pasta (`public_id`) ou da raiz (`nil`).
-  """
-  @spec list_files(Scope.t(), String.t() | nil) :: {:ok, [Ybira.File.t()]}
-  def list_files(%Scope{} = scope, folder_public_id \\ nil) do
+  @impl true
+  def list_files(%Scope{} = scope, folder_public_id \\ nil, opts \\ []) do
     Repo.with_tekoa(scope.tekoa.public_id, fn ->
       base =
         from f in Ybira.File,
@@ -109,40 +140,142 @@ defmodule Taina.Ybira do
               where: d.public_id == ^public_id
         end
 
-      {:ok, Repo.all(query)}
+      {items, next_cursor} = fetch_page(query, opts)
+      {:ok, %{items: items, next_cursor: next_cursor}}
     end)
   end
 
-  @doc """
-  Remove um arquivo do banco e do disco. Apenas o dono pode remover
-  (verificações de admin chegam com `Maraca.authorize?/4`).
-  """
-  @spec delete_file(Scope.t(), String.t()) :: {:ok, Ybira.File.t()} | {:error, :not_found | term}
+  @impl true
   def delete_file(%Scope{} = scope, file_public_id) when is_binary(file_public_id) do
-    result =
-      Repo.with_tekoa(scope.tekoa.public_id, fn ->
-        query =
-          from f in Ybira.File,
-            where: f.public_id == ^file_public_id,
-            where: f.ava_id == ^scope.ava.id
+    Repo.with_tekoa(scope.tekoa.public_id, fn ->
+      query =
+        from f in Ybira.File,
+          where: f.public_id == ^file_public_id,
+          where: f.ava_id == ^scope.ava.id,
+          where: is_nil(f.deleted_at)
 
-        with %Ybira.File{} = file <- Repo.one(query) || {:error, :not_found},
-             {:ok, file} <- Repo.delete(file) do
-          adjust_storage_used(scope.tekoa.id, -file.file_size_bytes)
-          {:ok, file}
-        end
-      end)
-
-    with {:ok, file} <- result do
-      Elixir.File.rm(file.filepath)
-      {:ok, file}
-    end
+      case Repo.one(query) do
+        nil -> {:error, :not_found}
+        file -> Repo.update(Ybira.File.delete_changeset(file))
+      end
+    end)
   end
 
-  @doc """
-  Verifica se a Tekoa do scope comporta mais `byte_size` bytes.
-  """
-  @spec check_capacity(Scope.t(), pos_integer) :: :ok | {:error, :storage_quota_exceeded}
+  @impl true
+  def restore_file(%Scope{} = scope, file_public_id) when is_binary(file_public_id) do
+    Repo.with_tekoa(scope.tekoa.public_id, fn ->
+      query =
+        from f in Ybira.File,
+          where: f.public_id == ^file_public_id and not is_nil(f.deleted_at)
+
+      file = Repo.one(query)
+
+      if file && owner?(scope, file.ava_id) do
+        Repo.update(Ybira.File.restore_changeset(file))
+      else
+        {:error, :not_found}
+      end
+    end)
+  end
+
+  @impl true
+  def list_trash(%Scope{} = scope, opts \\ []) do
+    Repo.with_tekoa(scope.tekoa.public_id, fn ->
+      query =
+        from f in Ybira.File,
+          where: not is_nil(f.deleted_at) and f.ava_id == ^scope.ava.id,
+          order_by: [desc: f.inserted_at, desc: f.id]
+
+      {items, next_cursor} = fetch_page(query, opts)
+      {:ok, %{items: items, next_cursor: next_cursor}}
+    end)
+  end
+
+  @impl true
+  def move_file(%Scope{} = scope, file_public_id, folder_public_id) when is_binary(file_public_id) do
+    Repo.with_tekoa(scope.tekoa.public_id, fn ->
+      with {:ok, file} <- fetch_owned_file(scope, file_public_id),
+           {:ok, folder_id} <- resolve_folder_id(folder_public_id) do
+        Repo.update(Ybira.File.changeset(file, %{folder_id: folder_id}))
+      end
+    end)
+  end
+
+  ## Pastas
+
+  @impl true
+  def create_folder(%Scope{} = scope, attrs) when is_map(attrs) do
+    name = fetch_attr(attrs, :name)
+    parent_public_id = fetch_attr(attrs, :parent_public_id)
+
+    Repo.with_tekoa(scope.tekoa.public_id, fn ->
+      with {:ok, parent_id} <- resolve_folder_id(parent_public_id) do
+        Repo.insert(
+          Ybira.Folder.changeset(%Ybira.Folder{}, %{
+            name: name,
+            parent_id: parent_id,
+            ava_id: scope.ava.id,
+            tekoa_id: scope.tekoa.id
+          })
+        )
+      end
+    end)
+  end
+
+  @impl true
+  def get_folder(%Scope{} = scope, public_id) when is_binary(public_id) do
+    Repo.with_tekoa(scope.tekoa.public_id, fn ->
+      case Repo.one(folder_by_public_id(public_id)) do
+        nil -> {:error, :not_found}
+        folder -> {:ok, folder}
+      end
+    end)
+  end
+
+  @impl true
+  def rename_folder(%Scope{} = scope, public_id, new_name) when is_binary(public_id) do
+    Repo.with_tekoa(scope.tekoa.public_id, fn ->
+      with {:ok, folder} <- fetch_folder(scope, public_id) do
+        Repo.update(Ybira.Folder.changeset(folder, %{name: new_name}))
+      end
+    end)
+  end
+
+  @impl true
+  def move_folder(%Scope{} = scope, public_id, new_parent_public_id) when is_binary(public_id) do
+    Repo.with_tekoa(scope.tekoa.public_id, fn ->
+      with {:ok, folder} <- fetch_folder(scope, public_id),
+           {:ok, new_parent_id} <- resolve_folder_id(new_parent_public_id),
+           :ok <- ensure_acyclic(folder.id, new_parent_id) do
+        Repo.update(Ybira.Folder.changeset(folder, %{parent_id: new_parent_id}))
+      end
+    end)
+  end
+
+  @impl true
+  def delete_folder(%Scope{} = scope, public_id) when is_binary(public_id) do
+    Repo.with_tekoa(scope.tekoa.public_id, fn ->
+      with {:ok, folder} <- fetch_folder(scope, public_id) do
+        soft_delete_tree(folder.id)
+        {:ok, :deleted}
+      end
+    end)
+  end
+
+  @impl true
+  def list_folder_contents(%Scope{} = scope, folder_public_id \\ nil, opts \\ []) do
+    Repo.with_tekoa(scope.tekoa.public_id, fn ->
+      with {:ok, folder_id} <- resolve_folder_id(folder_public_id) do
+        folders = Repo.all(child_folders_query(folder_id))
+        {files, next_cursor} = fetch_page(child_files_query(folder_id), opts)
+        {:ok, %{folders: folders, files: files, next_cursor: next_cursor}}
+      end
+    end)
+  end
+
+  ## Cota / armazenamento
+
+  @impl true
   def check_capacity(%Scope{} = scope, byte_size) do
     {:ok, result} =
       Repo.with_tekoa(scope.tekoa.public_id, fn ->
@@ -151,6 +284,54 @@ defmodule Taina.Ybira do
 
     result
   end
+
+  @impl true
+  def storage_stats(%Scope{} = scope) do
+    Repo.with_tekoa(scope.tekoa.public_id, fn ->
+      tekoa = Repo.get!(Tekoa, scope.tekoa.id)
+      {:ok, %{used_bytes: tekoa.storage_used_bytes, quota_bytes: tekoa.storage_quota_bytes}}
+    end)
+  end
+
+  @impl true
+  def purge_deleted_files(%DateTime{} = cutoff) do
+    files =
+      Repo.all(
+        from(f in Ybira.File, where: not is_nil(f.deleted_at) and f.deleted_at < ^cutoff),
+        skip_tekoa_id: true
+      )
+
+    Enum.each(files, fn file ->
+      {:ok, _} =
+        Repo.transaction(fn ->
+          Repo.delete!(file)
+          adjust_storage_used(file.tekoa_id, -file.file_size_bytes, skip_tekoa_id: true)
+        end)
+
+      # Fora da transação: se o disco falhar, o registro já foi (sem órfão no
+      # banco). Pior caso é um arquivo solto no disco, não inconsistência — mas
+      # logamos para dar visibilidade a problemas recorrentes de disco.
+      with {:error, reason} <- Elixir.File.rm(file.filepath) do
+        Logger.warning("PurgeTrash: falha ao remover arquivo do disco",
+          path: file.filepath,
+          file_id: file.id,
+          reason: reason
+        )
+      end
+    end)
+
+    # Pastas na lixeira só guardam metadados (sem bytes nem cota) — apaga em lote.
+    # `delete_folder/2` faz soft delete em cascata; sem isto, os registros de
+    # pasta ficariam para sempre com `deleted_at` preenchido.
+    Repo.delete_all(
+      from(d in Ybira.Folder, where: not is_nil(d.deleted_at) and d.deleted_at < ^cutoff),
+      skip_tekoa_id: true
+    )
+
+    {:ok, length(files)}
+  end
+
+  ## --- Helpers internos ---
 
   defp quota_check(tekoa_id, byte_size) do
     tekoa = Repo.get!(Tekoa, tekoa_id)
@@ -162,8 +343,12 @@ defmodule Taina.Ybira do
     end
   end
 
-  defp adjust_storage_used(tekoa_id, delta) do
-    Repo.update_all(from(t in Tekoa, where: t.id == ^tekoa_id), inc: [storage_used_bytes: delta])
+  defp adjust_storage_used(tekoa_id, delta, opts \\ []) do
+    Repo.update_all(
+      from(t in Tekoa, where: t.id == ^tekoa_id),
+      [inc: [storage_used_bytes: delta]],
+      opts
+    )
   end
 
   defp copy_to_storage(%Scope{} = scope, tmp_path, original_filename) do
@@ -200,4 +385,178 @@ defmodule Taina.Ybira do
   end
 
   defp storage_root, do: Application.fetch_env!(:taina, :storage_root)
+
+  # --- Pastas (resolução, autorização, cascata) ---
+
+  defp folder_by_public_id(public_id) do
+    from d in Ybira.Folder, where: d.public_id == ^public_id and is_nil(d.deleted_at)
+  end
+
+  defp resolve_folder_id(nil), do: {:ok, nil}
+
+  defp resolve_folder_id(public_id) when is_binary(public_id) do
+    case Repo.one(folder_by_public_id(public_id)) do
+      nil -> {:error, :not_found}
+      folder -> {:ok, folder.id}
+    end
+  end
+
+  defp fetch_folder(scope, public_id) do
+    case Repo.one(folder_by_public_id(public_id)) do
+      nil ->
+        {:error, :not_found}
+
+      folder ->
+        if owner?(scope, folder.ava_id), do: {:ok, folder}, else: {:error, :not_found}
+    end
+  end
+
+  defp fetch_owned_file(scope, public_id) do
+    query = from f in Ybira.File, where: f.public_id == ^public_id and is_nil(f.deleted_at)
+
+    case Repo.one(query) do
+      nil -> {:error, :not_found}
+      file -> if owner?(scope, file.ava_id), do: {:ok, file}, else: {:error, :not_found}
+    end
+  end
+
+  # Só o dono muta seus recursos. Admins não têm acesso automático (RFC 002:
+  # "admins são facilitadores, não deuses") — quando precisarem, pedem via
+  # `Maraca.request_access/5`.
+  defp owner?(%Scope{ava: %Ava{id: id}}, owner_id), do: id == owner_id
+
+  # Mover `folder_id` para baixo de `new_parent_id` fecharia um ciclo se
+  # `folder_id` for o próprio `new_parent_id` ou um ancestral dele.
+  defp ensure_acyclic(_folder_id, nil), do: :ok
+
+  defp ensure_acyclic(folder_id, new_parent_id) do
+    if ancestor_or_self?(new_parent_id, folder_id),
+      do: {:error, :circular_reference},
+      else: :ok
+  end
+
+  # Uma única CTE recursiva sobe a cadeia de ancestrais de `start_id` (incluindo
+  # ele) e responde se `folder_id` aparece lá — sem N+1 nem recursão Elixir
+  # ilimitada. Roda sob `with_tekoa`, então o RLS filtra por Tekoa.
+  defp ancestor_or_self?(start_id, folder_id) do
+    {:ok, %{rows: [[count]]}} =
+      Repo.query(
+        """
+        WITH RECURSIVE ancestors AS (
+          SELECT id, parent_id FROM ybira.folders WHERE id = $1
+          UNION ALL
+          SELECT f.id, f.parent_id FROM ybira.folders f
+          JOIN ancestors a ON f.id = a.parent_id
+        )
+        SELECT count(*) FROM ancestors WHERE id = $2
+        """,
+        [start_id, folder_id]
+      )
+
+    count > 0
+  end
+
+  # Soft delete em cascata sem recursão Elixir: uma CTE coleta a subárvore (raiz
+  # + descendentes não-deletados) e dois `update_all` marcam arquivos e pastas.
+  defp soft_delete_tree(root_id) do
+    now = DateTime.utc_now()
+    folder_ids = descendant_folder_ids(root_id)
+
+    Repo.update_all(
+      from(f in Ybira.File, where: f.folder_id in ^folder_ids and is_nil(f.deleted_at)),
+      set: [deleted_at: now]
+    )
+
+    Repo.update_all(
+      from(d in Ybira.Folder, where: d.id in ^folder_ids and is_nil(d.deleted_at)),
+      set: [deleted_at: now]
+    )
+
+    :ok
+  end
+
+  defp descendant_folder_ids(root_id) do
+    {:ok, %{rows: rows}} =
+      Repo.query(
+        """
+        WITH RECURSIVE subtree AS (
+          SELECT id FROM ybira.folders WHERE id = $1
+          UNION ALL
+          SELECT f.id FROM ybira.folders f
+          JOIN subtree s ON f.parent_id = s.id
+          WHERE f.deleted_at IS NULL
+        )
+        SELECT id FROM subtree
+        """,
+        [root_id]
+      )
+
+    List.flatten(rows)
+  end
+
+  defp child_folders_query(nil) do
+    from d in Ybira.Folder,
+      where: is_nil(d.parent_id) and is_nil(d.deleted_at),
+      order_by: [desc: d.inserted_at, desc: d.id]
+  end
+
+  defp child_folders_query(folder_id) do
+    from d in Ybira.Folder,
+      where: d.parent_id == ^folder_id and is_nil(d.deleted_at),
+      order_by: [desc: d.inserted_at, desc: d.id]
+  end
+
+  defp child_files_query(nil) do
+    from f in Ybira.File,
+      where: is_nil(f.folder_id) and is_nil(f.deleted_at),
+      order_by: [desc: f.inserted_at, desc: f.id]
+  end
+
+  defp child_files_query(folder_id) do
+    from f in Ybira.File,
+      where: f.folder_id == ^folder_id and is_nil(f.deleted_at),
+      order_by: [desc: f.inserted_at, desc: f.id]
+  end
+
+  defp fetch_attr(attrs, key) do
+    Map.get(attrs, key) || Map.get(attrs, to_string(key))
+  end
+
+  # --- Paginação por keyset ---
+
+  defp fetch_page(query, opts) do
+    limit = Keyword.get(opts, :limit, @default_limit)
+    cursor = Keyword.get(opts, :after_cursor)
+
+    rows =
+      query
+      |> apply_cursor(cursor)
+      |> limit(^(limit + 1))
+      |> Repo.all()
+
+    if length(rows) > limit do
+      page = Enum.take(rows, limit)
+      {page, encode_cursor(List.last(page))}
+    else
+      {rows, nil}
+    end
+  end
+
+  defp apply_cursor(query, nil), do: query
+
+  defp apply_cursor(query, cursor) when is_binary(cursor) do
+    case decode_cursor(cursor) do
+      {:ok, id} -> where(query, [x], x.id < ^id)
+      :error -> query
+    end
+  end
+
+  defp encode_cursor(%{id: id}), do: Base.url_encode64(<<id::64>>, padding: false)
+
+  defp decode_cursor(cursor) do
+    case Base.url_decode64(cursor, padding: false) do
+      {:ok, <<id::64>>} -> {:ok, id}
+      _ -> :error
+    end
+  end
 end

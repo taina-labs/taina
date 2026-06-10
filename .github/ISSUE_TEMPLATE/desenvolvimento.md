@@ -1,14 +1,14 @@
 ---
 name: Desenvolvimento
 about: Desenvolvimento técnico (Backend, frontend, infraestrutura)
-title: ''
+title: ""
 labels: engineering
-assignees: ''
-
+assignees: ""
 ---
 
 **Descrição**
 descreva aqui sua sugestão/requisito
 
 **Tarefas**
+
 - [ ] checklist das tarefas contidas nessa issue

@@ -1,5 +1,5 @@
 defmodule Taina.MaracaTest do
-  use Taina.DataCase, async: false
+  use Taina.DataCase, async: true
 
   import Plug.Test
   import Taina.Fixtures
@@ -89,6 +89,34 @@ defmodule Taina.MaracaTest do
                  "senhasegura123",
                  "tarde"
                )
+    end
+  end
+
+  describe "update_tekoa_quota/2" do
+    test "admin updates the storage quota" do
+      tekoa = tekoa_fixture()
+      admin = admin_fixture(tekoa)
+      scope = Scope.new(admin, tekoa)
+
+      assert {:ok, updated} = Maraca.update_tekoa_quota(scope, 5_000)
+      assert updated.storage_quota_bytes == 5_000
+    end
+
+    test "members are rejected" do
+      tekoa = tekoa_fixture()
+      member = confirmed_ava_fixture(tekoa)
+      scope = Scope.new(member, tekoa)
+
+      assert {:error, :unauthorized} = Maraca.update_tekoa_quota(scope, 5_000)
+    end
+
+    test "a non-positive quota fails validation" do
+      tekoa = tekoa_fixture()
+      admin = admin_fixture(tekoa)
+      scope = Scope.new(admin, tekoa)
+
+      assert {:error, changeset} = Maraca.update_tekoa_quota(scope, 0)
+      assert "must be greater than 0" in errors_on(changeset).storage_quota_bytes
     end
   end
 

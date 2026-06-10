@@ -1,14 +1,14 @@
 ---
 name: Comunidade & Governança
 about: Eventos, outreach, feedback
-title: ''
+title: ""
 labels: community
-assignees: ''
-
+assignees: ""
 ---
 
 **Descrição**
 descreva aqui sua sugestão/requisito
 
 **Tarefas**
+
 - [ ] checklist das tarefas contidas nessa issue
