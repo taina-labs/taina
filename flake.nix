@@ -29,6 +29,11 @@
           erlang_28
           just
           postgresql
+          # Ybira renditions (thumbnails/EXIF) via image/vix → libvips.
+          # On darwin vix uses its precompiled NIF; on NixOS/Pi point vix at
+          # this system libvips (VIX_COMPILATION_MODE=PLATFORM_PROVIDED_LIBVIPS).
+          vips
+          pkg-config
         ];
       };
     });

@@ -28,6 +28,38 @@ defmodule TainaWeb.FileController do
     end
   end
 
+  # Tamanhos de thumbnail gerados pelo `Ybira.Workers.Rendition` ("sm" grade,
+  # "md" fullscreen). O caminho no disco vem do `metadata` do arquivo; se o job
+  # ainda não rodou (ou falhou), respondemos 404 e a UI mostra um placeholder.
+  @thumbnail_sizes ~w(sm md)
+
+  def thumbnail(conn, %{"public_id" => public_id, "size" => size}) when size in @thumbnail_sizes do
+    with {:ok, ava} <- Maraca.get_session_user(conn),
+         scope = Scope.for_ava(ava),
+         {:ok, file} <- Ybira.get_file(scope, public_id),
+         {:ok, path} <- thumbnail_path(file, size) do
+      conn
+      |> put_resp_header("content-type", "image/webp")
+      |> put_resp_header("cache-control", "private, max-age=86400")
+      |> send_file(200, path)
+    else
+      {:error, :not_authenticated} -> send_resp(conn, 401, "")
+      _ -> send_resp(conn, 404, "")
+    end
+  end
+
+  def thumbnail(conn, _params), do: send_resp(conn, 404, "")
+
+  defp thumbnail_path(file, size) do
+    case get_in(file.metadata, ["thumbnails", size]) do
+      path when is_binary(path) ->
+        if File.exists?(path), do: {:ok, path}, else: {:error, :not_found}
+
+      _ ->
+        {:error, :not_found}
+    end
+  end
+
   defp serve_file(conn, file) do
     conn =
       conn

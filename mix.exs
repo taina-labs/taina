@@ -54,6 +54,7 @@ defmodule Taina.MixProject do
       {:bandit, "~> 1.5"},
       {:nanoid, "~> 2.1"},
       {:mime, "~> 2.0"},
+      {:image, "~> 0.54"},
       {:bcrypt_elixir, "~> 3.3"},
       {:oban, "~> 2.23"},
       # dev

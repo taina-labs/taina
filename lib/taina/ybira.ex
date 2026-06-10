@@ -39,6 +39,7 @@ defmodule Taina.Ybira do
   alias Taina.Scope
   alias Taina.Ybira
   alias Taina.Ybira.MimeDetector
+  alias Taina.Ybira.Workers.Rendition
 
   require Logger
 
@@ -99,10 +100,26 @@ defmodule Taina.Ybira do
       with :ok <- quota_check(scope.tekoa.id, size),
            {:ok, file} <- Repo.insert(Ybira.File.changeset(%Ybira.File{}, attrs)) do
         adjust_storage_used(scope.tekoa.id, size)
+        maybe_enqueue_rendition(scope, file)
         {:ok, file}
       end
     end)
   end
+
+  # Imagens ganham thumbnails + metadados (dimensões, EXIF) num job pós-upload.
+  # Enfileirado na mesma transação do insert: só roda se o upload commitar, e o
+  # job só toca o disco/banco depois (a fila do Oban é isenta de RLS — ver
+  # `Repo.prepare_query/3`). Em testes (`testing: :inline`) ele roda na hora.
+  defp maybe_enqueue_rendition(%Scope{} = scope, %Ybira.File{} = file) do
+    if image?(file.mime_type) do
+      %{file_id: file.id, tekoa_public_id: scope.tekoa.public_id}
+      |> Rendition.new()
+      |> Oban.insert()
+    end
+  end
+
+  defp image?("image/" <> _rest), do: true
+  defp image?(_mime), do: false
 
   ## Arquivos
 

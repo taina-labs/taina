@@ -21,5 +21,6 @@ defmodule TainaWeb.Router do
     pipe_through :authenticated
 
     get "/files/:public_id", FileController, :download
+    get "/files/:public_id/thumbnail/:size", FileController, :thumbnail
   end
 end

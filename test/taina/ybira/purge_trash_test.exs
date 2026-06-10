@@ -1,5 +1,5 @@
 defmodule Taina.Ybira.Workers.PurgeTrashTest do
-  use Taina.DataCase, async: false
+  use Taina.DataCase, async: true
 
   import Taina.Fixtures
 
