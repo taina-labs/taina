@@ -11,6 +11,7 @@ defmodule Taina.Ybira.Folder do
     * `name` - Nome da pasta (ex: "Documentos", "Fotos de Família")
     * `public_id` - Identificador público seguro
     * `parent_id` - Pasta pai (quando esta pasta está dentro de outra)
+    * `deleted_at` - Quando foi deletada (soft delete; o `PurgeTrash` apaga de vez depois de 30 dias)
   """
 
   use Ecto.Schema
@@ -26,6 +27,7 @@ defmodule Taina.Ybira.Folder do
           id: integer() | nil,
           name: String.t(),
           public_id: String.t() | nil,
+          deleted_at: DateTime.t() | nil,
           ava_id: integer(),
           ava: Ava.t() | NotLoaded.t() | nil,
           tekoa_id: integer(),
@@ -40,6 +42,7 @@ defmodule Taina.Ybira.Folder do
   schema "folders" do
     field :name, :string
     field :public_id, PublicId, autogenerate: true
+    field :deleted_at, :utc_datetime_usec
 
     belongs_to :ava, Ava
     belongs_to :tekoa, Tekoa
@@ -74,5 +77,12 @@ defmodule Taina.Ybira.Folder do
     |> foreign_key_constraint(:tekoa_id)
     |> foreign_key_constraint(:parent_id)
     |> unique_constraint(:public_id)
+  end
+
+  @doc """
+  Marca a pasta como deletada (soft delete), preenchendo `deleted_at`.
+  """
+  def delete_changeset(folder) do
+    change(folder, deleted_at: DateTime.utc_now())
   end
 end

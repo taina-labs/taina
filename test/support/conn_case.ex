@@ -35,4 +35,12 @@ defmodule TainaWeb.ConnCase do
     Taina.DataCase.setup_sandbox(tags)
     {:ok, conn: Phoenix.ConnTest.build_conn()}
   end
+
+  @doc """
+  Loga um Ava na sessão de teste (cookie), do jeito que a pipeline
+  `:authenticated` espera — `Maraca.get_session_user/1` lê `:ava_id`.
+  """
+  def log_in(conn, ava) do
+    Plug.Test.init_test_session(conn, %{ava_id: ava.public_id})
+  end
 end

@@ -5,6 +5,7 @@ defmodule Taina.Maraca.Behaviour do
   alias Taina.Maraca.Ava
   alias Taina.Maraca.Permission
   alias Taina.Maraca.Tekoa
+  alias Taina.Scope
 
   @doc """
   Convida um novo usuário para a Tekoa.
@@ -208,6 +209,37 @@ defmodule Taina.Maraca.Behaviour do
   """
   @callback get_session_user(Plug.Conn.t()) ::
               {:ok, Ava.t()} | {:error, :not_authenticated}
+
+  @doc """
+  Atualiza a cota de armazenamento da Tekoa do scope.
+
+  ## Regras de Negócio
+
+  - Apenas admins podem alterar a cota (`scope.ava.role == :admin`)
+  - `quota_bytes` deve ser maior que zero
+  - Demais (membros) recebem `{:error, :unauthorized}`
+
+  ## Parâmetros
+
+    * `scope` - `Taina.Scope` de quem está agindo + a Tekoa
+    * `quota_bytes` - novo limite de armazenamento, em bytes
+
+  ## Retorno
+
+    * `{:ok, %Tekoa{}}` - cota atualizada
+    * `{:error, :unauthorized}` - quem pediu não é admin
+    * `{:error, %Ecto.Changeset{}}` - validação falhou (ex.: cota <= 0)
+
+  ## Exemplos
+
+      iex> update_tekoa_quota(admin_scope, 10 * 1024 * 1024 * 1024)
+      {:ok, %Tekoa{storage_quota_bytes: 10737418240}}
+
+      iex> update_tekoa_quota(member_scope, 1024)
+      {:error, :unauthorized}
+  """
+  @callback update_tekoa_quota(Scope.t(), pos_integer()) ::
+              {:ok, Tekoa.t()} | {:error, :unauthorized | Ecto.Changeset.t()}
 
   # ============================================================================
   # AUTENTICAÇÃO - Reset de Senha

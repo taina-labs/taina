@@ -11,6 +11,7 @@ defmodule Taina.Application do
       TainaWeb.Telemetry,
       Taina.Repo,
       {DNSCluster, query: Application.get_env(:taina, :dns_cluster_query) || :ignore},
+      {Oban, Application.fetch_env!(:taina, Oban)},
       {Phoenix.PubSub, name: Taina.PubSub},
       TainaWeb.Endpoint
     ]

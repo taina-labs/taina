@@ -132,4 +132,19 @@ defmodule Taina.Ybira.File do
     |> foreign_key_constraint(:folder_id)
     |> unique_constraint(:public_id)
   end
+
+  @doc """
+  Move o arquivo para a lixeira (soft delete), preenchendo `deleted_at`. Os
+  bytes ficam no disco até o `PurgeTrash` apagar de vez.
+  """
+  def delete_changeset(file) do
+    change(file, deleted_at: DateTime.utc_now())
+  end
+
+  @doc """
+  Restaura um arquivo da lixeira, limpando `deleted_at`.
+  """
+  def restore_changeset(file) do
+    change(file, deleted_at: nil)
+  end
 end
