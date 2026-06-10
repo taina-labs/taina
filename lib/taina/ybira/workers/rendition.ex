@@ -53,8 +53,19 @@ defmodule Taina.Ybira.Workers.Rendition do
           "thumbnails" => thumbnails
         })
 
-      Repo.update(YbiraFile.changeset(file, %{metadata: metadata}))
-      :ok
+      case Repo.update(YbiraFile.changeset(file, %{metadata: metadata})) do
+        {:ok, _file} ->
+          :ok
+
+        # Best-effort: a foto já existe; logamos a falha de metadata e seguimos.
+        {:error, changeset} ->
+          Logger.warning("Rendition: falha ao gravar metadata",
+            file_id: file.id,
+            errors: inspect(changeset.errors)
+          )
+
+          :ok
+      end
     else
       error ->
         Logger.warning("Rendition: processamento falhou",

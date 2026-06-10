@@ -149,6 +149,8 @@ defmodule Taina.YbiraTest do
   end
 
   describe "upload/3 MIME detection (magic bytes)" do
+    # PNG magic bytes sem corpo válido: o rendition inline falha ao abrir e loga.
+    @tag capture_log: true
     test "detects PNG by magic bytes regardless of extension" do
       scope = scope_fixture()
       png = <<0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0>>

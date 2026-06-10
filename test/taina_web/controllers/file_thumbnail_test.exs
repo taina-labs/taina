@@ -19,6 +19,7 @@ defmodule TainaWeb.FileThumbnailTest do
 
     assert conn.status == 200
     assert get_resp_header(conn, "content-type") == ["image/webp"]
+    assert get_resp_header(conn, "cache-control") == ["private, max-age=86400"]
   end
 
   test "404 for an unsupported size", %{conn: conn, ava: ava, photo: photo} do

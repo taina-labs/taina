@@ -41,7 +41,8 @@ defmodule Taina.Jaci do
       query =
         from f in YbiraFile,
           where: is_nil(f.deleted_at) and like(f.mime_type, "image/%"),
-          order_by: [desc: f.inserted_at, desc: f.id]
+          # id serial monótono = ordem de upload; alinha com o cursor (id-only).
+          order_by: [desc: f.id]
 
       {items, next_cursor} = fetch_grid_page(query, opts)
       {:ok, %{items: items, next_cursor: next_cursor}}

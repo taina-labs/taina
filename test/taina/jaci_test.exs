@@ -36,15 +36,16 @@ defmodule Taina.JaciTest do
   describe "timeline/2" do
     test "orders by EXIF capture date, not upload date" do
       scope = scope_fixture()
+      {:ok, other} = Ybira.upload(scope, tmp_image_fixture(filename: "o.jpg"))
       {:ok, recent} = Ybira.upload(scope, tmp_image_fixture(filename: "r.jpg"))
-      {:ok, _other} = Ybira.upload(scope, tmp_image_fixture(filename: "o.jpg"))
 
-      # enviada por último, mas tirada há anos → deve ir para o fim da timeline
+      # enviada por último, mas tirada há anos → deve ir para o fim da timeline,
+      # contrariando a ordem de upload (senão o teste passa mesmo ignorando EXIF)
       set_taken_at(recent.id, ~N[2024-01-01 10:00:00])
 
       {:ok, %{groups: groups}} = Jaci.timeline(scope)
       ordered = groups |> Enum.flat_map(& &1.photos) |> Enum.map(& &1.public_id)
-      assert List.last(ordered) == recent.public_id
+      assert ordered == [other.public_id, recent.public_id]
     end
 
     test "groups photos by effective date" do

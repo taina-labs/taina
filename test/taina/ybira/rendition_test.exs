@@ -20,6 +20,7 @@ defmodule Taina.Ybira.Workers.RenditionTest do
     assert photo.metadata["height"] == 40
     # imagem gerada não tem EXIF → taken_at fica nulo (fallback é o upload)
     assert Map.has_key?(photo.metadata, "taken_at")
+    assert is_nil(photo.metadata["taken_at"])
     assert %{"sm" => sm, "md" => md} = photo.metadata["thumbnails"]
     assert File.exists?(sm)
     assert File.exists?(md)
