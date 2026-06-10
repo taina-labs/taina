@@ -69,5 +69,9 @@ defmodule Taina.Maraca.Tekoa do
     |> validate_number(:storage_quota_bytes, greater_than: 0)
     |> unique_constraint(:name)
     |> unique_constraint(:public_id)
+    |> unique_constraint(:name,
+      name: :single_tekoa_enforcement,
+      message: "apenas uma Tekoa por instância (ver RFC 002, D2)"
+    )
   end
 end

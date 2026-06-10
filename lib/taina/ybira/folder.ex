@@ -20,6 +20,7 @@ defmodule Taina.Ybira.Folder do
   alias Ecto.Association.NotLoaded
   alias Taina.Maraca.Ava
   alias Taina.Maraca.Tekoa
+  alias Taina.Repo.PublicId
 
   @type t :: %__MODULE__{
           id: integer() | nil,
@@ -29,8 +30,8 @@ defmodule Taina.Ybira.Folder do
           ava: Ava.t() | NotLoaded.t() | nil,
           tekoa_id: integer(),
           tekoa: Tekoa.t() | NotLoaded.t() | nil,
-          folder_id: integer() | nil,
-          folder: t() | NotLoaded.t() | nil,
+          parent_id: integer() | nil,
+          parent: t() | NotLoaded.t() | nil,
           inserted_at: NaiveDateTime.t() | nil,
           updated_at: NaiveDateTime.t() | nil
         }
@@ -38,11 +39,11 @@ defmodule Taina.Ybira.Folder do
   @schema_prefix "ybira"
   schema "folders" do
     field :name, :string
-    field :public_id, :string
+    field :public_id, PublicId, autogenerate: true
 
     belongs_to :ava, Ava
     belongs_to :tekoa, Tekoa
-    belongs_to :folder, __MODULE__
+    belongs_to :parent, __MODULE__, foreign_key: :parent_id
 
     timestamps()
   end
@@ -66,7 +67,7 @@ defmodule Taina.Ybira.Folder do
   """
   def changeset(folder, attrs) do
     folder
-    |> cast(attrs, [:name, :public_id, :ava_id, :tekoa_id, :parent_id])
+    |> cast(attrs, [:name, :ava_id, :tekoa_id, :parent_id])
     |> validate_required([:name, :ava_id, :tekoa_id])
     |> validate_length(:name, min: 1, max: 255)
     |> foreign_key_constraint(:ava_id)

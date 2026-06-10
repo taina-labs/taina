@@ -1,5 +1,7 @@
 # Guará
 
+> **Fora do MVP.** O chat foi cortado do MVP — comunidades já usam Signal/WhatsApp; arquivos e fotos são a prioridade de soberania de dados. Guará volta no pós-MVP, após a API JSON v1. Os schemas permanecem no código. Ver [RFC 002](https://github.com/taina-labs/tekoa/blob/main/tecnico/RFC_002_MVP.md).
+
 ## O que é
 
 Guará é o serviço de mensageiro privado e comunicação do ecossistema Tainá. Funciona como seu próprio WhatsApp ou Telegram, mas com total controle sobre suas conversas e sem dependência de plataformas comerciais.

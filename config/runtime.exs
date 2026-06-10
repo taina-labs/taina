@@ -47,4 +47,8 @@ if config_env() == :prod do
     secret_key_base: secret_key_base
 
   config :taina, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
+
+  # File storage root for Ybira. The Dockerfile creates /app/storage owned
+  # by the runtime user; docker-compose mounts the storage_data volume there.
+  config :taina, :storage_root, System.get_env("STORAGE_ROOT") || "/app/storage"
 end

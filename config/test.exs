@@ -29,3 +29,7 @@ config :taina, TainaWeb.Endpoint,
   http: [ip: {127, 0, 0, 1}, port: 4002],
   secret_key_base: "bf9kxtNUgDlvtHPEms1ROPbUnGMIhE2kotcm4HbyzxHX9uWULOiSiBQ97QAGwAGm",
   server: false
+
+config :taina,
+       :storage_root,
+       Path.join(System.tmp_dir!(), "taina_test_storage#{System.get_env("MIX_TEST_PARTITION")}")

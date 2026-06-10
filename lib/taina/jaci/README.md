@@ -1,5 +1,7 @@
 # Jaci
 
+> **MVP como "Jaci-lite".** O MVP entrega grade de fotos, linha do tempo e thumbnails sobre os arquivos do Ybira. Álbuns completos e EXIF avançado são pós-MVP. Ver [RFC 002](https://github.com/taina-labs/tekoa/blob/main/tecnico/RFC_002_MVP.md).
+
 ## O que é
 
 Jaci é o serviço de armazenamento e organização de fotos e memórias do ecossistema Tainá. Funciona como seu próprio Google Fotos ou iCloud Photos, mas com controle total sobre suas memórias pessoais e familiares.

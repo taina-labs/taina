@@ -12,11 +12,11 @@ Tainá vem do Tupi-Guarani e significa "estrela da manhã" - aquela que guia os 
 
 O backend Tainá gerencia:
 
-- Autenticação e autorização de usuários
-- Comunicação entre diferentes serviços
-- Configuração e monitoramento do sistema
-- APIs para aplicações cliente (streaming, storage, chat, etc.)
-- Sincronização de dados entre dispositivos
+- Autenticação, convites e autorização de usuários (Maraca)
+- Armazenamento de arquivos da comunidade (Ybira)
+- Galeria de fotos sobre os arquivos (Jaci-lite)
+- Configuração, backup e atualização do sistema
+- Chat (Guará), streaming e API JSON para apps cliente são pós-MVP
 
 ## Para quem é
 
@@ -26,13 +26,19 @@ O backend Tainá gerencia:
 
 ## Status do Projeto
 
-Este projeto está em desenvolvimento ativo. A documentação completa e guias de instalação estão disponíveis no repositório [Tekoá](https://github.com/taina-labs/tekoa).
+Em desenvolvimento ativo, seguindo a [RFC 002](https://github.com/taina-labs/tekoa/blob/main/tecnico/RFC_002_MVP.md).
+
+**MVP:** cofre de arquivos e fotos da comunidade, com instalação plug & play —
+uma Tekoa (comunidade) por instância. Documentação completa e guias no
+repositório [Tekoá](https://github.com/taina-labs/tekoa).
 
 ## Tecnologia
 
-- Desenvolvido em Elixir
-- Arquitetura de monolito modular
-- Interface via APIs XRPC e eventos
+- Elixir 1.20 / OTP 28, Phoenix 1.8
+- PostgreSQL 18 com Row-Level Security (isolamento por comunidade)
+- Arquitetura de monolito modular, backend-first
+- Interface web server-rendered (Phoenix LiveView) na fase de UI
+- API JSON pós-MVP para apps cliente (backup de fotos)
 
 ## Patrocinadores
 

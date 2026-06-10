@@ -1,5 +1,7 @@
 # Ka'a
 
+> **Visão de longo prazo — fora do MVP.** Este serviço é planejado para o pós-MVP. Ver [RFC 002](https://github.com/taina-labs/tekoa/blob/main/tecnico/RFC_002_MVP.md).
+
 ## O que é
 
 Ka'a é o serviço de automação residencial e casa inteligente do ecossistema Tainá. Funciona como sua própria Alexa ou Google Home, mas com controle total sobre seus dispositivos e sem dependência de empresas externas.

@@ -28,5 +28,8 @@ config :taina, TainaWeb.Endpoint,
   secret_key_base: "318cH01aO0gWN9FThKaSqgINCNwdQL1PkE5zPLns0FQDdgKzFDfBj+VoM8OtCme/",
   watchers: []
 
+# Local file storage for Ybira uploads
+config :taina, :storage_root, Path.expand("../priv/storage", __DIR__)
+
 # Enable dev routes for dashboard and mailbox
 config :taina, dev_routes: true

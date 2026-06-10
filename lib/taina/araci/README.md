@@ -1,5 +1,7 @@
 # Araci
 
+> **Visão de longo prazo — fora do MVP.** Este serviço é planejado para o pós-MVP. Ver [RFC 002](https://github.com/taina-labs/tekoa/blob/main/tecnico/RFC_002_MVP.md).
+
 ## O que é
 
 Araci é o serviço de streaming de filmes, séries e vídeos do ecossistema Tainá. Funciona como sua própria Netflix ou Prime Video, mas com total controle sobre o catálogo e sem dependência de empresas externas.

@@ -25,12 +25,13 @@ defmodule Taina.Guara.Message do
 
   alias Taina.Guara.Chat
   alias Taina.Maraca.Ava
+  alias Taina.Repo.PublicId
   alias Taina.Ybira.File
 
   @schema_prefix "guara"
   schema "messages" do
     field :content, :string
-    field :public_id, :string
+    field :public_id, PublicId, autogenerate: true
 
     field :message_type, Ecto.Enum,
       values: ~w(text image video audio file)a,
@@ -77,7 +78,6 @@ defmodule Taina.Guara.Message do
     message
     |> cast(attrs, [
       :content,
-      :public_id,
       :message_type,
       :metadata,
       :chat_id,

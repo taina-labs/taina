@@ -1,5 +1,7 @@
 # Arapa
 
+> **Visão de longo prazo — fora do MVP.** Este serviço é planejado para o pós-MVP. Ver [RFC 002](https://github.com/taina-labs/tekoa/blob/main/tecnico/RFC_002_MVP.md).
+
 ## O que é
 
 Arapa é o serviço de música, podcasts e áudio do ecossistema Tainá. Funciona como seu próprio Spotify ou Apple Music, mas com total controle sobre sua biblioteca musical e sem dependência de plataformas comerciais.

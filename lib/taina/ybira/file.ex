@@ -26,6 +26,7 @@ defmodule Taina.Ybira.File do
   alias Ecto.Association.NotLoaded
   alias Taina.Maraca.Ava
   alias Taina.Maraca.Tekoa
+  alias Taina.Repo.PublicId
   alias Taina.Ybira.Folder
 
   @type t :: %__MODULE__{
@@ -58,7 +59,7 @@ defmodule Taina.Ybira.File do
     field :file_size_bytes, :integer
     field :file_hash, :string
     field :metadata, :map, default: %{}
-    field :public_id, :string
+    field :public_id, PublicId, autogenerate: true
     field :deleted_at, :utc_datetime_usec
 
     belongs_to :ava, Ava
@@ -108,7 +109,6 @@ defmodule Taina.Ybira.File do
       :file_size_bytes,
       :file_hash,
       :metadata,
-      :public_id,
       :deleted_at,
       :ava_id,
       :tekoa_id,
@@ -118,7 +118,7 @@ defmodule Taina.Ybira.File do
       :filename,
       :original_filename,
       :filepath,
-      :filehash,
+      :file_hash,
       :mime_type,
       :file_size_bytes,
       :ava_id,

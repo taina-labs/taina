@@ -12,14 +12,20 @@ defmodule Taina.Repo do
 
   alias Ecto.Adapters.SQL
 
+  @tekoa_context_key :taina_current_tekoa_id
+
   @doc """
   Executa uma função dentro do contexto de uma Tekoa específica.
 
   Esta função é fundamental para o isolamento de comunidades no Tainá. Ela:
-  1. Inicia uma transação
-  2. Define a variável PostgreSQL `app.current_tekoa_id`
-  3. Executa o callback fornecido
-  4. Políticas RLS usam essa variável para filtrar dados automaticamente
+  1. Marca o processo atual com o contexto da Tekoa (verificado por `prepare_query/3`)
+  2. Inicia uma transação
+  3. Define a variável PostgreSQL `app.current_tekoa_id`
+  4. Executa o callback fornecido
+  5. Políticas RLS usam essa variável para filtrar dados automaticamente
+
+  O callback deve retornar `{:ok, valor}` ou `{:error, motivo}` (contrato de
+  `Repo.transact/2`): `{:error, _}` desfaz a transação.
 
   ## Isolamento por RLS
 
@@ -33,7 +39,8 @@ defmodule Taina.Repo do
 
   ## Parâmetros
 
-    * `tekoa_id` - ID da Tekoa (pode ser string ou qualquer tipo que implemente `String.Chars`)
+    * `tekoa_public_id` - **`public_id`** da Tekoa (as políticas RLS comparam
+      `maraca.tekoas.public_id` com `app.current_tekoa_id`)
     * `cb` - Função callback que será executada dentro do contexto da Tekoa
 
   ## Exemplos
@@ -58,19 +65,65 @@ defmodule Taina.Repo do
   - Processar requisições de usuários (cada usuário pertence a uma Tekoa)
   - Realizar operações em background jobs que manipulam dados de uma Tekoa
 
-  **IMPORTANTE**: Não executar queries sem contexto de Tekoa pode resultar em
-  acesso negado ou dados vazios, pois as políticas RLS não terão como filtrar.
+  **IMPORTANTE**: Queries executadas fora de `with_tekoa/2` levantam exceção
+  (via `prepare_query/3`), a menos que recebam a opção `skip_tekoa_id: true` —
+  reservada para operações de sistema (bootstrap de autenticação, lookups
+  pré-contexto, jobs administrativos).
   """
-  def with_tekoa(tekoa_id, cb) do
-    transact(fn ->
-      SQL.query!(
-        __MODULE__,
-        "SELECT set_config('app.current_tekoa_id', $1, true)",
-        [to_string(tekoa_id)]
-      )
+  def with_tekoa(tekoa_public_id, cb) do
+    public_id = to_string(tekoa_public_id)
+    previous = Process.put(@tekoa_context_key, public_id)
 
-      cb.()
-    end)
+    try do
+      transact(fn ->
+        SQL.query!(
+          __MODULE__,
+          "SELECT set_config('app.current_tekoa_id', $1, true)",
+          [public_id]
+        )
+
+        cb.()
+      end)
+    after
+      if is_nil(previous) do
+        Process.delete(@tekoa_context_key)
+      else
+        Process.put(@tekoa_context_key, previous)
+      end
+    end
+  end
+
+  @doc """
+  Rede de segurança do isolamento multi-tenant.
+
+  Toda query (`all`, `one`, `get*`, `update_all`, `delete_all`, preloads)
+  precisa rodar dentro de `with_tekoa/2` ou declarar explicitamente
+  `skip_tekoa_id: true`. Sem isso, levanta exceção em vez de retornar dados
+  vazios silenciosamente — esquecer o contexto vira erro de desenvolvimento,
+  não vazamento ou comportamento fantasma em produção.
+
+  Inserts/updates/deletes de structs não passam por este callback; para eles a
+  proteção é o RLS no banco (`WITH CHECK` das policies + `FORCE ROW LEVEL
+  SECURITY`).
+  """
+  @impl true
+  def prepare_query(_operation, query, opts) do
+    cond do
+      opts[:skip_tekoa_id] || opts[:schema_migration] ->
+        {query, opts}
+
+      is_binary(Process.get(@tekoa_context_key)) ->
+        {query, opts}
+
+      true ->
+        raise """
+        query executada fora do contexto de Tekoa: #{inspect(query)}
+
+        Envolva a operação em `Taina.Repo.with_tekoa/2` ou, se esta é uma \
+        operação de sistema (bootstrap de auth, migração, job administrativo), \
+        passe a opção `skip_tekoa_id: true` explicitamente.
+        """
+    end
   end
 
   @doc """
@@ -112,8 +165,8 @@ defmodule Taina.Repo do
   Se executada fora do contexto de uma Tekoa, pode retornar `:not_found`
   mesmo que a entidade exista (por causa das políticas RLS).
   """
-  def fetch(schema, id) do
-    if e = get(schema, id) do
+  def fetch(schema, id, opts \\ []) do
+    if e = get(schema, id, opts) do
       {:ok, e}
     else
       {:error, :not_found}

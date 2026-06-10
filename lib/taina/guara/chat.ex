@@ -36,10 +36,11 @@ defmodule Taina.Guara.Chat do
   alias Taina.Guara.Participant
   alias Taina.Maraca.Ava
   alias Taina.Maraca.Tekoa
+  alias Taina.Repo.PublicId
 
   @schema_prefix "guara"
   schema "chats" do
-    field :public_id, :string
+    field :public_id, PublicId, autogenerate: true
     field :name, :string
     field :icon, :string
 
@@ -81,7 +82,7 @@ defmodule Taina.Guara.Chat do
   """
   def changeset(chat, attrs) do
     chat
-    |> cast(attrs, [:name, :icon, :public_id, :tekoa_id, :created_by_id])
+    |> cast(attrs, [:name, :icon, :tekoa_id, :created_by_id])
     |> validate_required([:tekoa_id, :created_by_id])
     |> validate_length(:name, max: 255)
     |> foreign_key_constraint(:tekoa_id)

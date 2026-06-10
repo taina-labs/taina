@@ -1,5 +1,7 @@
 # Nhaman
 
+> **MVP parcial.** O MVP inclui um "Nhaman-lite": setup de primeiro boot, gestão de usuários, backup e atualização. O dashboard administrativo completo é pós-MVP. Ver [RFC 002](https://github.com/taina-labs/tekoa/blob/main/tecnico/RFC_002_MVP.md).
+
 ## O que é
 
 Nhaman é o painel de controle central do ecossistema Tainá. É o dashboard que permite gerenciar, monitorar e controlar todos os serviços da sua nuvem privada de forma unificada e intuitiva.

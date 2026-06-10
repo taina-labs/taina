@@ -1,5 +1,7 @@
 # Karai
 
+> **Visão de longo prazo — fora do MVP.** Este serviço é planejado para o pós-MVP. Ver [RFC 002](https://github.com/taina-labs/tekoa/blob/main/tecnico/RFC_002_MVP.md).
+
 ## O que é
 
 Karai é o serviço de segurança e proteção do ecossistema Tainá. É responsável por firewall, backup, monitoramento e proteção de todos os dados e serviços, garantindo que sua nuvem privada esteja sempre segura e funcionando.

@@ -38,3 +38,6 @@ result
 /.expert/
 /.lexical/
 /.elixir-tools/
+
+# Ybira dev storage
+/priv/storage/
