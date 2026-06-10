@@ -40,6 +40,8 @@ defmodule Taina.Ybira do
   alias Taina.Ybira
   alias Taina.Ybira.MimeDetector
 
+  require Logger
+
   @hash_chunk_bytes 1024 * 1024
   @default_limit 50
 
@@ -168,7 +170,7 @@ defmodule Taina.Ybira do
 
       file = Repo.one(query)
 
-      if file && owns_or_admin?(scope, file.ava_id) do
+      if file && owner?(scope, file.ava_id) do
         Repo.update(Ybira.File.restore_changeset(file))
       else
         {:error, :not_found}
@@ -307,9 +309,24 @@ defmodule Taina.Ybira do
         end)
 
       # Fora da transação: se o disco falhar, o registro já foi (sem órfão no
-      # banco). Pior caso é um arquivo solto no disco, não inconsistência.
-      Elixir.File.rm(file.filepath)
+      # banco). Pior caso é um arquivo solto no disco, não inconsistência — mas
+      # logamos para dar visibilidade a problemas recorrentes de disco.
+      with {:error, reason} <- Elixir.File.rm(file.filepath) do
+        Logger.warning("PurgeTrash: falha ao remover arquivo do disco",
+          path: file.filepath,
+          file_id: file.id,
+          reason: reason
+        )
+      end
     end)
+
+    # Pastas na lixeira só guardam metadados (sem bytes nem cota) — apaga em lote.
+    # `delete_folder/2` faz soft delete em cascata; sem isto, os registros de
+    # pasta ficariam para sempre com `deleted_at` preenchido.
+    Repo.delete_all(
+      from(d in Ybira.Folder, where: not is_nil(d.deleted_at) and d.deleted_at < ^cutoff),
+      skip_tekoa_id: true
+    )
 
     {:ok, length(files)}
   end
@@ -390,7 +407,7 @@ defmodule Taina.Ybira do
         {:error, :not_found}
 
       folder ->
-        if owns_or_admin?(scope, folder.ava_id), do: {:ok, folder}, else: {:error, :not_found}
+        if owner?(scope, folder.ava_id), do: {:ok, folder}, else: {:error, :not_found}
     end
   end
 
@@ -399,16 +416,17 @@ defmodule Taina.Ybira do
 
     case Repo.one(query) do
       nil -> {:error, :not_found}
-      file -> if owns_or_admin?(scope, file.ava_id), do: {:ok, file}, else: {:error, :not_found}
+      file -> if owner?(scope, file.ava_id), do: {:ok, file}, else: {:error, :not_found}
     end
   end
 
-  defp owns_or_admin?(%Scope{ava: %Ava{id: id, role: role}}, owner_id) do
-    id == owner_id or role == :admin
-  end
+  # Só o dono muta seus recursos. Admins não têm acesso automático (RFC 002:
+  # "admins são facilitadores, não deuses") — quando precisarem, pedem via
+  # `Maraca.request_access/5`.
+  defp owner?(%Scope{ava: %Ava{id: id}}, owner_id), do: id == owner_id
 
-  # Sobe a cadeia de ancestrais de `new_parent_id`; se cruzar `folder_id`, o
-  # movimento fecharia um ciclo (mover para si mesmo ou para uma descendente).
+  # Mover `folder_id` para baixo de `new_parent_id` fecharia um ciclo se
+  # `folder_id` for o próprio `new_parent_id` ou um ancestral dele.
   defp ensure_acyclic(_folder_id, nil), do: :ok
 
   defp ensure_acyclic(folder_id, new_parent_id) do
@@ -417,35 +435,63 @@ defmodule Taina.Ybira do
       else: :ok
   end
 
-  defp ancestor_or_self?(nil, _target_id), do: false
-  defp ancestor_or_self?(target_id, target_id), do: true
+  # Uma única CTE recursiva sobe a cadeia de ancestrais de `start_id` (incluindo
+  # ele) e responde se `folder_id` aparece lá — sem N+1 nem recursão Elixir
+  # ilimitada. Roda sob `with_tekoa`, então o RLS filtra por Tekoa.
+  defp ancestor_or_self?(start_id, folder_id) do
+    {:ok, %{rows: [[count]]}} =
+      Repo.query(
+        """
+        WITH RECURSIVE ancestors AS (
+          SELECT id, parent_id FROM ybira.folders WHERE id = $1
+          UNION ALL
+          SELECT f.id, f.parent_id FROM ybira.folders f
+          JOIN ancestors a ON f.id = a.parent_id
+        )
+        SELECT count(*) FROM ancestors WHERE id = $2
+        """,
+        [start_id, folder_id]
+      )
 
-  defp ancestor_or_self?(current_id, target_id) do
-    parent_id =
-      Repo.one(from d in Ybira.Folder, where: d.id == ^current_id, select: d.parent_id)
-
-    ancestor_or_self?(parent_id, target_id)
+    count > 0
   end
 
-  defp soft_delete_tree(folder_id) do
+  # Soft delete em cascata sem recursão Elixir: uma CTE coleta a subárvore (raiz
+  # + descendentes não-deletados) e dois `update_all` marcam arquivos e pastas.
+  defp soft_delete_tree(root_id) do
     now = DateTime.utc_now()
+    folder_ids = descendant_folder_ids(root_id)
 
     Repo.update_all(
-      from(f in Ybira.File, where: f.folder_id == ^folder_id and is_nil(f.deleted_at)),
+      from(f in Ybira.File, where: f.folder_id in ^folder_ids and is_nil(f.deleted_at)),
       set: [deleted_at: now]
     )
 
-    child_ids =
-      Repo.all(
-        from d in Ybira.Folder,
-          where: d.parent_id == ^folder_id and is_nil(d.deleted_at),
-          select: d.id
+    Repo.update_all(
+      from(d in Ybira.Folder, where: d.id in ^folder_ids and is_nil(d.deleted_at)),
+      set: [deleted_at: now]
+    )
+
+    :ok
+  end
+
+  defp descendant_folder_ids(root_id) do
+    {:ok, %{rows: rows}} =
+      Repo.query(
+        """
+        WITH RECURSIVE subtree AS (
+          SELECT id FROM ybira.folders WHERE id = $1
+          UNION ALL
+          SELECT f.id FROM ybira.folders f
+          JOIN subtree s ON f.parent_id = s.id
+          WHERE f.deleted_at IS NULL
+        )
+        SELECT id FROM subtree
+        """,
+        [root_id]
       )
 
-    Enum.each(child_ids, &soft_delete_tree/1)
-
-    Repo.update_all(from(d in Ybira.Folder, where: d.id == ^folder_id), set: [deleted_at: now])
-    :ok
+    List.flatten(rows)
   end
 
   defp child_folders_query(nil) do

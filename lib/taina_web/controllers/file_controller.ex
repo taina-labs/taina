@@ -33,12 +33,32 @@ defmodule TainaWeb.FileController do
       conn
       |> put_resp_header("accept-ranges", "bytes")
       |> put_resp_header("content-type", file.mime_type)
+      |> put_resp_header("content-disposition", content_disposition(file))
+      |> put_last_modified(file)
 
     case get_req_header(conn, "range") do
       ["bytes=" <> spec] -> serve_range(conn, file, spec)
       _ -> send_file(conn, 200, file.filepath)
     end
   end
+
+  # Tipos seguros de exibir abrem inline (mídia, PDF); o resto baixa como
+  # anexo — nada de octet-stream/zip rodando no contexto da página.
+  @inline_prefixes ["image/", "video/", "audio/", "application/pdf"]
+
+  defp content_disposition(file) do
+    kind = if String.starts_with?(file.mime_type, @inline_prefixes), do: "inline", else: "attachment"
+    ~s(#{kind}; filename="#{file.original_filename}")
+  end
+
+  # `Last-Modified` ajuda o cache do cliente (revalidação barata em banda
+  # limitada). Usa o `updated_at` do registro, que é UTC.
+  defp put_last_modified(conn, %{updated_at: %NaiveDateTime{} = at}) do
+    httpdate = at |> DateTime.from_naive!("Etc/UTC") |> Calendar.strftime("%a, %d %b %Y %H:%M:%S GMT")
+    put_resp_header(conn, "last-modified", httpdate)
+  end
+
+  defp put_last_modified(conn, _file), do: conn
 
   defp serve_range(conn, file, spec) do
     case parse_range(spec, file.file_size_bytes) do
@@ -70,7 +90,7 @@ defmodule TainaWeb.FileController do
 
   defp suffix_range(suffix, total) do
     case Integer.parse(suffix) do
-      {len, ""} when len > 0 ->
+      {len, ""} when len > 0 and total > 0 ->
         first = max(total - len, 0)
         {:ok, first, total - 1}
 

@@ -138,9 +138,10 @@ defmodule Taina.Ybira.Behaviour do
 
   @doc """
   Apaga de vez (banco + disco) os arquivos na lixeira com `deleted_at` anterior a
-  `cutoff`, devolvendo a cota. Operação de **sistema** (`skip_tekoa_id: true`,
-  cruza todas as Tekoas), usada pelo worker `PurgeTrash`. Devolve
-  `{:ok, quantidade_apagada}`.
+  `cutoff`, devolvendo a cota, e remove também as pastas na lixeira (que só
+  guardam metadados). Operação de **sistema** (`skip_tekoa_id: true`, cruza
+  todas as Tekoas), usada pelo worker `PurgeTrash`. Devolve
+  `{:ok, qtd_arquivos_apagados}`.
   """
   @callback purge_deleted_files(DateTime.t()) :: {:ok, non_neg_integer}
 end
