@@ -25,7 +25,7 @@
       default = pkgs.mkShell {
         name = "taina-dev";
         packages = with pkgs; [
-          (elixir-with-otp erlang_28)."1.18.4"
+          (elixir-with-otp erlang_28)."1.20.0"
           erlang_28
           just
           postgresql
