@@ -46,6 +46,14 @@ defmodule TainaWeb do
     end
   end
 
+  def live_view do
+    quote do
+      use Phoenix.LiveView
+
+      unquote(verified_routes())
+    end
+  end
+
   def verified_routes do
     quote do
       use Phoenix.VerifiedRoutes,

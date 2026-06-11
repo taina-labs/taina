@@ -195,19 +195,23 @@ defmodule Taina.Maraca.Behaviour do
 
   ## Parâmetros
 
-    * `conn_or_socket` - Conexão ou socket com sessão
+    * `conn_or_session` - a `Plug.Conn` (controllers/plugs) **ou** o mapa de
+      sessão de chaves string que o `on_mount` do LiveView recebe
 
   ## Retorno
 
-    * `{:ok, %Ava{}}` - Usuário autenticado
+    * `{:ok, %Ava{}}` - Usuário autenticado (com a Tekoa pré-carregada)
     * `{:error, :not_authenticated}` - Sem sessão válida
 
   ## Exemplos
 
       iex> get_session_user(conn)
       {:ok, %Ava{email: "user@example.com"}}
+
+      iex> get_session_user(%{"ava_id" => "V1StGXR8_Z5j"})
+      {:ok, %Ava{}}
   """
-  @callback get_session_user(Plug.Conn.t()) ::
+  @callback get_session_user(Plug.Conn.t() | map()) ::
               {:ok, Ava.t()} | {:error, :not_authenticated}
 
   @doc """

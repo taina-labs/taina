@@ -163,14 +163,25 @@ defmodule Taina.Maraca do
 
   @impl true
   def get_session_user(%Plug.Conn{} = conn) do
-    with public_id when is_binary(public_id) <- Plug.Conn.get_session(conn, :ava_id),
-         %Ava{} = ava <- Repo.get_by(Ava, [public_id: public_id], skip_tekoa_id: true) do
-      tekoa = Repo.get!(Tekoa, ava.tekoa_id, skip_tekoa_id: true)
-      {:ok, %{ava | tekoa: tekoa}}
-    else
-      _ -> {:error, :not_authenticated}
+    conn |> Plug.Conn.get_session(:ava_id) |> resolve_session_ava()
+  end
+
+  # LiveView `on_mount` recebe o mapa de sessão (chaves string), não a conn.
+  def get_session_user(%{"ava_id" => ava_id}), do: resolve_session_ava(ava_id)
+  def get_session_user(_session), do: {:error, :not_authenticated}
+
+  defp resolve_session_ava(public_id) when is_binary(public_id) do
+    case Repo.get_by(Ava, [public_id: public_id], skip_tekoa_id: true) do
+      %Ava{} = ava ->
+        tekoa = Repo.get!(Tekoa, ava.tekoa_id, skip_tekoa_id: true)
+        {:ok, %{ava | tekoa: tekoa}}
+
+      _ ->
+        {:error, :not_authenticated}
     end
   end
+
+  defp resolve_session_ava(_public_id), do: {:error, :not_authenticated}
 
   ## Gestão da Tekoa
 
