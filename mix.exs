@@ -5,7 +5,7 @@ defmodule Taina.MixProject do
     [
       app: :taina,
       version: "0.1.0",
-      elixir: "~> 1.15",
+      elixir: "~> 1.16",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       aliases: aliases(),
@@ -55,6 +55,7 @@ defmodule Taina.MixProject do
       {:bandit, "~> 1.5"},
       {:nanoid, "~> 2.1"},
       {:mime, "~> 2.0"},
+      {:image, "~> 0.68"},
       {:bcrypt_elixir, "~> 3.3"},
       {:oban, "~> 2.23"},
       # dev

@@ -78,4 +78,23 @@ defmodule Taina.Fixtures do
     File.write!(path, contents)
     path
   end
+
+  @doc """
+  Grava uma imagem JPEG de verdade num caminho temporário (via libvips), para
+  exercitar o pipeline de renditions do Ybira/Jaci. Sem EXIF — `taken_at` cai no
+  fallback de upload, como num arquivo sem metadados de câmera.
+  """
+  def tmp_image_fixture(opts \\ []) do
+    width = Keyword.get(opts, :width, 32)
+    height = Keyword.get(opts, :height, 24)
+    filename = Keyword.get(opts, :filename, "img.jpg")
+
+    dir = Path.join(System.tmp_dir!(), "taina_fixture_#{System.unique_integer([:positive])}")
+    File.mkdir_p!(dir)
+    path = Path.join(dir, filename)
+
+    {:ok, image} = Image.new(width, height, color: [255, 0, 0])
+    {:ok, _} = Image.write(image, path)
+    path
+  end
 end

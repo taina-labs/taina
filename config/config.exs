@@ -4,7 +4,7 @@ import Config
 # Configures Elixir's Logger
 config :logger, :default_formatter,
   format: "$time $metadata[$level] $message\n",
-  metadata: [:request_id, :path, :file_id, :reason]
+  metadata: [:request_id, :path, :file_id, :reason, :errors]
 
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, JSON
