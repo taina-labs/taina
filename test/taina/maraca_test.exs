@@ -231,7 +231,7 @@ defmodule Taina.MaracaTest do
       assert Maraca.authorize?(owner, :delete, "ybira_file", ybira_file.public_id)
     end
 
-    test "others are denied by default — including admins", %{tekoa: tekoa, other: other, ybira_file: ybira_file} do
+    test "others are denied by default, including admins", %{tekoa: tekoa, other: other, ybira_file: ybira_file} do
       admin = admin_fixture(tekoa)
 
       refute Maraca.authorize?(other, :read, "ybira_file", ybira_file.public_id)

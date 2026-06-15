@@ -81,7 +81,7 @@ defmodule Taina.Fixtures do
 
   @doc """
   Grava uma imagem JPEG de verdade num caminho temporário (via libvips), para
-  exercitar o pipeline de renditions do Ybira/Jaci. Sem EXIF — `taken_at` cai no
+  exercitar o pipeline de renditions do Ybira/Jaci. Sem EXIF, `taken_at` cai no
   fallback de upload, como num arquivo sem metadados de câmera.
   """
   def tmp_image_fixture(opts \\ []) do

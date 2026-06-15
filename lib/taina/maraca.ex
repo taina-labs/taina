@@ -2,7 +2,7 @@ defmodule Taina.Maraca do
   @moduledoc """
   Interface pública para autenticação e autorização do serviço Maraca.
 
-  Implementa `Taina.Maraca.Behaviour` — consulte cada callback para regras de
+  Implementa `Taina.Maraca.Behaviour`, consulte cada callback para regras de
   negócio detalhadas.
 
   ## Filosofia
@@ -15,7 +15,7 @@ defmodule Taina.Maraca do
   ## Convites sem e-mail
 
   Conforme a RFC 002 (D6), convites são por **link**: `invite_user/4` retorna
-  o Ava com o token cru no campo virtual `email_confirmation_token` — o
+  o Ava com o token cru no campo virtual `email_confirmation_token`, o
   chamador monta a URL/QR code e entrega pelo canal que a comunidade já usa.
   E-mail (Swoosh) é opcional e fica para depois.
 
@@ -44,7 +44,7 @@ defmodule Taina.Maraca do
   @reset_max_age_seconds 60 * 60
   @grantable_actions ~w(read write delete)a
 
-  # Mapa de tipos de recurso → {schema, campo de dono}. A propriedade é o
+  # Mapa de tipos de recurso -> {schema, campo de dono}. A propriedade é o
   # segundo nível da resolução de permissões; tipos fora deste mapa só podem
   # ser autorizados por permissão explícita.
   @owned_resources %{
@@ -83,6 +83,42 @@ defmodule Taina.Maraca do
     |> Ava.changeset(base)
     |> Ava.confirmation_changeset(Map.take(attrs, [:username, :password, :password_confirmation]))
     |> Repo.insert()
+  end
+
+  @impl true
+  def bootstrapped? do
+    Repo.exists?(Tekoa, skip_tekoa_id: true)
+  end
+
+  @impl true
+  def get_tekoa do
+    case Repo.one(Tekoa, skip_tekoa_id: true) do
+      %Tekoa{} = tekoa -> {:ok, tekoa}
+      nil -> {:error, :not_bootstrapped}
+    end
+  end
+
+  ## Membros
+
+  @impl true
+  def list_members(%Scope{} = scope) do
+    Repo.with_tekoa(scope.tekoa.public_id, fn ->
+      members =
+        Repo.all(
+          from a in Ava,
+            where: a.tekoa_id == ^scope.tekoa.id,
+            order_by: [asc: fragment("CASE WHEN ? = 'admin' THEN 0 ELSE 1 END", a.role), asc: a.inserted_at]
+        )
+
+      {:ok, members}
+    end)
+  end
+
+  @impl true
+  def count_members(%Scope{} = scope) do
+    Repo.with_tekoa(scope.tekoa.public_id, fn ->
+      {:ok, Repo.aggregate(from(a in Ava, where: a.tekoa_id == ^scope.tekoa.id), :count)}
+    end)
   end
 
   ## Convite e confirmação

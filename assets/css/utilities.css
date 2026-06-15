@@ -1,0 +1,249 @@
+/* Utilitários curados, sempre amarrados a tokens, nada de valor arbitrário.
+   A regra: se uma combinação se repete em 3+ telas, vira componente em
+   components.css; utilitário é para composição pontual de layout/espaço. */
+
+/* layout */
+.row {
+  display: flex;
+  align-items: center;
+}
+
+.col {
+  display: flex;
+  flex-direction: column;
+}
+
+.center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.between {
+  justify-content: space-between;
+}
+
+.wrap {
+  flex-wrap: wrap;
+}
+
+.flex-1 {
+  flex: 1;
+  min-width: 0;
+}
+
+.w-full {
+  width: 100%;
+}
+
+.grid {
+  display: grid;
+}
+
+/* gaps */
+.gap-1 {
+  gap: var(--space-1);
+}
+.gap-2 {
+  gap: var(--space-2);
+}
+.gap-3 {
+  gap: var(--space-3);
+}
+.gap-4 {
+  gap: var(--space-4);
+}
+.gap-5 {
+  gap: var(--space-5);
+}
+.gap-6 {
+  gap: var(--space-6);
+}
+.gap-8 {
+  gap: var(--space-8);
+}
+
+/* padding */
+.p-0 {
+  padding: 0;
+}
+.p-2 {
+  padding: var(--space-2);
+}
+.p-3 {
+  padding: var(--space-3);
+}
+.p-4 {
+  padding: var(--space-4);
+}
+.p-5 {
+  padding: var(--space-5);
+}
+.p-6 {
+  padding: var(--space-6);
+}
+.px-2 {
+  padding-inline: var(--space-2);
+}
+.px-3 {
+  padding-inline: var(--space-3);
+}
+.px-4 {
+  padding-inline: var(--space-4);
+}
+.px-5 {
+  padding-inline: var(--space-5);
+}
+.px-6 {
+  padding-inline: var(--space-6);
+}
+.py-2 {
+  padding-block: var(--space-2);
+}
+.py-3 {
+  padding-block: var(--space-3);
+}
+.py-4 {
+  padding-block: var(--space-4);
+}
+.py-6 {
+  padding-block: var(--space-6);
+}
+
+/* margin */
+.mt-1 {
+  margin-top: var(--space-1);
+}
+.mt-2 {
+  margin-top: var(--space-2);
+}
+.mt-3 {
+  margin-top: var(--space-3);
+}
+.mt-4 {
+  margin-top: var(--space-4);
+}
+.mt-6 {
+  margin-top: var(--space-6);
+}
+.mt-8 {
+  margin-top: var(--space-8);
+}
+.mt-10 {
+  margin-top: var(--space-10);
+}
+.mb-1 {
+  margin-bottom: var(--space-1);
+}
+.mb-2 {
+  margin-bottom: var(--space-2);
+}
+.mb-3 {
+  margin-bottom: var(--space-3);
+}
+.mb-4 {
+  margin-bottom: var(--space-4);
+}
+.mb-6 {
+  margin-bottom: var(--space-6);
+}
+.mb-8 {
+  margin-bottom: var(--space-8);
+}
+.mx-auto {
+  margin-inline: auto;
+}
+
+/* texto */
+.text-primary {
+  color: var(--text-primary);
+}
+.text-secondary {
+  color: var(--text-secondary);
+}
+.text-muted {
+  color: var(--text-muted);
+}
+.text-faint {
+  color: var(--text-faint);
+}
+.text-brand {
+  color: var(--brand-primary);
+}
+.text-success {
+  color: var(--feedback-success);
+}
+.text-warning {
+  color: var(--feedback-warning);
+}
+.text-error {
+  color: var(--feedback-error);
+}
+.text-center {
+  text-align: center;
+}
+.text-right {
+  text-align: right;
+}
+
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* superfícies e bordas */
+.surface-default {
+  background: var(--surface-default);
+}
+.surface-raised {
+  background: var(--surface-raised);
+}
+.surface-high {
+  background: var(--surface-high);
+}
+
+.radius-sm {
+  border-radius: var(--radius-sm);
+}
+.radius-md {
+  border-radius: var(--radius-md);
+}
+.radius-lg {
+  border-radius: var(--radius-lg);
+}
+.radius-xl {
+  border-radius: var(--radius-xl);
+}
+.radius-pill {
+  border-radius: var(--radius-pill);
+}
+
+.border-subtle {
+  border: var(--border-hairline) solid var(--border-subtle);
+}
+.border-default {
+  border: var(--border-hairline) solid var(--border-default);
+}
+.border-strong {
+  border: var(--border-hairline) solid var(--border-strong);
+}
+
+.divider {
+  border: 0;
+  border-top: var(--border-hairline) solid var(--border-subtle);
+  margin-block: var(--space-4);
+}
+
+/* responsivo, um breakpoint só (mobile-first) */
+@media (max-width: 767.98px) {
+  .hide-mobile {
+    display: none !important;
+  }
+}
+
+@media (min-width: 768px) {
+  .hide-desktop {
+    display: none !important;
+  }
+}

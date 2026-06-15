@@ -1,0 +1,297 @@
+/* Cascas de página: shell autenticado (bottom-nav mobile / sidebar desktop)
+   e layout de auth (céu noturno com horizonte). Um breakpoint só: 768px. */
+
+/* ---------- shell autenticado ---------- */
+
+.shell {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.shell__content {
+  flex: 1;
+  width: 100%;
+  padding: var(--space-4);
+  padding-bottom: calc(var(--size-nav-mobile) + var(--space-6));
+  /* `backwards` (não `both`): aplica o estado inicial antes de começar, mas
+     NÃO persiste o `transform` ao terminar, um transform permanente criaria
+     um stacking context que prenderia modais (position: fixed) atrás da
+     bottom-nav. */
+  animation: page-in 220ms ease backwards;
+}
+
+/* Transição suave de página: cada navegação (live_redirect) remonta o
+   conteúdo, então a animação toca de novo. Respeita quem pediu menos
+   movimento. */
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shell__content {
+    animation: none;
+  }
+}
+
+/* appbar mobile (telas internas com voltar + título) */
+.appbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--size-appbar);
+}
+
+.appbar__title {
+  flex: 1;
+  text-align: center;
+  font-family: var(--font-family-display);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+}
+
+/* a appbar centraliza o título entre ações; espaçador mantém o equilíbrio */
+.appbar__spacer {
+  width: var(--size-touch);
+  flex-shrink: 0;
+}
+
+/* navegação inferior (mobile) */
+.bottom-nav {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 30;
+  display: flex;
+  height: calc(var(--size-nav-mobile) + env(safe-area-inset-bottom));
+  padding-bottom: env(safe-area-inset-bottom);
+  background: var(--bg-deep);
+  border-top: var(--border-hairline) solid var(--border-subtle);
+}
+
+.bottom-nav__item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+}
+
+.bottom-nav__item[aria-current="page"] {
+  color: var(--brand-primary);
+}
+
+/* sidebar + topbar (desktop) */
+.sidebar {
+  display: none;
+}
+
+.topbar {
+  display: none;
+}
+
+@media (min-width: 768px) {
+  .shell {
+    flex-direction: row;
+  }
+
+  .bottom-nav {
+    display: none;
+  }
+
+  .sidebar {
+    display: flex;
+    flex-direction: column;
+    width: 248px;
+    flex-shrink: 0;
+    position: sticky;
+    top: 0;
+    height: 100dvh;
+    padding: var(--space-4);
+    background: var(--bg-deep);
+    border-right: var(--border-hairline) solid var(--border-subtle);
+  }
+
+  .sidebar__logo {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3) var(--space-6);
+    font-family: var(--font-family-display);
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-bold);
+  }
+
+  .sidebar__logo .icon {
+    color: var(--brand-primary);
+  }
+
+  .sidebar__nav {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    flex: 1;
+  }
+
+  .sidebar__item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    height: var(--size-control-md);
+    padding-inline: var(--space-3);
+    border-radius: var(--radius-md);
+    color: var(--text-secondary);
+    font-weight: var(--font-weight-medium);
+  }
+
+  .sidebar__item:hover {
+    background: var(--surface-default);
+    color: var(--text-primary);
+  }
+
+  .sidebar__item[aria-current="page"] {
+    background: var(--surface-raised);
+    color: var(--text-primary);
+  }
+
+  .sidebar__item[aria-current="page"] .icon {
+    color: var(--brand-primary);
+  }
+
+  .shell__main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    height: var(--size-appbar);
+    padding-inline: var(--space-6);
+    border-bottom: var(--border-hairline) solid var(--border-subtle);
+  }
+
+  .shell__content {
+    max-width: 1160px;
+    padding: var(--space-6);
+    padding-bottom: var(--space-12);
+  }
+}
+
+@media (max-width: 767.98px) {
+  .shell__main {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+  }
+}
+
+/* ---------- layout de auth (setup, login, convite) ---------- */
+
+.auth-layout {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--space-6) var(--space-4);
+  background:
+    radial-gradient(
+      120% 55% at 50% 118%,
+      rgb(226 103 74 / 0.35) 0%,
+      rgb(185 109 44 / 0.18) 38%,
+      transparent 70%
+    ),
+    var(--bg-deep);
+  background-attachment: fixed;
+  position: relative;
+  overflow: hidden;
+}
+
+/* estrelas: dois layers de pontinhos via radial-gradients repetidos */
+.auth-layout::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    radial-gradient(
+      1px 1px at 12% 18%,
+      rgb(250 247 240 / 0.7) 50%,
+      transparent 50%
+    ),
+    radial-gradient(
+      1px 1px at 78% 9%,
+      rgb(250 247 240 / 0.5) 50%,
+      transparent 50%
+    ),
+    radial-gradient(
+      1.5px 1.5px at 55% 24%,
+      rgb(250 247 240 / 0.6) 50%,
+      transparent 50%
+    ),
+    radial-gradient(
+      1px 1px at 31% 38%,
+      rgb(250 247 240 / 0.4) 50%,
+      transparent 50%
+    ),
+    radial-gradient(
+      1px 1px at 89% 33%,
+      rgb(250 247 240 / 0.55) 50%,
+      transparent 50%
+    ),
+    radial-gradient(
+      1.5px 1.5px at 8% 52%,
+      rgb(250 247 240 / 0.35) 50%,
+      transparent 50%
+    ),
+    radial-gradient(
+      1px 1px at 67% 44%,
+      rgb(250 247 240 / 0.45) 50%,
+      transparent 50%
+    ),
+    radial-gradient(
+      1px 1px at 42% 7%,
+      rgb(250 247 240 / 0.5) 50%,
+      transparent 50%
+    );
+}
+
+.auth-layout__card {
+  width: 100%;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  position: relative;
+  z-index: 1;
+}
+
+.auth-layout__footer {
+  position: relative;
+  z-index: 1;
+  margin-top: var(--space-8);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-faint);
+  text-align: center;
+}
+
+/* a "estrela da manhã" do logo */
+.spark {
+  color: var(--brand-primary);
+}

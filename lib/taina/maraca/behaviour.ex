@@ -162,7 +162,7 @@ defmodule Taina.Maraca.Behaviour do
 
   ## Regras de Negócio
 
-  - Só funciona em instância vazia — se já existe Tekoa, retorna
+  - Só funciona em instância vazia, se já existe Tekoa, retorna
     `{:error, :already_bootstrapped}` (reforçado pelo índice único
     `single_tekoa_enforcement` no banco; ver RFC 002, D2)
   - Admin é criado já confirmado (`confirmed_at`), com senha definida e
@@ -632,4 +632,55 @@ defmodule Taina.Maraca.Behaviour do
       false
   """
   @callback email_confirmed?(Ava.t()) :: boolean()
+
+  @doc """
+  Verifica se a instância já passou pelo setup (existe a Tekoa única).
+
+  Consulta de sistema (`skip_tekoa_id: true`): roda antes de existir sessão,
+  no redirecionamento para o wizard de primeiro boot.
+
+  ## Retorno
+
+    * `true` - Setup concluído, instância pronta
+    * `false` - Instância virgem, redirecionar para `/setup`
+  """
+  @callback bootstrapped?() :: boolean()
+
+  @doc """
+  Obtém a Tekoa única da instância (RFC 002, D2, modo single-tekoa).
+
+  Consulta de sistema (`skip_tekoa_id: true`): usada no login, antes de haver
+  scope, `authenticate/3` precisa da Tekoa e o usuário ainda não provou quem é.
+
+  ## Retorno
+
+    * `{:ok, %Tekoa{}}` - A Tekoa da instância
+    * `{:error, :not_bootstrapped}` - Setup ainda não rodou
+  """
+  @callback get_tekoa() :: {:ok, Tekoa.t()} | {:error, :not_bootstrapped}
+
+  @doc """
+  Lista os membros da Tekoa do scope, ordenados por papel (admins primeiro)
+  e data de entrada.
+
+  ## Regras de Negócio
+
+  - Inclui contas ainda não confirmadas (convites pendentes) e desativadas,
+    a tela de membros mostra o estado de cada uma
+  - Isolamento via RLS (scope-first)
+
+  ## Retorno
+
+    * `{:ok, [%Ava{}]}` - Membros da comunidade
+  """
+  @callback list_members(Scope.t()) :: {:ok, [Ava.t()]}
+
+  @doc """
+  Conta os membros da Tekoa do scope (card "Membros" da home).
+
+  ## Retorno
+
+    * `{:ok, count}` - Total de membros
+  """
+  @callback count_members(Scope.t()) :: {:ok, non_neg_integer()}
 end

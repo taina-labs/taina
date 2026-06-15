@@ -5,7 +5,7 @@ defmodule Taina.Scope do
 
   Todo context público do Tainá recebe um `Scope` como primeiro argumento
   (padrão de scopes do Phoenix 1.8). Isso garante que nenhuma operação de
-  domínio aconteça sem saber a Tekoa — e, por consequência, sem o contexto
+  domínio aconteça sem saber a Tekoa, e, por consequência, sem o contexto
   RLS correto via `Taina.Repo.with_tekoa/2`.
   """
 

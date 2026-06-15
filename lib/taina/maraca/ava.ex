@@ -161,7 +161,7 @@ defmodule Taina.Maraca.Ava do
   Changeset para convite de usuário por um administrador.
 
   Cria um novo Ava não confirmado com token de confirmação de email.
-  Usado no fluxo: Admin convida → Email enviado → Usuário confirma
+  Usado no fluxo: Admin convida -> Email enviado -> Usuário confirma
 
   ## Campos obrigatórios
 

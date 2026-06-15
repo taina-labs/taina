@@ -6,12 +6,12 @@ defmodule Taina.Ybira.Workers.Rendition do
   arquivo é uma imagem (ver RFC 002, Fase 3 / D8).
 
   As renditions são uma feature do Ybira (dono do arquivo, do `metadata` e do
-  layout de storage); o Jaci só **lê** o resultado para montar a galeria —
+  layout de storage); o Jaci só **lê** o resultado para montar a galeria,
   composição, não herança.
 
   Tudo é *best-effort*: HEIC sem suporte na libvips ou um arquivo corrompido
   não devem virar retentativa infinita nem job morto barulhento. Falhou,
-  logamos e devolvemos `:ok` — a foto ainda existe, só não ganha thumbnail.
+  logamos e devolvemos `:ok`, a foto ainda existe, só não ganha thumbnail.
 
   Roda em nível de sistema (cruza Tekoas), então recebe o `tekoa_public_id` nos
   args e faz todo o trabalho dentro de `Repo.with_tekoa/2` para respeitar o RLS.
@@ -33,7 +33,7 @@ defmodule Taina.Ybira.Workers.Rendition do
   def perform(%Oban.Job{args: %{"file_id" => file_id, "tekoa_public_id" => tekoa_public_id}}) do
     Repo.with_tekoa(tekoa_public_id, fn ->
       case Repo.get(YbiraFile, file_id) do
-        # Arquivo deletado entre o upload e o processamento — nada a fazer.
+        # Arquivo deletado entre o upload e o processamento, nada a fazer.
         nil -> {:ok, :gone}
         file -> {:ok, render(file, tekoa_public_id)}
       end

@@ -1,0 +1,35 @@
+defmodule TainaWeb.SessionController do
+  @moduledoc """
+  Cria e destrói a sessão (cookie). LiveView não escreve cookie, então o login
+  é um POST tradicional vindo do form do `LoginLive`; o resto da navegação
+  segue live.
+  """
+
+  use TainaWeb, :controller
+
+  alias Taina.Maraca
+
+  def create(conn, %{"email" => email, "password" => password}) do
+    with {:ok, tekoa} <- Maraca.get_tekoa(),
+         {:ok, ava} <- Maraca.authenticate(email, password, tekoa) do
+      conn
+      |> TainaWeb.Auth.log_in(ava)
+      |> redirect(to: ~p"/")
+    else
+      {:error, :not_bootstrapped} ->
+        redirect(conn, to: ~p"/setup")
+
+      {:error, _reason} ->
+        conn
+        |> put_flash(:error, gettext("E-mail ou senha incorretos."))
+        |> redirect(to: ~p"/login")
+    end
+  end
+
+  def delete(conn, _params) do
+    conn
+    |> Maraca.destroy_session()
+    |> put_flash(:info, gettext("Até logo!"))
+    |> redirect(to: ~p"/login")
+  end
+end

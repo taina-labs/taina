@@ -3,14 +3,14 @@ defmodule Taina.RlsIsolationTest do
   Prova que o isolamento RLS funciona de verdade no banco.
 
   O usuário de teste padrão (`postgres`) é superuser e **ignora RLS por
-  definição** — por isso este teste cria uma role restrita (`taina_rls_probe`)
+  definição**, por isso este teste cria uma role restrita (`taina_rls_probe`)
   e conecta via Postgrex puro, fora do sandbox do Ecto. Os dados são
   comitados de verdade e limpos ao final; o módulo precisa ser `async: false`
   porque o índice `single_tekoa_enforcement` permite apenas uma Tekoa viva.
 
   Com modo single-tekoa não há segunda Tekoa para testar vazamento cruzado;
-  o que se valida aqui é o mecanismo: sem contexto → zero linhas; contexto
-  correto → linhas da Tekoa; contexto errado → zero linhas.
+  o que se valida aqui é o mecanismo: sem contexto -> zero linhas; contexto
+  correto -> linhas da Tekoa; contexto errado -> zero linhas.
   """
 
   use ExUnit.Case, async: false
@@ -116,7 +116,7 @@ defmodule Taina.RlsIsolationTest do
     assert count == 0
   end
 
-  test "superuser bypasses RLS — production must not connect as superuser", %{
+  test "superuser bypasses RLS, production must not connect as superuser", %{
     admin: admin,
     tekoa_public_id: tekoa_public_id
   } do

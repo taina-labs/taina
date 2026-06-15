@@ -1,6 +1,6 @@
 defmodule Taina.Ybira.Behaviour do
   @moduledoc """
-  Contrato público do Ybira — o sistema de arquivos da comunidade.
+  Contrato público do Ybira, o sistema de arquivos da comunidade.
 
   Espelha o padrão de `Taina.Maraca.Behaviour`: toda a documentação de regra de
   negócio vive aqui (nos `@callback`); `Taina.Ybira` implementa com `@impl true`.
@@ -8,7 +8,7 @@ defmodule Taina.Ybira.Behaviour do
   documenta a fronteira do contexto num só lugar.
 
   Toda função recebe um `Taina.Scope` (quem + qual Tekoa) e roda sob isolamento
-  RLS — exceto `purge_deleted_files/1`, operação de sistema que cruza Tekoas.
+  RLS, exceto `purge_deleted_files/1`, operação de sistema que cruza Tekoas.
   """
 
   alias Taina.Scope
@@ -77,6 +77,13 @@ defmodule Taina.Ybira.Behaviour do
   @callback list_trash(Scope.t(), keyword) :: {:ok, page(File.t())}
 
   @doc """
+  Renomeia um arquivo (muda só o `original_filename`; os bytes e o nome no disco
+  ficam). Dono ou admin.
+  """
+  @callback rename_file(Scope.t(), String.t(), String.t()) ::
+              {:ok, File.t()} | {:error, :not_found | Ecto.Changeset.t()}
+
+  @doc """
   Move um arquivo para outra pasta (`public_id`) ou para a raiz (`nil`). Dono ou
   admin.
   """
@@ -112,18 +119,32 @@ defmodule Taina.Ybira.Behaviour do
 
   @doc """
   Deleta uma pasta em cascata (soft delete): a pasta, os arquivos dentro dela e
-  as subpastas, recursivamente. Dono ou admin. Não devolve cota — quem faz isso
+  as subpastas, recursivamente. Dono ou admin. Não devolve cota, quem faz isso
   é o `PurgeTrash`.
   """
   @callback delete_folder(Scope.t(), String.t()) :: {:ok, :deleted} | {:error, :not_found}
 
   @doc """
   Lista o conteúdo de uma pasta (`public_id`) ou da raiz (`nil`): subpastas (todas)
-  e arquivos não-deletados (paginados; `next_cursor` se refere aos arquivos).
+  e arquivos não-deletados (paginados por offset; `next_cursor` é o próximo
+  offset, ou `nil` no fim).
+
+  ## Opções
+
+    * `:sort` - `{campo, direção}`, campo em `:name | :date | :size`, direção em
+      `:asc | :desc` (default `{:date, :desc}`)
+    * `:limit` - itens por página (default: 50)
+    * `:offset` - deslocamento da página (default: 0)
   """
   @callback list_folder_contents(Scope.t(), String.t() | nil, keyword) ::
-              {:ok, %{folders: [Folder.t()], files: [File.t()], next_cursor: binary | nil}}
+              {:ok, %{folders: [Folder.t()], files: [File.t()], next_cursor: non_neg_integer | nil}}
               | {:error, :not_found}
+
+  @doc """
+  Lista todas as pastas (não deletadas) da Tekoa do scope, em ordem alfabética,
+  base do seletor de destino de "Mover para...".
+  """
+  @callback list_folders(Scope.t()) :: {:ok, [Folder.t()]}
 
   @doc """
   Verifica se a Tekoa do scope comporta mais `byte_size` bytes.
@@ -144,4 +165,31 @@ defmodule Taina.Ybira.Behaviour do
   `{:ok, qtd_arquivos_apagados}`.
   """
   @callback purge_deleted_files(DateTime.t()) :: {:ok, non_neg_integer}
+
+  @doc """
+  Últimos arquivos enviados (qualquer pasta, fora da lixeira), mais novos
+  primeiro, a lista "Recentes" da home. `opts`: `:limit` (padrão 4).
+  """
+  @callback list_recent(Scope.t(), keyword) :: {:ok, [File.t()]}
+
+  @doc """
+  Conta os arquivos ativos (fora da lixeira) da Tekoa do scope, card
+  "Arquivos" da home.
+  """
+  @callback count_files(Scope.t()) :: {:ok, non_neg_integer}
+
+  @doc """
+  Conta as fotos ativas (`mime_type image/*`, fora da lixeira), card "Fotos"
+  da home.
+  """
+  @callback count_photos(Scope.t()) :: {:ok, non_neg_integer}
+
+  @doc """
+  Uso de armazenamento por categoria de mídia (tela "Armazenamento" e card da
+  home desktop): bytes somados de arquivos ativos, agrupados em `:photos`,
+  `:videos`, `:documents` e `:others`.
+  """
+  @callback storage_stats_by_kind(Scope.t()) ::
+              {:ok,
+               %{photos: non_neg_integer, videos: non_neg_integer, documents: non_neg_integer, others: non_neg_integer}}
 end

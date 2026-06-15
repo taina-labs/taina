@@ -46,6 +46,8 @@ defmodule Taina.MixProject do
     [
       {:phoenix, "~> 1.8.1"},
       {:phoenix_live_view, "~> 1.1"},
+      {:gettext, "~> 0.26"},
+      {:eqrcode, "~> 0.2"},
       {:phoenix_ecto, "~> 4.5"},
       {:ecto_sql, "~> 3.13"},
       {:postgrex, ">= 0.0.0"},
@@ -58,8 +60,11 @@ defmodule Taina.MixProject do
       {:image, "~> 0.68"},
       {:bcrypt_elixir, "~> 3.3"},
       {:oban, "~> 2.23"},
+      {:lazy_html, "~> 0.1.11", only: :test, override: true},
       # dev
       {:tidewave, "~> 0.5", only: :dev},
+      {:phoenix_live_reload, "~> 1.6", only: :dev},
+      {:esbuild, "~> 0.10", runtime: Mix.env() == :dev},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:styler, "~> 1.5", only: [:dev, :test], runtime: false}
@@ -74,10 +79,13 @@ defmodule Taina.MixProject do
   # See the documentation for `Mix` for more info on aliases.
   defp aliases do
     [
-      setup: ["deps.get", "ecto.setup"],
+      setup: ["deps.get", "ecto.setup", "assets.setup", "assets.build"],
       "ecto.setup": ["ecto.create", "ecto.migrate", "run priv/repo/seeds.exs"],
       "ecto.reset": ["ecto.drop", "ecto.setup"],
       test: ["ecto.create --quiet", "ecto.migrate --quiet", "test"],
+      "assets.setup": ["esbuild.install --if-missing"],
+      "assets.build": ["esbuild taina"],
+      "assets.deploy": ["compile", "esbuild taina --minify", "phx.digest"],
       precommit: ["compile --warning-as-errors", "deps.unlock --unused", "format", "test"]
     ]
   end

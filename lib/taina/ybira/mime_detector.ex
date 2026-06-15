@@ -1,7 +1,7 @@
 defmodule Taina.Ybira.MimeDetector do
   @moduledoc """
-  Detecta o tipo MIME de um arquivo pelos *magic bytes* — os primeiros bytes do
-  conteúdo — em vez de confiar na extensão do nome.
+  Detecta o tipo MIME de um arquivo pelos *magic bytes*, os primeiros bytes do
+  conteúdo, em vez de confiar na extensão do nome.
 
   A extensão mente: qualquer um renomeia `malware.exe` para `foto.jpg`. Ler o
   cabeçalho real fecha essa brecha e alimenta a allowlist de `Taina.Ybira`, que
@@ -71,7 +71,7 @@ defmodule Taina.Ybira.MimeDetector do
 
   # Heurística: UTF-8 válido e sem byte NUL ⇒ tratamos como texto. O trecho lido
   # pode cortar um caractere multibyte no fim; nesse caso `String.valid?` falha e
-  # o arquivo vira octet-stream — que a allowlist ainda aceita.
+  # o arquivo vira octet-stream, que a allowlist ainda aceita.
   defp printable_text?(<<>>), do: false
 
   defp printable_text?(header) do

@@ -39,7 +39,7 @@ defmodule Taina.JaciTest do
       {:ok, other} = Ybira.upload(scope, tmp_image_fixture(filename: "o.jpg"))
       {:ok, recent} = Ybira.upload(scope, tmp_image_fixture(filename: "r.jpg"))
 
-      # enviada por último, mas tirada há anos → deve ir para o fim da timeline,
+      # enviada por último, mas tirada há anos -> deve ir para o fim da timeline,
       # contrariando a ordem de upload (senão o teste passa mesmo ignorando EXIF)
       set_taken_at(recent.id, ~N[2024-01-01 10:00:00])
 
@@ -63,7 +63,7 @@ defmodule Taina.JaciTest do
   end
 
   # Sobrescreve o metadata para simular EXIF (a imagem gerada não tem). Operação
-  # de sistema → `skip_tekoa_id`.
+  # de sistema -> `skip_tekoa_id`.
   defp set_taken_at(file_id, %NaiveDateTime{} = dt) do
     Repo.update_all(
       from(f in YbiraFile, where: f.id == ^file_id),

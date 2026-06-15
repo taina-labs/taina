@@ -4,7 +4,7 @@ defmodule Taina.Ybira.Workers.PurgeTrash do
   de 30 dias e devolve a cota da Tekoa (ver `Taina.Ybira.purge_deleted_files/1`).
 
   Agendado por cron (todo dia às 03:00, em `config/config.exs`). Roda em nível de
-  sistema, cruzando todas as Tekoas — por isso a lógica usa `skip_tekoa_id: true`.
+  sistema, cruzando todas as Tekoas, por isso a lógica usa `skip_tekoa_id: true`.
   `unique` evita acúmulo de jobs idênticos numa mesma janela diária.
   """
 

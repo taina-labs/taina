@@ -1,0 +1,153 @@
+/* Design tokens, espelho 1:1 do Penpot ("Cofre da Comunidade - UI v1").
+   Dois níveis, como lá: primitivos (paleta/escala bruta) e semânticos (o que
+   os componentes consomem). Componentes NUNCA usam primitivos direto, se um
+   valor novo for preciso, nasce primeiro como token semântico. */
+
+:root {
+  /* ---------- primitives - color ---------- */
+  --color-night-950: #060a14;
+  --color-night-900: #0a101f;
+  --color-night-800: #0f1729;
+  --color-night-700: #15203a;
+  --color-night-600: #1d2c4e;
+  --color-night-500: #28395f;
+  --color-night-400: #3a4d7a;
+  --color-night-300: #56689b;
+  --color-night-200: #8c9ac0;
+  --color-night-100: #bfc8df;
+  --color-night-50: #eef1f8;
+
+  --color-dawn-300: #ffd9a3;
+  --color-dawn-400: #fcbe74;
+  --color-dawn-500: #f2a65a;
+  --color-dawn-600: #dd8a3e;
+  --color-dawn-700: #b96d2c;
+
+  --color-ember-400: #f08a6c;
+  --color-ember-500: #e2674a;
+  --color-ember-600: #c44e33;
+
+  --color-star-50: #faf7f0;
+  --color-star-100: #f1ecdf;
+  --color-star-200: #e4dcc8;
+
+  --color-forest-300: #82cba4;
+  --color-forest-400: #5fb88a;
+  --color-forest-500: #3fa171;
+  --color-forest-600: #2f8159;
+  --color-forest-700: #246244;
+  --color-forest-900: #122e22;
+
+  --color-moon-300: #f4dfa6;
+  --color-moon-400: #eccd80;
+  --color-moon-500: #e3bc66;
+  --color-moon-600: #c49a48;
+  --color-moon-700: #9c7836;
+  --color-moon-900: #46350f;
+
+  --color-guara-500: #de5b3f;
+  --color-guara-600: #be4327;
+
+  --color-sky-300: #92c3f8;
+  --color-sky-500: #5ba3f5;
+  --color-sky-600: #3f84d6;
+  --color-sky-700: #2f66ac;
+
+  --color-red-500: #e5484d;
+  --color-red-600: #c03538;
+  --color-amber-500: #efb54a;
+
+  /* ---------- primitives - scale ---------- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-pill: 999px;
+
+  --border-hairline: 1px;
+  --border-thick: 2px;
+
+  --size-touch: 44px;
+  --size-control-sm: 36px;
+  --size-control-md: 48px;
+  --size-control-lg: 56px;
+  --size-nav-mobile: 72px;
+  --size-appbar: 64px;
+
+  --font-size-xs: 0.75rem;
+  --font-size-sm: 0.875rem;
+  --font-size-md: 1rem;
+  --font-size-lg: 1.125rem;
+  --font-size-xl: 1.375rem;
+  --font-size-2xl: 1.75rem;
+  --font-size-3xl: 2.25rem;
+  --font-size-display: 2.75rem;
+
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --font-weight-extrabold: 800;
+
+  --font-family-display: "Bricolage Grotesque", system-ui, sans-serif;
+  --font-family-body: "Schibsted Grotesk", system-ui, sans-serif;
+  --font-family-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --tracking-tight: -0.5px;
+  --tracking-normal: 0;
+  --tracking-wide: 1.5px;
+
+  --opacity-disabled: 0.4;
+  --opacity-muted: 0.72;
+  --opacity-scrim: 0.64;
+
+  --elevation-soft: 0 4px 16px 0 rgb(6 10 20 / 0.5);
+  --elevation-lifted: 0 12px 32px -4px rgb(6 10 20 / 0.65);
+
+  /* ---------- semantic ---------- */
+  --bg-app: var(--color-night-900);
+  --bg-deep: var(--color-night-950);
+
+  --surface-default: var(--color-night-800);
+  --surface-raised: var(--color-night-700);
+  --surface-high: var(--color-night-600);
+  --surface-overlay: rgb(10 16 31 / 0.88);
+
+  --border-subtle: var(--color-night-700);
+  --border-default: var(--color-night-600);
+  --border-strong: var(--color-night-500);
+
+  --text-primary: var(--color-star-50);
+  --text-secondary: var(--color-night-100);
+  --text-muted: var(--color-night-200);
+  --text-faint: var(--color-night-300);
+  --text-on-brand: var(--color-night-950);
+
+  --brand-primary: var(--color-dawn-500);
+  --brand-primary-hover: var(--color-dawn-400);
+  --brand-primary-pressed: var(--color-dawn-600);
+  --brand-ember: var(--color-ember-500);
+
+  --service-ybira: var(--color-forest-500);
+  --service-ybira-soft: var(--color-forest-900);
+  --service-jaci: var(--color-moon-500);
+  --service-jaci-soft: var(--color-moon-900);
+  --service-nhaman: var(--color-sky-500);
+  --service-guara: var(--color-guara-500);
+
+  --feedback-success: var(--color-forest-400);
+  --feedback-warning: var(--color-amber-500);
+  --feedback-error: var(--color-red-500);
+  --feedback-info: var(--color-sky-500);
+}

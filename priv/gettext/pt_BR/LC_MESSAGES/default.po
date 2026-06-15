@@ -1,0 +1,7 @@
+## Os msgids do domínio default já são escritos em pt-BR no código,
+## este arquivo existe para o fluxo do Gettext (extract/merge) e para
+## servir de base quando outros idiomas chegarem.
+msgid ""
+msgstr ""
+"Language: pt_BR\n"
+"Plural-Forms: nplurals=2; plural=(n > 1);\n"
