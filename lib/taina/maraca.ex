@@ -37,12 +37,19 @@ defmodule Taina.Maraca do
   alias Taina.Maraca.Permission
   alias Taina.Maraca.Tekoa
   alias Taina.Maraca.UnauthorizedError
+  alias Taina.RateLimit
   alias Taina.Repo
   alias Taina.Scope
 
   @invitation_max_age_seconds 7 * 24 * 60 * 60
   @reset_max_age_seconds 60 * 60
   @grantable_actions ~w(read write delete)a
+
+  # Janela de força bruta de login, por (tekoa, email): no máximo
+  # @login_rate_limit tentativas a cada @login_rate_scale_ms. Folgado o
+  # suficiente para erros de digitação, apertado contra enumeração de senha.
+  @login_rate_scale_ms 60_000
+  @login_rate_limit 5
 
   # Mapa de tipos de recurso → {schema, campo de dono}. A propriedade é o
   # segundo nível da resolução de permissões; tipos fora deste mapa só podem
@@ -123,6 +130,13 @@ defmodule Taina.Maraca do
 
   @impl true
   def authenticate(email, password, %Tekoa{} = tekoa) do
+    case login_rate_check(tekoa, email) do
+      :ok -> do_authenticate(email, password, tekoa)
+      {:error, :rate_limited} = error -> error
+    end
+  end
+
+  defp do_authenticate(email, password, %Tekoa{} = tekoa) do
     {:ok, result} =
       Repo.with_tekoa(tekoa.public_id, fn ->
         {:ok, Repo.get_by(Ava, email: email, tekoa_id: tekoa.id)}
@@ -131,9 +145,26 @@ defmodule Taina.Maraca do
     verify_credentials(result, password)
   end
 
+  # A janela é consumida por tentativa (antes do bcrypt), então também blinda a
+  # CPU do servidor contra um ataque de senha. Conta inexistente compartilha a
+  # mesma janela do email — não vaza existência.
+  defp login_rate_check(%Tekoa{} = tekoa, email) do
+    key = "login:#{tekoa.public_id}:#{String.downcase(to_string(email))}"
+
+    case RateLimit.hit(key, @login_rate_scale_ms, @login_rate_limit) do
+      {:allow, _count} -> :ok
+      {:deny, _retry_after_ms} -> {:error, :rate_limited}
+    end
+  end
+
   defp verify_credentials(nil, _password) do
     Bcrypt.no_user_verify()
     {:error, :invalid_credentials}
+  end
+
+  defp verify_credentials(%Ava{deactivated_at: deactivated_at}, _password) when not is_nil(deactivated_at) do
+    Bcrypt.no_user_verify()
+    {:error, :account_deactivated}
   end
 
   defp verify_credentials(%Ava{confirmed_at: nil}, _password) do
@@ -197,6 +228,100 @@ defmodule Taina.Maraca do
     else
       {:error, :unauthorized}
     end
+  end
+
+  ## Gestão de membros (admin)
+
+  @impl true
+  def list_members(%Scope{} = scope) do
+    with :ok <- ensure_admin(scope) do
+      Repo.with_tekoa(scope.tekoa.public_id, fn ->
+        {:ok, Repo.all(from a in Ava, order_by: [asc: a.inserted_at, asc: a.id])}
+      end)
+    end
+  end
+
+  @impl true
+  def update_member_role(%Scope{} = scope, member_public_id, role) do
+    with :ok <- ensure_admin(scope) do
+      Repo.with_tekoa(scope.tekoa.public_id, fn -> do_update_role(member_public_id, role) end)
+    end
+  end
+
+  @impl true
+  def deactivate_member(%Scope{} = scope, member_public_id) do
+    with :ok <- ensure_admin(scope) do
+      Repo.with_tekoa(scope.tekoa.public_id, fn -> do_deactivate(member_public_id) end)
+    end
+  end
+
+  @impl true
+  def reactivate_member(%Scope{} = scope, member_public_id) do
+    with :ok <- ensure_admin(scope) do
+      Repo.with_tekoa(scope.tekoa.public_id, fn -> do_reactivate(member_public_id) end)
+    end
+  end
+
+  defp ensure_admin(%Scope{ava: ava}) do
+    if admin?(ava), do: :ok, else: {:error, :unauthorized}
+  end
+
+  defp do_update_role(public_id, role) do
+    with {:ok, member} <- fetch_member(public_id),
+         :ok <- ensure_demotion_keeps_admin(member, role) do
+      Repo.update(Ava.role_changeset(member, role))
+    end
+  end
+
+  defp do_deactivate(public_id) do
+    with {:ok, member} <- fetch_member(public_id) do
+      deactivate_if_allowed(member)
+    end
+  end
+
+  defp do_reactivate(public_id) do
+    with {:ok, member} <- fetch_member(public_id) do
+      Repo.update(Ava.deactivation_changeset(member, nil))
+    end
+  end
+
+  # Resolve um membro pelo public_id dentro do contexto de Tekoa (RLS escopa por
+  # comunidade — public_id de outra Tekoa simplesmente não aparece).
+  defp fetch_member(public_id) do
+    case Repo.get_by(Ava, public_id: public_id) do
+      nil -> {:error, :not_found}
+      %Ava{} = ava -> {:ok, ava}
+    end
+  end
+
+  # Idempotente: conta já desativada não muda. O último admin ativo não pode ser
+  # desativado (a comunidade ficaria sem administração).
+  defp deactivate_if_allowed(%Ava{deactivated_at: at} = member) when not is_nil(at) do
+    {:ok, member}
+  end
+
+  defp deactivate_if_allowed(%Ava{} = member) do
+    if last_active_admin?(member) do
+      {:error, :last_admin}
+    else
+      Repo.update(Ava.deactivation_changeset(member, DateTime.utc_now()))
+    end
+  end
+
+  # Rebaixar admin → member só é barrado quando esvaziaria a administração.
+  defp ensure_demotion_keeps_admin(%Ava{role: :admin} = member, :member) do
+    if last_active_admin?(member), do: {:error, :last_admin}, else: :ok
+  end
+
+  defp ensure_demotion_keeps_admin(_member, _role), do: :ok
+
+  # `member` é o único admin ativo da Tekoa? Só faz sentido quando ele próprio é
+  # admin ativo; nesse caso, contagem == 1 significa que é o último.
+  defp last_active_admin?(%Ava{role: :admin, deactivated_at: nil}), do: active_admin_count() == 1
+  defp last_active_admin?(%Ava{}), do: false
+
+  defp active_admin_count do
+    Repo.aggregate(from(a in Ava, where: a.role == :admin and is_nil(a.deactivated_at)), :count)
   end
 
   ## Reset de senha

@@ -84,6 +84,7 @@ defmodule Taina.Maraca.Ava do
           reset_token_hash: String.t() | nil,
           reset_token_sent_at: DateTime.t() | nil,
           invited_at: DateTime.t() | nil,
+          deactivated_at: DateTime.t() | nil,
           password: String.t() | nil,
           password_confirmation: String.t() | nil,
           email_confirmation_token: String.t() | nil,
@@ -115,6 +116,9 @@ defmodule Taina.Maraca.Ava do
 
     # Invitation tracking
     field :invited_at, :utc_datetime_usec
+
+    # Account lifecycle: NULL = ativa; preenchido = desativada (bloqueia login).
+    field :deactivated_at, :utc_datetime_usec
 
     # Virtual fields for password and token handling
     field :password, :string, virtual: true
@@ -320,6 +324,34 @@ defmodule Taina.Maraca.Ava do
     |> put_change(:reset_token_hash, nil)
     |> put_change(:reset_token_sent_at, nil)
   end
+
+  @doc """
+  Changeset para troca de papel (admin ↔ member) por um admin.
+
+  Só toca `role`; valida a inclusão no enum. Quem pode trocar e a proteção do
+  último admin são regras do context (`Taina.Maraca.update_member_role/3`).
+  """
+  def role_changeset(ava, role) do
+    ava
+    |> cast(%{role: role}, [:role])
+    |> validate_required([:role])
+    |> validate_inclusion(:role, ~w(admin member)a)
+  end
+
+  @doc """
+  Changeset de (des)ativação de conta. `deactivated_at` é um `DateTime` para
+  desativar ou `nil` para reativar — definido programaticamente, nunca via
+  input do usuário.
+  """
+  def deactivation_changeset(ava, deactivated_at) do
+    change(ava, deactivated_at: deactivated_at)
+  end
+
+  @doc """
+  Conta ativa? (não desativada). Conta desativada não autentica.
+  """
+  def active?(%__MODULE__{deactivated_at: nil}), do: true
+  def active?(%__MODULE__{}), do: false
 
   @doc """
   Verifica se um token apresentado corresponde ao hash armazenado.

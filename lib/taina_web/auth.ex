@@ -22,14 +22,46 @@ defmodule TainaWeb.Auth do
   # quanto em `Phoenix.LiveView` (socket). Importamos só o lado da conn e
   # qualificamos o lado do socket para não ficar ambíguo.
   import Phoenix.Controller, only: [put_flash: 3, redirect: 2]
-  import Plug.Conn, only: [assign: 3, halt: 1]
+  import Plug.Conn, only: [assign: 3, halt: 1, put_session: 3, configure_session: 2, clear_session: 1]
 
   alias Phoenix.Component
   alias Phoenix.LiveView
   alias Taina.Maraca
+  alias Taina.Maraca.Ava
   alias Taina.Scope
 
   @login_path "/login"
+
+  @doc """
+  Inicia a sessão de um Ava autenticado.
+
+  Rotaciona o id de sessão e descarta o conteúdo anterior (**anti session
+  fixation**) antes de gravar o `:ava_id`. O controller de login (fase de UI)
+  chama isto logo após `Maraca.authenticate/3` e então redireciona; o
+  `:current_scope` é remontado na próxima requisição por `fetch_current_scope/2`
+  (que pré-carrega a Tekoa), então não o assinamos aqui.
+  """
+  def log_in_ava(conn, %Ava{} = ava) do
+    conn
+    |> renew_session()
+    |> put_session(:ava_id, ava.public_id)
+  end
+
+  @doc """
+  Encerra a sessão (logout): rotaciona o id e descarta todo o conteúdo. Espelho
+  de `log_in_ava/2`; deixa a conn pronta para o redirect pós-logout.
+  """
+  def log_out_ava(conn) do
+    renew_session(conn)
+  end
+
+  # Gera um novo id de sessão e zera o conteúdo anterior. Previne fixation: um id
+  # capturado antes do login não vale depois dele.
+  defp renew_session(conn) do
+    conn
+    |> configure_session(renew: true)
+    |> clear_session()
+  end
 
   @doc """
   Plug: resolve a sessão e assina `:current_scope` (um `Taina.Scope` quando há

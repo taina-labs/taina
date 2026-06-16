@@ -46,6 +46,12 @@ if config_env() == :prod do
     ],
     secret_key_base: secret_key_base
 
+  # Scheduled backups (Nhaman). Off unless BACKUP_ENABLED is truthy; BACKUP_DIR
+  # should point at a mounted USB disk or an rclone-synced path.
+  config :taina, :backup,
+    enabled: System.get_env("BACKUP_ENABLED") in ~w(true 1),
+    dir: System.get_env("BACKUP_DIR") || "/app/backups"
+
   config :taina, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 
   # File storage root for Ybira. The Dockerfile creates /app/storage owned

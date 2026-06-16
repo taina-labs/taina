@@ -87,4 +87,40 @@ defmodule TainaWeb.AuthTest do
       assert socket.redirected == {:redirect, %{to: "/login", status: 302}}
     end
   end
+
+  describe "log_in_ava/2" do
+    test "stores the ava id and drops prior session data (anti-fixation)", %{conn: conn, ava: ava} do
+      conn =
+        conn
+        |> Plug.Test.init_test_session(%{"pre_login" => "stale"})
+        |> Auth.log_in_ava(ava)
+
+      assert Plug.Conn.get_session(conn, :ava_id) == ava.public_id
+      refute Plug.Conn.get_session(conn, "pre_login")
+    end
+
+    test "the stored session resolves back to the scope", %{conn: conn, ava: ava, tekoa: tekoa} do
+      conn =
+        conn
+        |> Plug.Test.init_test_session(%{})
+        |> Auth.log_in_ava(ava)
+        |> Auth.fetch_current_scope([])
+
+      assert %Scope{} = scope = conn.assigns.current_scope
+      assert scope.ava.id == ava.id
+      assert scope.tekoa.id == tekoa.id
+    end
+  end
+
+  describe "log_out_ava/1" do
+    test "clears the session", %{conn: conn, ava: ava} do
+      conn =
+        conn
+        |> Plug.Test.init_test_session(%{})
+        |> Auth.log_in_ava(ava)
+        |> Auth.log_out_ava()
+
+      assert Plug.Conn.get_session(conn, :ava_id) == nil
+    end
+  end
 end

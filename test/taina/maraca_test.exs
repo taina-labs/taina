@@ -348,4 +348,100 @@ defmodule Taina.MaracaTest do
       assert pending.requester.id == admin.id
     end
   end
+
+  describe "member management" do
+    setup do
+      tekoa = tekoa_fixture()
+      admin = admin_fixture(tekoa)
+      member = confirmed_ava_fixture(tekoa)
+      %{tekoa: tekoa, admin: admin, member: member}
+    end
+
+    test "admin lists members; members cannot", %{tekoa: tekoa, admin: admin, member: member} do
+      assert {:ok, members} = Maraca.list_members(Scope.new(admin, tekoa))
+      assert length(members) == 2
+      assert {:error, :unauthorized} = Maraca.list_members(Scope.new(member, tekoa))
+    end
+
+    test "admin promotes a member to admin", %{tekoa: tekoa, admin: admin, member: member} do
+      assert {:ok, updated} =
+               Maraca.update_member_role(Scope.new(admin, tekoa), member.public_id, :admin)
+
+      assert updated.role == :admin
+    end
+
+    test "the last active admin cannot be demoted", %{tekoa: tekoa, admin: admin} do
+      assert {:error, :last_admin} =
+               Maraca.update_member_role(Scope.new(admin, tekoa), admin.public_id, :member)
+    end
+
+    test "an admin can be demoted when another active admin remains", %{
+      tekoa: tekoa,
+      admin: admin,
+      member: member
+    } do
+      scope = Scope.new(admin, tekoa)
+      {:ok, _} = Maraca.update_member_role(scope, member.public_id, :admin)
+
+      assert {:ok, demoted} = Maraca.update_member_role(scope, admin.public_id, :member)
+      assert demoted.role == :member
+    end
+
+    test "deactivate then reactivate a member", %{tekoa: tekoa, admin: admin, member: member} do
+      scope = Scope.new(admin, tekoa)
+
+      assert {:ok, deactivated} = Maraca.deactivate_member(scope, member.public_id)
+      refute Ava.active?(deactivated)
+
+      assert {:ok, reactivated} = Maraca.reactivate_member(scope, member.public_id)
+      assert Ava.active?(reactivated)
+    end
+
+    test "the last active admin cannot be deactivated", %{tekoa: tekoa, admin: admin} do
+      assert {:error, :last_admin} =
+               Maraca.deactivate_member(Scope.new(admin, tekoa), admin.public_id)
+    end
+
+    test "members cannot manage members", %{tekoa: tekoa, admin: admin, member: member} do
+      scope = Scope.new(member, tekoa)
+
+      assert {:error, :unauthorized} =
+               Maraca.update_member_role(scope, admin.public_id, :member)
+
+      assert {:error, :unauthorized} = Maraca.deactivate_member(scope, admin.public_id)
+      assert {:error, :unauthorized} = Maraca.reactivate_member(scope, admin.public_id)
+    end
+
+    test "unknown member is not found", %{tekoa: tekoa, admin: admin} do
+      scope = Scope.new(admin, tekoa)
+
+      assert {:error, :not_found} = Maraca.update_member_role(scope, "nope", :admin)
+      assert {:error, :not_found} = Maraca.deactivate_member(scope, "nope")
+    end
+
+    test "a deactivated account cannot authenticate", %{tekoa: tekoa, admin: admin} do
+      member = confirmed_ava_fixture(tekoa, %{email: "deact@example.com"})
+      {:ok, _} = Maraca.deactivate_member(Scope.new(admin, tekoa), member.public_id)
+
+      assert {:error, :account_deactivated} =
+               Maraca.authenticate("deact@example.com", "senhasegura123", tekoa)
+    end
+  end
+
+  describe "login rate limiting" do
+    test "blocks after too many attempts for the same (tekoa, email)" do
+      tekoa = tekoa_fixture()
+      confirmed_ava_fixture(tekoa, %{email: "brute@example.com"})
+
+      # As 5 primeiras tentativas passam (senha errada → :invalid_credentials);
+      # a 6ª é barrada pelo limitador.
+      for _ <- 1..5 do
+        assert {:error, :invalid_credentials} =
+                 Maraca.authenticate("brute@example.com", "errada123", tekoa)
+      end
+
+      assert {:error, :rate_limited} =
+               Maraca.authenticate("brute@example.com", "errada123", tekoa)
+    end
+  end
 end

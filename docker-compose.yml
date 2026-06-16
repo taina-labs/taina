@@ -38,13 +38,23 @@ services:
       # Ports
       PORT: 4000
 
-      # Storage (Ybira file uploads)
-      STORAGE_PATH: /app/storage
+      # Storage (Ybira file uploads) — must match the var read in
+      # config/runtime.exs (`STORAGE_ROOT`), or uploads silently fall back to
+      # the default path.
+      STORAGE_ROOT: /app/storage
+
+      # Backup (Nhaman) — off by default; set to "true" to enable the scheduled
+      # pg_dump + storage archive written under BACKUP_DIR.
+      BACKUP_ENABLED: "false"
+      BACKUP_DIR: /app/backups
     ports:
       - "4000:4000"
     volumes:
       # Mount storage for file uploads (persistent across restarts)
       - storage_data:/app/storage
+
+      # Backups land here; mount a host disk/USB in production instead.
+      - backups_data:/app/backups
 
       # Development: mount code for live reloading (comment out for production)
       # - .:/app
@@ -63,6 +73,8 @@ volumes:
   postgres_data:
     driver: local
   storage_data:
+    driver: local
+  backups_data:
     driver: local
 
 networks:

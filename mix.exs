@@ -58,6 +58,7 @@ defmodule Taina.MixProject do
       {:image, "~> 0.68"},
       {:bcrypt_elixir, "~> 3.3"},
       {:oban, "~> 2.23"},
+      {:hammer, "~> 7.0"},
       # dev
       {:tidewave, "~> 0.5", only: :dev},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},

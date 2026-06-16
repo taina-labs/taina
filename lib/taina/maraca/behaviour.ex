@@ -84,6 +84,8 @@ defmodule Taina.Maraca.Behaviour do
 
   - Email e senha devem estar corretos
   - Email deve estar confirmado (confirmed_at não nulo)
+  - Conta não pode estar desativada (`deactivated_at` nulo)
+  - Tentativas são limitadas por `(tekoa, email)` para conter força bruta
   - Usa bcrypt para verificar senha
   - Retorna Ava completo se autenticado
 
@@ -98,6 +100,8 @@ defmodule Taina.Maraca.Behaviour do
     * `{:ok, %Ava{}}` - Autenticado com sucesso
     * `{:error, :invalid_credentials}` - Email ou senha incorretos
     * `{:error, :email_not_confirmed}` - Email ainda não confirmado
+    * `{:error, :account_deactivated}` - Conta desativada por um admin
+    * `{:error, :rate_limited}` - Tentativas demais; tente de novo mais tarde
 
   ## Exemplos
 
@@ -108,7 +112,8 @@ defmodule Taina.Maraca.Behaviour do
       {:error, :invalid_credentials}
   """
   @callback authenticate(String.t(), String.t(), Tekoa.t()) ::
-              {:ok, Ava.t()} | {:error, :invalid_credentials | :email_not_confirmed}
+              {:ok, Ava.t()}
+              | {:error, :invalid_credentials | :email_not_confirmed | :account_deactivated | :rate_limited}
 
   @doc """
   Cria dados de sessão para usuário autenticado.
@@ -244,6 +249,92 @@ defmodule Taina.Maraca.Behaviour do
   """
   @callback update_tekoa_quota(Scope.t(), pos_integer()) ::
               {:ok, Tekoa.t()} | {:error, :unauthorized | Ecto.Changeset.t()}
+
+  # ============================================================================
+  # GESTÃO DE MEMBROS (admin)
+  # ============================================================================
+
+  @doc """
+  Lista os membros da Tekoa do scope (incluindo desativados).
+
+  ## Regras de Negócio
+
+  - Apenas admins listam membros (`scope.ava.role == :admin`)
+  - Ordenado por data de entrada (mais antigos primeiro)
+  - Inclui contas ainda não confirmadas (convites pendentes) e desativadas
+
+  ## Retorno
+
+    * `{:ok, [%Ava{}]}` - Membros da comunidade
+    * `{:error, :unauthorized}` - Quem pediu não é admin
+  """
+  @callback list_members(Scope.t()) :: {:ok, [Ava.t()]} | {:error, :unauthorized}
+
+  @doc """
+  Altera o papel (admin/member) de um membro.
+
+  ## Regras de Negócio
+
+  - Apenas admins alteram papéis
+  - Identifica o alvo por `public_id`
+  - **Não pode rebaixar o último admin ativo** — a comunidade ficaria sem
+    administração (`{:error, :last_admin}`)
+
+  ## Parâmetros
+
+    * `scope` - admin agindo + Tekoa
+    * `member_public_id` - alvo
+    * `role` - `:admin` ou `:member`
+
+  ## Retorno
+
+    * `{:ok, %Ava{}}` - Papel atualizado
+    * `{:error, :unauthorized}` - Quem pediu não é admin
+    * `{:error, :not_found}` - Membro não existe na Tekoa
+    * `{:error, :last_admin}` - Tentou rebaixar o último admin ativo
+    * `{:error, %Ecto.Changeset{}}` - Papel inválido
+  """
+  @callback update_member_role(Scope.t(), String.t(), :admin | :member) ::
+              {:ok, Ava.t()}
+              | {:error, :unauthorized | :not_found | :last_admin | Ecto.Changeset.t()}
+
+  @doc """
+  Desativa a conta de um membro (soft): preenche `deactivated_at`. A conta e os
+  dados permanecem; o login passa a ser recusado (`:account_deactivated`).
+
+  ## Regras de Negócio
+
+  - Apenas admins desativam contas
+  - Identifica o alvo por `public_id`
+  - **Não pode desativar o último admin ativo** (`{:error, :last_admin}`)
+  - Idempotente: desativar conta já desativada devolve `{:ok, ava}`
+
+  ## Retorno
+
+    * `{:ok, %Ava{}}` - Conta desativada
+    * `{:error, :unauthorized}` - Quem pediu não é admin
+    * `{:error, :not_found}` - Membro não existe na Tekoa
+    * `{:error, :last_admin}` - Tentou desativar o último admin ativo
+  """
+  @callback deactivate_member(Scope.t(), String.t()) ::
+              {:ok, Ava.t()} | {:error, :unauthorized | :not_found | :last_admin}
+
+  @doc """
+  Reativa uma conta desativada (limpa `deactivated_at`).
+
+  ## Regras de Negócio
+
+  - Apenas admins reativam contas
+  - Idempotente: reativar conta já ativa devolve `{:ok, ava}`
+
+  ## Retorno
+
+    * `{:ok, %Ava{}}` - Conta reativada
+    * `{:error, :unauthorized}` - Quem pediu não é admin
+    * `{:error, :not_found}` - Membro não existe na Tekoa
+  """
+  @callback reactivate_member(Scope.t(), String.t()) ::
+              {:ok, Ava.t()} | {:error, :unauthorized | :not_found}
 
   # ============================================================================
   # AUTENTICAÇÃO - Reset de Senha
