@@ -27,7 +27,7 @@
 @keyframes page-in {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(var(--space-2));
   }
 
   to {
@@ -279,16 +279,6 @@
   flex: 1;
   position: relative;
   z-index: 1;
-}
-
-.auth-layout__footer {
-  position: relative;
-  z-index: 1;
-  margin-top: var(--space-8);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-medium);
-  color: var(--text-faint);
-  text-align: center;
 }
 
 /* a "estrela da manhã" do logo */

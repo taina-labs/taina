@@ -67,7 +67,8 @@ defmodule Taina.Ybira.Behaviour do
   @callback delete_file(Scope.t(), String.t()) :: {:ok, File.t()} | {:error, :not_found}
 
   @doc """
-  Restaura um arquivo da lixeira (limpa `deleted_at`). Dono ou zelador.
+  Restaura um arquivo da lixeira (limpa `deleted_at`). Apenas o dono (o zelador
+  não tem atalho: pede via `Maraca.request_access/5` e o dono aprova).
   """
   @callback restore_file(Scope.t(), String.t()) :: {:ok, File.t()} | {:error, :not_found}
 
@@ -78,14 +79,14 @@ defmodule Taina.Ybira.Behaviour do
 
   @doc """
   Renomeia um arquivo (muda só o `original_filename`; os bytes e o nome no disco
-  ficam). Dono ou zelador.
+  ficam). Apenas o dono.
   """
   @callback rename_file(Scope.t(), String.t(), String.t()) ::
               {:ok, File.t()} | {:error, :not_found | Ecto.Changeset.t()}
 
   @doc """
-  Move um arquivo para outra pasta (`public_id`) ou para a raiz (`nil`). Dono ou
-  zelador.
+  Move um arquivo para outra pasta (`public_id`) ou para a raiz (`nil`). Apenas
+  o dono.
   """
   @callback move_file(Scope.t(), String.t(), String.t() | nil) ::
               {:ok, File.t()} | {:error, :not_found}
@@ -104,14 +105,14 @@ defmodule Taina.Ybira.Behaviour do
   @callback get_folder(Scope.t(), String.t()) :: {:ok, Folder.t()} | {:error, :not_found}
 
   @doc """
-  Renomeia uma pasta. Dono ou zelador.
+  Renomeia uma pasta. Apenas o dono.
   """
   @callback rename_folder(Scope.t(), String.t(), String.t()) ::
               {:ok, Folder.t()} | {:error, :not_found | Ecto.Changeset.t()}
 
   @doc """
-  Move uma pasta para baixo de outra (`public_id`) ou para a raiz (`nil`). Dono
-  ou zelador. Rejeita ciclos (mover para si mesma ou para uma descendente) com
+  Move uma pasta para baixo de outra (`public_id`) ou para a raiz (`nil`). Apenas
+  o dono. Rejeita ciclos (mover para si mesma ou para uma descendente) com
   `{:error, :circular_reference}`.
   """
   @callback move_folder(Scope.t(), String.t(), String.t() | nil) ::
@@ -119,7 +120,7 @@ defmodule Taina.Ybira.Behaviour do
 
   @doc """
   Deleta uma pasta em cascata (soft delete): a pasta, os arquivos dentro dela e
-  as subpastas, recursivamente. Dono ou zelador. Não devolve cota, quem faz isso
+  as subpastas, recursivamente. Apenas o dono. Não devolve cota, quem faz isso
   é o `PurgeTrash`.
   """
   @callback delete_folder(Scope.t(), String.t()) :: {:ok, :deleted} | {:error, :not_found}

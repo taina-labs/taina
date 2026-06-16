@@ -14,14 +14,33 @@ defmodule TainaWeb.HomeLive do
   def mount(_params, _session, socket) do
     scope = socket.assigns.current_scope
 
-    {:ok, recent} = Ybira.list_recent(scope, limit: 4)
-    {:ok, by_kind} = Ybira.storage_stats_by_kind(scope)
+    # A home degrada em vez de cair: se o Ybira falhar, avisamos por flash e
+    # mostramos a tela com as listas vazias (o empty_state assume o lugar) em
+    # vez de derrubar a LiveView.
+    {recent, ok?} = unwrap(Ybira.list_recent(scope, limit: 4), [])
+    {by_kind, ok?} = unwrap(Ybira.storage_stats_by_kind(scope), [], ok?)
 
-    {:ok,
-     socket
-     |> assign(:page_title, gettext("Início"))
-     |> assign(:recent, recent)
-     |> assign(:by_kind, by_kind)}
+    socket =
+      socket
+      |> assign(:page_title, gettext("Início"))
+      |> assign(:recent, recent)
+      |> assign(:by_kind, by_kind)
+
+    {:ok, maybe_warn(socket, ok?)}
+  end
+
+  defp unwrap(result, default, ok? \\ true)
+  defp unwrap({:ok, value}, _default, ok?), do: {value, ok?}
+  defp unwrap(_error, default, _ok?), do: {default, false}
+
+  defp maybe_warn(socket, true), do: socket
+
+  defp maybe_warn(socket, false) do
+    Phoenix.LiveView.put_flash(
+      socket,
+      :error,
+      gettext("Não foi possível carregar tudo agora. Tente recarregar em instantes.")
+    )
   end
 
   # Saudação pelo relógio da caixa, o servidor mora na casa da comunidade,

@@ -24,25 +24,31 @@ defmodule TainaWeb.FilesLive do
 
     case load_folder(scope, folder_public_id) do
       {:ok, folder} ->
-        {:ok, %{folders: folders, files: files, next_cursor: next_cursor}} =
-          Ybira.list_folder_contents(scope, folder_public_id, sort: sort)
+        case Ybira.list_folder_contents(scope, folder_public_id, sort: sort) do
+          {:ok, %{folders: folders, files: files, next_cursor: next_cursor}} ->
+            {:noreply,
+             socket
+             |> assign(:page_title, (folder && folder.name) || gettext("Arquivos"))
+             |> assign(:folder, folder)
+             |> assign(:folder_public_id, folder_public_id)
+             |> assign(:folders, folders)
+             |> assign(:next_cursor, next_cursor)
+             |> assign(:item_count, length(folders) + length(files))
+             |> assign(:sort, sort)
+             |> assign(:view, view)
+             |> assign(:modal, nil)
+             |> assign(:rename_target, nil)
+             |> assign(:move_target, nil)
+             |> assign(:all_folders, [])
+             |> assign(:confirm, nil)
+             |> stream(:files, files, reset: true)}
 
-        {:noreply,
-         socket
-         |> assign(:page_title, (folder && folder.name) || gettext("Arquivos"))
-         |> assign(:folder, folder)
-         |> assign(:folder_public_id, folder_public_id)
-         |> assign(:folders, folders)
-         |> assign(:next_cursor, next_cursor)
-         |> assign(:item_count, length(folders) + length(files))
-         |> assign(:sort, sort)
-         |> assign(:view, view)
-         |> assign(:modal, nil)
-         |> assign(:rename_target, nil)
-         |> assign(:move_target, nil)
-         |> assign(:all_folders, [])
-         |> assign(:confirm, nil)
-         |> stream(:files, files, reset: true)}
+          {:error, _reason} ->
+            {:noreply,
+             socket
+             |> Phoenix.LiveView.put_flash(:error, gettext("Não foi possível carregar a pasta."))
+             |> Phoenix.LiveView.push_navigate(to: ~p"/arquivos")}
+        end
 
       {:error, :not_found} ->
         {:noreply,
@@ -60,14 +66,17 @@ defmodule TainaWeb.FilesLive do
     %{next_cursor: offset, folder_public_id: folder_public_id, sort: sort} = socket.assigns
 
     if offset do
-      {:ok, %{files: files, next_cursor: next_cursor}} =
-        Ybira.list_folder_contents(socket.assigns.current_scope, folder_public_id, sort: sort, offset: offset)
+      case Ybira.list_folder_contents(socket.assigns.current_scope, folder_public_id, sort: sort, offset: offset) do
+        {:ok, %{files: files, next_cursor: next_cursor}} ->
+          {:noreply,
+           socket
+           |> assign(:next_cursor, next_cursor)
+           |> assign(:item_count, socket.assigns.item_count + length(files))
+           |> stream(:files, files)}
 
-      {:noreply,
-       socket
-       |> assign(:next_cursor, next_cursor)
-       |> assign(:item_count, socket.assigns.item_count + length(files))
-       |> stream(:files, files)}
+        {:error, _reason} ->
+          {:noreply, Phoenix.LiveView.put_flash(socket, :error, gettext("Não foi possível carregar mais itens."))}
+      end
     else
       {:noreply, socket}
     end
@@ -82,13 +91,17 @@ defmodule TainaWeb.FilesLive do
   end
 
   def handle_event("open-move", %{"kind" => kind, "id" => id, "name" => name}, socket) do
-    {:ok, folders} = Ybira.list_folders(socket.assigns.current_scope)
+    case Ybira.list_folders(socket.assigns.current_scope) do
+      {:ok, folders} ->
+        {:noreply,
+         socket
+         |> assign(:modal, "move")
+         |> assign(:move_target, %{kind: kind, id: id, name: name})
+         |> assign(:all_folders, folders)}
 
-    {:noreply,
-     socket
-     |> assign(:modal, "move")
-     |> assign(:move_target, %{kind: kind, id: id, name: name})
-     |> assign(:all_folders, folders)}
+      {:error, _reason} ->
+        {:noreply, Phoenix.LiveView.put_flash(socket, :error, gettext("Não foi possível abrir as pastas."))}
+    end
   end
 
   def handle_event("close-modal", _params, socket) do
@@ -303,7 +316,7 @@ defmodule TainaWeb.FilesLive do
         </.menu>
 
         <div class="row gap-2">
-          <span class="type-caption text-muted" style="align-self: center;">
+          <span class="type-caption text-muted self-center">
             {sort_label(@sort)} <.icon name={sort_arrow_icon(@sort)} size={14} />
           </span>
           <.icon_button
@@ -338,7 +351,7 @@ defmodule TainaWeb.FilesLive do
               <p class="tile__meta">{gettext("Pasta")}</p>
             </.link>
 
-            <div id="files-grid" phx-update="stream" style="display: contents;">
+            <div id="files-grid" phx-update="stream" class="contents">
               <.link
                 :for={{dom_id, file} <- @streams.files}
                 id={dom_id}

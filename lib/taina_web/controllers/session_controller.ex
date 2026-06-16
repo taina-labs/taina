@@ -26,6 +26,14 @@ defmodule TainaWeb.SessionController do
     end
   end
 
+  # POST sem os campos esperados (form adulterado, bot): trata como credencial
+  # invalida em vez de estourar FunctionClauseError (500).
+  def create(conn, _params) do
+    conn
+    |> put_flash(:error, gettext("Nome ou senha incorretos."))
+    |> redirect(to: ~p"/login")
+  end
+
   def delete(conn, _params) do
     conn
     |> Maraca.destroy_session()

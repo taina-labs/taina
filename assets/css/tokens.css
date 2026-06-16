@@ -150,4 +150,13 @@
   --feedback-warning: var(--color-amber-500);
   --feedback-error: var(--color-red-500);
   --feedback-info: var(--color-sky-500);
+
+  /* larguras de leitura: containers centrados das telas internas */
+  --measure-sm: 480px;
+  --measure-md: 560px;
+  --measure: 640px;
+  --measure-wide: 720px;
+
+  /* preenchimento dos campos de formulario (night-800 translucido) */
+  --field-bg: rgb(15 23 41 / 0.6);
 }

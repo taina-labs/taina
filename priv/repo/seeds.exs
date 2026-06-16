@@ -72,74 +72,77 @@ else
   tmp = Path.join(System.tmp_dir!(), "taina_seeds_#{System.unique_integer([:positive])}")
   File.mkdir_p!(tmp)
 
-  gera_foto = fn nome, [r, g, b] ->
-    caminho = Path.join(tmp, nome)
-    img = Image.new!(800, 600, color: [r, g, b])
-    Image.write!(img, caminho)
-    caminho
+  # try/after: o diretorio temporario some mesmo se um upload falhar no meio.
+  try do
+    gera_foto = fn nome, [r, g, b] ->
+      caminho = Path.join(tmp, nome)
+      img = Image.new!(800, 600, color: [r, g, b])
+      Image.write!(img, caminho)
+      caminho
+    end
+
+    gera_texto = fn nome, conteudo ->
+      caminho = Path.join(tmp, nome)
+      File.write!(caminho, conteudo)
+      caminho
+    end
+
+    gera_pdf = fn nome ->
+      caminho = Path.join(tmp, nome)
+      # PDF mínimo válido, só precisamos dos magic bytes "%PDF" e estrutura básica.
+      File.write!(caminho, """
+      %PDF-1.4
+      1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj
+      2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj
+      3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 595 842]>>endobj
+      trailer<</Root 1 0 R>>
+      %%EOF
+      """)
+
+      caminho
+    end
+
+    # Paleta de fotos (forest/moon/sky/ember/guara, ver tokens do Penpot).
+    paleta = [
+      {"festa-junina-01.png", [63, 161, 113]},
+      {"festa-junina-02.png", [227, 188, 102]},
+      {"assembleia-01.png", [91, 163, 245]},
+      {"assembleia-02.png", [226, 103, 74]},
+      {"quintal-01.png", [130, 203, 164]},
+      {"quintal-02.png", [222, 91, 63]},
+      {"horta-01.png", [196, 154, 72]},
+      {"horta-02.png", [47, 129, 89]}
+    ]
+
+    # Sobe as fotos para a pasta "Fotos da comunidade".
+    Enum.each(paleta, fn {nome, rgb} ->
+      caminho = gera_foto.(nome, rgb)
+      {:ok, _} = Ybira.upload(scope, caminho, filename: nome, folder_id: fotos.id)
+    end)
+
+    # Documentos.
+    ata =
+      gera_texto.(
+        "ata-da-assembleia.txt",
+        "Ata da assembleia comunitária\n\nPauta: uso do espaço, mutirão de limpeza, festa junina.\n"
+      )
+
+    {:ok, _} = Ybira.upload(scope, ata, filename: "Ata da assembleia.txt", folder_id: documentos.id)
+
+    orcamento =
+      gera_texto.("orcamento-2025.txt", "Orçamento 2025\n\nReceitas: rifas, doações.\nDespesas: materiais, manutenção.\n")
+
+    {:ok, _} = Ybira.upload(scope, orcamento, filename: "Orçamento 2025.txt", folder_id: documentos.id)
+
+    estatuto = gera_pdf.("estatuto.pdf")
+    {:ok, _} = Ybira.upload(scope, estatuto, filename: "Estatuto.pdf", folder_id: documentos.id)
+
+    # Um arquivo na raiz (logo), para a Home ter "recentes" variados.
+    logo = gera_foto.("logo-da-radio.png", [255, 217, 163])
+    {:ok, _} = Ybira.upload(scope, logo, filename: "Logo da rádio.png")
+  after
+    File.rm_rf!(tmp)
   end
-
-  gera_texto = fn nome, conteudo ->
-    caminho = Path.join(tmp, nome)
-    File.write!(caminho, conteudo)
-    caminho
-  end
-
-  gera_pdf = fn nome ->
-    caminho = Path.join(tmp, nome)
-    # PDF mínimo válido, só precisamos dos magic bytes "%PDF" e estrutura básica.
-    File.write!(caminho, """
-    %PDF-1.4
-    1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj
-    2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj
-    3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 595 842]>>endobj
-    trailer<</Root 1 0 R>>
-    %%EOF
-    """)
-
-    caminho
-  end
-
-  # Paleta de fotos (forest/moon/sky/ember/guara, ver tokens do Penpot).
-  paleta = [
-    {"festa-junina-01.png", [63, 161, 113]},
-    {"festa-junina-02.png", [227, 188, 102]},
-    {"assembleia-01.png", [91, 163, 245]},
-    {"assembleia-02.png", [226, 103, 74]},
-    {"quintal-01.png", [130, 203, 164]},
-    {"quintal-02.png", [222, 91, 63]},
-    {"horta-01.png", [196, 154, 72]},
-    {"horta-02.png", [47, 129, 89]}
-  ]
-
-  # Sobe as fotos para a pasta "Fotos da comunidade".
-  Enum.each(paleta, fn {nome, rgb} ->
-    caminho = gera_foto.(nome, rgb)
-    {:ok, _} = Ybira.upload(scope, caminho, filename: nome, folder_id: fotos.id)
-  end)
-
-  # Documentos.
-  ata =
-    gera_texto.(
-      "ata-da-assembleia.txt",
-      "Ata da assembleia comunitária\n\nPauta: uso do espaço, mutirão de limpeza, festa junina.\n"
-    )
-
-  {:ok, _} = Ybira.upload(scope, ata, filename: "Ata da assembleia.txt", folder_id: documentos.id)
-
-  orcamento =
-    gera_texto.("orcamento-2025.txt", "Orçamento 2025\n\nReceitas: rifas, doações.\nDespesas: materiais, manutenção.\n")
-
-  {:ok, _} = Ybira.upload(scope, orcamento, filename: "Orçamento 2025.txt", folder_id: documentos.id)
-
-  estatuto = gera_pdf.("estatuto.pdf")
-  {:ok, _} = Ybira.upload(scope, estatuto, filename: "Estatuto.pdf", folder_id: documentos.id)
-
-  # Um arquivo na raiz (logo), para a Home ter "recentes" variados.
-  logo = gera_foto.("logo-da-radio.png", [255, 217, 163])
-  {:ok, _} = Ybira.upload(scope, logo, filename: "Logo da rádio.png")
-
-  File.rm_rf!(tmp)
 
   IO.puts("""
 

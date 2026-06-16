@@ -128,7 +128,7 @@ defmodule TainaWeb.Layouts do
 
   @doc """
   Layout das telas públicas (setup, login, convite): céu noturno, estrelas e
-  horizonte aquecido; rodapé com a promessa do projeto.
+  horizonte aquecido.
   """
   attr :flash, :map, required: true
   slot :inner_block, required: true
@@ -140,9 +140,6 @@ defmodule TainaWeb.Layouts do
       <div class="auth-layout__card">
         {render_slot(@inner_block)}
       </div>
-      <p class="auth-layout__footer">
-        {gettext("Software livre, AGPL, seus dados ficam aqui")}
-      </p>
     </div>
     """
   end

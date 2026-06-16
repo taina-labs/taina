@@ -78,7 +78,7 @@ defmodule TainaWeb.InviteLive do
     >
       <Layouts.app_bar title={gettext("Convidar pessoas")} back={~p"/membros"} />
 
-      <div class="col gap-6 mx-auto w-full" style="max-width: 480px;">
+      <div class="col gap-6 mx-auto w-full measure-sm">
         <%= if @invite_url do %>
           <div class="qr-card">{qr_svg(@invite_url)}</div>
           <p class="type-body-sm text-secondary text-center">

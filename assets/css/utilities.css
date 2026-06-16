@@ -23,6 +23,10 @@
   align-items: center;
 }
 
+.self-center {
+  align-self: center;
+}
+
 .between {
   justify-content: space-between;
 }
@@ -38,6 +42,27 @@
 
 .w-full {
   width: 100%;
+}
+
+/* larguras de leitura (containers centrados das telas internas) */
+.measure-sm {
+  max-width: var(--measure-sm);
+}
+
+.measure-md {
+  max-width: var(--measure-md);
+}
+
+.measure {
+  max-width: var(--measure);
+}
+
+.measure-wide {
+  max-width: var(--measure-wide);
+}
+
+.contents {
+  display: contents;
 }
 
 .grid {

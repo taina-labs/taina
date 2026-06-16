@@ -61,7 +61,7 @@ defmodule TainaWeb.Router do
   end
 
   scope "/", TainaWeb do
-    pipe_through [:browser, :require_authenticated]
+    pipe_through :browser
 
     live_session :authenticated,
       on_mount: [{TainaWeb.Auth, :require_authenticated}, {TainaWeb.Hooks, :shell}] do

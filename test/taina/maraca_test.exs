@@ -100,9 +100,12 @@ defmodule Taina.MaracaTest do
 
       eight_days_ago = DateTime.add(DateTime.utc_now(), -8, :day)
 
-      invited
-      |> Ecto.Changeset.change(invite_sent_at: eight_days_ago)
-      |> Repo.update!()
+      Repo.with_tekoa(tekoa.public_id, fn ->
+        {:ok,
+         invited
+         |> Ecto.Changeset.change(invite_sent_at: eight_days_ago)
+         |> Repo.update!()}
+      end)
 
       assert {:error, :invalid_token} =
                Maraca.accept_invite(invited.invite_token, %{
@@ -241,9 +244,12 @@ defmodule Taina.MaracaTest do
 
       two_hours_ago = DateTime.add(DateTime.utc_now(), -2, :hour)
 
-      with_token
-      |> Ecto.Changeset.change(reset_token_sent_at: two_hours_ago)
-      |> Repo.update!()
+      Repo.with_tekoa(tekoa.public_id, fn ->
+        {:ok,
+         with_token
+         |> Ecto.Changeset.change(reset_token_sent_at: two_hours_ago)
+         |> Repo.update!()}
+      end)
 
       assert {:error, :invalid_token} =
                Maraca.reset_password(with_token.reset_token, "novasenha123", "novasenha123")

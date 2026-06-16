@@ -105,7 +105,7 @@ defmodule TainaWeb.UploadLive do
     >
       <Layouts.app_bar title={gettext("Enviar arquivos")} back={back_path(@folder)} />
 
-      <div class="col gap-6 mx-auto w-full" style="max-width: 560px;">
+      <div class="col gap-6 mx-auto w-full measure-md">
         <form id="upload-form" phx-change="validate" phx-submit="validate">
           <label
             id="dropzone"

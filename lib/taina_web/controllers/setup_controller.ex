@@ -10,7 +10,7 @@ defmodule TainaWeb.SetupController do
   alias Taina.Maraca
 
   # Cota inicial = espaço livre do disco do storage (melhor esforço); sem leitura
-  # possível, cai num padrão de 256 GB. O admin reajusta depois em /armazenamento.
+  # possível, cai num padrão de 256 GB. O zelador reajusta depois em /armazenamento.
   @default_quota_bytes 256 * 1024 * 1024 * 1024
 
   def create(conn, %{"setup" => params}) do
@@ -38,6 +38,14 @@ defmodule TainaWeb.SetupController do
         |> put_flash(:error, gettext("Não foi possível criar a comunidade. Revise os dados e tente de novo."))
         |> redirect(to: ~p"/setup")
     end
+  end
+
+  # POST sem o mapa "setup" (form adulterado, bot): pede revisao dos dados em
+  # vez de estourar FunctionClauseError (500).
+  def create(conn, _params) do
+    conn
+    |> put_flash(:error, gettext("Não foi possível criar a comunidade. Revise os dados e tente de novo."))
+    |> redirect(to: ~p"/setup")
   end
 
   defp initial_quota_bytes do

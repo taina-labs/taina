@@ -40,9 +40,9 @@ defmodule Taina.Maraca.AccessRequest do
 
   ## Exemplos de uso
 
-      # Admin solicita acesso a arquivo de usuário (criação)
+      # Zelador solicita acesso a arquivo de morador (criação)
       iex> create_changeset(%AccessRequest{}, %{
-      ...>   requester_id: admin.id,
+      ...>   requester_id: zelador.id,
       ...>   owner_id: user.id,
       ...>   resource_type: "ybira_file",
       ...>   resource_id: file.public_id,
@@ -69,7 +69,7 @@ defmodule Taina.Maraca.AccessRequest do
   Todas as solicitações são permanentemente registradas para auditoria. Isso garante:
   - Transparência sobre quem acessou dados de quem
   - Rastreabilidade para compliance (LGPD, GDPR)
-  - Confiança entre usuários e administradores
+  - Confiança entre moradores e zeladores
   """
 
   use Ecto.Schema
@@ -114,7 +114,7 @@ defmodule Taina.Maraca.AccessRequest do
   @doc """
   Changeset para criar uma nova AccessRequest.
 
-  Este changeset é usado quando um admin solicita acesso a um recurso.
+  Este changeset é usado quando um zelador solicita acesso a um recurso.
   O status é SEMPRE definido como :pending - não pode ser controlado pelo solicitante.
 
   ## Campos obrigatórios
@@ -138,7 +138,7 @@ defmodule Taina.Maraca.AccessRequest do
   ## Exemplos
 
       iex> create_changeset(%AccessRequest{}, %{
-      ...>   requester_id: admin.id,
+      ...>   requester_id: zelador.id,
       ...>   owner_id: user.id,
       ...>   resource_type: "ybira_file",
       ...>   resource_id: file.public_id,

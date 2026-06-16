@@ -1,7 +1,7 @@
 defmodule TainaWeb.StorageLive do
   @moduledoc """
   Armazenamento (tela "Ybira - Armazenamento"): uso total, barra segmentada
-  por tipo e cota da comunidade (admin edita via `update_tekoa_quota/2`).
+  por tipo e cota da comunidade (zelador edita via `update_tekoa_quota/2`).
 
   Nota de drift (design vs. backend): o Penpot mostra "cota por membro", mas a
   cota do Maraca é da Tekoa inteira, a UI mostra e edita a cota da
@@ -23,14 +23,26 @@ defmodule TainaWeb.StorageLive do
      |> load_stats()}
   end
 
+  # Carrega as estatisticas sem derrubar a tela: se o dominio falhar, avisamos
+  # por flash e marcamos `load_error` para o render cair no empty_state em vez
+  # de quebrar no match.
   defp load_stats(socket) do
     scope = socket.assigns.current_scope
-    {:ok, stats} = Ybira.storage_stats(scope)
-    {:ok, by_kind} = Ybira.storage_stats_by_kind(scope)
 
-    socket
-    |> assign(:stats, stats)
-    |> assign(:by_kind, by_kind)
+    with {:ok, stats} <- Ybira.storage_stats(scope),
+         {:ok, by_kind} <- Ybira.storage_stats_by_kind(scope) do
+      socket
+      |> assign(:stats, stats)
+      |> assign(:by_kind, by_kind)
+      |> assign(:load_error, false)
+    else
+      _error ->
+        socket
+        |> assign(:stats, nil)
+        |> assign(:by_kind, [])
+        |> assign(:load_error, true)
+        |> Phoenix.LiveView.put_flash(:error, gettext("Não foi possível carregar o armazenamento agora."))
+    end
   end
 
   @impl true
@@ -80,7 +92,14 @@ defmodule TainaWeb.StorageLive do
     >
       <Layouts.app_bar title={gettext("Armazenamento")} back={~p"/conta"} />
 
-      <div class="col gap-5 mx-auto w-full" style="max-width: 640px;">
+      <.empty_state
+        :if={@load_error}
+        icon="alert"
+        title={gettext("Não foi possível carregar")}
+        hint={gettext("O uso de armazenamento não respondeu agora. Tente recarregar em instantes.")}
+      />
+
+      <div :if={@stats} class="col gap-5 mx-auto w-full measure">
         <.card raised class="p-6">
           <p class="type-display">{format_bytes(@stats.used_bytes)}</p>
           <div class="row between mt-1 mb-4">

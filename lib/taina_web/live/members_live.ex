@@ -94,7 +94,7 @@ defmodule TainaWeb.MembersLive do
         </:action>
       </Layouts.app_bar>
 
-      <div class="col gap-4 mx-auto w-full" style="max-width: 640px;">
+      <div class="col gap-4 mx-auto w-full measure">
         <form id="member-search-form" phx-change="search" class="search">
           <.icon name="search" size={20} />
           <input

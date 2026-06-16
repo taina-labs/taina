@@ -91,7 +91,7 @@ defmodule TainaWeb.TrashLive do
     >
       <Layouts.app_bar title={gettext("Lixeira")} back={~p"/arquivos"} />
 
-      <div class="col gap-4 mx-auto w-full" style="max-width: 640px;">
+      <div class="col gap-4 mx-auto w-full measure">
         <.card class="row gap-3">
           <.icon name="clock" size={20} class="text-warning" />
           <p class="type-body-sm text-secondary">

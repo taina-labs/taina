@@ -368,11 +368,14 @@ defmodule Taina.Maraca do
     |> Repo.preload([:ava, :granted_by], skip_tekoa_id: true)
   end
 
-  ## Acesso administrativo (com aprovação do dono)
+  ## Acesso do zelador (com aprovação do dono)
 
   @impl true
   def request_access(%Ava{} = zelador, %Ava{} = owner, resource_type, resource_id, reason) do
     cond do
+      owner.tekoa_id != zelador.tekoa_id ->
+        {:error, :cross_tekoa_owner}
+
       not zelador?(zelador) ->
         {:error, :not_zelador}
 

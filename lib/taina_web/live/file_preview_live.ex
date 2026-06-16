@@ -113,8 +113,8 @@ defmodule TainaWeb.FilePreviewLive do
         </:action>
       </Layouts.app_bar>
 
-      <div class="col gap-4 mx-auto w-full" style="max-width: 720px;">
-        <div class="surface-raised radius-lg center" style="min-height: 280px; overflow: hidden;">
+      <div class="col gap-4 mx-auto w-full measure-wide">
+        <div class="surface-raised radius-lg center media-frame">
           <%= case media_kind(@file.mime_type) do %>
             <% :image -> %>
               <img src={~p"/files/#{@file.public_id}"} alt={@file.original_filename} />
@@ -126,8 +126,7 @@ defmodule TainaWeb.FilePreviewLive do
               <iframe
                 src={~p"/files/#{@file.public_id}"}
                 title={@file.original_filename}
-                class="w-full"
-                style="height: 70dvh; border: 0;"
+                class="w-full doc-frame"
               >
               </iframe>
             <% :text -> %>

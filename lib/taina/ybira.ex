@@ -550,9 +550,9 @@ defmodule Taina.Ybira do
     end
   end
 
-  # Só o dono muta seus recursos. Admins não têm acesso automático (RFC 002:
-  # "admins são facilitadores, não deuses"), quando precisarem, pedem via
-  # `Maraca.request_access/5`.
+  # Só o dono muta seus recursos. O zelador não tem acesso automático (RFC 003:
+  # "zero autoridade sobre dados, sem atalho para a casa de ninguém"), quando
+  # precisar, pede via `Maraca.request_access/5` e o dono aprova.
   defp owner?(%Scope{ava: %Ava{id: id}}, owner_id), do: id == owner_id
 
   # Mover `folder_id` para baixo de `new_parent_id` fecharia um ciclo se

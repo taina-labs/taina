@@ -134,8 +134,10 @@ defmodule Taina.Maraca.Ava do
       %Ecto.Changeset{valid?: false}
   """
   def changeset(ava, attrs) do
+    # `activated_at` e `public_id` sao programaticos (put_change/autogenerate),
+    # nunca vem de input: fora do cast para nao dar para forjar ativacao ou id.
     ava
-    |> cast(attrs, [:username, :display_name, :role, :activated_at, :public_id, :tekoa_id])
+    |> cast(attrs, [:username, :display_name, :role, :tekoa_id])
     |> validate_required([:username, :tekoa_id])
     |> validate_username()
     |> validate_display_name()

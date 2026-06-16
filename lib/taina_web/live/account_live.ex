@@ -26,7 +26,7 @@ defmodule TainaWeb.AccountLive do
     >
       <h1 class="type-h1 mb-6">{gettext("Conta")}</h1>
 
-      <div class="col gap-6 mx-auto w-full" style="max-width: 640px;">
+      <div class="col gap-6 mx-auto w-full measure">
         <.card class="row gap-4">
           <.avatar name={@current_scope.ava.display_name || @current_scope.ava.username} />
           <div class="flex-1">

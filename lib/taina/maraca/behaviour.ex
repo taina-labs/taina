@@ -35,7 +35,7 @@ defmodule Taina.Maraca.Behaviour do
       iex> invite_user(zelador, tekoa, role: :morador)
       {:ok, %Ava{invite_token: "abc...", activated_at: nil}}
 
-      iex> invite_user(morador, tekoa)
+      iex> invite_user(morador, tekoa, [])
       {:error, :not_zelador}
   """
   @callback invite_user(Ava.t(), Tekoa.t(), keyword()) ::
@@ -156,7 +156,7 @@ defmodule Taina.Maraca.Behaviour do
   @callback destroy_session(Plug.Conn.t()) :: Plug.Conn.t()
 
   @doc """
-  Bootstrap de primeira inicialização: cria a Tekoa única e o admin inicial.
+  Bootstrap de primeira inicialização: cria a Tekoa única e o zelador inicial.
 
   ## Regras de Negócio
 
@@ -229,12 +229,12 @@ defmodule Taina.Maraca.Behaviour do
   ## Retorno
 
     * `{:ok, %Tekoa{}}` - cota atualizada
-    * `{:error, :unauthorized}` - quem pediu não é admin
+    * `{:error, :unauthorized}` - quem pediu não é zelador
     * `{:error, %Ecto.Changeset{}}` - validação falhou (ex.: cota <= 0)
 
   ## Exemplos
 
-      iex> update_tekoa_quota(admin_scope, 10 * 1024 * 1024 * 1024)
+      iex> update_tekoa_quota(zelador_scope, 10 * 1024 * 1024 * 1024)
       {:ok, %Tekoa{storage_quota_bytes: 10737418240}}
 
       iex> update_tekoa_quota(morador_scope, 1024)
@@ -324,7 +324,7 @@ defmodule Taina.Maraca.Behaviour do
 
   ## Regras de Negócio
 
-  - Admins NÃO têm acesso automático (devem solicitar via AccessRequest)
+  - Zeladores NÃO têm acesso automático (devem solicitar via AccessRequest)
   - Dono do recurso sempre tem todas as permissões
   - Permissões explícitas são verificadas na tabela permissions
 
@@ -348,8 +348,8 @@ defmodule Taina.Maraca.Behaviour do
       iex> authorize?(other_user, :read, "ybira_file", file.public_id)
       false
 
-      iex> authorize?(admin, :read, "ybira_file", user_file.public_id)
-      false  # Admin precisa solicitar acesso
+      iex> authorize?(zelador, :read, "ybira_file", user_file.public_id)
+      false  # Zelador precisa solicitar acesso
   """
   @callback authorize?(Ava.t(), atom(), String.t(), String.t()) :: boolean()
 
@@ -496,6 +496,7 @@ defmodule Taina.Maraca.Behaviour do
   ## Retorno
 
     * `{:ok, %AccessRequest{}}` - Solicitação criada
+    * `{:error, :cross_tekoa_owner}` - Dono e zelador são de comunidades diferentes
     * `{:error, :not_zelador}` - Apenas zeladores podem pedir
     * `{:error, :already_has_access}` - Zelador já tem permissão
     * `{:error, %Ecto.Changeset{}}` - Validação falhou
@@ -510,7 +511,7 @@ defmodule Taina.Maraca.Behaviour do
   """
   @callback request_access(Ava.t(), Ava.t(), String.t(), String.t(), String.t()) ::
               {:ok, AccessRequest.t()}
-              | {:error, :not_zelador | :already_has_access | Ecto.Changeset.t()}
+              | {:error, :cross_tekoa_owner | :not_zelador | :already_has_access | Ecto.Changeset.t()}
 
   @doc """
   Owner aprova solicitação de acesso.
@@ -521,7 +522,7 @@ defmodule Taina.Maraca.Behaviour do
   - AccessRequest deve estar :pending
   - Cria Permission com action :read
   - Atualiza status para :approved
-  - Admin é notificado via PubSub
+  - Zelador é notificado via PubSub
 
   ## Parâmetros
 
@@ -551,7 +552,7 @@ defmodule Taina.Maraca.Behaviour do
   - Apenas owner pode negar
   - AccessRequest deve estar :pending
   - Atualiza status para :denied
-  - Admin é notificado via PubSub
+  - Zelador é notificado via PubSub
   - Request permanece no banco para auditoria
 
   ## Parâmetros
@@ -639,7 +640,7 @@ defmodule Taina.Maraca.Behaviour do
   @callback get_tekoa() :: {:ok, Tekoa.t()} | {:error, :not_bootstrapped}
 
   @doc """
-  Lista os membros da Tekoa do scope, ordenados por papel (admins primeiro)
+  Lista os membros da Tekoa do scope, ordenados por papel (zeladores primeiro)
   e data de entrada.
 
   ## Regras de Negócio

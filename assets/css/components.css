@@ -155,7 +155,7 @@
   width: 100%;
   height: var(--size-control-md);
   padding-inline: var(--space-4);
-  background: rgb(15 23 41 / 0.6);
+  background: var(--field-bg);
   border: var(--border-hairline) solid var(--border-default);
   border-radius: var(--radius-md);
   color: var(--text-primary);
@@ -818,6 +818,18 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   text-align: left;
+}
+
+/* moldura da midia no preview (imagem/video) */
+.media-frame {
+  min-height: 280px;
+  overflow: hidden;
+}
+
+/* preview de documento (PDF via iframe) */
+.doc-frame {
+  height: 70dvh;
+  border: 0;
 }
 
 /* ---------- visualizador fullscreen ---------- */
