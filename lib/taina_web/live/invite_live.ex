@@ -34,6 +34,10 @@ defmodule TainaWeb.InviteLive do
     {:noreply, assign(socket, :role, role)}
   end
 
+  def handle_event("set-role", _params, socket) do
+    {:noreply, socket}
+  end
+
   def handle_event("generate", _params, socket) do
     scope = socket.assigns.current_scope
     role = String.to_existing_atom(socket.assigns.role)

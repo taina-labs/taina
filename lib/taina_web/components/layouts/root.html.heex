@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#060A14" />
     <meta name="csrf-token" content={get_csrf_token()} />
-    <.live_title default="Tainá" suffix=" - Tainá">
+    <.live_title default={gettext("Tainá")} suffix={" - " <> gettext("Tainá")}>
       {assigns[:page_title]}
     </.live_title>
     <link phx-track-static rel="stylesheet" href={~p"/assets/css/app.css"} />

@@ -217,7 +217,7 @@
       transparent 70%
     ),
     var(--bg-deep);
-  background-attachment: fixed;
+  background-attachment: scroll;
   position: relative;
   overflow: hidden;
 }

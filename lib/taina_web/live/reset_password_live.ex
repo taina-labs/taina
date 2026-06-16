@@ -22,7 +22,7 @@ defmodule TainaWeb.ResetPasswordLive do
   def render(assigns) do
     ~H"""
     <Layouts.auth flash={@flash}>
-      <div class="col gap-3 text-center mt-10 mb-8" style="align-items: center;">
+      <div class="col gap-3 text-center mt-10 mb-8 items-center">
         <.icon name="shield" size={40} class="spark" />
         <h1 class="type-h1">{gettext("Redefinir senha")}</h1>
         <p class="type-body text-secondary">

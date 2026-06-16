@@ -6,11 +6,15 @@ import hooks from "./hooks";
 
 const csrfToken = document
   .querySelector("meta[name='csrf-token']")
-  .getAttribute("content");
+  ?.getAttribute("content");
+
+if (!csrfToken) {
+  console.warn("CSRF token ausente no <meta name='csrf-token'>");
+}
 
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
-  params: { _csrf_token: csrfToken },
+  params: csrfToken ? { _csrf_token: csrfToken } : {},
   hooks,
 });
 

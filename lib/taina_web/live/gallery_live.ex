@@ -13,6 +13,7 @@ defmodule TainaWeb.GalleryLive do
   use TainaWeb, :live_view
 
   alias Taina.Jaci
+  alias Taina.Jaci.Timeline
   alias Taina.Ybira
   alias TainaWeb.Layouts
 
@@ -62,6 +63,11 @@ defmodule TainaWeb.GalleryLive do
     |> assign(:current, nil)
     |> assign(:groups, groups)
     |> assign(:timeline_cursor, cursor)
+    |> assign(:photo_ids, timeline_photo_ids(groups))
+  end
+
+  defp timeline_photo_ids(groups) do
+    for group <- groups, photo <- group.photos, do: photo.public_id
   end
 
   defp open_viewer(socket, public_id) do
@@ -105,6 +111,7 @@ defmodule TainaWeb.GalleryLive do
         {:noreply,
          socket
          |> assign(:timeline_cursor, next_cursor)
+         |> assign(:photo_ids, socket.assigns.photo_ids ++ timeline_photo_ids(groups))
          |> assign(:groups, merge_groups(socket.assigns.groups, groups))}
 
       _other ->
@@ -135,8 +142,8 @@ defmodule TainaWeb.GalleryLive do
     {:noreply, assign(socket, :show_details, !socket.assigns.show_details)}
   end
 
-  def handle_event("confirm-delete", _params, socket) do
-    case Ybira.delete_file(socket.assigns.current_scope, socket.assigns.current.public_id) do
+  def handle_event("confirm-delete", _params, %{assigns: %{current: %{public_id: public_id}}} = socket) do
+    case Ybira.delete_file(socket.assigns.current_scope, public_id) do
       {:ok, _file} ->
         {:noreply,
          socket
@@ -151,6 +158,10 @@ defmodule TainaWeb.GalleryLive do
          |> assign(:show_confirm, false)
          |> Phoenix.LiveView.put_flash(:error, gettext("Não foi possível excluir a foto."))}
     end
+  end
+
+  def handle_event("confirm-delete", _params, socket) do
+    {:noreply, assign(socket, :show_confirm, false)}
   end
 
   defp reset_gallery(socket) do
@@ -202,7 +213,7 @@ defmodule TainaWeb.GalleryLive do
 
   defp photo_date(file) do
     file
-    |> Taina.Jaci.Timeline.effective_datetime()
+    |> Timeline.effective_datetime()
     |> NaiveDateTime.to_date()
     |> Calendar.strftime("%d/%m/%Y")
   end
@@ -232,6 +243,7 @@ defmodule TainaWeb.GalleryLive do
             id={dom_id}
             patch={~p"/fotos/#{photo.public_id}"}
             class="photo-grid__item"
+            aria-label={photo.original_filename}
           >
             <div :if={video?(photo)} class="photo-grid__video">
               <.icon name="play" size={28} />
@@ -267,7 +279,12 @@ defmodule TainaWeb.GalleryLive do
             {group_title(group.date)}, {ngettext("%{count} foto", "%{count} fotos", length(group.photos))}
           </h2>
           <div class="photo-grid">
-            <.link :for={photo <- group.photos} patch={~p"/fotos/#{photo.public_id}"} class="photo-grid__item">
+            <.link
+              :for={photo <- group.photos}
+              patch={~p"/fotos/#{photo.public_id}"}
+              class="photo-grid__item"
+              aria-label={photo.original_filename}
+            >
               <div :if={video?(photo)} class="photo-grid__video">
                 <.icon name="play" size={28} />
               </div>
@@ -318,10 +335,20 @@ defmodule TainaWeb.GalleryLive do
             src={~p"/files/#{@current.public_id}/thumbnail/md"}
             alt={@current.original_filename}
           />
-          <button type="button" class="viewer__nav viewer__nav--prev icon-btn" phx-click="prev">
+          <button
+            type="button"
+            class="viewer__nav viewer__nav--prev icon-btn"
+            phx-click="prev"
+            aria-label={gettext("Foto anterior")}
+          >
             <.icon name="chevron-left" size={28} />
           </button>
-          <button type="button" class="viewer__nav viewer__nav--next icon-btn" phx-click="next">
+          <button
+            type="button"
+            class="viewer__nav viewer__nav--next icon-btn"
+            phx-click="next"
+            aria-label={gettext("Próxima foto")}
+          >
             <.icon name="chevron-right" size={28} />
           </button>
         </div>

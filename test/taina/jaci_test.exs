@@ -20,6 +20,19 @@ defmodule Taina.JaciTest do
       assert Enum.map(items, & &1.public_id) == [p2.public_id, p1.public_id]
     end
 
+    test "inclui vídeos e exclui tipos fora de image/video" do
+      scope = scope_fixture()
+      {:ok, _doc} = Ybira.upload(scope, tmp_upload_fixture("texto", "a.txt"))
+      {:ok, img} = Ybira.upload(scope, tmp_image_fixture(filename: "foto.jpg"))
+      {:ok, vid} = Ybira.upload(scope, tmp_video_fixture("clipe.mp4"))
+
+      {:ok, %{items: items}} = Jaci.list_photos(scope)
+      ids = Enum.map(items, & &1.public_id)
+      assert img.public_id in ids
+      assert vid.public_id in ids
+      assert length(ids) == 2
+    end
+
     test "paginates by opaque cursor" do
       scope = scope_fixture()
       for i <- 1..3, do: {:ok, _} = Ybira.upload(scope, tmp_image_fixture(filename: "#{i}.jpg"))

@@ -41,9 +41,9 @@ defmodule TainaWeb.GalleryLiveTest do
     assert html =~ "segunda.jpg"
 
     # próxima = mais antiga
-    html = lv |> element("button.viewer__nav--next") |> render_click()
+    lv |> element("button.viewer__nav--next") |> render_click()
     assert_patch(lv, ~p"/fotos/#{first.public_id}")
-    assert html =~ "segunda.jpg" or render(lv) =~ "primeira.jpg"
+    assert render(lv) =~ "primeira.jpg"
 
     # fechar volta para a grade
     lv |> element("button[phx-click=close]") |> render_click()

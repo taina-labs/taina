@@ -89,6 +89,12 @@ const Share = {
 const DnD = {
   mounted() {
     let dragged = null;
+    const clearDragState = () => {
+      dragged = null;
+      this.el
+        .querySelectorAll(".is-drop")
+        .forEach((el) => el.classList.remove("is-drop"));
+    };
 
     this.el.addEventListener("dragstart", (e) => {
       const item = e.target.closest("[data-drag-id]");
@@ -111,15 +117,17 @@ const DnD = {
 
     this.el.addEventListener("drop", (e) => {
       const drop = e.target.closest("[data-drop-folder]");
-      if (!drop || !dragged) return;
+      if (!drop || !dragged) return clearDragState();
       e.preventDefault();
       drop.classList.remove("is-drop");
       const target = drop.dataset.dropFolder;
       if (target !== dragged.id) {
         this.pushEvent("move-item", { id: dragged.id, kind: dragged.kind, target });
       }
-      dragged = null;
+      clearDragState();
     });
+
+    this.el.addEventListener("dragend", () => clearDragState());
   },
 };
 

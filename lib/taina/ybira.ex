@@ -298,20 +298,25 @@ defmodule Taina.Ybira do
       with {:ok, folder_id} <- resolve_folder_id(folder_public_id) do
         folders = folder_id |> folders_in() |> apply_folder_sort(sort) |> Repo.all()
 
-        rows =
+        {files, next_cursor} =
           folder_id
           |> files_in()
           |> apply_file_sort(sort)
-          |> limit(^(limit + 1))
-          |> offset(^offset)
-          |> Repo.all()
-
-        {files, next_cursor} =
-          if length(rows) > limit, do: {Enum.take(rows, limit), offset + limit}, else: {rows, nil}
+          |> paginate_offset(limit, offset)
 
         {:ok, %{folders: folders, files: files, next_cursor: next_cursor}}
       end
     end)
+  end
+
+  defp paginate_offset(query, limit, offset) do
+    rows =
+      query
+      |> limit(^(limit + 1))
+      |> offset(^offset)
+      |> Repo.all()
+
+    if length(rows) > limit, do: {Enum.take(rows, limit), offset + limit}, else: {rows, nil}
   end
 
   @impl true
@@ -371,7 +376,7 @@ defmodule Taina.Ybira do
       count =
         Repo.aggregate(
           from(f in Ybira.File,
-            where: is_nil(f.deleted_at) and (like(f.mime_type, "image/%") or like(f.mime_type, "video/%"))
+            where: is_nil(f.deleted_at) and like(f.mime_type, "image/%")
           ),
           :count
         )

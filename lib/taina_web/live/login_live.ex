@@ -47,7 +47,7 @@ defmodule TainaWeb.LoginLive do
   def render(assigns) do
     ~H"""
     <Layouts.auth flash={@flash}>
-      <div class="col gap-3 text-center mt-10 mb-8" style="align-items: center;">
+      <div class="col gap-3 text-center mt-10 mb-8 items-center">
         <.icon name="spark" size={40} class="spark" />
         <h1 class="type-h1">Tainá</h1>
         <h2 class="type-h2">{gettext("Bem-vindo de volta")}</h2>
@@ -83,7 +83,7 @@ defmodule TainaWeb.LoginLive do
         <.button type="submit" variant="primary" class="w-full mt-2">{gettext("Entrar")}</.button>
       </form>
 
-      <div class="row gap-4 my-6" style="align-items: center;">
+      <div class="row gap-4 my-6">
         <hr class="divider flex-1" />
         <span class="type-caption text-faint">{gettext("ou")}</span>
         <hr class="divider flex-1" />

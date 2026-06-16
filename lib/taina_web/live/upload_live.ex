@@ -46,27 +46,28 @@ defmodule TainaWeb.UploadLive do
   # Consome cada arquivo assim que termina de subir; o resultado vai para a
   # lista CONCLUÍDO (ou para os erros, sem derrubar os demais envios).
   defp handle_progress(:files, entry, socket) do
-    if entry.done? do
-      scope = socket.assigns.current_scope
-      folder = socket.assigns.folder
+    if entry.done?, do: finish_upload(entry, socket), else: {:noreply, socket}
+  end
 
-      result =
-        consume_uploaded_entry(socket, entry, fn %{path: path} ->
-          opts = [filename: entry.client_name] ++ if folder, do: [folder_id: folder.id], else: []
-          {:ok, Ybira.upload(scope, path, opts)}
-        end)
+  defp finish_upload(entry, socket) do
+    scope = socket.assigns.current_scope
 
-      case result do
-        {:ok, file} ->
-          {:noreply, update(socket, :done, &[file | &1])}
+    result =
+      consume_uploaded_entry(socket, entry, fn %{path: path} ->
+        {:ok, Ybira.upload(scope, path, upload_opts(entry, socket.assigns.folder))}
+      end)
 
-        {:error, reason} ->
-          {:noreply, update(socket, :failed, &[{entry.client_name, upload_error(reason)} | &1])}
-      end
-    else
-      {:noreply, socket}
+    case result do
+      {:ok, file} ->
+        {:noreply, update(socket, :done, &[file | &1])}
+
+      {:error, reason} ->
+        {:noreply, update(socket, :failed, &[{entry.client_name, upload_error(reason)} | &1])}
     end
   end
+
+  defp upload_opts(entry, nil), do: [filename: entry.client_name]
+  defp upload_opts(entry, folder), do: [filename: entry.client_name, folder_id: folder.id]
 
   defp upload_error(:mime_not_allowed), do: gettext("tipo de arquivo não permitido")
   defp upload_error(:storage_quota_exceeded), do: gettext("a cota de armazenamento acabou")
@@ -118,7 +119,7 @@ defmodule TainaWeb.UploadLive do
             <span class="type-caption text-faint">
               {gettext("Imagens, PDFs e vídeos. Até 2 GB por arquivo")}
             </span>
-            <.live_file_input upload={@uploads.files} class="sr-only" style="display: none;" />
+            <.live_file_input upload={@uploads.files} class="sr-only" />
           </label>
         </form>
 

@@ -27,6 +27,12 @@ defmodule TainaWeb.FilePreviewLive do
          socket
          |> Phoenix.LiveView.put_flash(:error, gettext("Arquivo não encontrado."))
          |> Phoenix.LiveView.redirect(to: ~p"/arquivos")}
+
+      {:error, _reason} ->
+        {:ok,
+         socket
+         |> Phoenix.LiveView.put_flash(:error, gettext("Não foi possível abrir o arquivo agora."))
+         |> Phoenix.LiveView.redirect(to: ~p"/arquivos")}
     end
   end
 

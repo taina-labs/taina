@@ -23,13 +23,14 @@ defmodule Taina.YbiraStatsTest do
   end
 
   describe "count_files/1 e count_photos/1" do
-    test "contam ativos; fotos só image/*", %{scope: scope} do
+    test "contam ativos; fotos só image/*, vídeo não conta como foto", %{scope: scope} do
       {:ok, _doc} = Ybira.upload(scope, tmp_upload_fixture())
       {:ok, _img} = Ybira.upload(scope, tmp_image_fixture())
+      {:ok, _vid} = Ybira.upload(scope, tmp_video_fixture())
       {:ok, trashed} = Ybira.upload(scope, tmp_upload_fixture("x", "x.txt"))
       {:ok, _} = Ybira.delete_file(scope, trashed.public_id)
 
-      assert {:ok, 2} = Ybira.count_files(scope)
+      assert {:ok, 3} = Ybira.count_files(scope)
       assert {:ok, 1} = Ybira.count_photos(scope)
     end
   end

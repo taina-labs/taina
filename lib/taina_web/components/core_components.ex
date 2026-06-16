@@ -210,7 +210,7 @@ defmodule TainaWeb.CoreComponents do
     """
   end
 
-  attr :variant, :string, required: true, values: ~w(admin soon active inactive ybira jaci)
+  attr :variant, :string, required: true, values: ~w(zelador soon active inactive ybira jaci)
   slot :inner_block, required: true
 
   def badge(assigns) do
@@ -382,7 +382,7 @@ defmodule TainaWeb.CoreComponents do
       >
         <.icon name={@icon} size={20} />
       </button>
-      <div id={"#{@id}-list"} class="menu__list" role="menu" hidden>
+      <div id={"#{@id}-list"} class="menu__list" role="menu">
         <button
           :for={item <- @item}
           type="button"

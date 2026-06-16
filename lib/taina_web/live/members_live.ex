@@ -130,7 +130,7 @@ defmodule TainaWeb.MembersLive do
               <.avatar name={display_name(member)} inactive={is_nil(member.activated_at)} />
             </:leading>
             <:actions>
-              <.badge :if={member.role == :zelador} variant="admin">{gettext("Zelador(a)")}</.badge>
+              <.badge :if={member.role == :zelador} variant="zelador">{gettext("Zelador(a)")}</.badge>
               <.icon_button
                 :if={can_reset?(member, @current_scope)}
                 name="link"

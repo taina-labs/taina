@@ -61,7 +61,7 @@ defmodule TainaWeb.Layouts do
             {format_bytes(@storage_stats.used_bytes)} de {format_bytes(@storage_stats.quota_bytes)}
           </p>
           <p class="type-caption text-success mt-1">
-            {format_bytes(@storage_stats.quota_bytes - @storage_stats.used_bytes)} {gettext("livres")}
+            {format_bytes(max(@storage_stats.quota_bytes - @storage_stats.used_bytes, 0))} {gettext("livres")}
           </p>
         </.card>
       </aside>
@@ -119,8 +119,9 @@ defmodule TainaWeb.Layouts do
     """
   end
 
-  defp storage_percent(%{used_bytes: used, quota_bytes: quota}) when is_integer(quota) and quota > 0 do
-    round(used / quota * 100)
+  defp storage_percent(%{used_bytes: used, quota_bytes: quota})
+       when is_integer(used) and is_integer(quota) and quota > 0 do
+    (used / quota * 100) |> round() |> min(100) |> max(0)
   end
 
   defp storage_percent(_stats), do: 0

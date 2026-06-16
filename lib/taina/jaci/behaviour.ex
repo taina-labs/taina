@@ -3,9 +3,10 @@ defmodule Taina.Jaci.Behaviour do
   Contrato público do Jaci-lite, a galeria de fotos da comunidade.
 
   Jaci é uma camada de **leitura** sobre o Ybira (RFC 002, D4): ele consulta as
-  imagens (`mime_type image/*`) que o Ybira guarda e as apresenta como grade e
-  linha do tempo. Não armazena nada próprio, não muta arquivos, quem faz upload,
-  thumbnail e soft delete é o Ybira. Composição, não herança.
+  imagens e vídeos (`mime_type image/*` e `video/*`) que o Ybira guarda e os
+  apresenta como grade e linha do tempo. Não armazena nada próprio, não muta
+  arquivos, quem faz upload, thumbnail e soft delete é o Ybira. Composição, não
+  herança.
 
   Espelha o padrão de `Taina.Ybira.Behaviour`: as regras de negócio vivem aqui
   (nos `@callback`); `Taina.Jaci` implementa com `@impl true`. Toda função recebe

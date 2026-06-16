@@ -10,20 +10,17 @@ defmodule TainaWeb.Hooks do
   alias Taina.Ybira
 
   def on_mount(:shell, _params, _session, socket) do
-    socket =
-      assign_new(socket, :storage_stats, fn ->
-        case socket.assigns.current_scope do
-          nil ->
-            nil
-
-          scope ->
-            case Ybira.storage_stats(scope) do
-              {:ok, stats} -> stats
-              _error -> nil
-            end
-        end
-      end)
+    socket = assign_new(socket, :storage_stats, fn -> load_storage_stats(socket.assigns.current_scope) end)
 
     {:cont, socket}
+  end
+
+  defp load_storage_stats(nil), do: nil
+
+  defp load_storage_stats(scope) do
+    case Ybira.storage_stats(scope) do
+      {:ok, stats} -> stats
+      _error -> nil
+    end
   end
 end

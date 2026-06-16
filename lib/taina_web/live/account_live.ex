@@ -33,7 +33,7 @@ defmodule TainaWeb.AccountLive do
             <p class="type-h3">{@current_scope.ava.display_name || @current_scope.ava.username}</p>
             <p class="type-body-sm text-muted">{"@" <> @current_scope.ava.username}</p>
           </div>
-          <.badge :if={Maraca.zelador?(@current_scope.ava)} variant="admin">{gettext("Zelador(a)")}</.badge>
+          <.badge :if={Maraca.zelador?(@current_scope.ava)} variant="zelador">{gettext("Zelador(a)")}</.badge>
         </.card>
 
         <div class="list">

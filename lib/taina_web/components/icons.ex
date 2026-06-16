@@ -26,6 +26,8 @@ defmodule TainaWeb.Icons do
       ~S(<path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" x2="12" y1="2" y2="15"/>),
     "chevron-left" => ~S(<path d="m15 18-6-6 6-6"/>),
     "chevron-right" => ~S(<path d="m9 18 6-6-6-6"/>),
+    "chevron-up" => ~S(<path d="m18 15-6-6-6 6"/>),
+    "chevron-down" => ~S(<path d="m6 9 6 6 6-6"/>),
     "kebab" => ~S(<circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/>),
     "dots" => ~S(<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>),
     "trash" =>

@@ -46,7 +46,7 @@ defmodule TainaWeb.UploadLiveTest do
     assert file.original_filename == "junho.txt"
   end
 
-  test "arquivo rejeitado pelo Ybira aparece como falha", %{conn: conn, ava: ava} do
+  test "arquivo rejeitado pelo Ybira aparece como falha", %{conn: conn, scope: scope, ava: ava} do
     {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/arquivos/enviar")
 
     # ELF magic bytes, executável, rejeitado pela allowlist de MIME
@@ -60,5 +60,8 @@ defmodule TainaWeb.UploadLiveTest do
     html = render(lv)
     assert html =~ "Falharam"
     assert html =~ "tipo de arquivo não permitido"
+
+    # rejeição vale no domínio, não só na UI: nada foi persistido
+    assert {:ok, %{items: []}} = Ybira.list_files(scope)
   end
 end

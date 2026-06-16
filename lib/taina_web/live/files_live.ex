@@ -120,6 +120,7 @@ defmodule TainaWeb.FilesLive do
       case kind do
         "folder" -> Ybira.rename_folder(socket.assigns.current_scope, id, name)
         "file" -> Ybira.rename_file(socket.assigns.current_scope, id, name)
+        _ -> {:error, :invalid_kind}
       end
 
     case result do
@@ -137,6 +138,7 @@ defmodule TainaWeb.FilesLive do
       case kind do
         "file" -> Ybira.move_file(socket.assigns.current_scope, id, target)
         "folder" -> Ybira.move_folder(socket.assigns.current_scope, id, target)
+        _ -> {:error, :invalid_kind}
       end
 
     case result do
@@ -193,6 +195,10 @@ defmodule TainaWeb.FilesLive do
     end
   end
 
+  def handle_event("confirm-delete", _params, socket) do
+    {:noreply, assign(socket, :confirm, nil)}
+  end
+
   # Recarrega a pasta atual reaproveitando o handle_params, preservando ordem/visão.
   defp refresh(socket) do
     Phoenix.LiveView.push_patch(socket,
@@ -220,8 +226,8 @@ defmodule TainaWeb.FilesLive do
   defp sort_label({:date, _}), do: gettext("Data")
   defp sort_label({:size, _}), do: gettext("Tamanho")
 
-  defp sort_arrow({_field, :asc}), do: "↑"
-  defp sort_arrow({_field, :desc}), do: "↓"
+  defp sort_arrow_icon({_field, :asc}), do: "chevron-up"
+  defp sort_arrow_icon({_field, :desc}), do: "chevron-down"
 
   defp browse_path(folder_public_id, sort, view) do
     params = %{sort: sort_param(sort)}
@@ -298,7 +304,7 @@ defmodule TainaWeb.FilesLive do
 
         <div class="row gap-2">
           <span class="type-caption text-muted" style="align-self: center;">
-            {sort_label(@sort)} {sort_arrow(@sort)}
+            {sort_label(@sort)} <.icon name={sort_arrow_icon(@sort)} size={14} />
           </span>
           <.icon_button
             name="grid"

@@ -42,7 +42,8 @@ defmodule TainaWeb.SetupLive do
 
     case validate_step(socket.assigns.step, data) do
       %{} = errors when map_size(errors) == 0 ->
-        {:noreply, socket |> assign(:data, data) |> assign(:errors, %{}) |> assign(:step, socket.assigns.step + 1)}
+        next_step = min(socket.assigns.step + 1, 3)
+        {:noreply, socket |> assign(:data, data) |> assign(:errors, %{}) |> assign(:step, next_step)}
 
       errors ->
         {:noreply, socket |> assign(:data, data) |> assign(:errors, errors)}
@@ -64,6 +65,8 @@ defmodule TainaWeb.SetupLive do
     |> validate_presence(data, "username", gettext("escolha um nome de usuário"))
     |> validate_password(data)
   end
+
+  defp validate_step(_step, _data), do: %{}
 
   defp validate_presence(errors, data, key, message) do
     if String.trim(data[key] || "") == "", do: Map.put(errors, key, message), else: errors
@@ -97,7 +100,7 @@ defmodule TainaWeb.SetupLive do
     ~H"""
     <Layouts.auth flash={@flash}>
       <div :if={@step == 1} class="col flex-1">
-        <div class="col gap-4 text-center mt-10 mb-8" style="align-items: center;">
+        <div class="col gap-4 text-center mt-10 mb-8 items-center">
           <.icon name="spark" size={48} class="spark" />
           <h1 class="type-display">Tainá</h1>
           <p class="type-body text-secondary">

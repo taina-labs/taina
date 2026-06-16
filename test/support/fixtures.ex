@@ -99,4 +99,13 @@ defmodule Taina.Fixtures do
     {:ok, _} = Image.write(image, path)
     path
   end
+
+  @doc """
+  Grava um arquivo com os magic bytes de um contêiner ISO-BMFF `ftyp/mp42`, o
+  bastante para o `MimeDetector` classificar como `video/mp4`. Sem faixas reais,
+  só exercita a allowlist e o filtro image/video do Jaci/Ybira.
+  """
+  def tmp_video_fixture(filename \\ "v.mp4") do
+    tmp_upload_fixture(<<0, 0, 0, 0x18, "ftyp", "mp42", 0, 0, 0, 0>>, filename)
+  end
 end

@@ -244,14 +244,16 @@ defmodule Taina.Maraca do
   @impl true
   def mint_reset_link(%Scope{} = scope, %Ava{} = member) do
     if zelador?(scope.ava) do
-      Repo.with_tekoa(scope.tekoa.public_id, fn ->
-        case Repo.get_by(Ava, id: member.id, tekoa_id: scope.tekoa.id) do
-          nil -> {:error, :not_found}
-          %Ava{} = ava -> Repo.update(Ava.password_reset_request_changeset(ava))
-        end
-      end)
+      Repo.with_tekoa(scope.tekoa.public_id, fn -> do_mint_reset_link(scope, member) end)
     else
       {:error, :unauthorized}
+    end
+  end
+
+  defp do_mint_reset_link(%Scope{} = scope, %Ava{} = member) do
+    case Repo.get_by(Ava, id: member.id, tekoa_id: scope.tekoa.id) do
+      nil -> {:error, :not_found}
+      %Ava{} = ava -> Repo.update(Ava.password_reset_request_changeset(ava))
     end
   end
 

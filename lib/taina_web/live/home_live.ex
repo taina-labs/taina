@@ -62,7 +62,9 @@ defmodule TainaWeb.HomeLive do
           <p class="type-body text-secondary">{greeting()}</p>
           <h1 class="type-h1">{@current_scope.tekoa.name}</h1>
         </div>
-        <.avatar name={@current_scope.ava.display_name || @current_scope.ava.username} />
+        <.link navigate={~p"/conta"} aria-label={gettext("Sua conta")}>
+          <.avatar name={@current_scope.ava.display_name || @current_scope.ava.username} />
+        </.link>
       </div>
 
       <.card :if={@storage_stats} class="mb-6">
