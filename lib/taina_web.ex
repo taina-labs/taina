@@ -17,7 +17,7 @@ defmodule TainaWeb do
   those modules here.
   """
 
-  def static_paths, do: ~w(assets robots.txt)
+  def static_paths, do: ~w(assets fonts robots.txt)
 
   def router do
     quote do
@@ -38,7 +38,8 @@ defmodule TainaWeb do
 
   def controller do
     quote do
-      use Phoenix.Controller, formats: [:html, :json]
+      use Phoenix.Controller, formats: [:html, :json], layouts: [html: TainaWeb.Layouts]
+      use Gettext, backend: TainaWeb.Gettext
 
       import Plug.Conn
 
@@ -49,6 +50,39 @@ defmodule TainaWeb do
   def live_view do
     quote do
       use Phoenix.LiveView
+
+      unquote(html_helpers())
+    end
+  end
+
+  def live_component do
+    quote do
+      use Phoenix.LiveComponent
+
+      unquote(html_helpers())
+    end
+  end
+
+  def html do
+    quote do
+      use Phoenix.Component
+
+      # Import convenience functions for HTML rendering (forms, etc.)
+      import Phoenix.HTML
+
+      unquote(html_helpers())
+    end
+  end
+
+  defp html_helpers do
+    quote do
+      use Gettext, backend: TainaWeb.Gettext
+
+      import Phoenix.Controller, only: [get_csrf_token: 0]
+      import Phoenix.HTML
+      import TainaWeb.CoreComponents
+
+      alias Phoenix.LiveView.JS
 
       unquote(verified_routes())
     end

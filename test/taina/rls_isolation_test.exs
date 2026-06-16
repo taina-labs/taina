@@ -3,20 +3,19 @@ defmodule Taina.RlsIsolationTest do
   Prova que o isolamento RLS funciona de verdade no banco.
 
   O usuário de teste padrão (`postgres`) é superuser e **ignora RLS por
-  definição** — por isso este teste cria uma role restrita (`taina_rls_probe`)
+  definição**, por isso este teste cria uma role restrita (`taina_rls_probe`)
   e conecta via Postgrex puro, fora do sandbox do Ecto. Os dados são
   comitados de verdade e limpos ao final; o módulo precisa ser `async: false`
   porque o índice `single_tekoa_enforcement` permite apenas uma Tekoa viva.
 
   Com modo single-tekoa não há segunda Tekoa para testar vazamento cruzado;
-  o que se valida aqui é o mecanismo: sem contexto → zero linhas; contexto
-  correto → linhas da Tekoa; contexto errado → zero linhas.
+  o que se valida aqui é o mecanismo: sem contexto -> zero linhas; contexto
+  correto -> linhas da Tekoa; contexto errado -> zero linhas.
   """
 
   use ExUnit.Case, async: false
 
   @probe_role "taina_rls_probe"
-  @probe_email "rls@probe.test"
 
   setup_all do
     admin_opts = conn_opts()
@@ -57,10 +56,10 @@ defmodule Taina.RlsIsolationTest do
     Postgrex.query!(
       admin,
       """
-      INSERT INTO maraca.avas (tekoa_id, username, email, inserted_at, updated_at)
-      VALUES ($1, 'rlsprobe', $2, now(), now())
+      INSERT INTO maraca.avas (tekoa_id, username, inserted_at, updated_at)
+      VALUES ($1, 'rlsprobe', now(), now())
       """,
-      [tekoa_id, @probe_email]
+      [tekoa_id]
     )
 
     probe_opts =
@@ -74,7 +73,7 @@ defmodule Taina.RlsIsolationTest do
 
     on_exit(fn ->
       {:ok, cleaner} = Postgrex.start_link(admin_opts)
-      Postgrex.query!(cleaner, "DELETE FROM maraca.avas WHERE email = $1", [@probe_email])
+      Postgrex.query!(cleaner, "DELETE FROM maraca.avas WHERE username = 'rlsprobe'", [])
       Postgrex.query!(cleaner, "DELETE FROM maraca.tekoas WHERE public_id = $1", [tekoa_public_id])
       GenServer.stop(cleaner)
     end)
@@ -116,7 +115,7 @@ defmodule Taina.RlsIsolationTest do
     assert count == 0
   end
 
-  test "superuser bypasses RLS — production must not connect as superuser", %{
+  test "superuser bypasses RLS, production must not connect as superuser", %{
     admin: admin,
     tekoa_public_id: tekoa_public_id
   } do

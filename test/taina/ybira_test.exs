@@ -264,10 +264,11 @@ defmodule Taina.YbiraTest do
 
       assert folder.name == "uma pasta"
       assert length(files) == 2
-      assert is_binary(cursor)
+      # Paginação por offset: next_cursor é o próximo deslocamento (inteiro).
+      assert cursor == 2
 
       assert {:ok, %{files: [_last], next_cursor: nil}} =
-               Ybira.list_folder_contents(scope, nil, limit: 2, after_cursor: cursor)
+               Ybira.list_folder_contents(scope, nil, limit: 2, offset: cursor)
     end
   end
 

@@ -26,7 +26,7 @@ else
     pool_size: System.schedulers_online() * 2
 end
 
-# Jobs rodam síncronos (inline) no processo de teste — dentro do sandbox Ecto,
+# Jobs rodam síncronos (inline) no processo de teste, dentro do sandbox Ecto,
 # sem filas nem cron de verdade.
 config :taina, Oban, testing: :inline
 

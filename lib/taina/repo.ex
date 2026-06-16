@@ -15,7 +15,7 @@ defmodule Taina.Repo do
   @tekoa_context_key :taina_current_tekoa_id
 
   # Tabelas de infraestrutura (schema `public`, sem RLS) que rodam fora de
-  # qualquer Tekoa por natureza — hoje, a fila do Oban. O guard isenta SÓ estas:
+  # qualquer Tekoa por natureza, hoje, a fila do Oban. O guard isenta SÓ estas:
   # qualquer outra tabela é tratada como dado de Tekoa e exige contexto. Assim,
   # schemas novos de fases futuras ficam protegidos por padrão, e esquecer de
   # isentar uma nova tabela de infra causa um erro barulhento, nunca um
@@ -74,7 +74,7 @@ defmodule Taina.Repo do
   - Realizar operações em background jobs que manipulam dados de uma Tekoa
 
   **IMPORTANTE**: Queries executadas fora de `with_tekoa/2` levantam exceção
-  (via `prepare_query/3`), a menos que recebam a opção `skip_tekoa_id: true` —
+  (via `prepare_query/3`), a menos que recebam a opção `skip_tekoa_id: true`,
   reservada para operações de sistema (bootstrap de autenticação, lookups
   pré-contexto, jobs administrativos).
   """
@@ -107,12 +107,12 @@ defmodule Taina.Repo do
   Toda query (`all`, `one`, `get*`, `update_all`, `delete_all`, preloads)
   precisa rodar dentro de `with_tekoa/2` ou declarar explicitamente
   `skip_tekoa_id: true`. Sem isso, levanta exceção em vez de retornar dados
-  vazios silenciosamente — esquecer o contexto vira erro de desenvolvimento,
+  vazios silenciosamente, esquecer o contexto vira erro de desenvolvimento,
   não vazamento ou comportamento fantasma em produção.
 
   A única isenção automática são as tabelas de infraestrutura listadas em
   `@infra_table_prefixes` (a fila do Oban): elas não guardam dado de Tekoa.
-  Tudo o mais raiseia por padrão — o lado seguro.
+  Tudo o mais raiseia por padrão, o lado seguro.
 
   Inserts/updates/deletes de structs não passam por este callback; para eles a
   proteção é o RLS no banco (`WITH CHECK` das policies + `FORCE ROW LEVEL
@@ -142,8 +142,8 @@ defmodule Taina.Repo do
   end
 
   # Isenta apenas tabelas de infraestrutura, identificadas pelo nome (ex.:
-  # `oban_jobs`, `oban_peers`). Lê só o nome da tabela na cláusula `from` — sem
-  # introspecção de schema — e, no que não reconhecer, raiseia (lado seguro).
+  # `oban_jobs`, `oban_peers`). Lê só o nome da tabela na cláusula `from`, sem
+  # introspecção de schema, e, no que não reconhecer, raiseia (lado seguro).
   defp infra_query?(%Ecto.Query{from: %{source: {table, _schema}}}) when is_binary(table) do
     String.starts_with?(table, @infra_table_prefixes)
   end

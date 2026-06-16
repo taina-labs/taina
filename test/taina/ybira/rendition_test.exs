@@ -8,7 +8,7 @@ defmodule Taina.Ybira.Workers.RenditionTest do
   @moduletag capture_log: true
 
   # Oban roda `:inline` em teste, então o job de rendition acontece durante o
-  # `upload/3` — daí podermos reler o arquivo logo em seguida.
+  # `upload/3`, daí podermos reler o arquivo logo em seguida.
 
   test "image upload fills dimensions, EXIF slot and thumbnail paths" do
     scope = scope_fixture()
@@ -18,7 +18,7 @@ defmodule Taina.Ybira.Workers.RenditionTest do
 
     assert photo.metadata["width"] == 50
     assert photo.metadata["height"] == 40
-    # imagem gerada não tem EXIF → taken_at fica nulo (fallback é o upload)
+    # imagem gerada não tem EXIF -> taken_at fica nulo (fallback é o upload)
     assert Map.has_key?(photo.metadata, "taken_at")
     assert is_nil(photo.metadata["taken_at"])
     assert %{"sm" => sm, "md" => md} = photo.metadata["thumbnails"]

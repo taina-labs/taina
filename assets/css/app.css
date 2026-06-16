@@ -1,0 +1,23 @@
+/* Entry point, empacotado pelo esbuild junto com js/app.js.
+   Ordem importa: tokens primeiro, utilitários por último (precedência). */
+
+@import "./tokens.css";
+@import "./base.css";
+@import "./layouts.css";
+@import "./components.css";
+@import "./utilities.css";
+
+/* Estados de conexão do LiveView (feedback discreto, sem JS extra) */
+.phx-loading {
+  cursor: wait;
+}
+
+.phx-click-loading {
+  opacity: var(--opacity-muted);
+  pointer-events: none;
+}
+
+/* uploads: entrada inválida */
+.phx-no-feedback .field__error {
+  display: none;
+}

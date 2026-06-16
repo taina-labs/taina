@@ -25,13 +25,13 @@ defmodule Taina.Fixtures do
     |> Repo.insert!()
   end
 
+  # Convite pendente: tem nome mas ainda sem senha (conta não ativada).
   def ava_fixture(%Tekoa{} = tekoa, attrs \\ %{}) do
     n = System.unique_integer([:positive])
 
     attrs =
       Enum.into(attrs, %{
         username: "ava#{n}",
-        email: "ava#{n}@example.com",
         tekoa_id: tekoa.id
       })
 
@@ -40,29 +40,31 @@ defmodule Taina.Fixtures do
     |> Repo.insert!()
   end
 
-  def confirmed_ava_fixture(%Tekoa{} = tekoa, attrs \\ %{}) do
+  # Conta ativa: nome de usuário + senha definidos (convite aceito).
+  def active_ava_fixture(%Tekoa{} = tekoa, attrs \\ %{}) do
     n = System.unique_integer([:positive])
     password = Map.get(attrs, :password, "senhasegura123")
 
     base = %{
       username: Map.get(attrs, :username, "ava#{n}"),
-      email: Map.get(attrs, :email, "ava#{n}@example.com"),
-      role: Map.get(attrs, :role, :member),
+      display_name: Map.get(attrs, :display_name),
+      role: Map.get(attrs, :role, :morador),
       tekoa_id: tekoa.id
     }
 
     %Ava{}
     |> Ava.changeset(base)
-    |> Ava.confirmation_changeset(%{
+    |> Ava.accept_invite_changeset(%{
       username: base.username,
+      display_name: base.display_name,
       password: password,
       password_confirmation: password
     })
     |> Repo.insert!()
   end
 
-  def admin_fixture(%Tekoa{} = tekoa, attrs \\ %{}) do
-    confirmed_ava_fixture(tekoa, Map.put(attrs, :role, :admin))
+  def zelador_fixture(%Tekoa{} = tekoa, attrs \\ %{}) do
+    active_ava_fixture(tekoa, Map.put(attrs, :role, :zelador))
   end
 
   def scope_fixture(attrs \\ %{}) do
@@ -81,7 +83,7 @@ defmodule Taina.Fixtures do
 
   @doc """
   Grava uma imagem JPEG de verdade num caminho temporário (via libvips), para
-  exercitar o pipeline de renditions do Ybira/Jaci. Sem EXIF — `taken_at` cai no
+  exercitar o pipeline de renditions do Ybira/Jaci. Sem EXIF, `taken_at` cai no
   fallback de upload, como num arquivo sem metadados de câmera.
   """
   def tmp_image_fixture(opts \\ []) do
@@ -96,5 +98,14 @@ defmodule Taina.Fixtures do
     {:ok, image} = Image.new(width, height, color: [255, 0, 0])
     {:ok, _} = Image.write(image, path)
     path
+  end
+
+  @doc """
+  Grava um arquivo com os magic bytes de um contêiner ISO-BMFF `ftyp/mp42`, o
+  bastante para o `MimeDetector` classificar como `video/mp4`. Sem faixas reais,
+  só exercita a allowlist e o filtro image/video do Jaci/Ybira.
+  """
+  def tmp_video_fixture(filename \\ "v.mp4") do
+    tmp_upload_fixture(<<0, 0, 0, 0x18, "ftyp", "mp42", 0, 0, 0, 0>>, filename)
   end
 end

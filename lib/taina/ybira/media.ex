@@ -1,12 +1,12 @@
 defmodule Taina.Ybira.Media do
   @moduledoc """
-  Processamento de imagem do Ybira — o único lugar que fala com a libvips
+  Processamento de imagem do Ybira, o único lugar que fala com a libvips
   (via `image`/`vix`). Isolar aqui mantém a dependência de mídia numa fronteira
   fina: o resto do código pede dimensões, data de captura e thumbnails sem saber
   qual biblioteca está por baixo.
 
   Tudo é *best-effort* (RFC 002, D8): HEIC e arquivos corrompidos podem falhar
-  na leitura sem derrubar o upload — quem chama trata o `{:error, _}` e segue.
+  na leitura sem derrubar o upload, quem chama trata o `{:error, _}` e segue.
   A detecção de tipo já aconteceu no upload (magic bytes); aqui assumimos um
   arquivo de imagem plausível.
   """
@@ -16,7 +16,7 @@ defmodule Taina.Ybira.Media do
 
   @doc """
   Lê metadados leves de uma imagem: dimensões e, quando houver, a data de
-  captura do EXIF (`taken_at`, `NaiveDateTime` — o EXIF não carrega timezone).
+  captura do EXIF (`taken_at`, `NaiveDateTime`, o EXIF não carrega timezone).
 
   Retorna `{:ok, %{width, height, taken_at}}` ou `{:error, term}`.
   """
@@ -68,7 +68,7 @@ defmodule Taina.Ybira.Media do
   # O `image` aninha o EXIF em sub-mapas cujas chaves variam entre versões e
   # câmeras. Em vez de acoplar a chaves específicas, varremos os valores
   # procurando o formato de data/hora do EXIF e preferimos a chave "original"
-  # (DateTimeOriginal — o instante da captura, não o da última edição).
+  # (DateTimeOriginal, o instante da captura, não o da última edição).
   defp find_exif_datetime(exif) do
     exif
     |> collect_datetimes([])

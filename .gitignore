@@ -41,3 +41,6 @@ result
 
 # Ybira dev storage
 /priv/storage/
+
+# esbuild output (built from assets/ via `mix assets.build`)
+/priv/static/assets/

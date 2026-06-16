@@ -75,7 +75,7 @@ defmodule TainaWeb.FileController do
   end
 
   # Tipos seguros de exibir abrem inline (mídia, PDF); o resto baixa como
-  # anexo — nada de octet-stream/zip rodando no contexto da página.
+  # anexo, nada de octet-stream/zip rodando no contexto da página.
   @inline_prefixes ["image/", "video/", "audio/", "application/pdf"]
 
   defp content_disposition(file) do

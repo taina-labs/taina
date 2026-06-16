@@ -26,7 +26,19 @@ config :taina, TainaWeb.Endpoint,
   code_reloader: true,
   debug_errors: true,
   secret_key_base: "318cH01aO0gWN9FThKaSqgINCNwdQL1PkE5zPLns0FQDdgKzFDfBj+VoM8OtCme/",
-  watchers: []
+  watchers: [
+    esbuild: {Esbuild, :install_and_run, [:taina, ~w(--sourcemap=inline --watch)]}
+  ]
+
+# Watch templates and assets for browser live reload
+config :taina, TainaWeb.Endpoint,
+  live_reload: [
+    patterns: [
+      ~r"priv/static/(?!uploads/).*(js|css|png|jpeg|jpg|gif|svg|woff2)$",
+      ~r"priv/gettext/.*(po)$",
+      ~r"lib/taina_web/(controllers|live|components)/.*(ex|heex)$"
+    ]
+  ]
 
 # Local file storage for Ybira uploads
 config :taina, :storage_root, Path.expand("../priv/storage", __DIR__)
