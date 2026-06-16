@@ -1,11 +1,9 @@
 defmodule TainaWeb.InviteLive do
   @moduledoc """
-  Convite por link + QR (RFC 002, D6): admin informa o e-mail da pessoa,
-  escolhe o papel e recebe a URL com token, QR renderizado no servidor
-  (`eqrcode`, SVG inline, zero JS) e botões de copiar/compartilhar.
-
-  Nota de drift (design vs. backend): o Penpot não pede e-mail, mas
-  `Maraca.invite_user/4` exige, o e-mail identifica a conta convidada.
+  Convite por link + QR (RFC 002 D6, RFC_003 seção 4): o zelador escolhe o papel
+  e recebe a URL com token; QR renderizado no servidor (`eqrcode`, SVG inline,
+  zero JS) e botões de copiar/compartilhar. O convite não pede e-mail: o token
+  viaja no link e a pessoa escolhe nome e senha ao aceitar.
   """
 
   use TainaWeb, :live_view
@@ -17,44 +15,36 @@ defmodule TainaWeb.InviteLive do
   def mount(_params, _session, socket) do
     scope = socket.assigns.current_scope
 
-    if Maraca.admin?(scope.ava) do
+    if Maraca.zelador?(scope.ava) do
       {:ok,
        socket
        |> assign(:page_title, gettext("Convidar pessoas"))
-       |> assign(:role, "member")
-       |> assign(:email, "")
-       |> assign(:invite_url, nil)
-       |> assign(:error, nil)}
+       |> assign(:role, "morador")
+       |> assign(:invite_url, nil)}
     else
       {:ok,
        socket
-       |> Phoenix.LiveView.put_flash(:error, gettext("Só a administração pode convidar pessoas."))
+       |> Phoenix.LiveView.put_flash(:error, gettext("Só quem cuida da comunidade pode convidar pessoas."))
        |> Phoenix.LiveView.redirect(to: ~p"/")}
     end
   end
 
   @impl true
-  def handle_event("set-role", %{"role" => role}, socket) when role in ~w(member admin) do
+  def handle_event("set-role", %{"role" => role}, socket) when role in ~w(morador zelador) do
     {:noreply, assign(socket, :role, role)}
   end
 
-  def handle_event("generate", %{"invite" => %{"email" => email}}, socket) do
+  def handle_event("generate", _params, socket) do
     scope = socket.assigns.current_scope
     role = String.to_existing_atom(socket.assigns.role)
 
-    case Maraca.invite_user(scope.ava, scope.tekoa, email, role: role) do
+    case Maraca.invite_user(scope.ava, scope.tekoa, role: role) do
       {:ok, ava} ->
+        {:noreply, assign(socket, :invite_url, url(~p"/convite/#{ava.invite_token}"))}
+
+      {:error, _reason} ->
         {:noreply,
-         socket
-         |> assign(:email, email)
-         |> assign(:error, nil)
-         |> assign(:invite_url, url(~p"/convite/#{ava.email_confirmation_token}"))}
-
-      {:error, %Ecto.Changeset{} = changeset} ->
-        {:noreply, assign(socket, :error, invite_error(changeset))}
-
-      {:error, :not_admin} ->
-        {:noreply, assign(socket, :error, gettext("Só a administração pode convidar pessoas."))}
+         Phoenix.LiveView.put_flash(socket, :error, gettext("Não foi possível gerar o convite. Tente de novo."))}
     end
   end
 
@@ -63,20 +53,7 @@ defmodule TainaWeb.InviteLive do
   end
 
   def handle_event("reset", _params, socket) do
-    {:noreply, socket |> assign(:invite_url, nil) |> assign(:email, "")}
-  end
-
-  defp invite_error(changeset) do
-    if Keyword.has_key?(changeset.errors, :email) do
-      {message, _opts} = changeset.errors[:email]
-
-      case message do
-        "has already been taken" -> gettext("Já existe uma conta com esse e-mail nesta comunidade.")
-        _other -> gettext("Informe um e-mail válido.")
-      end
-    else
-      gettext("Não foi possível gerar o convite. Tente de novo.")
-    end
+    {:noreply, assign(socket, :invite_url, nil)}
   end
 
   defp qr_svg(invite_url) do
@@ -139,28 +116,19 @@ defmodule TainaWeb.InviteLive do
           </p>
         <% else %>
           <form id="invite-form" phx-submit="generate" class="col gap-5">
-            <.input
-              label={gettext("E-mail da pessoa convidada")}
-              type="email"
-              name="invite[email]"
-              id="invite_email"
-              value={@email}
-              placeholder="pessoa@exemplo.org"
-              help={gettext("Identifica a conta. O convite em si vai por link/QR.")}
-              errors={List.wrap(@error)}
-              required
-            />
-
             <div>
               <p class="type-overline text-faint mb-2">{gettext("Papel da pessoa convidada")}</p>
               <div class="row gap-3">
-                <.chip selected={@role == "member"} phx-click="set-role" phx-value-role="member">
-                  {gettext("Membro")}
+                <.chip selected={@role == "morador"} phx-click="set-role" phx-value-role="morador">
+                  {gettext("Morador(a)")}
                 </.chip>
-                <.chip selected={@role == "admin"} phx-click="set-role" phx-value-role="admin">
-                  {gettext("Admin")}
+                <.chip selected={@role == "zelador"} phx-click="set-role" phx-value-role="zelador">
+                  {gettext("Zelador(a)")}
                 </.chip>
               </div>
+              <p class="type-caption text-faint mt-2">
+                {gettext("Morador participa da comunidade. Zelador também cuida da máquina.")}
+              </p>
             </div>
 
             <.button type="submit" variant="primary" class="w-full">{gettext("Gerar convite")}</.button>

@@ -8,29 +8,29 @@ defmodule TainaWeb.InviteFlowTest do
 
   setup do
     tekoa = tekoa_fixture()
-    admin = admin_fixture(tekoa)
-    %{tekoa: tekoa, admin: admin}
+    zelador = zelador_fixture(tekoa)
+    %{tekoa: tekoa, zelador: zelador}
   end
 
-  test "membro comum não acessa a tela de convite", %{conn: conn, tekoa: tekoa} do
-    member = confirmed_ava_fixture(tekoa)
+  test "morador comum não acessa a tela de convite", %{conn: conn, tekoa: tekoa} do
+    morador = active_ava_fixture(tekoa)
 
-    assert {:error, {:redirect, %{to: "/"}}} = conn |> log_in(member) |> live(~p"/membros/convidar")
+    assert {:error, {:redirect, %{to: "/"}}} = conn |> log_in(morador) |> live(~p"/membros/convidar")
   end
 
-  test "admin gera convite com link + QR", %{conn: conn, admin: admin} do
-    {:ok, lv, _html} = conn |> log_in(admin) |> live(~p"/membros/convidar")
+  test "zelador gera convite com link + QR, sem e-mail", %{conn: conn, zelador: zelador} do
+    {:ok, lv, _html} = conn |> log_in(zelador) |> live(~p"/membros/convidar")
 
-    html = lv |> element("form") |> render_submit(%{"invite" => %{"email" => "joao@exemplo.org"}})
+    html = lv |> element("form") |> render_submit(%{})
 
     assert html =~ "/convite/"
     assert html =~ "<svg"
     assert html =~ "Copiar link"
   end
 
-  test "convite aceito vira conta logada", %{conn: conn, admin: admin, tekoa: tekoa} do
-    {:ok, invited} = Maraca.invite_user(admin, tekoa, "joao@exemplo.org")
-    token = invited.email_confirmation_token
+  test "convite aceito vira conta logada", %{conn: conn, zelador: zelador, tekoa: tekoa} do
+    {:ok, invited} = Maraca.invite_user(zelador, tekoa)
+    token = invited.invite_token
 
     # a tela de aceite renderiza com o token na URL
     {:ok, _lv, html} = live(conn, ~p"/convite/#{token}")
@@ -40,7 +40,8 @@ defmodule TainaWeb.InviteFlowTest do
     conn =
       post(conn, ~p"/convite/#{token}", %{
         "account" => %{
-          "username" => "João Mendes",
+          "username" => "joao",
+          "display_name" => "João Mendes",
           "password" => "frase-longa-segura",
           "password_confirmation" => "frase-longa-segura"
         }
@@ -54,7 +55,7 @@ defmodule TainaWeb.InviteFlowTest do
     conn =
       post(conn, ~p"/convite/token-invalido", %{
         "account" => %{
-          "username" => "João",
+          "username" => "joao",
           "password" => "frase-longa-segura",
           "password_confirmation" => "frase-longa-segura"
         }

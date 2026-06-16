@@ -16,14 +16,14 @@ defmodule TainaWeb.SetupController do
   def create(conn, %{"setup" => params}) do
     tekoa_attrs = %{name: params["community_name"], storage_quota_bytes: initial_quota_bytes()}
 
-    admin_attrs = %{
+    zelador_attrs = %{
       username: params["username"],
-      email: params["email"],
+      display_name: params["display_name"],
       password: params["password"],
       password_confirmation: params["password_confirmation"]
     }
 
-    case Maraca.bootstrap(tekoa_attrs, admin_attrs) do
+    case Maraca.bootstrap(tekoa_attrs, zelador_attrs) do
       {:ok, %{ava: ava}} ->
         conn
         |> TainaWeb.Auth.log_in(ava)

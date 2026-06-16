@@ -1,16 +1,13 @@
 defmodule TainaWeb.SetupLive do
   @moduledoc """
-  Wizard de primeiro boot (3 passos): nome da comunidade, conta de
-  administração e armazenamento. Os passos vivem aqui (validação ao vivo);
+  Wizard de primeiro boot (3 passos): nome da comunidade, conta de quem cuida
+  (zelador) e armazenamento. Os passos vivem aqui (validação ao vivo);
   o submit final é um POST tradicional para `SetupController`, que faz
   `Maraca.bootstrap/2` e abre a sessão na mesma requisição.
 
   Deriva da RFC 002 (D2): só roda em instância virgem, se já existe Tekoa,
-  redireciona para o login.
-
-  Nota de drift (design vs. backend): o Penpot marca o e-mail do admin como
-  opcional, mas `Ava.changeset/2` exige e-mail; o campo aqui é obrigatório
-  até o Maraca suportar contas sem e-mail.
+  redireciona para o login. A conta criada é a do zelador (quem cuida da
+  máquina); identidade por nome de usuário, sem e-mail (RFC_003, seção 4).
   """
 
   use TainaWeb, :live_view
@@ -27,7 +24,7 @@ defmodule TainaWeb.SetupLive do
        socket
        |> assign(:page_title, gettext("Primeiros passos"))
        |> assign(:step, 1)
-       |> assign(:data, %{"community_name" => "", "username" => "", "email" => "", "password" => ""})
+       |> assign(:data, %{"community_name" => "", "username" => "", "display_name" => "", "password" => ""})
        |> assign(:errors, %{})
        |> assign(:storage_root, Application.fetch_env!(:taina, :storage_root))
        |> assign(:free_space, free_space())}
@@ -64,19 +61,12 @@ defmodule TainaWeb.SetupLive do
 
   defp validate_step(2, data) do
     %{}
-    |> validate_presence(data, "username", gettext("como devemos te chamar?"))
-    |> validate_email(data)
+    |> validate_presence(data, "username", gettext("escolha um nome de usuário"))
     |> validate_password(data)
   end
 
   defp validate_presence(errors, data, key, message) do
     if String.trim(data[key] || "") == "", do: Map.put(errors, key, message), else: errors
-  end
-
-  defp validate_email(errors, data) do
-    if String.match?(data["email"] || "", ~r/^[^\s]+@[^\s]+\.[^\s]+$/),
-      do: errors,
-      else: Map.put(errors, "email", gettext("informe um e-mail válido"))
   end
 
   defp validate_password(errors, data) do
@@ -136,32 +126,32 @@ defmodule TainaWeb.SetupLive do
       <div :if={@step == 2} class="col flex-1">
         <.icon_button name="chevron-left" label={gettext("Voltar")} phx-click="back" />
         <div class="col gap-3 mt-4 mb-6">
-          <h1 class="type-h1">{gettext("Crie a conta de administração")}</h1>
+          <h1 class="type-h1">{gettext("Crie a conta de quem cuida")}</h1>
           <p class="type-body text-secondary">
-            {gettext("Você é quem cuida desta comunidade. Guarde bem este acesso. Ele controla tudo.")}
+            {gettext("Você é o primeiro zelador desta comunidade. Guarde bem este acesso. Ele cuida da máquina.")}
           </p>
           <.steps current={2} />
-          <p class="type-overline text-faint">{gettext("Passo 2 de 3: administração")}</p>
+          <p class="type-overline text-faint">{gettext("Passo 2 de 3: quem cuida")}</p>
         </div>
 
         <form id="setup-step-2" phx-change="validate" phx-submit="next" class="col gap-5 flex-1">
           <.input
-            label={gettext("Seu nome")}
+            label={gettext("Seu nome de usuário")}
             name="setup[username]"
             id="setup_username"
             value={@data["username"]}
-            placeholder={gettext("ex.: Ana Oliveira")}
+            placeholder={gettext("ex.: ana")}
+            help={gettext("Sem espaços. É com ele que você entra.")}
+            autocapitalize="none"
             errors={List.wrap(@errors["username"])}
           />
           <.input
-            label={gettext("E-mail")}
-            type="email"
-            name="setup[email]"
-            id="setup_email"
-            value={@data["email"]}
-            placeholder="voce@exemplo.org"
-            help={gettext("Usado só para entrar e recuperar a conta. Nada sai daqui.")}
-            errors={List.wrap(@errors["email"])}
+            label={gettext("Nome de exibição (opcional)")}
+            name="setup[display_name]"
+            id="setup_display_name"
+            value={@data["display_name"]}
+            placeholder={gettext("ex.: Ana Oliveira")}
+            help={gettext("Como seu nome aparece para a comunidade.")}
           />
           <.input
             label={gettext("Senha")}
@@ -214,7 +204,7 @@ defmodule TainaWeb.SetupLive do
           <.card class="mt-2">
             <p class="type-overline text-faint mb-2">{gettext("Resumo")}</p>
             <p class="type-body">
-              {@data["community_name"]}, {gettext("admin")} {@data["username"]}, {gettext("disco interno")}
+              {@data["community_name"]}, {gettext("zelador(a)")} {@data["username"]}, {gettext("disco interno")}
             </p>
           </.card>
 
@@ -224,7 +214,7 @@ defmodule TainaWeb.SetupLive do
             <input type="hidden" name="_csrf_token" value={get_csrf_token()} />
             <input type="hidden" name="setup[community_name]" value={@data["community_name"]} />
             <input type="hidden" name="setup[username]" value={@data["username"]} />
-            <input type="hidden" name="setup[email]" value={@data["email"]} />
+            <input type="hidden" name="setup[display_name]" value={@data["display_name"]} />
             <input type="hidden" name="setup[password]" value={@data["password"]} />
             <input type="hidden" name="setup[password_confirmation]" value={@data["password"]} />
             <.button type="submit" variant="service" class="w-full">{gettext("Criar minha nuvem")}</.button>

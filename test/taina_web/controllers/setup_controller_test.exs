@@ -8,14 +8,14 @@ defmodule TainaWeb.SetupControllerTest do
   @params %{
     "setup" => %{
       "community_name" => "Quilombo do Café",
-      "username" => "Ana Oliveira",
-      "email" => "ana@exemplo.org",
+      "username" => "ana",
+      "display_name" => "Ana Oliveira",
       "password" => "frase-longa-segura",
       "password_confirmation" => "frase-longa-segura"
     }
   }
 
-  test "bootstrap cria a Tekoa + admin e já entra logado", %{conn: conn} do
+  test "bootstrap cria a Tekoa + zelador e já entra logado", %{conn: conn} do
     conn = post(conn, ~p"/setup", @params)
 
     assert redirected_to(conn) == ~p"/"

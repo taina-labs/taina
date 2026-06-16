@@ -119,7 +119,7 @@ defmodule TainaWeb.CoreComponents do
   @doc """
   Campo de formulário com rótulo, ajuda e erros. Aceita `Phoenix.HTML.FormField`.
 
-      <.input field={@form[:email]} type="email" label="E-mail" help="Convites são por link/QR." />
+      <.input field={@form[:username]} type="text" label="Nome de usuário" />
   """
   attr :id, :any, default: nil
   attr :name, :any
@@ -128,7 +128,7 @@ defmodule TainaWeb.CoreComponents do
   attr :type, :string, default: "text"
   attr :help, :string, default: nil
   attr :icon, :string, default: nil
-  attr :field, FormField, doc: "ex.: @form[:email]"
+  attr :field, FormField, doc: "ex.: @form[:username]"
   attr :errors, :list, default: []
   attr :rest, :global, include: ~w(autocomplete placeholder required minlength maxlength inputmode autofocus)
 

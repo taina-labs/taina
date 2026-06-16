@@ -6,7 +6,7 @@ defmodule TainaWeb.StorageLiveTest do
 
   setup do
     tekoa = tekoa_fixture()
-    %{tekoa: tekoa, admin: admin_fixture(tekoa), member: confirmed_ava_fixture(tekoa)}
+    %{tekoa: tekoa, admin: zelador_fixture(tekoa), member: active_ava_fixture(tekoa)}
   end
 
   test "mostra uso e legenda por tipo", %{conn: conn, member: member} do

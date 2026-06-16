@@ -106,7 +106,7 @@ defmodule TainaWeb.StorageLive do
           </div>
         </div>
 
-        <div :if={Maraca.admin?(@current_scope.ava)}>
+        <div :if={Maraca.zelador?(@current_scope.ava)}>
           <p class="type-overline text-faint mb-2">{gettext("Cota da comunidade")}</p>
           <button type="button" class="card row between w-full" phx-click="toggle-quota-modal">
             <span class="type-body">{gettext("Limite total")}</span>

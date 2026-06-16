@@ -28,12 +28,12 @@ defmodule TainaWeb.AccountLive do
 
       <div class="col gap-6 mx-auto w-full" style="max-width: 640px;">
         <.card class="row gap-4">
-          <.avatar name={@current_scope.ava.username || @current_scope.ava.email} />
+          <.avatar name={@current_scope.ava.display_name || @current_scope.ava.username} />
           <div class="flex-1">
-            <p class="type-h3">{@current_scope.ava.username}</p>
-            <p class="type-body-sm text-muted">{@current_scope.ava.email}</p>
+            <p class="type-h3">{@current_scope.ava.display_name || @current_scope.ava.username}</p>
+            <p class="type-body-sm text-muted">{"@" <> @current_scope.ava.username}</p>
           </div>
-          <.badge :if={Maraca.admin?(@current_scope.ava)} variant="admin">{gettext("Admin")}</.badge>
+          <.badge :if={Maraca.zelador?(@current_scope.ava)} variant="admin">{gettext("Zelador(a)")}</.badge>
         </.card>
 
         <div class="list">
@@ -43,7 +43,7 @@ defmodule TainaWeb.AccountLive do
           </.list_row>
 
           <.list_row
-            :if={Maraca.admin?(@current_scope.ava)}
+            :if={Maraca.zelador?(@current_scope.ava)}
             title={gettext("Convidar pessoas")}
             meta={gettext("link + QR code")}
             navigate={~p"/membros/convidar"}

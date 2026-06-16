@@ -9,7 +9,7 @@ defmodule TainaWeb.TrashLiveTest do
 
   setup do
     tekoa = tekoa_fixture()
-    ava = confirmed_ava_fixture(tekoa)
+    ava = active_ava_fixture(tekoa)
     scope = Scope.new(ava, tekoa)
     {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("oi", "antiga.txt"))
     {:ok, _} = Ybira.delete_file(scope, file.public_id)

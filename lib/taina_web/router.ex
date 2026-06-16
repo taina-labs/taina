@@ -50,11 +50,13 @@ defmodule TainaWeb.Router do
       live "/setup", SetupLive
       live "/login", LoginLive
       live "/convite/:token", InviteAcceptLive
+      live "/redefinir/:token", ResetPasswordLive
     end
 
     post "/setup", SetupController, :create
     post "/login", SessionController, :create
     post "/convite/:token", InviteController, :accept
+    post "/redefinir/:token", PasswordController, :update
     delete "/logout", SessionController, :delete
   end
 

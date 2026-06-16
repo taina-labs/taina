@@ -13,7 +13,7 @@ defmodule TainaWeb.HomeLiveTest do
 
   test "mostra comunidade, armazenamento e recentes", %{conn: conn} do
     tekoa = tekoa_fixture(%{name: "Quilombo do Café"})
-    ava = confirmed_ava_fixture(tekoa)
+    ava = active_ava_fixture(tekoa)
     scope = Scope.new(ava, tekoa)
     {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("oi", "ata.txt"))
 

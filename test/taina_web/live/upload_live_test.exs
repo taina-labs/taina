@@ -9,7 +9,7 @@ defmodule TainaWeb.UploadLiveTest do
 
   setup do
     tekoa = tekoa_fixture()
-    ava = confirmed_ava_fixture(tekoa)
+    ava = active_ava_fixture(tekoa)
     %{scope: Scope.new(ava, tekoa), ava: ava}
   end
 

@@ -1,10 +1,15 @@
-## Os msgids do domínio default já são escritos em pt-BR no código,
-## este arquivo existe para o fluxo do Gettext (extract/merge) e para
-## servir de base quando outros idiomas chegarem.
+## This file is a PO Template file.
+##
+## "msgid"s here are often extracted from source code.
+## Add new messages manually only if they're dynamic
+## messages that can't be statically extracted.
+##
+## Run "mix gettext.extract" to bring this file up to
+## date. Leave "msgstr"s empty as changing them here has no
+## effect: edit them in PO (.po) files instead.
+#
 msgid ""
 msgstr ""
-"Language: pt_BR\n"
-"Plural-Forms: nplurals=2; plural=(n > 1);\n"
 
 #: lib/taina_web/live/gallery_live.ex:267
 #, elixir-autogen, elixir-format

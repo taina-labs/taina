@@ -1,7 +1,7 @@
 defmodule TainaWeb.InviteAcceptLive do
   @moduledoc """
   Aceite de convite: a pessoa convidada escolhe nome e senha. O submit é um
-  POST tradicional para `InviteController.accept` (`confirm_email/4` + sessão
+  POST tradicional para `InviteController.accept` (`accept_invite/2` + sessão
   na mesma requisição). O token só é validado de verdade no submit, aqui ele
   apenas viaja na URL.
   """
@@ -33,13 +33,23 @@ defmodule TainaWeb.InviteAcceptLive do
       <form id="invite-accept-form" action={~p"/convite/#{@token}"} method="post" class="col gap-5">
         <input type="hidden" name="_csrf_token" value={get_csrf_token()} />
         <.input
-          label={gettext("Seu nome")}
+          label={gettext("Seu nome de usuário")}
           name="account[username]"
           id="account_username"
           value=""
-          placeholder={gettext("ex.: João Mendes")}
+          placeholder={gettext("ex.: joao")}
+          help={gettext("Sem espaços. É com ele que você entra na comunidade.")}
+          autocapitalize="none"
           required
           minlength="3"
+        />
+        <.input
+          label={gettext("Nome de exibição (opcional)")}
+          name="account[display_name]"
+          id="account_display_name"
+          value=""
+          placeholder={gettext("ex.: João Mendes")}
+          help={gettext("Como seu nome aparece para a comunidade.")}
         />
         <.input
           label={gettext("Senha")}

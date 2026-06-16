@@ -25,13 +25,13 @@ defmodule Taina.Fixtures do
     |> Repo.insert!()
   end
 
+  # Convite pendente: tem nome mas ainda sem senha (conta não ativada).
   def ava_fixture(%Tekoa{} = tekoa, attrs \\ %{}) do
     n = System.unique_integer([:positive])
 
     attrs =
       Enum.into(attrs, %{
         username: "ava#{n}",
-        email: "ava#{n}@example.com",
         tekoa_id: tekoa.id
       })
 
@@ -40,29 +40,31 @@ defmodule Taina.Fixtures do
     |> Repo.insert!()
   end
 
-  def confirmed_ava_fixture(%Tekoa{} = tekoa, attrs \\ %{}) do
+  # Conta ativa: nome de usuário + senha definidos (convite aceito).
+  def active_ava_fixture(%Tekoa{} = tekoa, attrs \\ %{}) do
     n = System.unique_integer([:positive])
     password = Map.get(attrs, :password, "senhasegura123")
 
     base = %{
       username: Map.get(attrs, :username, "ava#{n}"),
-      email: Map.get(attrs, :email, "ava#{n}@example.com"),
-      role: Map.get(attrs, :role, :member),
+      display_name: Map.get(attrs, :display_name),
+      role: Map.get(attrs, :role, :morador),
       tekoa_id: tekoa.id
     }
 
     %Ava{}
     |> Ava.changeset(base)
-    |> Ava.confirmation_changeset(%{
+    |> Ava.accept_invite_changeset(%{
       username: base.username,
+      display_name: base.display_name,
       password: password,
       password_confirmation: password
     })
     |> Repo.insert!()
   end
 
-  def admin_fixture(%Tekoa{} = tekoa, attrs \\ %{}) do
-    confirmed_ava_fixture(tekoa, Map.put(attrs, :role, :admin))
+  def zelador_fixture(%Tekoa{} = tekoa, attrs \\ %{}) do
+    active_ava_fixture(tekoa, Map.put(attrs, :role, :zelador))
   end
 
   def scope_fixture(attrs \\ %{}) do

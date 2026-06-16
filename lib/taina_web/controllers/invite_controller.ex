@@ -1,7 +1,7 @@
 defmodule TainaWeb.InviteController do
   @moduledoc """
   Aceite de convite: o `InviteAcceptLive` valida o formulário ao vivo e o
-  submit final chega como POST tradicional, `confirm_email/4` ativa a conta
+  submit final chega como POST tradicional, `accept_invite/2` cria a conta
   e a sessão nasce na mesma requisição.
   """
 
@@ -10,7 +10,7 @@ defmodule TainaWeb.InviteController do
   alias Taina.Maraca
 
   def accept(conn, %{"token" => token, "account" => params}) do
-    case Maraca.confirm_email(token, params["password"], params["password_confirmation"], params["username"]) do
+    case Maraca.accept_invite(token, params) do
       {:ok, ava} ->
         conn
         |> TainaWeb.Auth.log_in(ava)

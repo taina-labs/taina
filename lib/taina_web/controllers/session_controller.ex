@@ -9,9 +9,9 @@ defmodule TainaWeb.SessionController do
 
   alias Taina.Maraca
 
-  def create(conn, %{"email" => email, "password" => password}) do
+  def create(conn, %{"username" => username, "password" => password}) do
     with {:ok, tekoa} <- Maraca.get_tekoa(),
-         {:ok, ava} <- Maraca.authenticate(email, password, tekoa) do
+         {:ok, ava} <- Maraca.authenticate(username, password, tekoa) do
       conn
       |> TainaWeb.Auth.log_in(ava)
       |> redirect(to: ~p"/")
@@ -21,7 +21,7 @@ defmodule TainaWeb.SessionController do
 
       {:error, _reason} ->
         conn
-        |> put_flash(:error, gettext("E-mail ou senha incorretos."))
+        |> put_flash(:error, gettext("Nome ou senha incorretos."))
         |> redirect(to: ~p"/login")
     end
   end

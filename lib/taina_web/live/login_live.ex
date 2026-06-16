@@ -29,12 +29,13 @@ defmodule TainaWeb.LoginLive do
 
   @impl true
   def handle_event("forgot-password", _params, socket) do
-    # Sem SMTP no MVP (RFC 002, D6): a redefinição passa pela administração.
+    # Sem e-mail (RFC_003, seção 4): a recuperação é mediada pelo zelador, que
+    # gera um link de redefinição e entrega pelo mesmo canal dos convites.
     {:noreply,
      Phoenix.LiveView.put_flash(
        socket,
        :info,
-       gettext("Fale com quem administra sua comunidade para redefinir a senha.")
+       gettext("Fale com quem cuida da sua comunidade. Ela gera um link para você criar uma senha nova.")
      )}
   end
 
@@ -50,18 +51,20 @@ defmodule TainaWeb.LoginLive do
         <.icon name="spark" size={40} class="spark" />
         <h1 class="type-h1">Tainá</h1>
         <h2 class="type-h2">{gettext("Bem-vindo de volta")}</h2>
-        <p class="type-body-sm text-secondary">{gettext("Entre na nuvem da sua comunidade.")}</p>
+        <p class="type-body-sm text-secondary">{gettext("Entre com seu nome na nuvem da sua comunidade.")}</p>
       </div>
 
       <form id="login-form" action={~p"/login"} method="post" class="col gap-4">
         <input type="hidden" name="_csrf_token" value={get_csrf_token()} />
         <.input
-          label={gettext("E-mail")}
-          type="email"
-          name="email"
-          id="login_email"
+          label={gettext("Seu nome")}
+          type="text"
+          name="username"
+          id="login_username"
           value=""
-          placeholder="voce@exemplo.org"
+          placeholder={gettext("seu nome de usuário")}
+          autocomplete="username"
+          autocapitalize="none"
           required
         />
         <.input

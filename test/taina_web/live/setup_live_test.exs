@@ -21,27 +21,20 @@ defmodule TainaWeb.SetupLiveTest do
     assert html =~ "dê um nome à comunidade"
 
     html = lv |> element("form") |> render_submit(%{"setup" => %{"community_name" => "Quilombo do Café"}})
-    assert html =~ "Crie a conta de administração"
+    assert html =~ "Crie a conta de quem cuida"
 
-    # passo 2: validações de e-mail e senha
-    html =
-      lv
-      |> element("form")
-      |> render_submit(%{"setup" => %{"username" => "Ana", "email" => "invalido", "password" => "curta"}})
-
-    assert html =~ "informe um e-mail válido"
+    # passo 2: senha curta trava
+    html = lv |> element("form") |> render_submit(%{"setup" => %{"username" => "ana", "password" => "curta"}})
     assert html =~ "pelo menos 8 caracteres"
 
     html =
       lv
       |> element("form")
-      |> render_submit(%{
-        "setup" => %{"username" => "Ana", "email" => "ana@exemplo.org", "password" => "frase-longa-segura"}
-      })
+      |> render_submit(%{"setup" => %{"username" => "ana", "password" => "frase-longa-segura"}})
 
     # passo 3: resumo + form final apontando para o POST /setup
     assert html =~ "Onde guardar os arquivos"
-    assert html =~ "Quilombo do Café, admin Ana, disco interno"
+    assert html =~ "Quilombo do Café, zelador(a) ana, disco interno"
     assert has_element?(lv, ~s(form[action="/setup"]))
     assert has_element?(lv, ~s(input[name="setup[password_confirmation]"]))
   end

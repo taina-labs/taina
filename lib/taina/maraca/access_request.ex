@@ -1,22 +1,23 @@
 defmodule Taina.Maraca.AccessRequest do
   @moduledoc """
-  Representa uma solicitação de acesso de um administrador a um recurso de usuário.
+  Representa um pedido de acesso de um zelador ao recurso de uma pessoa.
 
-  Este schema é fundamental para a filosofia do Tainá: **administradores são facilitadores,
-  não deuses**. Ao contrário de sistemas tradicionais onde admins têm acesso irrestrito,
-  no Tainá eles devem solicitar permissão explícita do dono do recurso.
+  Este schema é fundamental para a filosofia do Tainá: **zeladores cuidam da
+  máquina, não são deuses**. Ao contrário de sistemas tradicionais onde quem
+  administra tem acesso irrestrito, no Tainá o zelador pede permissão explícita
+  ao dono do recurso.
 
   ## Filosofia e fluxo
 
-  1. **Admin tenta acessar** - Sistema nega acesso (não possui Permission)
-  2. **Admin solicita acesso** - Cria AccessRequest com justificativa
-  3. **Dono é notificado** - Recebe solicitação via PubSub/email
+  1. **Zelador tenta acessar** - Sistema nega acesso (não possui Permission)
+  2. **Zelador pede acesso** - Cria AccessRequest com justificativa
+  3. **Dono é notificado** - Recebe solicitação via PubSub
   4. **Dono decide** - Aprova (cria Permission temporária) ou nega
   5. **Rastreabilidade** - Todas as solicitações ficam registradas
 
   ## Campos principais
 
-    * `requester_id` - ID do Ava que solicita acesso (geralmente um admin)
+    * `requester_id` - ID do Ava que pede acesso (geralmente um zelador)
     * `owner_id` - ID do Ava dono do recurso (quem pode aprovar/negar)
     * `resource_type` - Tipo do recurso (ex: "ybira_file", "guara_chat")
     * `resource_id` - ID público do recurso específico

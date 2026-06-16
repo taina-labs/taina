@@ -10,7 +10,7 @@ defmodule TainaWeb.LoginLiveTest do
 
   test "quem já está logado vai direto para a home", %{conn: conn} do
     tekoa = tekoa_fixture()
-    ava = confirmed_ava_fixture(tekoa)
+    ava = active_ava_fixture(tekoa)
 
     assert {:error, {:redirect, %{to: "/"}}} = conn |> log_in(ava) |> live(~p"/login")
   end
@@ -22,7 +22,7 @@ defmodule TainaWeb.LoginLiveTest do
 
     assert html =~ "Bem-vindo de volta"
     assert has_element?(lv, ~s(form[action="/login"]))
-    assert has_element?(lv, ~s(input[name="email"]))
+    assert has_element?(lv, ~s(input[name="username"]))
     assert has_element?(lv, ~s(input[name="password"]))
   end
 end

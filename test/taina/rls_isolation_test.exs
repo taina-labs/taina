@@ -16,7 +16,6 @@ defmodule Taina.RlsIsolationTest do
   use ExUnit.Case, async: false
 
   @probe_role "taina_rls_probe"
-  @probe_email "rls@probe.test"
 
   setup_all do
     admin_opts = conn_opts()
@@ -57,10 +56,10 @@ defmodule Taina.RlsIsolationTest do
     Postgrex.query!(
       admin,
       """
-      INSERT INTO maraca.avas (tekoa_id, username, email, inserted_at, updated_at)
-      VALUES ($1, 'rlsprobe', $2, now(), now())
+      INSERT INTO maraca.avas (tekoa_id, username, inserted_at, updated_at)
+      VALUES ($1, 'rlsprobe', now(), now())
       """,
-      [tekoa_id, @probe_email]
+      [tekoa_id]
     )
 
     probe_opts =
@@ -74,7 +73,7 @@ defmodule Taina.RlsIsolationTest do
 
     on_exit(fn ->
       {:ok, cleaner} = Postgrex.start_link(admin_opts)
-      Postgrex.query!(cleaner, "DELETE FROM maraca.avas WHERE email = $1", [@probe_email])
+      Postgrex.query!(cleaner, "DELETE FROM maraca.avas WHERE username = 'rlsprobe'", [])
       Postgrex.query!(cleaner, "DELETE FROM maraca.tekoas WHERE public_id = $1", [tekoa_public_id])
       GenServer.stop(cleaner)
     end)

@@ -1,12 +1,15 @@
-# Seeds — popula uma instância de desenvolvimento com uma comunidade plausível:
-# uma Tekoa, um admin, dois membros, pastas e alguns arquivos reais (fotos,
-# documento, planilha-texto). Tudo passa pelos contexts públicos (Maraca/Ybira),
-# então respeita RLS, cota, detecção de MIME por magic bytes e dispara os jobs
-# de thumbnail — exatamente como em produção.
+# Seeds, popula uma instância de desenvolvimento com uma comunidade plausível:
+# uma Tekoa, um zelador, dois moradores (mais um convite pendente), pastas e
+# alguns arquivos reais (fotos, documento, PDF). Tudo passa pelos contexts
+# públicos (Maraca/Ybira), então respeita RLS, cota, detecção de MIME por magic
+# bytes e dispara os jobs de thumbnail, exatamente como em produção.
 #
 #     mix run priv/repo/seeds.exs
 #
-# Idempotente: se já houver uma Tekoa (RFC 002, D2 — uma por instância), não faz
+# Identidade nome-primeiro, sem e-mail (RFC_003, seção 4): convite por link +
+# aceite (a pessoa escolhe nome de usuário e senha), login por nome.
+#
+# Idempotente: se já houver uma Tekoa (RFC 002, D2, uma por instância), não faz
 # nada. Use `mix ecto.reset` para recomeçar do zero.
 
 alias Taina.Maraca
@@ -14,34 +17,45 @@ alias Taina.Scope
 alias Taina.Ybira
 
 if Maraca.bootstrapped?() do
-  IO.puts("\n⚠️  Já existe uma comunidade — seeds ignorados. Use `mix ecto.reset` para recomeçar.\n")
+  IO.puts("\nJá existe uma comunidade, seeds ignorados. Use `mix ecto.reset` para recomeçar.\n")
 else
   # 256 GB de cota, como nas telas do design.
   quota_bytes = 256 * 1024 * 1024 * 1024
-  admin_password = "semente-da-manha"
+  zelador_password = "semente-da-manha"
 
-  {:ok, %{tekoa: tekoa, ava: admin}} =
+  {:ok, %{tekoa: tekoa, ava: zelador}} =
     Maraca.bootstrap(
       %{name: "Quilombo do Café", storage_quota_bytes: quota_bytes},
-      %{username: "ana", email: "ana@taina.local", password: admin_password, password_confirmation: admin_password}
+      %{
+        username: "ana",
+        display_name: "Ana Oliveira",
+        password: zelador_password,
+        password_confirmation: zelador_password
+      }
     )
 
-  scope = Scope.new(admin, tekoa)
+  scope = Scope.new(zelador, tekoa)
 
-  # --- Membros: convite por link + aceite, o fluxo real (sem e-mail) ---
+  # --- Moradores: convite por link + aceite, o fluxo real (sem e-mail) ---
 
-  convidar_e_aceitar = fn email, username, role ->
-    {:ok, convidado} = Maraca.invite_user(admin, tekoa, email, role: role)
-    senha = "membro-#{username}-123"
-    {:ok, ava} = Maraca.confirm_email(convidado.email_confirmation_token, senha, senha, username)
-    {ava, senha}
+  convidar_e_aceitar = fn username, display_name ->
+    {:ok, convidado} = Maraca.invite_user(zelador, tekoa, role: :morador)
+    senha = "morador-#{username}-123"
+
+    {:ok, _ava} =
+      Maraca.accept_invite(convidado.invite_token, %{
+        "username" => username,
+        "display_name" => display_name,
+        "password" => senha,
+        "password_confirmation" => senha
+      })
   end
 
-  {_joao, _} = convidar_e_aceitar.("joao@taina.local", "joao", :member)
-  {_maria, _} = convidar_e_aceitar.("maria@taina.local", "maria", :member)
+  convidar_e_aceitar.("joao", "João Mendes")
+  convidar_e_aceitar.("maria", "Maria Silva")
 
-  # Pedro: convidado mas ainda não aceitou (aparece como pendente no admin).
-  {:ok, _pedro} = Maraca.invite_user(admin, tekoa, "pedro@taina.local", role: :member)
+  # Convite gerado mas ainda não aceito (aparece como pendente nos Moradores).
+  {:ok, _pendente} = Maraca.invite_user(zelador, tekoa, role: :morador)
 
   # --- Pastas ---
 
@@ -51,7 +65,7 @@ else
 
   # --- Geração de arquivos reais num diretório temporário ---
   #
-  # As fotos são PNGs sólidos (a paleta do grid do design) gerados via libvips —
+  # As fotos são PNGs sólidos (a paleta do grid do design) gerados via libvips,
   # magic bytes válidos, então passam pela allowlist e disparam o worker de
   # thumbnail de verdade.
 
@@ -73,7 +87,7 @@ else
 
   gera_pdf = fn nome ->
     caminho = Path.join(tmp, nome)
-    # PDF mínimo válido — só precisamos dos magic bytes "%PDF" e estrutura básica.
+    # PDF mínimo válido, só precisamos dos magic bytes "%PDF" e estrutura básica.
     File.write!(caminho, """
     %PDF-1.4
     1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj
@@ -86,7 +100,7 @@ else
     caminho
   end
 
-  # Paleta de fotos (forest/moon/sky/ember/guara — ver tokens do Penpot).
+  # Paleta de fotos (forest/moon/sky/ember/guara, ver tokens do Penpot).
   paleta = [
     {"festa-junina-01.png", [63, 161, 113]},
     {"festa-junina-02.png", [227, 188, 102]},
@@ -121,7 +135,7 @@ else
   estatuto = gera_pdf.("estatuto.pdf")
   {:ok, _} = Ybira.upload(scope, estatuto, filename: "Estatuto.pdf", folder_id: documentos.id)
 
-  # Um arquivo na raiz (logo) e uma foto na raiz, para a Home ter "recentes" variados.
+  # Um arquivo na raiz (logo), para a Home ter "recentes" variados.
   logo = gera_foto.("logo-da-radio.png", [255, 217, 163])
   {:ok, _} = Ybira.upload(scope, logo, filename: "Logo da rádio.png")
 
@@ -129,17 +143,17 @@ else
 
   IO.puts("""
 
-  ✦ Tainá — comunidade de exemplo criada
+  Tainá, comunidade de exemplo criada
 
     Comunidade: #{tekoa.name}
-    Admin:      ana@taina.local  /  senha: #{admin_password}
-    Membros:    joao@taina.local /  senha: membro-joao-123
-                maria@taina.local /  senha: membro-maria-123
-    Pendente:   pedro@taina.local (convite não aceito)
+    Zelador:    ana   /  senha: #{zelador_password}
+    Moradores:  joao  /  senha: morador-joao-123
+                maria /  senha: morador-maria-123
+    Pendente:   1 convite de morador gerado, ainda não aceito
 
     Pastas: Documentos, Fotos da comunidade, Vídeos
-    Arquivos: 8 fotos + 3 documentos + 1 logo (thumbnails geram em segundo plano)
+    Arquivos: 8 fotos + 3 documentos + 1 logo (thumbnails em segundo plano)
 
-    Entre em http://localhost:4000/login
+    Entre em http://localhost:4000/login com o nome "ana"
   """)
 end

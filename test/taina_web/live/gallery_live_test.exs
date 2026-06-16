@@ -9,7 +9,7 @@ defmodule TainaWeb.GalleryLiveTest do
 
   setup do
     tekoa = tekoa_fixture()
-    ava = confirmed_ava_fixture(tekoa)
+    ava = active_ava_fixture(tekoa)
     scope = Scope.new(ava, tekoa)
 
     {:ok, first} = Ybira.upload(scope, tmp_image_fixture(filename: "primeira.jpg"))
