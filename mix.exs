@@ -86,7 +86,7 @@ defmodule Taina.MixProject do
       "assets.setup": ["esbuild.install --if-missing"],
       "assets.build": ["esbuild taina"],
       "assets.deploy": ["compile", "esbuild taina --minify", "phx.digest"],
-      precommit: ["compile --warning-as-errors", "deps.unlock --unused", "format", "test"]
+      precommit: ["compile --warning-as-errors", "deps.unlock --unused", "format", "credo --strict", "dialyzer", "test"]
     ]
   end
 end

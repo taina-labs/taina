@@ -76,37 +76,36 @@ defmodule Taina.Maraca.Behaviour do
               {:ok, Ava.t()} | {:error, :invalid_token | Ecto.Changeset.t()}
 
   @doc """
-  Autentica usuário com email e senha.
+  Autentica usuário com nome de usuário e senha.
 
   ## Regras de Negócio
 
-  - Email e senha devem estar corretos
-  - Email deve estar confirmado (confirmed_at não nulo)
+  - Nome de usuário e senha devem estar corretos
+  - Conta sem senha definida (convite ainda não aceito) não autentica
   - Usa bcrypt para verificar senha
   - Retorna Ava completo se autenticado
 
   ## Parâmetros
 
-    * `email` - Email do usuário
+    * `username` - Nome de usuário (handle único na Tekoa)
     * `password` - Senha do usuário
     * `tekoa` - Tekoa onde o usuário está registrado
 
   ## Retorno
 
     * `{:ok, %Ava{}}` - Autenticado com sucesso
-    * `{:error, :invalid_credentials}` - Email ou senha incorretos
-    * `{:error, :email_not_confirmed}` - Email ainda não confirmado
+    * `{:error, :invalid_credentials}` - Nome de usuário ou senha incorretos
 
   ## Exemplos
 
-      iex> authenticate("user@example.com", "senha123", tekoa)
+      iex> authenticate("maria", "senha123", tekoa)
       {:ok, %Ava{username: "maria"}}
 
-      iex> authenticate("user@example.com", "senhaerrada", tekoa)
+      iex> authenticate("maria", "senhaerrada", tekoa)
       {:error, :invalid_credentials}
   """
   @callback authenticate(String.t(), String.t(), Tekoa.t()) ::
-              {:ok, Ava.t()} | {:error, :invalid_credentials | :email_not_confirmed}
+              {:ok, Ava.t()} | {:error, :invalid_credentials}
 
   @doc """
   Cria dados de sessão para usuário autenticado.
@@ -331,7 +330,7 @@ defmodule Taina.Maraca.Behaviour do
   ## Parâmetros
 
     * `ava` - Ava que está tentando acessar
-    * `action` - Ação desejada (:read, :write, :delete, :share)
+    * `action` - Ação desejada (:read, :write, :delete)
     * `resource_type` - Tipo do recurso ("ybira_file", "guara_chat", etc.)
     * `resource_id` - public_id do recurso
 
@@ -384,7 +383,7 @@ defmodule Taina.Maraca.Behaviour do
   ## Regras de Negócio
 
   - **APENAS o dono do recurso pode conceder permissões**
-  - Não é possível conceder :share (delegação desabilitada)
+  - Só ações concedíveis são aceitas (:read, :write, :delete)
   - Permissão é única por (ava_id, resource_type, resource_id, action)
   - Grava granted_by_id para auditoria
 
@@ -400,7 +399,7 @@ defmodule Taina.Maraca.Behaviour do
 
     * `{:ok, %Permission{}}` - Permissão concedida
     * `{:error, :not_owner}` - Granter não é dono do recurso
-    * `{:error, :invalid_action}` - Tentou conceder :share
+    * `{:error, :invalid_action}` - Ação fora de (:read, :write, :delete)
     * `{:error, %Ecto.Changeset{}}` - Validação falhou
 
   ## Exemplos
@@ -411,7 +410,7 @@ defmodule Taina.Maraca.Behaviour do
       iex> grant_permission(non_owner, user_b, :read, "ybira_file", file.public_id)
       {:error, :not_owner}
 
-      iex> grant_permission(owner, user_b, :share, "ybira_file", file.public_id)
+      iex> grant_permission(owner, user_b, :manage, "ybira_file", file.public_id)
       {:error, :invalid_action}
   """
   @callback grant_permission(Ava.t(), Ava.t(), atom(), String.t(), String.t()) ::
@@ -470,11 +469,13 @@ defmodule Taina.Maraca.Behaviour do
   @callback list_permissions(String.t(), String.t()) :: [Permission.t()]
 
   @doc """
-  Zelador pede acesso ao recurso de uma pessoa.
+  Morador pede acesso ao recurso de outra pessoa (RFC_003, D4).
 
   ## Regras de Negócio
 
-  - Apenas zeladores podem pedir acesso (o zelador não tem atalho para a casa)
+  - Qualquer morador pode pedir acesso (inclusive o zelador, que não tem atalho
+    para a casa de ninguém)
+  - Não se pede acesso ao próprio recurso
   - Cria AccessRequest com status :pending (não pode ser alterado na criação)
   - Owner é notificado via PubSub
   - Justificativa (reason) é obrigatória (max 250 chars)
@@ -487,7 +488,7 @@ defmodule Taina.Maraca.Behaviour do
 
   ## Parâmetros
 
-    * `zelador_ava` - Zelador pedindo acesso
+    * `requester_ava` - Pessoa pedindo acesso
     * `owner_ava` - Dono do recurso
     * `resource_type` - Tipo do recurso
     * `resource_id` - ID do recurso
@@ -496,22 +497,22 @@ defmodule Taina.Maraca.Behaviour do
   ## Retorno
 
     * `{:ok, %AccessRequest{}}` - Solicitação criada
-    * `{:error, :cross_tekoa_owner}` - Dono e zelador são de comunidades diferentes
-    * `{:error, :not_zelador}` - Apenas zeladores podem pedir
-    * `{:error, :already_has_access}` - Zelador já tem permissão
+    * `{:error, :cross_tekoa_owner}` - Dono e quem pede são de comunidades diferentes
+    * `{:error, :cannot_request_own}` - Não se pede acesso ao próprio recurso
+    * `{:error, :already_has_access}` - Quem pede já tem permissão
     * `{:error, %Ecto.Changeset{}}` - Validação falhou
 
   ## Exemplos
 
-      iex> request_access(zelador, owner, "ybira_file", file.public_id, "Ticket #123")
+      iex> request_access(morador, owner, "ybira_file", file.public_id, "Ticket #123")
       {:ok, %AccessRequest{status: :pending}}
 
-      iex> request_access(morador, owner, "ybira_file", file.public_id, "Motivo")
-      {:error, :not_zelador}
+      iex> request_access(owner, owner, "ybira_file", file.public_id, "Motivo")
+      {:error, :cannot_request_own}
   """
   @callback request_access(Ava.t(), Ava.t(), String.t(), String.t(), String.t()) ::
               {:ok, AccessRequest.t()}
-              | {:error, :cross_tekoa_owner | :not_zelador | :already_has_access | Ecto.Changeset.t()}
+              | {:error, :cross_tekoa_owner | :cannot_request_own | :already_has_access | Ecto.Changeset.t()}
 
   @doc """
   Owner aprova solicitação de acesso.
@@ -592,6 +593,27 @@ defmodule Taina.Maraca.Behaviour do
       [%AccessRequest{status: :pending, reason: "Ticket #123"}]
   """
   @callback list_access_requests(Ava.t()) :: [AccessRequest.t()]
+
+  @doc """
+  Lista os pedidos de acesso pendentes feitos por uma pessoa (RFC_003, D4).
+
+  Complementa `list_access_requests/1` (caixa de entrada do dono): aqui é a visão
+  de quem pede, os pedidos que a pessoa fez e ainda aguardam decisão.
+
+  ## Parâmetros
+
+    * `requester_ava` - Pessoa que fez os pedidos
+
+  ## Retorno
+
+    * Lista de `%AccessRequest{}` com status :pending (com `:owner` pré-carregado)
+
+  ## Exemplos
+
+      iex> list_my_requests(requester)
+      [%AccessRequest{status: :pending, reason: "Ticket #123"}]
+  """
+  @callback list_my_requests(Ava.t()) :: [AccessRequest.t()]
 
   @doc """
   Verifica se o Ava é zelador(a) na sua Tekoa.
