@@ -10,10 +10,12 @@ erl_crash.dump
 node_modules/
 assets/node_modules/
 
-# Since we are building assets from assets/,
-# we ignore priv/static. You may want to comment
-# this depending on your deployment strategy.
-priv/static/
+# esbuild output and the digest manifest are regenerated in-image by
+# `mix assets.deploy`, so they are not part of the build context. Source static
+# files (fonts, icons, manifest.webmanifest, sw.js, robots.txt) ARE kept: they
+# are committed and `COPY priv priv` must include them.
+priv/static/assets/
+priv/static/cache_manifest.json
 
 # Ignore package manager files
 .npm
