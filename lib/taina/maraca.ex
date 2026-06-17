@@ -368,7 +368,7 @@ defmodule Taina.Maraca do
   end
 
   defp do_mint_reset_link(%Scope{} = scope, %Ava{} = member) do
-    case Repo.get_by(Ava, id: member.id, tekoa_id: scope.tekoa.id) do
+    case Repo.get_by(Ava, public_id: member.public_id, tekoa_id: scope.tekoa.id) do
       nil -> {:error, :not_found}
       %Ava{} = ava -> Repo.update(Ava.password_reset_request_changeset(ava))
     end
@@ -488,29 +488,29 @@ defmodule Taina.Maraca do
   ## Acesso do zelador (com aprovação do dono)
 
   @impl true
-  def request_access(%Ava{} = zelador, %Ava{} = owner, resource_type, resource_id, reason) do
+  def request_access(%Ava{} = requester, %Ava{} = owner, resource_type, resource_id, reason) do
     cond do
-      owner.tekoa_id != zelador.tekoa_id ->
+      owner.tekoa_id != requester.tekoa_id ->
         {:error, :cross_tekoa_owner}
 
-      not zelador?(zelador) ->
-        {:error, :not_zelador}
+      requester.id == owner.id ->
+        {:error, :cannot_request_own}
 
-      authorize?(zelador, :read, resource_type, resource_id) ->
+      authorize?(requester, :read, resource_type, resource_id) ->
         {:error, :already_has_access}
 
       true ->
         attrs = %{
-          requester_id: zelador.id,
+          requester_id: requester.id,
           owner_id: owner.id,
           resource_type: resource_type,
           resource_id: resource_id,
           reason: reason,
-          tekoa_id: zelador.tekoa_id
+          tekoa_id: requester.tekoa_id
         }
 
         result =
-          Repo.with_tekoa(tekoa_public_id(zelador), fn ->
+          Repo.with_tekoa(tekoa_public_id(requester), fn ->
             Repo.insert(AccessRequest.create_changeset(%AccessRequest{}, attrs))
           end)
 
@@ -580,6 +580,23 @@ defmodule Taina.Maraca do
             where: r.status == :pending,
             order_by: [desc: r.inserted_at],
             preload: [:requester]
+
+        {:ok, Repo.all(query)}
+      end)
+
+    requests
+  end
+
+  @impl true
+  def list_my_requests(%Ava{} = requester) do
+    {:ok, requests} =
+      Repo.with_tekoa(tekoa_public_id(requester), fn ->
+        query =
+          from r in AccessRequest,
+            where: r.requester_id == ^requester.id,
+            where: r.status == :pending,
+            order_by: [desc: r.inserted_at],
+            preload: [:owner]
 
         {:ok, Repo.all(query)}
       end)

@@ -8,16 +8,10 @@ defmodule TainaWeb.Router do
     plug :accepts, ["json"]
   end
 
-  # Download de arquivos: sessão por cookie, sem travar o `accept` (o cliente
-  # pede o tipo do arquivo, não JSON).
   pipeline :authenticated do
     plug :fetch_session
   end
 
-  # UI server-rendered (LiveView): sessão + flash + scope da requisição. As
-  # rotas HTML/LiveView que usam este pipeline chegam com a fase de UI; a cola
-  # de auth (`fetch_current_scope` / `require_authenticated` / `on_mount`) já
-  # fica pronta aqui (ver `TainaWeb.Auth`).
   pipeline :browser do
     plug :accepts, ["html"]
     plug :fetch_session
@@ -41,8 +35,6 @@ defmodule TainaWeb.Router do
     get "/files/:public_id/thumbnail/:size", FileController, :thumbnail
   end
 
-  # Telas públicas: wizard de primeiro boot, login e aceite de convite. Os
-  # POSTs tradicionais existem porque cookie de sessão só nasce em controller.
   scope "/", TainaWeb do
     pipe_through :browser
 

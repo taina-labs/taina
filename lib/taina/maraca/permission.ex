@@ -18,7 +18,7 @@ defmodule Taina.Maraca.Permission do
     * `ava_id` - ID do Ava que recebe a permissão
     * `resource_type` - Tipo do recurso (ex: "ybira_file", "ybira_folder", "guara_chat")
     * `resource_id` - ID público do recurso específico
-    * `action` - Ação permitida: :read, :write, :delete, ou :share
+    * `action` - Ação permitida: :read, :write, ou :delete
     * `granted_by_id` - ID do Ava que concedeu a permissão (rastreabilidade)
     * `tekoa_id` - Comunidade à qual a permissão pertence (isolamento RLS)
 
@@ -63,13 +63,13 @@ defmodule Taina.Maraca.Permission do
   alias Ecto.Association.NotLoaded
   alias Taina.Maraca
 
-  @actions ~w(read write delete share)a
+  @actions ~w(read write delete)a
 
   @type t :: %__MODULE__{
           id: integer() | nil,
           resource_id: String.t(),
           resource_type: String.t(),
-          action: :read | :write | :delete | :share,
+          action: :read | :write | :delete,
           ava_id: integer(),
           ava: Maraca.Ava.t() | NotLoaded.t() | nil,
           tekoa_id: integer(),
@@ -101,7 +101,7 @@ defmodule Taina.Maraca.Permission do
     * `ava_id` - Ava que receberá a permissão
     * `resource_type` - Tipo do recurso (ex: "ybira_file", "guara_chat")
     * `resource_id` - ID público do recurso
-    * `action` - Ação permitida (:read, :write, :delete, :share)
+    * `action` - Ação permitida (:read, :write, :delete)
 
   ## Campos de contexto (NÃO vêm de parâmetros)
 

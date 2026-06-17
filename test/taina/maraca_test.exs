@@ -291,7 +291,7 @@ defmodule Taina.MaracaTest do
       end
     end
 
-    test "only the owner grants; :share is never grantable", %{
+    test "only the owner grants; non-grantable actions are rejected", %{
       owner: owner,
       other: other,
       ybira_file: ybira_file
@@ -300,7 +300,7 @@ defmodule Taina.MaracaTest do
                Maraca.grant_permission(other, other, :read, "ybira_file", ybira_file.public_id)
 
       assert {:error, :invalid_action} =
-               Maraca.grant_permission(owner, other, :share, "ybira_file", ybira_file.public_id)
+               Maraca.grant_permission(owner, other, :manage, "ybira_file", ybira_file.public_id)
     end
 
     test "revoke by owner removes access", %{owner: owner, other: other, ybira_file: ybira_file} do
@@ -357,11 +357,18 @@ defmodule Taina.MaracaTest do
       assert {:error, :invalid_status} = Maraca.deny_access_request(owner, request.id)
     end
 
-    test "moradores cannot request access", %{tekoa: tekoa, owner: owner, ybira_file: ybira_file} do
+    test "any morador can request access (RFC_003 D4)", %{tekoa: tekoa, owner: owner, ybira_file: ybira_file} do
       morador = active_ava_fixture(tekoa)
 
-      assert {:error, :not_zelador} =
+      assert {:ok, %AccessRequest{status: :pending, requester_id: requester_id}} =
                Maraca.request_access(morador, owner, "ybira_file", ybira_file.public_id, "Por favor")
+
+      assert requester_id == morador.id
+    end
+
+    test "cannot request access to your own resource", %{owner: owner, ybira_file: ybira_file} do
+      assert {:error, :cannot_request_own} =
+               Maraca.request_access(owner, owner, "ybira_file", ybira_file.public_id, "Meu próprio")
     end
 
     test "zelador with existing permission cannot re-request", %{owner: owner, zelador: zelador, ybira_file: ybira_file} do
@@ -385,6 +392,20 @@ defmodule Taina.MaracaTest do
       assert [pending] = Maraca.list_access_requests(owner)
       assert pending.id == request.id
       assert pending.requester.id == zelador.id
+    end
+
+    test "list_my_requests/1 shows the requests the caller made", %{
+      owner: owner,
+      zelador: zelador,
+      ybira_file: ybira_file
+    } do
+      {:ok, request} = Maraca.request_access(zelador, owner, "ybira_file", ybira_file.public_id, "Ticket")
+
+      assert [mine] = Maraca.list_my_requests(zelador)
+      assert mine.id == request.id
+      assert mine.owner.id == owner.id
+
+      assert [] = Maraca.list_my_requests(owner)
     end
   end
 
