@@ -164,10 +164,15 @@ defmodule Taina.Maraca do
   @impl true
   def authenticate(username, password, %Tekoa{} = tekoa) do
     username = normalize_username(username)
+    key = login_rate_key(tekoa, username)
 
-    case login_rate_check(tekoa, username) do
-      :ok -> do_authenticate(username, password, tekoa)
-      {:error, :rate_limited} = error -> error
+    if login_rate_exceeded?(key) do
+      {:error, :rate_limited}
+    else
+      case do_authenticate(username, password, tekoa) do
+        {:ok, ava} -> {:ok, ava}
+        {:error, _reason} = error -> record_login_failure(key, error)
+      end
     end
   end
 
@@ -180,16 +185,19 @@ defmodule Taina.Maraca do
     verify_credentials(result, password)
   end
 
-  # A janela é consumida por tentativa (antes do bcrypt), então também blinda a
-  # CPU do servidor contra um ataque de senha. Conta inexistente compartilha a
-  # mesma janela do username -- não vaza existência.
-  defp login_rate_check(%Tekoa{} = tekoa, username) do
-    key = "login:#{tekoa.public_id}:#{username}"
+  defp login_rate_key(%Tekoa{} = tekoa, username), do: "login:#{tekoa.public_id}:#{username}"
 
-    case RateLimit.hit(key, @login_rate_scale_ms, @login_rate_limit) do
-      {:allow, _count} -> :ok
-      {:deny, _retry_after_ms} -> {:error, :rate_limited}
-    end
+  # Só as falhas contam para a janela: lemos a contagem sem incrementar, então
+  # uma senha correta nunca a queima (login/logout/login não tranca ninguém).
+  # Acima do limite recusamos antes do bcrypt, blindando a CPU contra força
+  # bruta. Conta inexistente compartilha a janela do username (não vaza existência).
+  defp login_rate_exceeded?(key) do
+    RateLimit.get(key, @login_rate_scale_ms) >= @login_rate_limit
+  end
+
+  defp record_login_failure(key, error) do
+    _ = RateLimit.hit(key, @login_rate_scale_ms, @login_rate_limit)
+    error
   end
 
   defp verify_credentials(nil, _password) do
@@ -242,9 +250,12 @@ defmodule Taina.Maraca do
   def get_session_user(%{"ava_id" => ava_id}), do: resolve_session_ava(ava_id)
   def get_session_user(_session), do: {:error, :not_authenticated}
 
+  # Revalida a cada request/mount: uma conta desativada pelo zelador deixa de
+  # resolver, então a sessão ainda aberta cai no próximo acesso -- honra o
+  # "não vai mais conseguir entrar" da tela de membros.
   defp resolve_session_ava(public_id) when is_binary(public_id) do
     case Repo.get_by(Ava, [public_id: public_id], skip_tekoa_id: true) do
-      %Ava{} = ava ->
+      %Ava{deactivated_at: nil} = ava ->
         tekoa = Repo.get!(Tekoa, ava.tekoa_id, skip_tekoa_id: true)
         {:ok, %{ava | tekoa: tekoa}}
 
@@ -352,8 +363,20 @@ defmodule Taina.Maraca do
   defp last_active_zelador?(%Ava{role: :zelador, deactivated_at: nil}), do: active_zelador_count() == 1
   defp last_active_zelador?(%Ava{}), do: false
 
+  # Trava os zeladores ativos com FOR UPDATE para serializar desativações e
+  # rebaixamentos concorrentes: dois zeladores se removendo ao mesmo tempo não
+  # podem ambos ler count == 2 e zerar a administração -- o segundo bloqueia,
+  # relê após o commit do primeiro e enxerga count == 1. Roda sempre dentro da
+  # transação de `Repo.with_tekoa`. `count(*)` não aceita FOR UPDATE no Postgres,
+  # então travamos as linhas e contamos no Elixir (teto de 50 membros, custo trivial).
   defp active_zelador_count do
-    Repo.aggregate(from(a in Ava, where: a.role == :zelador and is_nil(a.deactivated_at)), :count)
+    from(a in Ava,
+      where: a.role == :zelador and is_nil(a.deactivated_at),
+      lock: "FOR UPDATE",
+      select: a.id
+    )
+    |> Repo.all()
+    |> length()
   end
 
   ## Reset de senha

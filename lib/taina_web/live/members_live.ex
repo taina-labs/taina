@@ -9,6 +9,7 @@ defmodule TainaWeb.MembersLive do
   use TainaWeb, :live_view
 
   alias Taina.Maraca
+  alias Taina.Maraca.Ava
   alias TainaWeb.Layouts
 
   @impl true
@@ -30,16 +31,16 @@ defmodule TainaWeb.MembersLive do
 
   def handle_event("reset-link", %{"id" => public_id}, socket) do
     scope = socket.assigns.current_scope
+    member = Enum.find(socket.assigns.members, &(&1.public_id == public_id))
 
-    with %{} = member <- Enum.find(socket.assigns.members, &(&1.public_id == public_id)),
+    with %Ava{} <- member,
          {:ok, ava} <- Maraca.mint_reset_link(scope, member) do
       {:noreply,
        socket
        |> assign(:reset_link, url(~p"/redefinir/#{ava.reset_token}"))
        |> assign(:reset_member, display_name(member))}
     else
-      _ ->
-        {:noreply, Phoenix.LiveView.put_flash(socket, :error, gettext("Não foi possível gerar o link. Tente de novo."))}
+      _ -> {:noreply, flash_error(socket, gettext("Não foi possível gerar o link. Tente de novo."))}
     end
   end
 

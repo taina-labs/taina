@@ -17,7 +17,7 @@ defmodule Mix.Tasks.Taina.Backup.Verify do
   a config, sobe o `:postgrex` e fala direto com o banco — assim o
   `pg_restore --clean` não esbarra em planos em cache do pool.
 
-  > ⚠️ **Destrutivo.** Roda contra o banco apontado por `Taina.Repo`/`DATABASE_URL`.
+  > **Destrutivo.** Roda contra o banco apontado por `Taina.Repo`/`DATABASE_URL`.
   > Use só em CI ou num banco descartável.
 
       MIX_ENV=dev mix taina.backup.verify
@@ -63,7 +63,7 @@ defmodule Mix.Tasks.Taina.Backup.Verify do
     File.rm_rf(storage)
     File.rm_rf(backup_dir)
 
-    Mix.shell().info([:green, "✔ backup/restore round-trip OK", :reset])
+    Mix.shell().info([:green, "backup/restore round-trip OK", :reset])
   end
 
   defp seed(conn, public_id) do
@@ -102,13 +102,14 @@ defmodule Mix.Tasks.Taina.Backup.Verify do
   defp postgrex_opts do
     uri = URI.parse(Backup.database_url())
     {user, pass} = parse_userinfo(uri.userinfo)
+    database = (uri.path || "/postgres") |> String.trim_leading("/") |> URI.decode()
 
     [
       hostname: uri.host || "localhost",
       port: uri.port || 5432,
       username: user,
       password: pass,
-      database: String.trim_leading(uri.path || "/postgres", "/")
+      database: database
     ]
   end
 
