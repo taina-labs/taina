@@ -26,8 +26,6 @@ defmodule Taina.Nhaman.Backup do
   pode ser disparado sob demanda ("backup com um clique").
   """
 
-  require Logger
-
   @doc "O backup agendado está habilitado? (`config :taina, :backup, enabled:`)."
   def enabled?, do: Keyword.get(config(), :enabled, false)
 

@@ -8,73 +8,71 @@ defmodule Taina.Maraca.Behaviour do
   alias Taina.Scope
 
   @doc """
-  Convida um novo usuário para a Tekoa.
+  Convida uma pessoa para a Tekoa (por link/QR, sem e-mail).
 
   ## Regras de Negócio
 
-  - Apenas admins podem convidar usuários
-  - Gera token único de confirmação de email
-  - Email deve ser único dentro da Tekoa
-  - Email é enviado com link de confirmação
+  - Apenas zeladores podem convidar
+  - Cria um Ava pendente com token de convite; nome e senha vêm no aceite
+  - O token cru volta em `invite_token` (campo virtual) para montar o link/QR
+  - Papel padrão é `:morador`
   - Token expira após 7 dias
 
   ## Parâmetros
 
-    * `admin_ava` - Ava com role :admin que está convidando
-    * `tekoa` - Tekoa à qual o usuário será adicionado
-    * `email` - Email do usuário convidado
-    * `opts` - Opções adicionais (role, etc.)
+    * `zelador_ava` - Ava com role :zelador que está convidando
+    * `tekoa` - Tekoa à qual a pessoa será adicionada
+    * `opts` - Opções (`:role`, padrão `:morador`)
 
   ## Retorno
 
-    * `{:ok, %Ava{}}` - Convite criado, email enviado
-    * `{:error, :not_admin}` - Apenas admins podem convidar
+    * `{:ok, %Ava{}}` - Convite criado (token cru em `invite_token`)
+    * `{:error, :not_zelador}` - Apenas zeladores podem convidar
     * `{:error, %Ecto.Changeset{}}` - Validação falhou
 
   ## Exemplos
 
-      iex> invite_user(admin, tekoa, "novo@example.com")
-      {:ok, %Ava{email: "novo@example.com", confirmed_at: nil}}
+      iex> invite_user(zelador, tekoa, role: :morador)
+      {:ok, %Ava{invite_token: "abc...", activated_at: nil}}
 
-      iex> invite_user(member, tekoa, "outro@example.com")
-      {:error, :not_admin}
+      iex> invite_user(morador, tekoa, [])
+      {:error, :not_zelador}
   """
-  @callback invite_user(Ava.t(), Tekoa.t(), String.t(), keyword()) ::
-              {:ok, Ava.t()} | {:error, :not_admin | Ecto.Changeset.t()}
+  @callback invite_user(Ava.t(), Tekoa.t(), keyword()) ::
+              {:ok, Ava.t()} | {:error, :not_zelador | Ecto.Changeset.t()}
 
   @doc """
-  Confirma email do usuário e ativa a conta.
+  Aceita o convite e cria a conta (a pessoa escolhe nome e senha).
 
   ## Regras de Negócio
 
-  - Token deve ser válido e não expirado (< 7 dias)
-  - Senha deve ter no mínimo 8 caracteres
-  - Senha e confirmação devem coincidir
-  - Username deve ser único dentro da Tekoa (3-50 caracteres)
-  - Define confirmed_at e remove token
+  - Token de convite deve ser válido e não expirado (< 7 dias)
+  - `username` é obrigatório, handle único na Tekoa (3-50 caracteres)
+  - `display_name` é opcional
+  - Senha mínima de 8 caracteres, igual à confirmação
+  - Define `activated_at` e queima o token de convite
 
   ## Parâmetros
 
-    * `token` - Token recebido por email
-    * `password` - Senha do usuário
-    * `password_confirmation` - Confirmação da senha
-    * `username` - Nome de usuário escolhido
+    * `token` - Token de convite (veio no link/QR)
+    * `attrs` - Mapa com `username`, `password`, `password_confirmation` e,
+      opcionalmente, `display_name` (chaves string ou atom)
 
   ## Retorno
 
-    * `{:ok, %Ava{}}` - Conta confirmada e ativada
+    * `{:ok, %Ava{}}` - Conta criada e ativa
     * `{:error, :invalid_token}` - Token inválido ou expirado
     * `{:error, %Ecto.Changeset{}}` - Validação falhou
 
   ## Exemplos
 
-      iex> confirm_email(token, "senha123", "senha123", "maria")
-      {:ok, %Ava{confirmed_at: ~U[2026-01-22 20:00:00Z], username: "maria"}}
+      iex> accept_invite(token, %{"username" => "maria", "password" => "senha1234", "password_confirmation" => "senha1234"})
+      {:ok, %Ava{activated_at: ~U[2026-06-16 20:00:00Z], username: "maria"}}
 
-      iex> confirm_email("invalid", "senha", "senha", "user")
+      iex> accept_invite("invalid", %{})
       {:error, :invalid_token}
   """
-  @callback confirm_email(String.t(), String.t(), String.t(), String.t()) ::
+  @callback accept_invite(String.t(), map()) ::
               {:ok, Ava.t()} | {:error, :invalid_token | Ecto.Changeset.t()}
 
   @doc """
@@ -106,7 +104,7 @@ defmodule Taina.Maraca.Behaviour do
   ## Exemplos
 
       iex> authenticate("user@example.com", "senha123", tekoa)
-      {:ok, %Ava{email: "user@example.com"}}
+      {:ok, %Ava{username: "maria"}}
 
       iex> authenticate("user@example.com", "senhaerrada", tekoa)
       {:error, :invalid_credentials}
@@ -135,7 +133,7 @@ defmodule Taina.Maraca.Behaviour do
   ## Exemplos
 
       iex> create_session(ava)
-      %{ava_id: "ava_123", tekoa_id: "tekoa_456", role: :member}
+      %{ava_id: "ava_123", tekoa_id: "tekoa_456", role: :morador}
   """
   @callback create_session(Ava.t()) :: map()
 
@@ -163,21 +161,21 @@ defmodule Taina.Maraca.Behaviour do
   @callback destroy_session(Plug.Conn.t()) :: Plug.Conn.t()
 
   @doc """
-  Bootstrap de primeira inicialização: cria a Tekoa única e o admin inicial.
+  Bootstrap de primeira inicialização: cria a Tekoa única e o zelador inicial.
 
   ## Regras de Negócio
 
-  - Só funciona em instância vazia — se já existe Tekoa, retorna
+  - Só funciona em instância vazia, se já existe Tekoa, retorna
     `{:error, :already_bootstrapped}` (reforçado pelo índice único
     `single_tekoa_enforcement` no banco; ver RFC 002, D2)
-  - Admin é criado já confirmado (`confirmed_at`), com senha definida e
-    `role: :admin`
-  - Tekoa + admin na mesma transação
+  - O zelador inicial é criado já ativo (`activated_at`), com senha e
+    `role: :zelador`
+  - Tekoa + zelador na mesma transação
 
   ## Parâmetros
 
     * `tekoa_attrs` - `%{name: ..., storage_quota_bytes: ...}`
-    * `admin_attrs` - `%{username: ..., email: ..., password: ..., password_confirmation: ...}`
+    * `zelador_attrs` - `%{username: ..., display_name: ..., password: ..., password_confirmation: ...}`
 
   ## Retorno
 
@@ -211,7 +209,7 @@ defmodule Taina.Maraca.Behaviour do
   ## Exemplos
 
       iex> get_session_user(conn)
-      {:ok, %Ava{email: "user@example.com"}}
+      {:ok, %Ava{username: "maria"}}
 
       iex> get_session_user(%{"ava_id" => "V1StGXR8_Z5j"})
       {:ok, %Ava{}}
@@ -224,9 +222,9 @@ defmodule Taina.Maraca.Behaviour do
 
   ## Regras de Negócio
 
-  - Apenas admins podem alterar a cota (`scope.ava.role == :admin`)
+  - Apenas zeladores podem alterar a cota (`scope.ava.role == :zelador`)
   - `quota_bytes` deve ser maior que zero
-  - Demais (membros) recebem `{:error, :unauthorized}`
+  - Moradores recebem `{:error, :unauthorized}`
 
   ## Parâmetros
 
@@ -236,67 +234,51 @@ defmodule Taina.Maraca.Behaviour do
   ## Retorno
 
     * `{:ok, %Tekoa{}}` - cota atualizada
-    * `{:error, :unauthorized}` - quem pediu não é admin
+    * `{:error, :unauthorized}` - quem pediu não é zelador
     * `{:error, %Ecto.Changeset{}}` - validação falhou (ex.: cota <= 0)
 
   ## Exemplos
 
-      iex> update_tekoa_quota(admin_scope, 10 * 1024 * 1024 * 1024)
+      iex> update_tekoa_quota(zelador_scope, 10 * 1024 * 1024 * 1024)
       {:ok, %Tekoa{storage_quota_bytes: 10737418240}}
 
-      iex> update_tekoa_quota(member_scope, 1024)
+      iex> update_tekoa_quota(morador_scope, 1024)
       {:error, :unauthorized}
   """
   @callback update_tekoa_quota(Scope.t(), pos_integer()) ::
               {:ok, Tekoa.t()} | {:error, :unauthorized | Ecto.Changeset.t()}
 
   # ============================================================================
-  # GESTÃO DE MEMBROS (admin)
+  # GESTÃO DE MEMBROS (zelador)
   # ============================================================================
 
   @doc """
-  Lista os membros da Tekoa do scope (incluindo desativados).
+  Altera o papel (zelador/morador) de um membro.
 
   ## Regras de Negócio
 
-  - Apenas admins listam membros (`scope.ava.role == :admin`)
-  - Ordenado por data de entrada (mais antigos primeiro)
-  - Inclui contas ainda não confirmadas (convites pendentes) e desativadas
-
-  ## Retorno
-
-    * `{:ok, [%Ava{}]}` - Membros da comunidade
-    * `{:error, :unauthorized}` - Quem pediu não é admin
-  """
-  @callback list_members(Scope.t()) :: {:ok, [Ava.t()]} | {:error, :unauthorized}
-
-  @doc """
-  Altera o papel (admin/member) de um membro.
-
-  ## Regras de Negócio
-
-  - Apenas admins alteram papéis
+  - Apenas zeladores alteram papéis
   - Identifica o alvo por `public_id`
-  - **Não pode rebaixar o último admin ativo** — a comunidade ficaria sem
-    administração (`{:error, :last_admin}`)
+  - **Não pode rebaixar o último zelador ativo** -- a comunidade ficaria sem
+    quem cuida da máquina (`{:error, :last_zelador}`)
 
   ## Parâmetros
 
-    * `scope` - admin agindo + Tekoa
+    * `scope` - zelador agindo + Tekoa
     * `member_public_id` - alvo
-    * `role` - `:admin` ou `:member`
+    * `role` - `:zelador` ou `:morador`
 
   ## Retorno
 
     * `{:ok, %Ava{}}` - Papel atualizado
-    * `{:error, :unauthorized}` - Quem pediu não é admin
+    * `{:error, :unauthorized}` - Quem pediu não é zelador
     * `{:error, :not_found}` - Membro não existe na Tekoa
-    * `{:error, :last_admin}` - Tentou rebaixar o último admin ativo
+    * `{:error, :last_zelador}` - Tentou rebaixar o último zelador ativo
     * `{:error, %Ecto.Changeset{}}` - Papel inválido
   """
-  @callback update_member_role(Scope.t(), String.t(), :admin | :member) ::
+  @callback update_member_role(Scope.t(), String.t(), :zelador | :morador) ::
               {:ok, Ava.t()}
-              | {:error, :unauthorized | :not_found | :last_admin | Ecto.Changeset.t()}
+              | {:error, :unauthorized | :not_found | :last_zelador | Ecto.Changeset.t()}
 
   @doc """
   Desativa a conta de um membro (soft): preenche `deactivated_at`. A conta e os
@@ -304,33 +286,33 @@ defmodule Taina.Maraca.Behaviour do
 
   ## Regras de Negócio
 
-  - Apenas admins desativam contas
+  - Apenas zeladores desativam contas
   - Identifica o alvo por `public_id`
-  - **Não pode desativar o último admin ativo** (`{:error, :last_admin}`)
+  - **Não pode desativar o último zelador ativo** (`{:error, :last_zelador}`)
   - Idempotente: desativar conta já desativada devolve `{:ok, ava}`
 
   ## Retorno
 
     * `{:ok, %Ava{}}` - Conta desativada
-    * `{:error, :unauthorized}` - Quem pediu não é admin
+    * `{:error, :unauthorized}` - Quem pediu não é zelador
     * `{:error, :not_found}` - Membro não existe na Tekoa
-    * `{:error, :last_admin}` - Tentou desativar o último admin ativo
+    * `{:error, :last_zelador}` - Tentou desativar o último zelador ativo
   """
   @callback deactivate_member(Scope.t(), String.t()) ::
-              {:ok, Ava.t()} | {:error, :unauthorized | :not_found | :last_admin}
+              {:ok, Ava.t()} | {:error, :unauthorized | :not_found | :last_zelador}
 
   @doc """
   Reativa uma conta desativada (limpa `deactivated_at`).
 
   ## Regras de Negócio
 
-  - Apenas admins reativam contas
+  - Apenas zeladores reativam contas
   - Idempotente: reativar conta já ativa devolve `{:ok, ava}`
 
   ## Retorno
 
     * `{:ok, %Ava{}}` - Conta reativada
-    * `{:error, :unauthorized}` - Quem pediu não é admin
+    * `{:error, :unauthorized}` - Quem pediu não é zelador
     * `{:error, :not_found}` - Membro não existe na Tekoa
   """
   @callback reactivate_member(Scope.t(), String.t()) ::
@@ -341,31 +323,36 @@ defmodule Taina.Maraca.Behaviour do
   # ============================================================================
 
   @doc """
-  Solicita reset de senha.
+  Zelador gera um link de redefinição de senha para uma pessoa.
+
+  Sem e-mail, a recuperação é mediada: o zelador gera o token e entrega o link
+  pelo mesmo canal dos convites (RFC_003 seção 4). É cuidado-da-máquina, não dá
+  ao zelador a senha nem os dados de ninguém.
 
   ## Regras de Negócio
 
-  - Gera reset_token único
-  - Token expira após 1 hora
-  - Email é enviado com link de reset
-  - Funciona mesmo se email não existir (segurança)
+  - Apenas zeladores podem gerar o link
+  - Gera `reset_token` único; expira após 1 hora
+  - O token cru volta em `reset_token` (campo virtual) para montar o link
 
   ## Parâmetros
 
-    * `email` - Email do usuário
-    * `tekoa` - Tekoa onde o usuário está registrado
+    * `scope` - `Taina.Scope` de quem age (deve ser zelador)
+    * `member` - o Ava que recuperará o acesso
 
   ## Retorno
 
-    * `{:ok, %Ava{}}` - Token gerado, email enviado
-    * `{:ok, :email_sent}` - Email não existe, mas resposta igual (segurança)
+    * `{:ok, %Ava{}}` - Token gerado (cru em `reset_token`)
+    * `{:error, :unauthorized}` - Quem pediu não é zelador
+    * `{:error, :not_found}` - Pessoa não encontrada na Tekoa
 
   ## Exemplos
 
-      iex> request_password_reset("user@example.com", tekoa)
+      iex> mint_reset_link(zelador_scope, member)
       {:ok, %Ava{reset_token: "abc...", reset_token_sent_at: ~U[...]}}
   """
-  @callback request_password_reset(String.t(), Tekoa.t()) :: {:ok, Ava.t() | :email_sent}
+  @callback mint_reset_link(Scope.t(), Ava.t()) ::
+              {:ok, Ava.t()} | {:error, :unauthorized | :not_found}
 
   @doc """
   Completa reset de senha.
@@ -379,7 +366,7 @@ defmodule Taina.Maraca.Behaviour do
 
   ## Parâmetros
 
-    * `reset_token` - Token recebido por email
+    * `reset_token` - Token recebido pelo link de redefinição
     * `new_password` - Nova senha
     * `password_confirmation` - Confirmação da nova senha
 
@@ -412,7 +399,7 @@ defmodule Taina.Maraca.Behaviour do
 
   ## Regras de Negócio
 
-  - Admins NÃO têm acesso automático (devem solicitar via AccessRequest)
+  - Zeladores NÃO têm acesso automático (devem solicitar via AccessRequest)
   - Dono do recurso sempre tem todas as permissões
   - Permissões explícitas são verificadas na tabela permissions
 
@@ -436,8 +423,8 @@ defmodule Taina.Maraca.Behaviour do
       iex> authorize?(other_user, :read, "ybira_file", file.public_id)
       false
 
-      iex> authorize?(admin, :read, "ybira_file", user_file.public_id)
-      false  # Admin precisa solicitar acesso
+      iex> authorize?(zelador, :read, "ybira_file", user_file.public_id)
+      false  # Zelador precisa solicitar acesso
   """
   @callback authorize?(Ava.t(), atom(), String.t(), String.t()) :: boolean()
 
@@ -558,15 +545,15 @@ defmodule Taina.Maraca.Behaviour do
   @callback list_permissions(String.t(), String.t()) :: [Permission.t()]
 
   @doc """
-  Admin solicita acesso a recurso de usuário.
+  Zelador pede acesso ao recurso de uma pessoa.
 
   ## Regras de Negócio
 
-  - Apenas admins podem solicitar acesso
+  - Apenas zeladores podem pedir acesso (o zelador não tem atalho para a casa)
   - Cria AccessRequest com status :pending (não pode ser alterado na criação)
   - Owner é notificado via PubSub
   - Justificativa (reason) é obrigatória (max 250 chars)
-  - Não pode solicitar se já tem permissão
+  - Não pode pedir se já tem permissão
 
   ## Implementação
 
@@ -575,7 +562,7 @@ defmodule Taina.Maraca.Behaviour do
 
   ## Parâmetros
 
-    * `admin_ava` - Admin solicitando acesso
+    * `zelador_ava` - Zelador pedindo acesso
     * `owner_ava` - Dono do recurso
     * `resource_type` - Tipo do recurso
     * `resource_id` - ID do recurso
@@ -584,21 +571,22 @@ defmodule Taina.Maraca.Behaviour do
   ## Retorno
 
     * `{:ok, %AccessRequest{}}` - Solicitação criada
-    * `{:error, :not_admin}` - Apenas admins podem solicitar
-    * `{:error, :already_has_access}` - Admin já tem permissão
+    * `{:error, :cross_tekoa_owner}` - Dono e zelador são de comunidades diferentes
+    * `{:error, :not_zelador}` - Apenas zeladores podem pedir
+    * `{:error, :already_has_access}` - Zelador já tem permissão
     * `{:error, %Ecto.Changeset{}}` - Validação falhou
 
   ## Exemplos
 
-      iex> request_access(admin, owner, "ybira_file", file.public_id, "Ticket #123")
+      iex> request_access(zelador, owner, "ybira_file", file.public_id, "Ticket #123")
       {:ok, %AccessRequest{status: :pending}}
 
-      iex> request_access(member, owner, "ybira_file", file.public_id, "Motivo")
-      {:error, :not_admin}
+      iex> request_access(morador, owner, "ybira_file", file.public_id, "Motivo")
+      {:error, :not_zelador}
   """
   @callback request_access(Ava.t(), Ava.t(), String.t(), String.t(), String.t()) ::
               {:ok, AccessRequest.t()}
-              | {:error, :not_admin | :already_has_access | Ecto.Changeset.t()}
+              | {:error, :cross_tekoa_owner | :not_zelador | :already_has_access | Ecto.Changeset.t()}
 
   @doc """
   Owner aprova solicitação de acesso.
@@ -609,7 +597,7 @@ defmodule Taina.Maraca.Behaviour do
   - AccessRequest deve estar :pending
   - Cria Permission com action :read
   - Atualiza status para :approved
-  - Admin é notificado via PubSub
+  - Zelador é notificado via PubSub
 
   ## Parâmetros
 
@@ -639,7 +627,7 @@ defmodule Taina.Maraca.Behaviour do
   - Apenas owner pode negar
   - AccessRequest deve estar :pending
   - Atualiza status para :denied
-  - Admin é notificado via PubSub
+  - Zelador é notificado via PubSub
   - Request permanece no banco para auditoria
 
   ## Parâmetros
@@ -681,46 +669,73 @@ defmodule Taina.Maraca.Behaviour do
   @callback list_access_requests(Ava.t()) :: [AccessRequest.t()]
 
   @doc """
-  Verifica se Ava é admin na sua Tekoa.
-
-  ## Parâmetros
-
-    * `ava` - Ava a verificar
-
-  ## Retorno
-
-    * `true` - É admin
-    * `false` - Não é admin
-
-  ## Exemplos
-
-      iex> admin?(admin_ava)
-      true
-
-      iex> admin?(member_ava)
-      false
+  Verifica se o Ava é zelador(a) na sua Tekoa.
   """
-  @callback admin?(Ava.t()) :: boolean()
+  @callback zelador?(Ava.t()) :: boolean()
 
   @doc """
-  Verifica se email do Ava foi confirmado.
+  Verifica se o Ava é morador(a) na sua Tekoa.
+  """
+  @callback morador?(Ava.t()) :: boolean()
 
-  ## Parâmetros
-
-    * `ava` - Ava a verificar
+  @doc """
+  Verifica se a conta está ativa (a pessoa já aceitou o convite).
 
   ## Retorno
 
-    * `true` - Email confirmado (confirmed_at não é nil)
-    * `false` - Email não confirmado
-
-  ## Exemplos
-
-      iex> email_confirmed?(confirmed_ava)
-      true
-
-      iex> email_confirmed?(invited_ava)
-      false
+    * `true` - `activated_at` definido (convite aceito)
+    * `false` - Convite ainda pendente
   """
-  @callback email_confirmed?(Ava.t()) :: boolean()
+  @callback activated?(Ava.t()) :: boolean()
+
+  @doc """
+  Verifica se a instância já passou pelo setup (existe a Tekoa única).
+
+  Consulta de sistema (`skip_tekoa_id: true`): roda antes de existir sessão,
+  no redirecionamento para o wizard de primeiro boot.
+
+  ## Retorno
+
+    * `true` - Setup concluído, instância pronta
+    * `false` - Instância virgem, redirecionar para `/setup`
+  """
+  @callback bootstrapped?() :: boolean()
+
+  @doc """
+  Obtém a Tekoa única da instância (RFC 002, D2, modo single-tekoa).
+
+  Consulta de sistema (`skip_tekoa_id: true`): usada no login, antes de haver
+  scope, `authenticate/3` precisa da Tekoa e o usuário ainda não provou quem é.
+
+  ## Retorno
+
+    * `{:ok, %Tekoa{}}` - A Tekoa da instância
+    * `{:error, :not_bootstrapped}` - Setup ainda não rodou
+  """
+  @callback get_tekoa() :: {:ok, Tekoa.t()} | {:error, :not_bootstrapped}
+
+  @doc """
+  Lista os membros da Tekoa do scope, ordenados por papel (zeladores primeiro)
+  e data de entrada.
+
+  ## Regras de Negócio
+
+  - Inclui contas ainda não confirmadas (convites pendentes) e desativadas,
+    a tela de membros mostra o estado de cada uma
+  - Isolamento via RLS (scope-first)
+
+  ## Retorno
+
+    * `{:ok, [%Ava{}]}` - Membros da comunidade
+  """
+  @callback list_members(Scope.t()) :: {:ok, [Ava.t()]}
+
+  @doc """
+  Conta os membros da Tekoa do scope (card "Membros" da home).
+
+  ## Retorno
+
+    * `{:ok, count}` - Total de membros
+  """
+  @callback count_members(Scope.t()) :: {:ok, non_neg_integer()}
 end

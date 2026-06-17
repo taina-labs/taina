@@ -134,6 +134,17 @@ defmodule Taina.Ybira.File do
   end
 
   @doc """
+  Renomeia o arquivo: muda só o `original_filename` (o nome no disco,
+  `filename`, e os bytes não mudam).
+  """
+  def rename_changeset(file, new_name) do
+    file
+    |> cast(%{original_filename: new_name}, [:original_filename])
+    |> validate_required([:original_filename])
+    |> validate_length(:original_filename, min: 1, max: 255)
+  end
+
+  @doc """
   Move o arquivo para a lixeira (soft delete), preenchendo `deleted_at`. Os
   bytes ficam no disco até o `PurgeTrash` apagar de vez.
   """

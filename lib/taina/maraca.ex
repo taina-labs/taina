@@ -2,22 +2,22 @@ defmodule Taina.Maraca do
   @moduledoc """
   Interface pública para autenticação e autorização do serviço Maraca.
 
-  Implementa `Taina.Maraca.Behaviour` — consulte cada callback para regras de
+  Implementa `Taina.Maraca.Behaviour`, consulte cada callback para regras de
   negócio detalhadas.
 
   ## Filosofia
 
-  - **Usuários são donos de seus dados** - Propriedade explícita
-  - **Admins são facilitadores, não deuses** - Devem solicitar acesso
+  - **Moradores são donos de seus dados** - Propriedade explícita
+  - **Zeladores cuidam da máquina, não são deuses** - Devem pedir acesso
   - **Permissões explícitas** - Nunca implícitas
   - **Auditabilidade total** - Todas as tentativas de acesso registradas
 
-  ## Convites sem e-mail
+  ## Identidade sem e-mail (RFC_003, seção 4)
 
-  Conforme a RFC 002 (D6), convites são por **link**: `invite_user/4` retorna
-  o Ava com o token cru no campo virtual `email_confirmation_token` — o
-  chamador monta a URL/QR code e entrega pelo canal que a comunidade já usa.
-  E-mail (Swoosh) é opcional e fica para depois.
+  Convites são por **link/QR**: `invite_user/3` cria um Ava pendente e devolve
+  o token cru no campo virtual `invite_token`; o chamador monta a URL/QR e
+  entrega pelo canal que a comunidade já usa. Não há e-mail: login é por nome
+  (`username`) e a recuperação é mediada pelo zelador (`mint_reset_link/2`).
 
   ## Ordem de Resolução de Permissões
 
@@ -45,13 +45,13 @@ defmodule Taina.Maraca do
   @reset_max_age_seconds 60 * 60
   @grantable_actions ~w(read write delete)a
 
-  # Janela de força bruta de login, por (tekoa, email): no máximo
+  # Janela de força bruta de login, por (tekoa, username): no máximo
   # @login_rate_limit tentativas a cada @login_rate_scale_ms. Folgado o
   # suficiente para erros de digitação, apertado contra enumeração de senha.
   @login_rate_scale_ms 60_000
   @login_rate_limit 5
 
-  # Mapa de tipos de recurso → {schema, campo de dono}. A propriedade é o
+  # Mapa de tipos de recurso -> {schema, campo de dono}. A propriedade é o
   # segundo nível da resolução de permissões; tipos fora deste mapa só podem
   # ser autorizados por permissão explícita.
   @owned_resources %{
@@ -63,63 +63,96 @@ defmodule Taina.Maraca do
   ## Bootstrap
 
   @impl true
-  def bootstrap(tekoa_attrs, admin_attrs) do
+  def bootstrap(tekoa_attrs, zelador_attrs) do
     if Repo.exists?(Tekoa, skip_tekoa_id: true) do
       {:error, :already_bootstrapped}
     else
-      Repo.transact(fn -> create_tekoa_with_admin(tekoa_attrs, admin_attrs) end)
+      Repo.transact(fn -> create_tekoa_with_zelador(tekoa_attrs, zelador_attrs) end)
     end
   end
 
-  defp create_tekoa_with_admin(tekoa_attrs, admin_attrs) do
+  defp create_tekoa_with_zelador(tekoa_attrs, zelador_attrs) do
     with {:ok, tekoa} <- Repo.insert(Tekoa.changeset(%Tekoa{}, tekoa_attrs)),
-         {:ok, ava} <- insert_bootstrap_admin(tekoa, admin_attrs) do
+         {:ok, ava} <- insert_bootstrap_zelador(tekoa, zelador_attrs) do
       {:ok, %{tekoa: tekoa, ava: ava}}
     end
   end
 
-  defp insert_bootstrap_admin(%Tekoa{} = tekoa, attrs) do
+  defp insert_bootstrap_zelador(%Tekoa{} = tekoa, attrs) do
     base = %{
       username: attrs[:username],
-      email: attrs[:email],
-      role: :admin,
+      display_name: attrs[:display_name],
+      role: :zelador,
       tekoa_id: tekoa.id
     }
 
     %Ava{}
     |> Ava.changeset(base)
-    |> Ava.confirmation_changeset(Map.take(attrs, [:username, :password, :password_confirmation]))
+    |> Ava.accept_invite_changeset(Map.take(attrs, [:username, :display_name, :password, :password_confirmation]))
     |> Repo.insert()
   end
 
-  ## Convite e confirmação
+  @impl true
+  def bootstrapped? do
+    Repo.exists?(Tekoa, skip_tekoa_id: true)
+  end
 
   @impl true
-  def invite_user(%Ava{} = admin, %Tekoa{} = tekoa, email, opts \\ []) do
-    if admin?(admin) and admin.tekoa_id == tekoa.id do
+  def get_tekoa do
+    case Repo.one(Tekoa, skip_tekoa_id: true) do
+      %Tekoa{} = tekoa -> {:ok, tekoa}
+      nil -> {:error, :not_bootstrapped}
+    end
+  end
+
+  ## Membros
+
+  @impl true
+  def list_members(%Scope{} = scope) do
+    Repo.with_tekoa(scope.tekoa.public_id, fn ->
+      members =
+        Repo.all(
+          from a in Ava,
+            where: a.tekoa_id == ^scope.tekoa.id,
+            order_by: [asc: fragment("CASE WHEN ? = 'zelador' THEN 0 ELSE 1 END", a.role), asc: a.inserted_at]
+        )
+
+      {:ok, members}
+    end)
+  end
+
+  @impl true
+  def count_members(%Scope{} = scope) do
+    Repo.with_tekoa(scope.tekoa.public_id, fn ->
+      {:ok, Repo.aggregate(from(a in Ava, where: a.tekoa_id == ^scope.tekoa.id), :count)}
+    end)
+  end
+
+  ## Convite e aceite
+
+  @impl true
+  def invite_user(%Ava{} = zelador, %Tekoa{} = tekoa, opts \\ []) do
+    if zelador?(zelador) and zelador.tekoa_id == tekoa.id do
       attrs = %{
-        email: email,
         tekoa_id: tekoa.id,
-        invited_by_id: admin.id,
-        role: Keyword.get(opts, :role, :member)
+        invited_by_id: zelador.id,
+        role: Keyword.get(opts, :role, :morador)
       }
 
       Repo.with_tekoa(tekoa.public_id, fn ->
         Repo.insert(Ava.invitation_changeset(%Ava{}, attrs))
       end)
     else
-      {:error, :not_admin}
+      {:error, :not_zelador}
     end
   end
 
   @impl true
-  def confirm_email(token, password, password_confirmation, username) do
-    with %Ava{} = ava <- find_by_token(:email_confirmation_token_hash, token),
-         false <- token_expired?(ava.email_confirmation_sent_at, @invitation_max_age_seconds) do
-      attrs = %{username: username, password: password, password_confirmation: password_confirmation}
-
+  def accept_invite(token, attrs) do
+    with %Ava{} = ava <- find_by_token(:invite_token_hash, token),
+         false <- token_expired?(ava.invite_sent_at, @invitation_max_age_seconds) do
       Repo.with_tekoa(tekoa_public_id(ava), fn ->
-        Repo.update(Ava.confirmation_changeset(ava, attrs))
+        Repo.update(Ava.accept_invite_changeset(ava, attrs))
       end)
     else
       _ -> {:error, :invalid_token}
@@ -129,17 +162,19 @@ defmodule Taina.Maraca do
   ## Autenticação e sessão
 
   @impl true
-  def authenticate(email, password, %Tekoa{} = tekoa) do
-    case login_rate_check(tekoa, email) do
-      :ok -> do_authenticate(email, password, tekoa)
+  def authenticate(username, password, %Tekoa{} = tekoa) do
+    username = normalize_username(username)
+
+    case login_rate_check(tekoa, username) do
+      :ok -> do_authenticate(username, password, tekoa)
       {:error, :rate_limited} = error -> error
     end
   end
 
-  defp do_authenticate(email, password, %Tekoa{} = tekoa) do
+  defp do_authenticate(username, password, %Tekoa{} = tekoa) do
     {:ok, result} =
       Repo.with_tekoa(tekoa.public_id, fn ->
-        {:ok, Repo.get_by(Ava, email: email, tekoa_id: tekoa.id)}
+        {:ok, Repo.get_by(Ava, username: username, tekoa_id: tekoa.id)}
       end)
 
     verify_credentials(result, password)
@@ -147,9 +182,9 @@ defmodule Taina.Maraca do
 
   # A janela é consumida por tentativa (antes do bcrypt), então também blinda a
   # CPU do servidor contra um ataque de senha. Conta inexistente compartilha a
-  # mesma janela do email — não vaza existência.
-  defp login_rate_check(%Tekoa{} = tekoa, email) do
-    key = "login:#{tekoa.public_id}:#{String.downcase(to_string(email))}"
+  # mesma janela do username -- não vaza existência.
+  defp login_rate_check(%Tekoa{} = tekoa, username) do
+    key = "login:#{tekoa.public_id}:#{username}"
 
     case RateLimit.hit(key, @login_rate_scale_ms, @login_rate_limit) do
       {:allow, _count} -> :ok
@@ -162,14 +197,16 @@ defmodule Taina.Maraca do
     {:error, :invalid_credentials}
   end
 
+  # Conta desativada pelo zelador: bloqueia login mesmo com senha correta.
   defp verify_credentials(%Ava{deactivated_at: deactivated_at}, _password) when not is_nil(deactivated_at) do
     Bcrypt.no_user_verify()
     {:error, :account_deactivated}
   end
 
-  defp verify_credentials(%Ava{confirmed_at: nil}, _password) do
+  # Convite ainda não aceito: sem senha definida, não há o que verificar.
+  defp verify_credentials(%Ava{password_hash: nil}, _password) do
     Bcrypt.no_user_verify()
-    {:error, :email_not_confirmed}
+    {:error, :invalid_credentials}
   end
 
   defp verify_credentials(%Ava{} = ava, password) do
@@ -178,6 +215,10 @@ defmodule Taina.Maraca do
     else
       {:error, :invalid_credentials}
     end
+  end
+
+  defp normalize_username(username) do
+    username |> to_string() |> String.trim() |> String.downcase()
   end
 
   @impl true
@@ -218,7 +259,7 @@ defmodule Taina.Maraca do
 
   @impl true
   def update_tekoa_quota(%Scope{} = scope, quota_bytes) when is_integer(quota_bytes) do
-    if admin?(scope.ava) do
+    if zelador?(scope.ava) do
       Repo.with_tekoa(scope.tekoa.public_id, fn ->
         Tekoa
         |> Repo.get!(scope.tekoa.id)
@@ -230,45 +271,36 @@ defmodule Taina.Maraca do
     end
   end
 
-  ## Gestão de membros (admin)
-
-  @impl true
-  def list_members(%Scope{} = scope) do
-    with :ok <- ensure_admin(scope) do
-      Repo.with_tekoa(scope.tekoa.public_id, fn ->
-        {:ok, Repo.all(from a in Ava, order_by: [asc: a.inserted_at, asc: a.id])}
-      end)
-    end
-  end
+  ## Gestão de membros (zelador)
 
   @impl true
   def update_member_role(%Scope{} = scope, member_public_id, role) do
-    with :ok <- ensure_admin(scope) do
+    with :ok <- ensure_zelador(scope) do
       Repo.with_tekoa(scope.tekoa.public_id, fn -> do_update_role(member_public_id, role) end)
     end
   end
 
   @impl true
   def deactivate_member(%Scope{} = scope, member_public_id) do
-    with :ok <- ensure_admin(scope) do
+    with :ok <- ensure_zelador(scope) do
       Repo.with_tekoa(scope.tekoa.public_id, fn -> do_deactivate(member_public_id) end)
     end
   end
 
   @impl true
   def reactivate_member(%Scope{} = scope, member_public_id) do
-    with :ok <- ensure_admin(scope) do
+    with :ok <- ensure_zelador(scope) do
       Repo.with_tekoa(scope.tekoa.public_id, fn -> do_reactivate(member_public_id) end)
     end
   end
 
-  defp ensure_admin(%Scope{ava: ava}) do
-    if admin?(ava), do: :ok, else: {:error, :unauthorized}
+  defp ensure_zelador(%Scope{ava: ava}) do
+    if zelador?(ava), do: :ok, else: {:error, :unauthorized}
   end
 
   defp do_update_role(public_id, role) do
     with {:ok, member} <- fetch_member(public_id),
-         :ok <- ensure_demotion_keeps_admin(member, role) do
+         :ok <- ensure_demotion_keeps_zelador(member, role) do
       Repo.update(Ava.role_changeset(member, role))
     end
   end
@@ -286,7 +318,7 @@ defmodule Taina.Maraca do
   end
 
   # Resolve um membro pelo public_id dentro do contexto de Tekoa (RLS escopa por
-  # comunidade — public_id de outra Tekoa simplesmente não aparece).
+  # comunidade -- public_id de outra Tekoa simplesmente não aparece).
   defp fetch_member(public_id) do
     case Repo.get_by(Ava, public_id: public_id) do
       nil -> {:error, :not_found}
@@ -294,46 +326,52 @@ defmodule Taina.Maraca do
     end
   end
 
-  # Idempotente: conta já desativada não muda. O último admin ativo não pode ser
-  # desativado (a comunidade ficaria sem administração).
+  # Idempotente: conta já desativada não muda. O último zelador ativo não pode
+  # ser desativado (a comunidade ficaria sem quem cuida da máquina).
   defp deactivate_if_allowed(%Ava{deactivated_at: at} = member) when not is_nil(at) do
     {:ok, member}
   end
 
   defp deactivate_if_allowed(%Ava{} = member) do
-    if last_active_admin?(member) do
-      {:error, :last_admin}
+    if last_active_zelador?(member) do
+      {:error, :last_zelador}
     else
       Repo.update(Ava.deactivation_changeset(member, DateTime.utc_now()))
     end
   end
 
-  # Rebaixar admin → member só é barrado quando esvaziaria a administração.
-  defp ensure_demotion_keeps_admin(%Ava{role: :admin} = member, :member) do
-    if last_active_admin?(member), do: {:error, :last_admin}, else: :ok
+  # Rebaixar zelador -> morador só é barrado quando esvaziaria a administração.
+  defp ensure_demotion_keeps_zelador(%Ava{role: :zelador} = member, :morador) do
+    if last_active_zelador?(member), do: {:error, :last_zelador}, else: :ok
   end
 
-  defp ensure_demotion_keeps_admin(_member, _role), do: :ok
+  defp ensure_demotion_keeps_zelador(_member, _role), do: :ok
 
-  # `member` é o único admin ativo da Tekoa? Só faz sentido quando ele próprio é
-  # admin ativo; nesse caso, contagem == 1 significa que é o último.
-  defp last_active_admin?(%Ava{role: :admin, deactivated_at: nil}), do: active_admin_count() == 1
-  defp last_active_admin?(%Ava{}), do: false
+  # `member` é o único zelador ativo da Tekoa? Só faz sentido quando ele próprio
+  # é zelador ativo; nesse caso, contagem == 1 significa que é o último.
+  defp last_active_zelador?(%Ava{role: :zelador, deactivated_at: nil}), do: active_zelador_count() == 1
+  defp last_active_zelador?(%Ava{}), do: false
 
-  defp active_admin_count do
-    Repo.aggregate(from(a in Ava, where: a.role == :admin and is_nil(a.deactivated_at)), :count)
+  defp active_zelador_count do
+    Repo.aggregate(from(a in Ava, where: a.role == :zelador and is_nil(a.deactivated_at)), :count)
   end
 
   ## Reset de senha
 
   @impl true
-  def request_password_reset(email, %Tekoa{} = tekoa) do
-    Repo.with_tekoa(tekoa.public_id, fn ->
-      case Repo.get_by(Ava, email: email, tekoa_id: tekoa.id) do
-        nil -> {:ok, :email_sent}
-        %Ava{} = ava -> Repo.update(Ava.password_reset_request_changeset(ava))
-      end
-    end)
+  def mint_reset_link(%Scope{} = scope, %Ava{} = member) do
+    if zelador?(scope.ava) do
+      Repo.with_tekoa(scope.tekoa.public_id, fn -> do_mint_reset_link(scope, member) end)
+    else
+      {:error, :unauthorized}
+    end
+  end
+
+  defp do_mint_reset_link(%Scope{} = scope, %Ava{} = member) do
+    case Repo.get_by(Ava, id: member.id, tekoa_id: scope.tekoa.id) do
+      nil -> {:error, :not_found}
+      %Ava{} = ava -> Repo.update(Ava.password_reset_request_changeset(ava))
+    end
   end
 
   @impl true
@@ -447,29 +485,32 @@ defmodule Taina.Maraca do
     |> Repo.preload([:ava, :granted_by], skip_tekoa_id: true)
   end
 
-  ## Acesso administrativo (com aprovação do dono)
+  ## Acesso do zelador (com aprovação do dono)
 
   @impl true
-  def request_access(%Ava{} = admin, %Ava{} = owner, resource_type, resource_id, reason) do
+  def request_access(%Ava{} = zelador, %Ava{} = owner, resource_type, resource_id, reason) do
     cond do
-      not admin?(admin) ->
-        {:error, :not_admin}
+      owner.tekoa_id != zelador.tekoa_id ->
+        {:error, :cross_tekoa_owner}
 
-      authorize?(admin, :read, resource_type, resource_id) ->
+      not zelador?(zelador) ->
+        {:error, :not_zelador}
+
+      authorize?(zelador, :read, resource_type, resource_id) ->
         {:error, :already_has_access}
 
       true ->
         attrs = %{
-          requester_id: admin.id,
+          requester_id: zelador.id,
           owner_id: owner.id,
           resource_type: resource_type,
           resource_id: resource_id,
           reason: reason,
-          tekoa_id: admin.tekoa_id
+          tekoa_id: zelador.tekoa_id
         }
 
         result =
-          Repo.with_tekoa(tekoa_public_id(admin), fn ->
+          Repo.with_tekoa(tekoa_public_id(zelador), fn ->
             Repo.insert(AccessRequest.create_changeset(%AccessRequest{}, attrs))
           end)
 
@@ -549,12 +590,16 @@ defmodule Taina.Maraca do
   ## Predicados
 
   @impl true
-  def admin?(%Ava{role: :admin}), do: true
-  def admin?(%Ava{}), do: false
+  def zelador?(%Ava{role: :zelador}), do: true
+  def zelador?(%Ava{}), do: false
 
   @impl true
-  def email_confirmed?(%Ava{confirmed_at: nil}), do: false
-  def email_confirmed?(%Ava{}), do: true
+  def morador?(%Ava{role: :morador}), do: true
+  def morador?(%Ava{}), do: false
+
+  @impl true
+  def activated?(%Ava{activated_at: nil}), do: false
+  def activated?(%Ava{}), do: true
 
   ## Helpers internos
 

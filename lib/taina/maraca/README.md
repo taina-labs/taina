@@ -13,12 +13,12 @@ Maracá vem do Tupi-Guarani e designa o chocalho cerimonial usado em rituais imp
 O Maraca oferece:
 
 - Criação e gerenciamento de Tekoas (comunidades)
-- Cadastro seguro de Avas (pessoas/usuários) com criptografia de senhas
-- Confirmação de e-mail obrigatória para novos membros
+- Cadastro seguro de Avas (pessoas) com criptografia de senhas
+- Convites por link/QR, sem e-mail; login por nome de usuário
 - Sistema de permissões granular por recurso (arquivos, pastas, conversas)
-- Controle de acesso baseado em papéis (administrador, membro)
+- Controle de acesso baseado em papéis (zelador, morador)
 - Isolamento total de dados entre comunidades (Row-Level Security)
-- Solicitação de acesso com aprovação explícita (admins não acessam dados sem permissão)
+- Pedido de acesso com aprovação explícita (zeladores não acessam dados sem permissão)
 - Lixeira com recuperação de dados excluídos (15 dias configurável)
 
 ## Para quem é
@@ -30,10 +30,10 @@ O Maraca oferece:
 
 ## Vantagens
 
-- Usuários são donos de seus dados (admins não têm acesso automático)
+- Moradores são donos de seus dados (zeladores não têm acesso automático)
 - Isolamento completo entre comunidades no nível do banco de dados
 - Permissões explícitas e amigáveis para iniciantes
-- Padrões seguros por padrão (confirmação de e-mail, criptografia bcrypt)
+- Padrões seguros por padrão (senha bcrypt, tokens de uso único)
 - Arquitetura extensível para federação entre Tekoas no futuro
 - Sem rastreamento, sem venda de dados, sem algoritmos manipulativos
 
@@ -47,7 +47,7 @@ Este projeto está em desenvolvimento ativo. Maraca é o serviço fundamental so
 - Criptografia de senhas com bcrypt
 - Row-Level Security (RLS) no PostgreSQL para isolamento de dados
 - Sistema de permissões com biblioteca Permit
-- Confirmação de e-mail com tokens seguros
+- Convites e redefinição por token (link/QR), sem e-mail
 - Soft delete com recuperação de dados (lixeira)
 
 ## Contribuindo

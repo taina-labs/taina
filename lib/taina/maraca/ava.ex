@@ -2,65 +2,52 @@ defmodule Taina.Maraca.Ava do
   @moduledoc """
   Representa uma pessoa que usa o Tainá dentro de uma comunidade.
 
-  Cada Ava (pessoa/usuário) pertence a uma Tekoa (comunidade) e pode ter diferentes
-  níveis de permissão: admin (administrador) ou member (membro). O nome vem do Tupi-Guarani
+  Cada Ava (pessoa) pertence a uma Tekoa (comunidade) e tem um papel: zelador(a)
+  (cuida da máquina) ou morador(a) (qualquer membro). O nome vem do Tupi-Guarani
   e representa a essência de uma pessoa na comunidade digital.
 
-  ## Campos principais
+  ## Identidade: nome-primeiro, sem e-mail (RFC_003, seção 4)
 
-    * `username` - Nome de usuário único dentro da comunidade
-    * `email` - Email para comunicação e login
-    * `role` - Função na comunidade (admin ou member)
-    * `confirmed_at` - Data/hora em que o email foi confirmado
-    * `public_id` - Identificador público seguro (não expõe o ID do banco)
-    * `password_hash` - Hash bcrypt da senha do usuário
-    * `email_confirmation_token_hash` - Hash SHA256 do token de confirmação (armazenado no DB)
-    * `email_confirmation_token` - Token cru para confirmação (virtual, usado apenas em emails)
-    * `reset_token_hash` - Hash SHA256 do token de reset (armazenado no DB)
-    * `reset_token` - Token cru para reset de senha (virtual, usado apenas em emails)
-    * `invited_by_id` - ID do Ava (admin) que convidou este usuário
-    * `invited_at` - Data/hora do convite
+    * `username` - nome de usuário, único na comunidade. É a identidade e a chave
+      de acesso (login por nome). Modelado como handle (minúsculas, sem espaços)
+      para virar `nome@tekoa` na federação futura.
+    * `display_name` - nome de exibição, opcional. Texto livre (espaços, acentos),
+      é como o nome aparece para a comunidade. Trocá-lo nunca quebra o login.
+    * `role` - papel na comunidade (`:zelador` ou `:morador`).
+    * `activated_at` - quando a pessoa aceitou o convite e a conta ficou ativa.
+    * `public_id` - identificador público seguro (não expõe o id do banco).
+    * `password_hash` - hash bcrypt da senha.
+    * `invite_token_hash` - hash SHA256 do token de convite (no banco).
+    * `invite_token` - token cru do convite (virtual, vai no link/QR).
+    * `reset_token_hash` / `reset_token` - idem para o link de redefinição que o
+      zelador gera (recuperação mediada, RFC_003 seção 4).
+    * `invited_by_id` / `invited_at` - quem convidou e quando.
 
-  ## Fluxos de Autenticação
+  Não há e-mail: convites são por link/QR e a recuperação passa pelo zelador
+  (RFC_002 D6, RFC_003 seção 4). A conta fica pendente até o aceite do convite,
+  não até confirmar e-mail.
 
-  Este schema suporta os seguintes fluxos através de changesets específicos:
+  ## Fluxos de autenticação
 
-  ### 1. Convite de Usuário (Admin)
+  Suportados por changesets específicos:
 
-      iex> changeset = Ava.invitation_changeset(%Ava{}, %{
-      ...>   email: "novo@example.com",
-      ...>   tekoa_id: 1,
-      ...>   invited_by_id: admin.id
-      ...> })
-
-  ### 2. Confirmação de Email e Ativação
-
-      iex> changeset = Ava.confirmation_changeset(invited_ava, %{
-      ...>   username: "maria",
-      ...>   password: "senhasegura123",
-      ...>   password_confirmation: "senhasegura123"
-      ...> })
-
-  ### 3. Solicitação de Reset de Senha
-
-      iex> changeset = Ava.password_reset_request_changeset(ava)
-
-  ### 4. Completar Reset de Senha
-
-      iex> changeset = Ava.password_reset_changeset(ava, %{
-      ...>   password: "novasenha123",
-      ...>   password_confirmation: "novasenha123"
-      ...> })
+    1. **Convite** (`invitation_changeset/2`): cria um Ava pendente só com token
+       de convite e papel. Sem nome, sem senha ainda.
+    2. **Aceite do convite** (`accept_invite_changeset/2`): a pessoa define nome
+       de usuário, nome de exibição (opcional) e senha; a conta ativa.
+    3. **Pedido de redefinição** (`password_reset_request_changeset/1`): o
+       zelador gera um token de redefinição.
+    4. **Redefinição** (`password_reset_changeset/2`): a pessoa define a nova
+       senha pelo link.
 
   ## Segurança
 
-  - Senhas são sempre hasheadas com bcrypt antes de serem armazenadas
-  - Tokens de confirmação e reset são gerados usando Nanoid (32 caracteres)
-  - Apenas o hash SHA256 dos tokens é armazenado no banco (defesa em profundidade)
-  - Tokens crus são retornados em campos virtuais apenas para envio de email
-  - Verificação de tokens usa comparação de tempo constante (previne timing attacks)
-  - Token de reset expira após 1 hora
-  - Email deve ser confirmado antes do primeiro login
+  - Senhas são hasheadas com bcrypt antes de armazenadas.
+  - Tokens (convite e redefinição) são gerados com Nanoid (32 caracteres); só o
+    hash SHA256 é persistido (defesa em profundidade). O token cru fica num campo
+    virtual, usado apenas para montar o link/QR.
+  - Verificação de token usa comparação de tempo constante.
+  - Token de redefinição expira após 1 hora; token de convite, após 7 dias.
   """
 
   use Ecto.Schema
@@ -74,20 +61,20 @@ defmodule Taina.Maraca.Ava do
   @type t :: %__MODULE__{
           id: integer() | nil,
           username: String.t() | nil,
-          email: String.t(),
-          confirmed_at: DateTime.t() | nil,
+          display_name: String.t() | nil,
+          activated_at: DateTime.t() | nil,
           public_id: String.t() | nil,
-          role: :admin | :member,
+          role: :zelador | :morador,
           password_hash: String.t() | nil,
-          email_confirmation_token_hash: String.t() | nil,
-          email_confirmation_sent_at: DateTime.t() | nil,
+          invite_token_hash: String.t() | nil,
+          invite_sent_at: DateTime.t() | nil,
           reset_token_hash: String.t() | nil,
           reset_token_sent_at: DateTime.t() | nil,
           invited_at: DateTime.t() | nil,
           deactivated_at: DateTime.t() | nil,
           password: String.t() | nil,
           password_confirmation: String.t() | nil,
-          email_confirmation_token: String.t() | nil,
+          invite_token: String.t() | nil,
           reset_token: String.t() | nil,
           tekoa_id: integer() | nil,
           tekoa: Maraca.Tekoa.t() | NotLoaded.t() | nil,
@@ -100,17 +87,19 @@ defmodule Taina.Maraca.Ava do
   @schema_prefix "maraca"
   schema "avas" do
     field :username, :string
-    field :email, :string
-    field :confirmed_at, :utc_datetime_usec
+    field :display_name, :string
+    field :activated_at, :utc_datetime_usec
     field :public_id, PublicId, autogenerate: true
-    field :role, Ecto.Enum, values: ~w(admin member)a, default: :member
+    field :role, Ecto.Enum, values: ~w(zelador morador)a, default: :morador
 
     # Authentication fields
     field :password_hash, :string
-    field :email_confirmation_token_hash, :string
-    field :email_confirmation_sent_at, :utc_datetime_usec
 
-    # Password reset fields
+    # Invite token (link/QR): the invite carries the token, no e-mail.
+    field :invite_token_hash, :string
+    field :invite_sent_at, :utc_datetime_usec
+
+    # Password reset token (zelador-minted link)
     field :reset_token_hash, :string
     field :reset_token_sent_at, :utc_datetime_usec
 
@@ -123,7 +112,7 @@ defmodule Taina.Maraca.Ava do
     # Virtual fields for password and token handling
     field :password, :string, virtual: true
     field :password_confirmation, :string, virtual: true
-    field :email_confirmation_token, :string, virtual: true
+    field :invite_token, :string, virtual: true
     field :reset_token, :string, virtual: true
 
     belongs_to :tekoa, Maraca.Tekoa
@@ -133,151 +122,123 @@ defmodule Taina.Maraca.Ava do
   end
 
   @doc """
-  Valida um Ava com as informações fornecidas.
+  Valida um Ava com nome de usuário e comunidade.
 
   ## Campos obrigatórios
 
-    * `username` - deve ter entre 3 e 50 caracteres
-    * `email` - deve ser um email válido e único na comunidade
+    * `username` - 3 a 50 caracteres, handle (minúsculas, números, `.`, `-`, `_`)
     * `tekoa_id` - deve referenciar uma Tekoa existente
 
   ## Exemplos
 
-      iex> changeset(%Ava{}, %{username: "maria", email: "maria@example.com", tekoa_id: 1})
+      iex> changeset(%Ava{}, %{username: "maria", tekoa_id: 1})
       %Ecto.Changeset{valid?: true}
 
-      iex> changeset(%Ava{}, %{username: "ab", email: "invalido"})
+      iex> changeset(%Ava{}, %{username: "ab"})
       %Ecto.Changeset{valid?: false}
   """
   def changeset(ava, attrs) do
+    # `activated_at` e `public_id` sao programaticos (put_change/autogenerate),
+    # nunca vem de input: fora do cast para nao dar para forjar ativacao ou id.
     ava
-    |> cast(attrs, [:username, :email, :role, :confirmed_at, :public_id, :tekoa_id])
-    |> validate_required([:username, :email, :tekoa_id])
-    |> validate_length(:username, min: 3, max: 50)
-    |> validate_format(:email, ~r/^[^\s]+@[^\s]+\.[^\s]+$/, message: "deve ser um email válido")
-    |> unique_constraint(:email, name: :avas_tekoa_id_email_index)
+    |> cast(attrs, [:username, :display_name, :role, :tekoa_id])
+    |> validate_required([:username, :tekoa_id])
+    |> validate_username()
+    |> validate_display_name()
+    |> validate_inclusion(:role, ~w(zelador morador)a)
     |> unique_constraint(:username, name: :avas_tekoa_id_username_index)
-    |> validate_inclusion(:role, ~w(admin member)a)
     |> unique_constraint(:public_id)
   end
 
   @doc """
-  Changeset para convite de usuário por um administrador.
+  Changeset para convite por um zelador.
 
-  Cria um novo Ava não confirmado com token de confirmação de email.
-  Usado no fluxo: Admin convida → Email enviado → Usuário confirma
+  Cria um Ava pendente: só token de convite e papel, sem nome nem senha (a
+  pessoa define no aceite). O convite não pede e-mail: o token viaja no link/QR.
 
   ## Campos obrigatórios
 
-    * `email` - Email do usuário convidado
-    * `tekoa_id` - Comunidade à qual pertence
-    * `invited_by_id` - ID do admin que está convidando
+    * `tekoa_id` - comunidade à qual pertence
+    * `invited_by_id` - id do zelador que está convidando
 
   ## Gerado automaticamente
 
-    * `email_confirmation_token_hash` - Hash SHA256 do token (armazenado no DB)
-    * `email_confirmation_token` - Token cru (campo virtual, use para enviar no email)
-    * `email_confirmation_sent_at` - Timestamp do envio do convite
-    * `invited_at` - Timestamp do convite
-
-  ## Segurança
-
-  O token cru é gerado usando Nanoid (32 caracteres) e apenas o hash SHA256
-  é persistido no banco. O token cru fica disponível no campo virtual
-  `email_confirmation_token` do changeset para ser usado no email.
+    * `invite_token_hash` - hash SHA256 do token (no banco)
+    * `invite_token` - token cru (campo virtual, use para montar o link/QR)
+    * `invite_sent_at` / `invited_at` - timestamps do convite
 
   ## Exemplos
 
-      iex> changeset = invitation_changeset(%Ava{}, %{
-      ...>   email: "novo@example.com",
-      ...>   tekoa_id: 1,
-      ...>   invited_by_id: 2
-      ...> })
+      iex> changeset = invitation_changeset(%Ava{}, %{tekoa_id: 1, invited_by_id: 2})
       iex> changeset.valid?
       true
-      iex> changeset.changes.email_confirmation_token
-      "abc123..." # Token cru de 32 caracteres para usar no email
+      iex> changeset.changes.invite_token
+      "abc123..." # token cru de 32 caracteres para o link/QR
   """
   def invitation_changeset(ava, attrs) do
     raw_token = generate_token()
 
     ava
-    |> cast(attrs, [:email, :tekoa_id, :invited_by_id, :role])
-    |> validate_required([:email, :tekoa_id, :invited_by_id])
-    |> validate_format(:email, ~r/^[^\s]+@[^\s]+\.[^\s]+$/, message: "deve ser um email válido")
-    |> put_change(:email_confirmation_token_hash, hash_token(raw_token))
-    |> put_change(:email_confirmation_token, raw_token)
-    |> put_change(:email_confirmation_sent_at, DateTime.utc_now())
+    |> cast(attrs, [:tekoa_id, :invited_by_id, :role])
+    |> validate_required([:tekoa_id, :invited_by_id])
+    |> validate_inclusion(:role, ~w(zelador morador)a)
+    |> put_change(:invite_token_hash, hash_token(raw_token))
+    |> put_change(:invite_token, raw_token)
+    |> put_change(:invite_sent_at, DateTime.utc_now())
     |> put_change(:invited_at, DateTime.utc_now())
-    |> unique_constraint(:email, name: :avas_tekoa_id_email_index)
-    |> unique_constraint(:email_confirmation_token_hash)
+    |> unique_constraint(:invite_token_hash)
   end
 
   @doc """
-  Changeset para confirmação de email e ativação de conta.
+  Changeset de aceite do convite: a pessoa cria a conta.
 
-  Usado quando o usuário clica no link de confirmação e define sua senha.
-  Valida token, define username/senha, e marca email como confirmado.
+  Define nome de usuário, nome de exibição (opcional) e senha; marca a conta como
+  ativa (`activated_at`) e queima o token de convite.
 
   ## Campos obrigatórios
 
-    * `username` - Nome de usuário (3-50 caracteres)
-    * `password` - Senha (mínimo 8 caracteres)
-    * `password_confirmation` - Confirmação da senha (deve ser igual)
+    * `username` - nome de usuário (handle, 3 a 50 caracteres)
+    * `password` - senha (mínimo 8 caracteres)
+    * `password_confirmation` - confirmação (deve ser igual)
 
-  ## Efeitos
+  ## Opcionais
 
-    * Hash da senha é gerado e armazenado em `password_hash`
-    * `confirmed_at` é definido com timestamp atual
-    * `email_confirmation_token_hash` é removido (null)
+    * `display_name` - nome de exibição
 
   ## Exemplos
 
-      iex> confirmation_changeset(invited_ava, %{
+      iex> accept_invite_changeset(invited_ava, %{
       ...>   username: "maria",
       ...>   password: "senhasegura123",
       ...>   password_confirmation: "senhasegura123"
       ...> })
       %Ecto.Changeset{valid?: true}
   """
-  def confirmation_changeset(ava, attrs) do
+  def accept_invite_changeset(ava, attrs) do
     ava
-    |> cast(attrs, [:username, :password, :password_confirmation])
+    |> cast(attrs, [:username, :display_name, :password, :password_confirmation])
     |> validate_required([:username, :password, :password_confirmation])
-    |> validate_length(:username, min: 3, max: 50)
+    |> validate_username()
+    |> validate_display_name()
     |> validate_length(:password, min: 8, message: "deve ter no mínimo 8 caracteres")
     |> validate_confirmation(:password, message: "senha e confirmação não coincidem")
     |> hash_password()
-    |> put_change(:confirmed_at, DateTime.utc_now())
-    |> put_change(:email_confirmation_token_hash, nil)
+    |> put_change(:activated_at, DateTime.utc_now())
+    |> put_change(:invite_token_hash, nil)
     |> unique_constraint(:username, name: :avas_tekoa_id_username_index)
   end
 
   @doc """
-  Changeset para solicitar reset de senha.
+  Changeset para o zelador pedir a redefinição de senha de uma pessoa.
 
-  Gera um token de reset e define o timestamp de envio.
-  O token expira após 1 hora.
+  Gera um token de redefinição e o timestamp de envio. O token expira após 1
+  hora. O zelador entrega o link pelo mesmo canal dos convites (RFC_003 seção 4).
 
   ## Efeitos
 
-    * `reset_token_hash` - Hash SHA256 do token (armazenado no DB)
-    * `reset_token` - Token cru (campo virtual, use para enviar no email)
-    * `reset_token_sent_at` - Timestamp do envio
-
-  ## Segurança
-
-  O token cru é gerado usando Nanoid (32 caracteres) e apenas o hash SHA256
-  é persistido no banco. O token cru fica disponível no campo virtual
-  `reset_token` do changeset para ser usado no email.
-
-  ## Exemplos
-
-      iex> changeset = password_reset_request_changeset(ava)
-      iex> changeset.valid?
-      true
-      iex> changeset.changes.reset_token
-      "xyz789..." # Token cru de 32 caracteres para usar no email
+    * `reset_token_hash` - hash SHA256 do token (no banco)
+    * `reset_token` - token cru (campo virtual, para montar o link)
+    * `reset_token_sent_at` - timestamp do envio
   """
   def password_reset_request_changeset(ava) do
     raw_token = generate_token()
@@ -291,28 +252,14 @@ defmodule Taina.Maraca.Ava do
   end
 
   @doc """
-  Changeset para completar reset de senha.
+  Changeset para completar a redefinição de senha pelo link.
 
-  Valida nova senha, gera hash, e remove token de reset.
+  Valida a nova senha, gera o hash e remove o token de redefinição.
 
   ## Campos obrigatórios
 
-    * `password` - Nova senha (mínimo 8 caracteres)
-    * `password_confirmation` - Confirmação da nova senha
-
-  ## Efeitos
-
-    * `password_hash` é atualizado
-    * `reset_token_hash` é removido (null)
-    * `reset_token_sent_at` é removido (null)
-
-  ## Exemplos
-
-      iex> password_reset_changeset(ava, %{
-      ...>   password: "novasenha123",
-      ...>   password_confirmation: "novasenha123"
-      ...> })
-      %Ecto.Changeset{valid?: true}
+    * `password` - nova senha (mínimo 8 caracteres)
+    * `password_confirmation` - confirmação da nova senha
   """
   def password_reset_changeset(ava, attrs) do
     ava
@@ -326,21 +273,21 @@ defmodule Taina.Maraca.Ava do
   end
 
   @doc """
-  Changeset para troca de papel (admin ↔ member) por um admin.
+  Changeset para troca de papel (zelador <-> morador) por um zelador.
 
   Só toca `role`; valida a inclusão no enum. Quem pode trocar e a proteção do
-  último admin são regras do context (`Taina.Maraca.update_member_role/3`).
+  último zelador são regras do context (`Taina.Maraca.update_member_role/3`).
   """
   def role_changeset(ava, role) do
     ava
     |> cast(%{role: role}, [:role])
     |> validate_required([:role])
-    |> validate_inclusion(:role, ~w(admin member)a)
+    |> validate_inclusion(:role, ~w(zelador morador)a)
   end
 
   @doc """
   Changeset de (des)ativação de conta. `deactivated_at` é um `DateTime` para
-  desativar ou `nil` para reativar — definido programaticamente, nunca via
+  desativar ou `nil` para reativar -- definido programaticamente, nunca via
   input do usuário.
   """
   def deactivation_changeset(ava, deactivated_at) do
@@ -358,14 +305,9 @@ defmodule Taina.Maraca.Ava do
 
   Usa comparação de tempo constante para prevenir timing attacks.
 
-  ## Parâmetros
-
-    * `stored_hash` - Hash SHA256 armazenado no banco
-    * `presented_token` - Token cru apresentado pelo usuário
-
   ## Exemplos
 
-      iex> verify_token(ava.email_confirmation_token_hash, token_from_email)
+      iex> verify_token(ava.invite_token_hash, token_from_link)
       true
 
       iex> verify_token(ava.reset_token_hash, wrong_token)
@@ -378,6 +320,24 @@ defmodule Taina.Maraca.Ava do
 
   def verify_token(nil, _presented_token), do: false
   def verify_token(_stored_hash, nil), do: false
+
+  # O username é a chave de acesso e a semente do handle federado: normalizamos
+  # para minúsculas e restringimos o conjunto de caracteres (sem espaços).
+  defp validate_username(changeset) do
+    changeset
+    |> update_change(:username, &normalize_username/1)
+    |> validate_length(:username, min: 3, max: 50)
+    |> validate_format(:username, ~r/^[a-z0-9._-]+$/,
+      message: "use só minúsculas, números, ponto, hífen ou _, sem espaços"
+    )
+  end
+
+  defp normalize_username(nil), do: nil
+  defp normalize_username(username), do: username |> String.trim() |> String.downcase()
+
+  defp validate_display_name(changeset) do
+    validate_length(changeset, :display_name, max: 80)
+  end
 
   defp hash_password(%Ecto.Changeset{valid?: true, changes: %{password: password}} = changeset) do
     changeset
@@ -396,7 +356,7 @@ defmodule Taina.Maraca.Ava do
   Hash SHA256 de um token cru, no mesmo formato persistido no banco.
 
   Usado pelo contexto Maraca para localizar Avas por token
-  (`email_confirmation_token_hash` / `reset_token_hash`).
+  (`invite_token_hash` / `reset_token_hash`).
   """
   def hash_token(raw_token) do
     :sha256 |> :crypto.hash(raw_token) |> Base.encode64(padding: false)

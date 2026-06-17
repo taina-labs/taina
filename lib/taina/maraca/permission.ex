@@ -4,13 +4,13 @@ defmodule Taina.Maraca.Permission do
 
   No Tainá, seguimos o princípio de que **os usuários são donos de seus dados**. Isso significa
   que permissões devem ser explícitas - nenhum acesso é concedido automaticamente, nem mesmo
-  para administradores. Cada Permission registra quem pode fazer o quê com qual recurso.
+  para o zelador. Cada Permission registra quem pode fazer o quê com qual recurso.
 
   ## Filosofia
 
-  Diferente de sistemas tradicionais onde administradores têm acesso irrestrito, no Tainá:
+  Diferente de sistemas tradicionais onde quem administra tem acesso irrestrito, no Tainá:
   - Proprietários de recursos controlam totalmente o acesso
-  - Administradores devem solicitar permissão via AccessRequest
+  - O zelador deve solicitar permissão via AccessRequest
   - Todas as permissões são rastreáveis e revogáveis
 
   ## Campos principais

@@ -1,8 +1,8 @@
 defmodule Taina.Ybira do
   @moduledoc """
-  Ybira — sistema de arquivos da comunidade.
+  Ybira, sistema de arquivos da comunidade.
 
-  Implementa `Taina.Ybira.Behaviour` — as regras de negócio de cada função estão
+  Implementa `Taina.Ybira.Behaviour`, as regras de negócio de cada função estão
   documentadas lá, nos `@callback`.
 
   Todas as funções públicas recebem um `Taina.Scope` (quem + qual Tekoa) e
@@ -16,7 +16,7 @@ defmodule Taina.Ybira do
 
   ## Lixeira (soft delete)
 
-  Deletar um arquivo ou pasta só preenche `deleted_at` — os bytes ficam no disco
+  Deletar um arquivo ou pasta só preenche `deleted_at`, os bytes ficam no disco
   e a cota não é devolvida na hora. O worker `Taina.Ybira.Workers.PurgeTrash`
   apaga de vez o que está na lixeira há mais de 30 dias e só então recupera a
   cota. Até lá, `restore_file/2` traz o arquivo de volta.
@@ -48,7 +48,7 @@ defmodule Taina.Ybira do
 
   # Tipos MIME aceitos no upload. Detectados pelos magic bytes (não pela
   # extensão); `application/octet-stream` cobre binários desconhecidos, mas
-  # executáveis são detectados e ficam de fora — logo, rejeitados.
+  # executáveis são detectados e ficam de fora, logo, rejeitados.
   @allowed_mime_types ~w[
     image/jpeg image/png image/gif image/webp image/heic image/heif
     video/mp4 video/quicktime video/webm video/avi
@@ -108,7 +108,7 @@ defmodule Taina.Ybira do
 
   # Imagens ganham thumbnails + metadados (dimensões, EXIF) num job pós-upload.
   # Enfileirado na mesma transação do insert: só roda se o upload commitar, e o
-  # job só toca o disco/banco depois (a fila do Oban é isenta de RLS — ver
+  # job só toca o disco/banco depois (a fila do Oban é isenta de RLS, ver
   # `Repo.prepare_query/3`). Em testes (`testing: :inline`) ele roda na hora.
   defp maybe_enqueue_rendition(%Scope{} = scope, %Ybira.File{} = file) do
     if image?(file.mime_type) do
@@ -209,6 +209,15 @@ defmodule Taina.Ybira do
   end
 
   @impl true
+  def rename_file(%Scope{} = scope, file_public_id, new_name) when is_binary(file_public_id) do
+    Repo.with_tekoa(scope.tekoa.public_id, fn ->
+      with {:ok, file} <- fetch_owned_file(scope, file_public_id) do
+        Repo.update(Ybira.File.rename_changeset(file, new_name))
+      end
+    end)
+  end
+
+  @impl true
   def move_file(%Scope{} = scope, file_public_id, folder_public_id) when is_binary(file_public_id) do
     Repo.with_tekoa(scope.tekoa.public_id, fn ->
       with {:ok, file} <- fetch_owned_file(scope, file_public_id),
@@ -281,12 +290,39 @@ defmodule Taina.Ybira do
 
   @impl true
   def list_folder_contents(%Scope{} = scope, folder_public_id \\ nil, opts \\ []) do
+    sort = normalize_sort(Keyword.get(opts, :sort))
+    limit = Keyword.get(opts, :limit, @default_limit)
+    offset = Keyword.get(opts, :offset, 0)
+
     Repo.with_tekoa(scope.tekoa.public_id, fn ->
       with {:ok, folder_id} <- resolve_folder_id(folder_public_id) do
-        folders = Repo.all(child_folders_query(folder_id))
-        {files, next_cursor} = fetch_page(child_files_query(folder_id), opts)
+        folders = folder_id |> folders_in() |> apply_folder_sort(sort) |> Repo.all()
+
+        {files, next_cursor} =
+          folder_id
+          |> files_in()
+          |> apply_file_sort(sort)
+          |> paginate_offset(limit, offset)
+
         {:ok, %{folders: folders, files: files, next_cursor: next_cursor}}
       end
+    end)
+  end
+
+  defp paginate_offset(query, limit, offset) do
+    rows =
+      query
+      |> limit(^(limit + 1))
+      |> offset(^offset)
+      |> Repo.all()
+
+    if length(rows) > limit, do: {Enum.take(rows, limit), offset + limit}, else: {rows, nil}
+  end
+
+  @impl true
+  def list_folders(%Scope{} = scope) do
+    Repo.with_tekoa(scope.tekoa.public_id, fn ->
+      {:ok, Repo.all(from d in Ybira.Folder, where: is_nil(d.deleted_at), order_by: [asc: d.name])}
     end)
   end
 
@@ -311,6 +347,83 @@ defmodule Taina.Ybira do
   end
 
   @impl true
+  def list_recent(%Scope{} = scope, opts \\ []) do
+    limit = Keyword.get(opts, :limit, 4)
+
+    Repo.with_tekoa(scope.tekoa.public_id, fn ->
+      files =
+        Repo.all(
+          from f in Ybira.File,
+            where: is_nil(f.deleted_at),
+            order_by: [desc: f.id],
+            limit: ^limit
+        )
+
+      {:ok, files}
+    end)
+  end
+
+  @impl true
+  def count_files(%Scope{} = scope) do
+    Repo.with_tekoa(scope.tekoa.public_id, fn ->
+      {:ok, Repo.aggregate(from(f in Ybira.File, where: is_nil(f.deleted_at)), :count)}
+    end)
+  end
+
+  @impl true
+  def count_photos(%Scope{} = scope) do
+    Repo.with_tekoa(scope.tekoa.public_id, fn ->
+      count =
+        Repo.aggregate(
+          from(f in Ybira.File,
+            where: is_nil(f.deleted_at) and like(f.mime_type, "image/%")
+          ),
+          :count
+        )
+
+      {:ok, count}
+    end)
+  end
+
+  @impl true
+  def storage_stats_by_kind(%Scope{} = scope) do
+    Repo.with_tekoa(scope.tekoa.public_id, fn ->
+      rows =
+        Repo.all(
+          from f in Ybira.File,
+            where: is_nil(f.deleted_at),
+            group_by: fragment("split_part(?, '/', 1)", f.mime_type),
+            select: {fragment("split_part(?, '/', 1)", f.mime_type), sum(f.file_size_bytes)}
+        )
+
+      {:ok, classify_storage_kinds(rows)}
+    end)
+  end
+
+  # Categorias da tela de armazenamento: o prefixo do MIME decide; tudo que
+  # não é mídia (application/*, text/*) conta como documento.
+  defp classify_storage_kinds(rows) do
+    Enum.reduce(rows, %{photos: 0, videos: 0, documents: 0, others: 0}, fn {prefix, bytes}, acc ->
+      key =
+        case prefix do
+          "image" -> :photos
+          "video" -> :videos
+          "application" -> :documents
+          "text" -> :documents
+          _other -> :others
+        end
+
+      Map.update!(acc, key, &(&1 + to_integer(bytes)))
+    end)
+  end
+
+  # `sum/1` sobre bigint volta como `Decimal` no Postgres; normalizamos para
+  # inteiro (bytes são sempre inteiros) antes de somar no acumulador.
+  defp to_integer(nil), do: 0
+  defp to_integer(%Decimal{} = bytes), do: Decimal.to_integer(bytes)
+  defp to_integer(bytes) when is_integer(bytes), do: bytes
+
+  @impl true
   def purge_deleted_files(%DateTime{} = cutoff) do
     files =
       Repo.all(
@@ -326,7 +439,7 @@ defmodule Taina.Ybira do
         end)
 
       # Fora da transação: se o disco falhar, o registro já foi (sem órfão no
-      # banco). Pior caso é um arquivo solto no disco, não inconsistência — mas
+      # banco). Pior caso é um arquivo solto no disco, não inconsistência, mas
       # logamos para dar visibilidade a problemas recorrentes de disco.
       with {:error, reason} <- Elixir.File.rm(file.filepath) do
         Logger.warning("PurgeTrash: falha ao remover arquivo do disco",
@@ -337,7 +450,7 @@ defmodule Taina.Ybira do
       end
     end)
 
-    # Pastas na lixeira só guardam metadados (sem bytes nem cota) — apaga em lote.
+    # Pastas na lixeira só guardam metadados (sem bytes nem cota), apaga em lote.
     # `delete_folder/2` faz soft delete em cascata; sem isto, os registros de
     # pasta ficariam para sempre com `deleted_at` preenchido.
     Repo.delete_all(
@@ -437,9 +550,9 @@ defmodule Taina.Ybira do
     end
   end
 
-  # Só o dono muta seus recursos. Admins não têm acesso automático (RFC 002:
-  # "admins são facilitadores, não deuses") — quando precisarem, pedem via
-  # `Maraca.request_access/5`.
+  # Só o dono muta seus recursos. O zelador não tem acesso automático (RFC 003:
+  # "zero autoridade sobre dados, sem atalho para a casa de ninguém"), quando
+  # precisar, pede via `Maraca.request_access/5` e o dono aprova.
   defp owner?(%Scope{ava: %Ava{id: id}}, owner_id), do: id == owner_id
 
   # Mover `folder_id` para baixo de `new_parent_id` fecharia um ciclo se
@@ -453,7 +566,7 @@ defmodule Taina.Ybira do
   end
 
   # Uma única CTE recursiva sobe a cadeia de ancestrais de `start_id` (incluindo
-  # ele) e responde se `folder_id` aparece lá — sem N+1 nem recursão Elixir
+  # ele) e responde se `folder_id` aparece lá, sem N+1 nem recursão Elixir
   # ilimitada. Roda sob `with_tekoa`, então o RLS filtra por Tekoa.
   defp ancestor_or_self?(start_id, folder_id) do
     {:ok, %{rows: [[count]]}} =
@@ -511,29 +624,30 @@ defmodule Taina.Ybira do
     List.flatten(rows)
   end
 
-  defp child_folders_query(nil) do
-    from d in Ybira.Folder,
-      where: is_nil(d.parent_id) and is_nil(d.deleted_at),
-      order_by: [desc: d.inserted_at, desc: d.id]
-  end
+  # Conteúdo da pasta (sem ordenação, quem chama aplica `apply_*_sort`).
+  defp folders_in(nil), do: from(d in Ybira.Folder, where: is_nil(d.parent_id) and is_nil(d.deleted_at))
+  defp folders_in(folder_id), do: from(d in Ybira.Folder, where: d.parent_id == ^folder_id and is_nil(d.deleted_at))
 
-  defp child_folders_query(folder_id) do
-    from d in Ybira.Folder,
-      where: d.parent_id == ^folder_id and is_nil(d.deleted_at),
-      order_by: [desc: d.inserted_at, desc: d.id]
-  end
+  defp files_in(nil), do: from(f in Ybira.File, where: is_nil(f.folder_id) and is_nil(f.deleted_at))
+  defp files_in(folder_id), do: from(f in Ybira.File, where: f.folder_id == ^folder_id and is_nil(f.deleted_at))
 
-  defp child_files_query(nil) do
-    from f in Ybira.File,
-      where: is_nil(f.folder_id) and is_nil(f.deleted_at),
-      order_by: [desc: f.inserted_at, desc: f.id]
-  end
+  # Ordenação dinâmica (nome/data/tamanho x asc/desc), com `id` como desempate
+  # estável. A paginação aqui é por offset (não keyset), o que permite qualquer
+  # ordem sem cursor composto, suficiente para uma caixa de comunidade.
+  @sort_fields ~w(name date size)a
+  @sort_dirs ~w(asc desc)a
 
-  defp child_files_query(folder_id) do
-    from f in Ybira.File,
-      where: f.folder_id == ^folder_id and is_nil(f.deleted_at),
-      order_by: [desc: f.inserted_at, desc: f.id]
-  end
+  defp normalize_sort({field, dir}) when field in @sort_fields and dir in @sort_dirs, do: {field, dir}
+  defp normalize_sort(_other), do: {:date, :desc}
+
+  defp apply_file_sort(query, {:name, dir}), do: order_by(query, [f], [{^dir, f.original_filename}, {^dir, f.id}])
+  defp apply_file_sort(query, {:size, dir}), do: order_by(query, [f], [{^dir, f.file_size_bytes}, {^dir, f.id}])
+  defp apply_file_sort(query, {:date, dir}), do: order_by(query, [f], [{^dir, f.inserted_at}, {^dir, f.id}])
+
+  defp apply_folder_sort(query, {:name, dir}), do: order_by(query, [d], [{^dir, d.name}])
+  defp apply_folder_sort(query, {:date, dir}), do: order_by(query, [d], [{^dir, d.inserted_at}])
+  # Pastas não têm tamanho; ao ordenar por tamanho, mantêm ordem alfabética.
+  defp apply_folder_sort(query, {:size, _dir}), do: order_by(query, [d], asc: d.name)
 
   defp fetch_attr(attrs, key) do
     Map.get(attrs, key) || Map.get(attrs, to_string(key))

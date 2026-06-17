@@ -1,12 +1,12 @@
 defmodule Taina.Jaci do
   @moduledoc """
-  Jaci-lite — a galeria de fotos da comunidade.
+  Jaci-lite, a galeria de fotos da comunidade.
 
   Implementa `Taina.Jaci.Behaviour`; as regras de negócio estão lá, nos
   `@callback`. Jaci é uma camada de **leitura** sobre o Ybira (RFC 002, D4):
   consulta os arquivos de imagem (`mime_type image/*`) que o Ybira guarda e os
   apresenta como grade (`list_photos/2`) e linha do tempo (`timeline/2`). Não
-  grava nem muta nada — upload, thumbnail e soft delete são do Ybira.
+  grava nem muta nada, upload, thumbnail e soft delete são do Ybira.
 
   Como todo context, recebe um `Taina.Scope` e roda dentro de
   `Repo.with_tekoa/2` (isolamento RLS). A paginação segue o keyset do Ybira: a
@@ -28,7 +28,7 @@ defmodule Taina.Jaci do
 
   # Expressão SQL da data efetiva: captura do EXIF quando houver, senão upload.
   # Espelha `Timeline.effective_datetime/1` e o índice de
-  # `*_jaci_photo_indexes` — os três precisam concordar.
+  # `*_jaci_photo_indexes`, os três precisam concordar.
   defmacrop effective_ts(file) do
     quote do
       fragment("COALESCE((? ->> 'taken_at')::timestamp, ?)", unquote(file).metadata, unquote(file).inserted_at)
@@ -40,7 +40,7 @@ defmodule Taina.Jaci do
     Repo.with_tekoa(scope.tekoa.public_id, fn ->
       query =
         from f in YbiraFile,
-          where: is_nil(f.deleted_at) and like(f.mime_type, "image/%"),
+          where: is_nil(f.deleted_at) and (like(f.mime_type, "image/%") or like(f.mime_type, "video/%")),
           # id serial monótono = ordem de upload; alinha com o cursor (id-only).
           order_by: [desc: f.id]
 
@@ -94,7 +94,7 @@ defmodule Taina.Jaci do
 
     base =
       from f in YbiraFile,
-        where: is_nil(f.deleted_at) and like(f.mime_type, "image/%"),
+        where: is_nil(f.deleted_at) and (like(f.mime_type, "image/%") or like(f.mime_type, "video/%")),
         order_by: [desc: effective_ts(f), desc: f.id],
         select: %{file: f, ts: effective_ts(f)}
 

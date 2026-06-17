@@ -4,7 +4,7 @@ defmodule Taina.Jaci.Timeline do
   decide a data de uma foto e agrupa uma lista já ordenada em baldes por dia.
 
   A data efetiva de uma foto é a captura do EXIF (`metadata["taken_at"]`) quando
-  existe; senão, o instante do upload (`inserted_at`) — o "mtime" da RFC 002,
+  existe; senão, o instante do upload (`inserted_at`), o "mtime" da RFC 002,
   Fase 3. O EXIF não carrega timezone, então trabalhamos em `NaiveDateTime`.
   """
 
@@ -30,7 +30,7 @@ defmodule Taina.Jaci.Timeline do
   @doc """
   Agrupa fotos **já ordenadas por data efetiva decrescente** em baldes diários
   consecutivos. Como a entrada vem ordenada, todas as fotos de um mesmo dia são
-  contíguas — `chunk_by` basta. Em paginação, um dia pode se repartir entre o
+  contíguas, `chunk_by` basta. Em paginação, um dia pode se repartir entre o
   fim de uma página e o início da próxima; a UI funde grupos de mesma data
   adjacentes.
   """
