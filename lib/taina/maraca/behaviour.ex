@@ -287,6 +287,8 @@ defmodule Taina.Maraca.Behaviour do
   - Identifica o alvo por `public_id`
   - **Não pode desativar o último zelador ativo** (`{:error, :last_zelador}`)
   - Idempotente: desativar conta já desativada devolve `{:ok, ava}`
+  - O contrato não impede o zelador de agir sobre a própria conta (quem esconde
+    a auto-ação é a tela de membros); só o último zelador ativo é barrado
 
   ## Retorno
 

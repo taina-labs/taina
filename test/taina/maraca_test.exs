@@ -497,5 +497,16 @@ defmodule Taina.MaracaTest do
       assert {:error, :rate_limited} =
                Maraca.authenticate("brute", "errada123", tekoa)
     end
+
+    test "successful logins never consume the window" do
+      tekoa = tekoa_fixture()
+      active_ava_fixture(tekoa, %{username: "carla"})
+
+      # Muito acima do limite, sempre com a senha certa: só falhas contam, então
+      # nenhuma trava aparece.
+      for _ <- 1..(3 * 5) do
+        assert {:ok, _} = Maraca.authenticate("carla", "senhasegura123", tekoa)
+      end
+    end
   end
 end

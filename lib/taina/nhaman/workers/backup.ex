@@ -30,7 +30,7 @@ defmodule Taina.Nhaman.Workers.Backup do
   defp do_backup do
     case Backup.run() do
       {:ok, %{archive: path, bytes: bytes}} ->
-        Logger.info("Backup concluído", path: path, reason: "#{bytes} bytes")
+        Logger.info("Backup concluído", path: path, bytes: bytes)
         :ok
 
       {:error, reason} = error ->

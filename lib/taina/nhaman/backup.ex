@@ -44,15 +44,19 @@ defmodule Taina.Nhaman.Backup do
     storage_root = Keyword.get(opts, :storage_root, storage_root())
     db_url = Keyword.get(opts, :database_url) || database_url()
     now = Keyword.get(opts, :now, DateTime.utc_now())
+    workdir = tmp_workdir()
 
-    with :ok <- File.mkdir_p(dir),
-         {:ok, workdir} <- mk_workdir(),
-         dump_path = Path.join(workdir, "db.dump"),
-         :ok <- pg_dump(db_url, dump_path),
-         archive_path = Path.join(dir, archive_filename(now)),
-         :ok <- package_archive(archive_path, dump_path, storage_root) do
-      _ = File.rm_rf(workdir)
-      {:ok, %{archive: archive_path, bytes: file_size(archive_path)}}
+    try do
+      with :ok <- File.mkdir_p(dir),
+           :ok <- File.mkdir_p(workdir),
+           dump_path = Path.join(workdir, "db.dump"),
+           :ok <- pg_dump(db_url, dump_path),
+           archive_path = Path.join(dir, archive_filename(now)),
+           :ok <- package_archive(archive_path, dump_path, storage_root) do
+        {:ok, %{archive: archive_path, bytes: file_size(archive_path)}}
+      end
+    after
+      File.rm_rf(workdir)
     end
   end
 
@@ -67,13 +71,16 @@ defmodule Taina.Nhaman.Backup do
   def restore(archive_path, opts \\ []) do
     storage_root = Keyword.get(opts, :storage_root, storage_root())
     db_url = Keyword.get(opts, :database_url) || database_url()
+    workdir = tmp_workdir()
 
-    with {:ok, workdir} <- mk_workdir(),
-         :ok <- extract_archive(archive_path, workdir),
-         :ok <- pg_restore(db_url, Path.join(workdir, "db.dump")),
-         :ok <- restore_storage(Path.join(workdir, "storage"), storage_root) do
-      _ = File.rm_rf(workdir)
-      {:ok, :restored}
+    try do
+      with :ok <- extract_archive(archive_path, workdir),
+           :ok <- pg_restore(db_url, Path.join(workdir, "db.dump")),
+           :ok <- restore_storage(Path.join(workdir, "storage"), storage_root) do
+        {:ok, :restored}
+      end
+    after
+      File.rm_rf(workdir)
     end
   end
 
@@ -179,10 +186,21 @@ defmodule Taina.Nhaman.Backup do
     db = config[:database] || raise "Taina.Repo sem :database nem :url para o backup"
 
     userinfo =
-      if pass == "", do: URI.encode(user), else: "#{URI.encode(user)}:#{URI.encode(pass)}"
+      if pass == "", do: encode(user), else: "#{encode(user)}:#{encode(pass)}"
 
-    "postgresql://#{userinfo}@#{host}:#{port}/#{db}"
+    URI.to_string(%URI{
+      scheme: "postgresql",
+      userinfo: userinfo,
+      host: host,
+      port: port,
+      path: "/" <> encode(db)
+    })
   end
+
+  # Percent-encode de um componente da URL (userinfo, nome do banco): só os
+  # caracteres não reservados passam intactos, o resto vira %XX. Robusto a senhas
+  # e nomes com `@`, `:`, `/` etc., que quebrariam a conninfo do pg_dump.
+  defp encode(value), do: URI.encode(value, &URI.char_unreserved?/1)
 
   ## Casca imperativa
 
@@ -220,13 +238,8 @@ defmodule Taina.Nhaman.Backup do
     end)
   end
 
-  defp mk_workdir do
-    path = Path.join(System.tmp_dir!(), "taina_backup_#{System.unique_integer([:positive])}")
-
-    case File.mkdir_p(path) do
-      :ok -> {:ok, path}
-      error -> error
-    end
+  defp tmp_workdir do
+    Path.join(System.tmp_dir!(), "taina_backup_#{System.unique_integer([:positive])}")
   end
 
   defp file_size(path) do
