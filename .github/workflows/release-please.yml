@@ -23,3 +23,48 @@ jobs:
           token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
           config-file: .github/release-please-config.json
           manifest-file: .github/.release-please-manifest.json
+
+  # Build and push the production image only when release-please cut a release.
+  # Multi-arch (amd64 for mini PCs/VPS, arm64 for the Raspberry Pi 5). Forks
+  # publish to their own namespace via github.repository_owner; install.sh /
+  # update.sh pin the canonical ghcr.io/taina-labs/taina.
+  docker:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute lowercase image name
+        id: image
+        run: echo "name=ghcr.io/${OWNER,,}/taina" >> "$GITHUB_OUTPUT"
+        env:
+          OWNER: ${{ github.repository_owner }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ steps.image.outputs.name }}:latest
+            ${{ steps.image.outputs.name }}:${{ needs.release-please.outputs.tag_name }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

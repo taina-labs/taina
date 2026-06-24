@@ -40,6 +40,23 @@ repositório [Tekoá](https://github.com/taina-labs/tekoa).
 - Interface web server-rendered (Phoenix LiveView) na fase de UI
 - API JSON pós-MVP para apps cliente (backup de fotos)
 
+## Instalação e operação
+
+Este repositório é o código do Tainá. Para subir um servidor numa caixa
+(Raspberry Pi, mini PC ou VPS), use o [Oka](https://github.com/taina-labs/oka),
+o repositório de orquestração: ele baixa a imagem publicada e sobe tudo com um
+comando (`./install.sh`), com HTTPS automático via Caddy e atualização em um
+passo (`./update.sh`).
+
+A imagem multi-arch (amd64 e arm64 para o Raspberry Pi 5) é publicada em
+`ghcr.io/taina-labs/taina` a cada release.
+
+Guias do operador (no repositório [Tekoá](https://github.com/taina-labs/tekoa)):
+
+- Acesso remoto (Tailscale recomendado, Headscale soberano, WireGuard avançado):
+  `guias/acesso-remoto.md`.
+- Runbook de backup e restauração (procedimento e ensaio): `guias/runbook-backup-restore.md`.
+
 ## Patrocinadores
 
 Agradeço imensamente aos nossos patrocinadores por apoiar esse projeto!

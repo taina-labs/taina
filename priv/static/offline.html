@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#060A14" />
+    <title>Sem conexão - Tainá</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #060a14;
+        color: #f5f6f8;
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        padding: 1.5rem;
+      }
+      main {
+        max-width: 22rem;
+        text-align: center;
+      }
+      img {
+        width: 72px;
+        height: 72px;
+        margin-bottom: 1.25rem;
+      }
+      h1 {
+        font-size: 1.4rem;
+        margin: 0 0 0.5rem;
+      }
+      p {
+        margin: 0 0 1.5rem;
+        line-height: 1.5;
+        color: #c2c7d0;
+      }
+      button {
+        background: #f2a65a;
+        color: #060a14;
+        border: 0;
+        border-radius: 0.5rem;
+        padding: 0.75rem 1.5rem;
+        font-size: 1rem;
+        font-weight: 600;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <img src="/icons/favicon.svg" alt="Tainá" />
+      <h1>Sem conexão</h1>
+      <p>
+        Não foi possível falar com o servidor da sua comunidade. Verifique sua
+        rede e tente de novo.
+      </p>
+      <button onclick="location.reload()">Tentar de novo</button>
+    </main>
+  </body>
+</html>

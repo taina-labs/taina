@@ -194,3 +194,68 @@ jobs:
 
       - name: Run tests
         run: mix test
+
+  # Verifica que um backup gerado pelo Taina.Nhaman.Backup realmente restaura
+  # (RFC 002, Fase 4 — "restore testado automaticamente em CI"). Roda contra um
+  # banco real e descartável, fora do sandbox de teste.
+  backup-restore:
+    needs: deps
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    env:
+      MIX_ENV: dev
+      PGHOST: localhost
+      PGPORT: "5432"
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: taina_dev
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: ${{ env.ELIXIR_VERSION }}
+          otp-version: ${{ env.OTP_VERSION }}
+
+      - name: Install PostgreSQL client 18
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc --fail \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          sudo sh -c 'echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-18
+
+      - name: Install Hex and Rebar
+        run: |
+          mix local.rebar --force
+          mix local.hex --force
+
+      - name: Install deps
+        run: mix deps.get
+
+      - name: Create and migrate database
+        run: |
+          mix ecto.create
+          mix ecto.migrate
+
+      - name: Verify backup/restore round-trip
+        run: mix taina.backup.verify

@@ -95,6 +95,8 @@ defmodule Taina.Maraca.Behaviour do
 
     * `{:ok, %Ava{}}` - Autenticado com sucesso
     * `{:error, :invalid_credentials}` - Nome de usuário ou senha incorretos
+    * `{:error, :account_deactivated}` - Conta desativada por um admin
+    * `{:error, :rate_limited}` - Tentativas demais; tente de novo mais tarde
 
   ## Exemplos
 
@@ -105,7 +107,8 @@ defmodule Taina.Maraca.Behaviour do
       {:error, :invalid_credentials}
   """
   @callback authenticate(String.t(), String.t(), Tekoa.t()) ::
-              {:ok, Ava.t()} | {:error, :invalid_credentials}
+              {:ok, Ava.t()}
+              | {:error, :invalid_credentials | :account_deactivated | :rate_limited}
 
   @doc """
   Cria dados de sessão para usuário autenticado.
@@ -241,6 +244,78 @@ defmodule Taina.Maraca.Behaviour do
   """
   @callback update_tekoa_quota(Scope.t(), pos_integer()) ::
               {:ok, Tekoa.t()} | {:error, :unauthorized | Ecto.Changeset.t()}
+
+  # ============================================================================
+  # GESTÃO DE MEMBROS (zelador)
+  # ============================================================================
+
+  @doc """
+  Altera o papel (zelador/morador) de um membro.
+
+  ## Regras de Negócio
+
+  - Apenas zeladores alteram papéis
+  - Identifica o alvo por `public_id`
+  - **Não pode rebaixar o último zelador ativo** -- a comunidade ficaria sem
+    quem cuida da máquina (`{:error, :last_zelador}`)
+
+  ## Parâmetros
+
+    * `scope` - zelador agindo + Tekoa
+    * `member_public_id` - alvo
+    * `role` - `:zelador` ou `:morador`
+
+  ## Retorno
+
+    * `{:ok, %Ava{}}` - Papel atualizado
+    * `{:error, :unauthorized}` - Quem pediu não é zelador
+    * `{:error, :not_found}` - Membro não existe na Tekoa
+    * `{:error, :last_zelador}` - Tentou rebaixar o último zelador ativo
+    * `{:error, %Ecto.Changeset{}}` - Papel inválido
+  """
+  @callback update_member_role(Scope.t(), String.t(), :zelador | :morador) ::
+              {:ok, Ava.t()}
+              | {:error, :unauthorized | :not_found | :last_zelador | Ecto.Changeset.t()}
+
+  @doc """
+  Desativa a conta de um membro (soft): preenche `deactivated_at`. A conta e os
+  dados permanecem; o login passa a ser recusado (`:account_deactivated`).
+
+  ## Regras de Negócio
+
+  - Apenas zeladores desativam contas
+  - Identifica o alvo por `public_id`
+  - **Não pode desativar o último zelador ativo** (`{:error, :last_zelador}`)
+  - Idempotente: desativar conta já desativada devolve `{:ok, ava}`
+  - O contrato não impede o zelador de agir sobre a própria conta (quem esconde
+    a auto-ação é a tela de membros); só o último zelador ativo é barrado
+
+  ## Retorno
+
+    * `{:ok, %Ava{}}` - Conta desativada
+    * `{:error, :unauthorized}` - Quem pediu não é zelador
+    * `{:error, :not_found}` - Membro não existe na Tekoa
+    * `{:error, :last_zelador}` - Tentou desativar o último zelador ativo
+  """
+  @callback deactivate_member(Scope.t(), String.t()) ::
+              {:ok, Ava.t()} | {:error, :unauthorized | :not_found | :last_zelador}
+
+  @doc """
+  Reativa uma conta desativada (limpa `deactivated_at`).
+
+  ## Regras de Negócio
+
+  - Apenas zeladores reativam contas
+  - Idempotente: reativar conta já ativa devolve `{:ok, ava}`
+
+  ## Retorno
+
+    * `{:ok, %Ava{}}` - Conta reativada
+    * `{:error, :unauthorized}` - Quem pediu não é zelador
+    * `{:error, :not_found}` - Membro não existe na Tekoa
+  """
+  @callback reactivate_member(Scope.t(), String.t()) ::
+              {:ok, Ava.t()} | {:error, :unauthorized | :not_found}
 
   # ============================================================================
   # AUTENTICAÇÃO - Reset de Senha

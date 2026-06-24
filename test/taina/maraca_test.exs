@@ -408,4 +408,105 @@ defmodule Taina.MaracaTest do
       assert [] = Maraca.list_my_requests(owner)
     end
   end
+
+  describe "member management" do
+    setup do
+      tekoa = tekoa_fixture()
+      zelador = zelador_fixture(tekoa)
+      member = active_ava_fixture(tekoa)
+      %{tekoa: tekoa, zelador: zelador, member: member}
+    end
+
+    test "zelador promotes a morador to zelador", %{tekoa: tekoa, zelador: zelador, member: member} do
+      assert {:ok, updated} =
+               Maraca.update_member_role(Scope.new(zelador, tekoa), member.public_id, :zelador)
+
+      assert updated.role == :zelador
+    end
+
+    test "the last active zelador cannot be demoted", %{tekoa: tekoa, zelador: zelador} do
+      assert {:error, :last_zelador} =
+               Maraca.update_member_role(Scope.new(zelador, tekoa), zelador.public_id, :morador)
+    end
+
+    test "a zelador can be demoted when another active zelador remains", %{
+      tekoa: tekoa,
+      zelador: zelador,
+      member: member
+    } do
+      scope = Scope.new(zelador, tekoa)
+      {:ok, _} = Maraca.update_member_role(scope, member.public_id, :zelador)
+
+      assert {:ok, demoted} = Maraca.update_member_role(scope, zelador.public_id, :morador)
+      assert demoted.role == :morador
+    end
+
+    test "deactivate then reactivate a member", %{tekoa: tekoa, zelador: zelador, member: member} do
+      scope = Scope.new(zelador, tekoa)
+
+      assert {:ok, deactivated} = Maraca.deactivate_member(scope, member.public_id)
+      refute Ava.active?(deactivated)
+
+      assert {:ok, reactivated} = Maraca.reactivate_member(scope, member.public_id)
+      assert Ava.active?(reactivated)
+    end
+
+    test "the last active zelador cannot be deactivated", %{tekoa: tekoa, zelador: zelador} do
+      assert {:error, :last_zelador} =
+               Maraca.deactivate_member(Scope.new(zelador, tekoa), zelador.public_id)
+    end
+
+    test "moradores cannot manage members", %{tekoa: tekoa, zelador: zelador, member: member} do
+      scope = Scope.new(member, tekoa)
+
+      assert {:error, :unauthorized} =
+               Maraca.update_member_role(scope, zelador.public_id, :morador)
+
+      assert {:error, :unauthorized} = Maraca.deactivate_member(scope, zelador.public_id)
+      assert {:error, :unauthorized} = Maraca.reactivate_member(scope, zelador.public_id)
+    end
+
+    test "unknown member is not found", %{tekoa: tekoa, zelador: zelador} do
+      scope = Scope.new(zelador, tekoa)
+
+      assert {:error, :not_found} = Maraca.update_member_role(scope, "nope", :zelador)
+      assert {:error, :not_found} = Maraca.deactivate_member(scope, "nope")
+    end
+
+    test "a deactivated account cannot authenticate", %{tekoa: tekoa, zelador: zelador} do
+      member = active_ava_fixture(tekoa, %{username: "deact"})
+      {:ok, _} = Maraca.deactivate_member(Scope.new(zelador, tekoa), member.public_id)
+
+      assert {:error, :account_deactivated} =
+               Maraca.authenticate("deact", "senhasegura123", tekoa)
+    end
+  end
+
+  describe "login rate limiting" do
+    test "blocks after too many attempts for the same (tekoa, username)" do
+      tekoa = tekoa_fixture()
+      active_ava_fixture(tekoa, %{username: "brute"})
+
+      # As 5 primeiras tentativas passam (senha errada -> :invalid_credentials);
+      # a 6a e barrada pelo limitador.
+      for _ <- 1..5 do
+        assert {:error, :invalid_credentials} =
+                 Maraca.authenticate("brute", "errada123", tekoa)
+      end
+
+      assert {:error, :rate_limited} =
+               Maraca.authenticate("brute", "errada123", tekoa)
+    end
+
+    test "successful logins never consume the window" do
+      tekoa = tekoa_fixture()
+      active_ava_fixture(tekoa, %{username: "carla"})
+
+      # Muito acima do limite, sempre com a senha certa: só falhas contam, então
+      # nenhuma trava aparece.
+      for _ <- 1..(3 * 5) do
+        assert {:ok, _} = Maraca.authenticate("carla", "senhasegura123", tekoa)
+      end
+    end
+  end
 end

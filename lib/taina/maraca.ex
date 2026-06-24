@@ -37,12 +37,19 @@ defmodule Taina.Maraca do
   alias Taina.Maraca.Permission
   alias Taina.Maraca.Tekoa
   alias Taina.Maraca.UnauthorizedError
+  alias Taina.RateLimit
   alias Taina.Repo
   alias Taina.Scope
 
   @invitation_max_age_seconds 7 * 24 * 60 * 60
   @reset_max_age_seconds 60 * 60
   @grantable_actions ~w(read write delete)a
+
+  # Janela de força bruta de login, por (tekoa, username): no máximo
+  # @login_rate_limit tentativas a cada @login_rate_scale_ms. Folgado o
+  # suficiente para erros de digitação, apertado contra enumeração de senha.
+  @login_rate_scale_ms 60_000
+  @login_rate_limit 5
 
   # Mapa de tipos de recurso -> {schema, campo de dono}. A propriedade é o
   # segundo nível da resolução de permissões; tipos fora deste mapa só podem
@@ -157,7 +164,19 @@ defmodule Taina.Maraca do
   @impl true
   def authenticate(username, password, %Tekoa{} = tekoa) do
     username = normalize_username(username)
+    key = login_rate_key(tekoa, username)
 
+    if login_rate_exceeded?(key) do
+      {:error, :rate_limited}
+    else
+      case do_authenticate(username, password, tekoa) do
+        {:ok, ava} -> {:ok, ava}
+        {:error, _reason} = error -> record_login_failure(key, error)
+      end
+    end
+  end
+
+  defp do_authenticate(username, password, %Tekoa{} = tekoa) do
     {:ok, result} =
       Repo.with_tekoa(tekoa.public_id, fn ->
         {:ok, Repo.get_by(Ava, username: username, tekoa_id: tekoa.id)}
@@ -166,9 +185,30 @@ defmodule Taina.Maraca do
     verify_credentials(result, password)
   end
 
+  defp login_rate_key(%Tekoa{} = tekoa, username), do: "login:#{tekoa.public_id}:#{username}"
+
+  # Só as falhas contam para a janela: lemos a contagem sem incrementar, então
+  # uma senha correta nunca a queima (login/logout/login não tranca ninguém).
+  # Acima do limite recusamos antes do bcrypt, blindando a CPU contra força
+  # bruta. Conta inexistente compartilha a janela do username (não vaza existência).
+  defp login_rate_exceeded?(key) do
+    RateLimit.get(key, @login_rate_scale_ms) >= @login_rate_limit
+  end
+
+  defp record_login_failure(key, error) do
+    _ = RateLimit.hit(key, @login_rate_scale_ms, @login_rate_limit)
+    error
+  end
+
   defp verify_credentials(nil, _password) do
     Bcrypt.no_user_verify()
     {:error, :invalid_credentials}
+  end
+
+  # Conta desativada pelo zelador: bloqueia login mesmo com senha correta.
+  defp verify_credentials(%Ava{deactivated_at: deactivated_at}, _password) when not is_nil(deactivated_at) do
+    Bcrypt.no_user_verify()
+    {:error, :account_deactivated}
   end
 
   # Convite ainda não aceito: sem senha definida, não há o que verificar.
@@ -210,9 +250,12 @@ defmodule Taina.Maraca do
   def get_session_user(%{"ava_id" => ava_id}), do: resolve_session_ava(ava_id)
   def get_session_user(_session), do: {:error, :not_authenticated}
 
+  # Revalida a cada request/mount: uma conta desativada pelo zelador deixa de
+  # resolver, então a sessão ainda aberta cai no próximo acesso -- honra o
+  # "não vai mais conseguir entrar" da tela de membros.
   defp resolve_session_ava(public_id) when is_binary(public_id) do
     case Repo.get_by(Ava, [public_id: public_id], skip_tekoa_id: true) do
-      %Ava{} = ava ->
+      %Ava{deactivated_at: nil} = ava ->
         tekoa = Repo.get!(Tekoa, ava.tekoa_id, skip_tekoa_id: true)
         {:ok, %{ava | tekoa: tekoa}}
 
@@ -237,6 +280,103 @@ defmodule Taina.Maraca do
     else
       {:error, :unauthorized}
     end
+  end
+
+  ## Gestão de membros (zelador)
+
+  @impl true
+  def update_member_role(%Scope{} = scope, member_public_id, role) do
+    with :ok <- ensure_zelador(scope) do
+      Repo.with_tekoa(scope.tekoa.public_id, fn -> do_update_role(member_public_id, role) end)
+    end
+  end
+
+  @impl true
+  def deactivate_member(%Scope{} = scope, member_public_id) do
+    with :ok <- ensure_zelador(scope) do
+      Repo.with_tekoa(scope.tekoa.public_id, fn -> do_deactivate(member_public_id) end)
+    end
+  end
+
+  @impl true
+  def reactivate_member(%Scope{} = scope, member_public_id) do
+    with :ok <- ensure_zelador(scope) do
+      Repo.with_tekoa(scope.tekoa.public_id, fn -> do_reactivate(member_public_id) end)
+    end
+  end
+
+  defp ensure_zelador(%Scope{ava: ava}) do
+    if zelador?(ava), do: :ok, else: {:error, :unauthorized}
+  end
+
+  defp do_update_role(public_id, role) do
+    with {:ok, member} <- fetch_member(public_id),
+         :ok <- ensure_demotion_keeps_zelador(member, role) do
+      Repo.update(Ava.role_changeset(member, role))
+    end
+  end
+
+  defp do_deactivate(public_id) do
+    with {:ok, member} <- fetch_member(public_id) do
+      deactivate_if_allowed(member)
+    end
+  end
+
+  defp do_reactivate(public_id) do
+    with {:ok, member} <- fetch_member(public_id) do
+      Repo.update(Ava.deactivation_changeset(member, nil))
+    end
+  end
+
+  # Resolve um membro pelo public_id dentro do contexto de Tekoa (RLS escopa por
+  # comunidade -- public_id de outra Tekoa simplesmente não aparece).
+  defp fetch_member(public_id) do
+    case Repo.get_by(Ava, public_id: public_id) do
+      nil -> {:error, :not_found}
+      %Ava{} = ava -> {:ok, ava}
+    end
+  end
+
+  # Idempotente: conta já desativada não muda. O último zelador ativo não pode
+  # ser desativado (a comunidade ficaria sem quem cuida da máquina).
+  defp deactivate_if_allowed(%Ava{deactivated_at: at} = member) when not is_nil(at) do
+    {:ok, member}
+  end
+
+  defp deactivate_if_allowed(%Ava{} = member) do
+    if last_active_zelador?(member) do
+      {:error, :last_zelador}
+    else
+      Repo.update(Ava.deactivation_changeset(member, DateTime.utc_now()))
+    end
+  end
+
+  # Rebaixar zelador -> morador só é barrado quando esvaziaria a administração.
+  defp ensure_demotion_keeps_zelador(%Ava{role: :zelador} = member, :morador) do
+    if last_active_zelador?(member), do: {:error, :last_zelador}, else: :ok
+  end
+
+  defp ensure_demotion_keeps_zelador(_member, _role), do: :ok
+
+  # `member` é o único zelador ativo da Tekoa? Só faz sentido quando ele próprio
+  # é zelador ativo; nesse caso, contagem == 1 significa que é o último.
+  defp last_active_zelador?(%Ava{role: :zelador, deactivated_at: nil}), do: active_zelador_count() == 1
+  defp last_active_zelador?(%Ava{}), do: false
+
+  # Trava os zeladores ativos com FOR UPDATE para serializar desativações e
+  # rebaixamentos concorrentes: dois zeladores se removendo ao mesmo tempo não
+  # podem ambos ler count == 2 e zerar a administração -- o segundo bloqueia,
+  # relê após o commit do primeiro e enxerga count == 1. Roda sempre dentro da
+  # transação de `Repo.with_tekoa`. `count(*)` não aceita FOR UPDATE no Postgres,
+  # então travamos as linhas e contamos no Elixir (teto de 50 membros, custo trivial).
+  defp active_zelador_count do
+    from(a in Ava,
+      where: a.role == :zelador and is_nil(a.deactivated_at),
+      lock: "FOR UPDATE",
+      select: a.id
+    )
+    |> Repo.all()
+    |> length()
   end
 
   ## Reset de senha

@@ -43,4 +43,36 @@ defmodule TainaWeb.MembersLiveTest do
 
     refute html =~ "/membros/convidar"
   end
+
+  test "zelador muda o papel de um morador", %{conn: conn, zelador: zelador, member: member} do
+    {:ok, lv, _html} = conn |> log_in(zelador) |> live(~p"/membros")
+
+    html = render_click(lv, "set-role", %{"id" => member.public_id, "role" => "zelador"})
+
+    assert html =~ "Papel atualizado."
+  end
+
+  test "zelador desativa e reativa um morador", %{conn: conn, zelador: zelador, member: member} do
+    {:ok, lv, _html} = conn |> log_in(zelador) |> live(~p"/membros")
+
+    html = render_click(lv, "deactivate", %{"id" => member.public_id})
+    assert html =~ "Conta desativada"
+
+    html = render_click(lv, "reactivate", %{"id" => member.public_id})
+    assert html =~ "Conta reativada."
+  end
+
+  test "não deixa desativar o último zelador", %{conn: conn, zelador: zelador} do
+    {:ok, lv, _html} = conn |> log_in(zelador) |> live(~p"/membros")
+
+    html = render_click(lv, "deactivate", %{"id" => zelador.public_id})
+
+    assert html =~ "pelo menos um zelador ativo"
+  end
+
+  test "morador comum não vê ações de conta", %{conn: conn, member: member} do
+    {:ok, _lv, html} = conn |> log_in(member) |> live(~p"/membros")
+
+    refute html =~ "Ações da conta"
+  end
 end

@@ -60,6 +60,7 @@ defmodule Taina.MixProject do
       {:image, "~> 0.68"},
       {:bcrypt_elixir, "~> 3.3"},
       {:oban, "~> 2.23"},
+      {:hammer, "~> 7.0"},
       {:lazy_html, "~> 0.1.11", only: :test, override: true},
       # dev
       {:tidewave, "~> 0.5", only: :dev},

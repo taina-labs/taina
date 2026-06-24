@@ -9,19 +9,19 @@ defmodule TainaWeb.MembersLive do
   use TainaWeb, :live_view
 
   alias Taina.Maraca
+  alias Taina.Maraca.Ava
   alias TainaWeb.Layouts
 
   @impl true
   def mount(_params, _session, socket) do
-    {:ok, members} = Maraca.list_members(socket.assigns.current_scope)
-
     {:ok,
      socket
      |> assign(:page_title, gettext("Moradores"))
-     |> assign(:members, members)
      |> assign(:query, "")
      |> assign(:reset_link, nil)
-     |> assign(:reset_member, nil)}
+     |> assign(:reset_member, nil)
+     |> assign(:confirm_deactivate, nil)
+     |> assign_members()}
   end
 
   @impl true
@@ -31,16 +31,16 @@ defmodule TainaWeb.MembersLive do
 
   def handle_event("reset-link", %{"id" => public_id}, socket) do
     scope = socket.assigns.current_scope
+    member = Enum.find(socket.assigns.members, &(&1.public_id == public_id))
 
-    with %{} = member <- Enum.find(socket.assigns.members, &(&1.public_id == public_id)),
+    with %Ava{} <- member,
          {:ok, ava} <- Maraca.mint_reset_link(scope, member) do
       {:noreply,
        socket
        |> assign(:reset_link, url(~p"/redefinir/#{ava.reset_token}"))
        |> assign(:reset_member, display_name(member))}
     else
-      _ ->
-        {:noreply, Phoenix.LiveView.put_flash(socket, :error, gettext("Não foi possível gerar o link. Tente de novo."))}
+      _ -> {:noreply, flash_error(socket, gettext("Não foi possível gerar o link. Tente de novo."))}
     end
   end
 
@@ -50,6 +50,67 @@ defmodule TainaWeb.MembersLive do
 
   def handle_event("copied", _params, socket) do
     {:noreply, Phoenix.LiveView.put_flash(socket, :info, gettext("Link copiado!"))}
+  end
+
+  def handle_event("set-role", %{"id" => public_id, "role" => role}, socket) do
+    role = String.to_existing_atom(role)
+
+    case Maraca.update_member_role(socket.assigns.current_scope, public_id, role) do
+      {:ok, _ava} ->
+        {:noreply, socket |> assign_members() |> flash_info(gettext("Papel atualizado."))}
+
+      {:error, :last_zelador} ->
+        {:noreply, flash_error(socket, last_zelador_message())}
+
+      {:error, _reason} ->
+        {:noreply, flash_error(socket, gettext("Não foi possível mudar o papel. Tente de novo."))}
+    end
+  end
+
+  def handle_event("ask-deactivate", %{"id" => public_id}, socket) do
+    member = Enum.find(socket.assigns.members, &(&1.public_id == public_id))
+    {:noreply, assign(socket, :confirm_deactivate, member)}
+  end
+
+  def handle_event("close-confirm", _params, socket) do
+    {:noreply, assign(socket, :confirm_deactivate, nil)}
+  end
+
+  def handle_event("deactivate", %{"id" => public_id}, socket) do
+    socket = assign(socket, :confirm_deactivate, nil)
+
+    case Maraca.deactivate_member(socket.assigns.current_scope, public_id) do
+      {:ok, _ava} ->
+        {:noreply, socket |> assign_members() |> flash_info(gettext("Conta desativada."))}
+
+      {:error, :last_zelador} ->
+        {:noreply, flash_error(socket, last_zelador_message())}
+
+      {:error, _reason} ->
+        {:noreply, flash_error(socket, gettext("Não foi possível desativar a conta. Tente de novo."))}
+    end
+  end
+
+  def handle_event("reactivate", %{"id" => public_id}, socket) do
+    case Maraca.reactivate_member(socket.assigns.current_scope, public_id) do
+      {:ok, _ava} ->
+        {:noreply, socket |> assign_members() |> flash_info(gettext("Conta reativada."))}
+
+      {:error, _reason} ->
+        {:noreply, flash_error(socket, gettext("Não foi possível reativar a conta. Tente de novo."))}
+    end
+  end
+
+  defp assign_members(socket) do
+    {:ok, members} = Maraca.list_members(socket.assigns.current_scope)
+    assign(socket, :members, members)
+  end
+
+  defp flash_info(socket, msg), do: Phoenix.LiveView.put_flash(socket, :info, msg)
+  defp flash_error(socket, msg), do: Phoenix.LiveView.put_flash(socket, :error, msg)
+
+  defp last_zelador_message do
+    gettext("A comunidade precisa de pelo menos um zelador ativo. Promova outra pessoa antes.")
   end
 
   defp filtered(members, ""), do: members
@@ -68,6 +129,7 @@ defmodule TainaWeb.MembersLive do
 
   defp member_meta(member, scope) do
     cond do
+      deactivated?(member) -> gettext("Conta desativada")
       member.id == scope.ava.id -> gettext("Você")
       is_nil(member.activated_at) -> gettext("Convite pendente")
       member.role == :zelador -> gettext("Quem cuida da máquina")
@@ -78,6 +140,14 @@ defmodule TainaWeb.MembersLive do
   defp can_reset?(member, scope) do
     Maraca.zelador?(scope.ava) and member.id != scope.ava.id and not is_nil(member.activated_at)
   end
+
+  # Zelador agindo sobre outra conta (nunca a própria): pode mudar papel e
+  # (des)ativar. A proteção do último zelador é reforçada no context.
+  defp manageable?(member, scope) do
+    Maraca.zelador?(scope.ava) and member.id != scope.ava.id
+  end
+
+  defp deactivated?(member), do: not is_nil(member.deactivated_at)
 
   @impl true
   def render(assigns) do
@@ -127,7 +197,10 @@ defmodule TainaWeb.MembersLive do
             meta={member_meta(member, @current_scope)}
           >
             <:leading>
-              <.avatar name={display_name(member)} inactive={is_nil(member.activated_at)} />
+              <.avatar
+                name={display_name(member)}
+                inactive={is_nil(member.activated_at) or deactivated?(member)}
+              />
             </:leading>
             <:actions>
               <.badge :if={member.role == :zelador} variant="zelador">{gettext("Zelador(a)")}</.badge>
@@ -138,6 +211,41 @@ defmodule TainaWeb.MembersLive do
                 phx-click="reset-link"
                 phx-value-id={member.public_id}
               />
+              <.menu
+                :if={manageable?(member, @current_scope)}
+                id={"member-menu-#{member.public_id}"}
+                label={gettext("Ações da conta")}
+              >
+                <:item
+                  :if={member.role == :morador}
+                  icon="shield"
+                  click={JS.push("set-role", value: %{id: member.public_id, role: "zelador"})}
+                >
+                  {gettext("Tornar zelador(a)")}
+                </:item>
+                <:item
+                  :if={member.role == :zelador}
+                  icon="user"
+                  click={JS.push("set-role", value: %{id: member.public_id, role: "morador"})}
+                >
+                  {gettext("Tornar morador(a)")}
+                </:item>
+                <:item
+                  :if={not deactivated?(member)}
+                  icon="logout"
+                  danger
+                  click={JS.push("ask-deactivate", value: %{id: member.public_id})}
+                >
+                  {gettext("Desativar conta")}
+                </:item>
+                <:item
+                  :if={deactivated?(member)}
+                  icon="restore"
+                  click={JS.push("reactivate", value: %{id: member.public_id})}
+                >
+                  {gettext("Reativar conta")}
+                </:item>
+              </.menu>
             </:actions>
           </.list_row>
         </div>
@@ -166,6 +274,23 @@ defmodule TainaWeb.MembersLive do
           {gettext("Copiar link")}
         </.button>
       </.modal>
+
+      <.confirm_dialog
+        id="confirm-deactivate"
+        show={@confirm_deactivate != nil}
+        title={gettext("Desativar esta conta?")}
+        message={
+          gettext(
+            "%{name} não vai mais conseguir entrar. Os dados ficam guardados e você pode reativar quando quiser.",
+            name: @confirm_deactivate && display_name(@confirm_deactivate)
+          )
+        }
+        confirm_label={gettext("Desativar")}
+        on_confirm={
+          JS.push("deactivate", value: %{id: @confirm_deactivate && @confirm_deactivate.public_id})
+        }
+        on_cancel={JS.push("close-confirm")}
+      />
     </Layouts.app>
     """
   end

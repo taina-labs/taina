@@ -17,7 +17,11 @@ defmodule TainaWeb do
   those modules here.
   """
 
-  def static_paths, do: ~w(assets fonts robots.txt)
+  # sw.js is intentionally absent: it is served by a dedicated plug in the
+  # Endpoint with a no-cache header so service-worker updates are always picked
+  # up (see TainaWeb.Endpoint).
+  def static_paths,
+    do: ~w(assets fonts icons robots.txt favicon.ico apple-touch-icon.png manifest.webmanifest offline.html)
 
   def router do
     quote do

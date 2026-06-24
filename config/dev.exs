@@ -10,12 +10,15 @@ config :phoenix, :plug_init_mode, :runtime
 # in production as building large stacktraces may be expensive.
 config :phoenix, :stacktrace_depth, 20
 
-# Configure your database
+# Configure your database. Honors the standard libpq env vars (PGHOST/PGUSER/…)
+# so CI — and the `taina.backup.verify` round-trip — can point at a service DB
+# without code changes; falls back to local defaults otherwise.
 config :taina, Taina.Repo,
-  username: "postgres",
-  password: "postgres",
-  hostname: "localhost",
-  database: "taina_dev",
+  username: System.get_env("PGUSER") || "postgres",
+  password: System.get_env("PGPASSWORD") || "postgres",
+  hostname: System.get_env("PGHOST") || "localhost",
+  port: String.to_integer(System.get_env("PGPORT") || "5432"),
+  database: System.get_env("PGDATABASE") || "taina_dev",
   stacktrace: true,
   show_sensitive_data_on_connection_error: true,
   pool_size: 10

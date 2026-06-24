@@ -1,19 +1,19 @@
-# Find eligible builder and runner images on Docker Hub. We use Ubuntu/Debian
-# instead of Alpine to avoid DNS resolution issues in production.
+# Find eligible builder and runner images on Docker Hub. We use Debian instead
+# of Alpine to avoid DNS resolution issues in production.
 #
-# https://hub.docker.com/r/hexpm/elixir/tags?page=1&name=ubuntu
-# https://hub.docker.com/_/ubuntu?tab=tags
+# Versions are pinned to match CI (.github/workflows/ci.yml): Elixir 1.20.0,
+# OTP 28, so the release built here compiles consistently with what CI tests.
 #
 # This file is based on these images:
 #
 #   - https://hub.docker.com/r/hexpm/elixir/tags - for the build image
-#   - https://hub.docker.com/_/debian?tab=tags&page=1&name=bullseye-20240612-slim - for the release image
+#   - https://hub.docker.com/_/debian?tab=tags - for the release image
 #   - https://pkgs.org/ - resource for finding needed packages
-#   - Ex: hexpm/elixir:1.17.2-erlang-27.0-debian-bullseye-20240612-slim
+#   - Ex: hexpm/elixir:1.20.0-erlang-28.3.2-debian-bookworm-20260610-slim
 #
-ARG ELIXIR_VERSION=1.17.2
-ARG OTP_VERSION=27.0
-ARG DEBIAN_VERSION=bullseye-20240612-slim
+ARG ELIXIR_VERSION=1.20.0
+ARG OTP_VERSION=28.3.2
+ARG DEBIAN_VERSION=bookworm-20260610-slim
 
 ARG BUILDER_IMAGE="hexpm/elixir:${ELIXIR_VERSION}-erlang-${OTP_VERSION}-debian-${DEBIAN_VERSION}"
 ARG RUNNER_IMAGE="debian:${DEBIAN_VERSION}"
@@ -71,8 +71,21 @@ RUN mix release
 # the compiled release and other runtime necessities
 FROM ${RUNNER_IMAGE}
 
+# Runtime libs (bookworm package names: libncurses6, not the bullseye
+# libncurses5) plus the PostgreSQL 18 client. Scheduled backups
+# (Taina.Nhaman.Backup) shell out to pg_dump / pg_restore via System.cmd, so
+# without the client they fail with :command_unavailable. The pgdg apt repo is
+# the same one CI uses for its backup-restore job.
 RUN apt-get update -y && \
-  apt-get install -y libstdc++6 openssl libncurses5 locales ca-certificates \
+  apt-get install -y --no-install-recommends \
+    libstdc++6 openssl libncurses6 locales ca-certificates curl gnupg \
+  && install -d /usr/share/postgresql-common/pgdg \
+  && curl -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc --fail \
+    https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+  && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] http://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" \
+    > /etc/apt/sources.list.d/pgdg.list \
+  && apt-get update -y \
+  && apt-get install -y --no-install-recommends postgresql-client-18 \
   && apt-get clean && rm -f /var/lib/apt/lists/*_*
 
 # Set the locale
