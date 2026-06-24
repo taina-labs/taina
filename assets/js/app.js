@@ -30,3 +30,14 @@ liveSocket.connect();
 
 // Exposto para debug no console (liveSocket.enableDebug(), etc.).
 window.liveSocket = liveSocket;
+
+// Registra o service worker (app instalável + tela offline). updateViaCache
+// 'none' garante que o navegador sempre rebusque o sw.js para pegar versões
+// novas. Falha silenciosa em navegadores sem suporte.
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker
+      .register("/sw.js", { updateViaCache: "none" })
+      .catch((err) => console.warn("Falha ao registrar o service worker:", err));
+  });
+}

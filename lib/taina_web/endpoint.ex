@@ -19,6 +19,11 @@ defmodule TainaWeb.Endpoint do
     websocket: [connect_info: [session: @session_options]],
     longpoll: [connect_info: [session: @session_options]]
 
+  # Serve the service worker from the root with no-cache so browsers always
+  # re-check it for updates (Plug.Static would attach a long/etag cache). The
+  # root path also gives it the "/" scope it needs without an extra header.
+  plug :service_worker
+
   # Serve at "/" the static files from "priv/static" directory.
   #
   # When code reloading is disabled (e.g., in production),
@@ -49,4 +54,19 @@ defmodule TainaWeb.Endpoint do
   plug Plug.Head
   plug Plug.Session, @session_options
   plug TainaWeb.Router
+
+  defp service_worker(%Plug.Conn{method: method, request_path: "/sw.js"} = conn, _opts) when method in ["GET", "HEAD"] do
+    # Resolved at runtime: in a release app_dir points at the release path, not
+    # the build path a compile-time attribute would have captured.
+    path = Application.app_dir(:taina, "priv/static/sw.js")
+
+    conn
+    |> Plug.Conn.put_resp_header("content-type", "text/javascript; charset=utf-8")
+    |> Plug.Conn.put_resp_header("cache-control", "no-cache")
+    |> Plug.Conn.put_resp_header("service-worker-allowed", "/")
+    |> Plug.Conn.send_file(200, path)
+    |> Plug.Conn.halt()
+  end
+
+  defp service_worker(conn, _opts), do: conn
 end
