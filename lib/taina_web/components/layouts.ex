@@ -17,11 +17,13 @@ defmodule TainaWeb.Layouts do
   Shell autenticado. `active_tab` marca o item ativo na navegação
   (`:home`, `:files`, `:photos`, `:members`, `:account`).
   `storage_stats` (opcional) alimenta o mini-card de armazenamento da sidebar.
+  `account_alert` acende um ponto na aba Conta quando há pedido esperando.
   """
   attr :flash, :map, required: true
   attr :current_scope, Taina.Scope, default: nil
   attr :active_tab, :atom, default: nil
   attr :storage_stats, :map, default: nil, doc: "%{used_bytes: _, quota_bytes: _}"
+  attr :account_alert, :boolean, default: false, doc: "ponto na aba Conta quando há pedido esperando"
   slot :inner_block, required: true
 
   def app(assigns) do
@@ -51,6 +53,7 @@ defmodule TainaWeb.Layouts do
             navigate={~p"/conta"}
             icon="shield"
             active={@active_tab == :account}
+            alert={@account_alert}
             label={gettext("Conta")}
           />
         </nav>
@@ -85,6 +88,7 @@ defmodule TainaWeb.Layouts do
           navigate={~p"/conta"}
           icon="user"
           active={@active_tab in [:account, :members]}
+          alert={@account_alert}
           label={gettext("Conta")}
         />
       </nav>
@@ -96,11 +100,13 @@ defmodule TainaWeb.Layouts do
   attr :icon, :string, required: true
   attr :label, :string, required: true
   attr :active, :boolean, default: false
+  attr :alert, :boolean, default: false
 
   defp sidebar_item(assigns) do
     ~H"""
-    <.link navigate={@navigate} class="sidebar__item" aria-current={@active && "page"}>
+    <.link navigate={@navigate} class="sidebar__item" aria-current={@active && "page"} aria-label={nav_label(@label, @alert)}>
       <.icon name={@icon} size={20} /> {@label}
+      <span :if={@alert} class="nav-dot" aria-hidden="true"></span>
     </.link>
     """
   end
@@ -109,15 +115,22 @@ defmodule TainaWeb.Layouts do
   attr :icon, :string, required: true
   attr :label, :string, required: true
   attr :active, :boolean, default: false
+  attr :alert, :boolean, default: false
 
   defp bottom_nav_item(assigns) do
     ~H"""
-    <.link navigate={@navigate} class="bottom-nav__item" aria-current={@active && "page"}>
+    <.link navigate={@navigate} class="bottom-nav__item" aria-current={@active && "page"} aria-label={nav_label(@label, @alert)}>
       <.icon name={@icon} size={22} />
       <span>{@label}</span>
+      <span :if={@alert} class="nav-dot" aria-hidden="true"></span>
     </.link>
     """
   end
+
+  # Sufixo no rótulo acessível só quando o ponto acende: o leitor de tela anuncia
+  # "Conta, há pedidos esperando". Sem ponto, o rótulo fica como está.
+  defp nav_label(label, true), do: label <> ", " <> gettext("há pedidos esperando")
+  defp nav_label(label, false), do: label
 
   defp storage_percent(%{used_bytes: used, quota_bytes: quota})
        when is_integer(used) and is_integer(quota) and quota > 0 do

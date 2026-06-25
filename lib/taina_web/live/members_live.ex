@@ -157,6 +157,7 @@ defmodule TainaWeb.MembersLive do
       current_scope={@current_scope}
       active_tab={:members}
       storage_stats={assigns[:storage_stats]}
+      account_alert={assigns[:account_alert] || false}
     >
       <Layouts.app_bar title={gettext("Moradores")} back={~p"/conta"}>
         <:action :if={Maraca.zelador?(@current_scope.ava)}>

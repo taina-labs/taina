@@ -23,6 +23,7 @@ defmodule TainaWeb.AccountLive do
       current_scope={@current_scope}
       active_tab={:account}
       storage_stats={assigns[:storage_stats]}
+      account_alert={assigns[:account_alert] || false}
     >
       <h1 class="type-h1 mb-6">{gettext("Conta")}</h1>
 
@@ -37,6 +38,27 @@ defmodule TainaWeb.AccountLive do
         </.card>
 
         <div class="list">
+          <.list_row
+            title={gettext("Pedidos")}
+            meta={gettext("quem pediu para abrir seus arquivos")}
+            navigate={~p"/conta/pedidos"}
+          >
+            <:leading><.service_square service="nhaman" icon="shield" /></:leading>
+            <:actions>
+              <span :if={@account_alert} class="nav-dot" aria-hidden="true"></span>
+              <.icon name="chevron-right" size={18} class="text-faint" />
+            </:actions>
+          </.list_row>
+
+          <.list_row
+            title={gettext("Meus pedidos")}
+            meta={gettext("o que você está esperando")}
+            navigate={~p"/conta/meus-pedidos"}
+          >
+            <:leading><.service_square service="ybira" icon="folder" /></:leading>
+            <:actions><.icon name="chevron-right" size={18} class="text-faint" /></:actions>
+          </.list_row>
+
           <.list_row title={gettext("Membros")} meta={gettext("quem faz parte da comunidade")} navigate={~p"/membros"}>
             <:leading><.service_square service="nhaman" icon="user" /></:leading>
             <:actions><.icon name="chevron-right" size={18} class="text-faint" /></:actions>

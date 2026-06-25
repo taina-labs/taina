@@ -139,6 +139,32 @@ defmodule Taina.Ybira do
   end
 
   @impl true
+  def fetch_access_target(%Scope{} = scope, file_public_id) when is_binary(file_public_id) do
+    Repo.with_tekoa(scope.tekoa.public_id, fn ->
+      query =
+        from f in Ybira.File,
+          where: f.public_id == ^file_public_id and is_nil(f.deleted_at),
+          preload: [:ava]
+
+      case Repo.one(query) do
+        nil -> {:error, :not_found}
+        file -> access_target(scope, file)
+      end
+    end)
+  end
+
+  defp access_target(%Scope{} = scope, %Ybira.File{} = file) do
+    if Maraca.can_read?(scope.ava, file.zona, file.ava_id, "ybira_file", file.public_id) do
+      {:error, :already_readable}
+    else
+      # `request_access/5` precisa do dono com a Tekoa para montar o topico
+      # PubSub; o `file.ava` vem sem ela, entao recarregamos com o preload.
+      owner = Repo.preload(file.ava, :tekoa)
+      {:ok, %{owner: owner, file_public_id: file.public_id, filename: file.original_filename}}
+    end
+  end
+
+  @impl true
   def list_files(%Scope{} = scope, folder_public_id \\ nil, opts \\ []) do
     Repo.with_tekoa(scope.tekoa.public_id, fn ->
       base =

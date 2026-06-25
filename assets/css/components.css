@@ -296,6 +296,15 @@
   }
 }
 
+/* ponto ambiente de "tem pedido esperando" (nav Conta e linha Pedidos) */
+.nav-dot {
+  width: var(--size-nav-dot);
+  height: var(--size-nav-dot);
+  border-radius: var(--radius-pill);
+  background: var(--brand-primary);
+  flex-shrink: 0;
+}
+
 /* legenda do uso por tipo (armazenamento) */
 .legend-dot {
   width: var(--space-3);

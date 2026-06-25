@@ -226,6 +226,7 @@ defmodule TainaWeb.GalleryLive do
       current_scope={@current_scope}
       active_tab={:photos}
       storage_stats={assigns[:storage_stats]}
+      account_alert={assigns[:account_alert] || false}
     >
       <h1 class="type-h1 mb-4">{gettext("Fotos")}</h1>
 

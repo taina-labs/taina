@@ -678,6 +678,11 @@ defmodule Taina.Maraca do
     requests
   end
 
+  @impl true
+  def subscribe_to_my_events(%Ava{public_id: pid}) do
+    Phoenix.PubSub.subscribe(Taina.PubSub, "maraca:ava:" <> pid)
+  end
+
   ## Predicados
 
   @impl true

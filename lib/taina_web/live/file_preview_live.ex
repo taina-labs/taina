@@ -7,6 +7,7 @@ defmodule TainaWeb.FilePreviewLive do
 
   use TainaWeb, :live_view
 
+  alias Taina.Maraca
   alias Taina.Ybira
   alias TainaWeb.Layouts
 
@@ -20,7 +21,11 @@ defmodule TainaWeb.FilePreviewLive do
          |> assign(:file, file)
          |> assign(:text_preview, load_text_preview(file))
          |> assign(:show_details, false)
-         |> assign(:show_confirm, false)}
+         |> assign(:show_confirm, false)
+         |> assign(:show_zona, false)}
+
+      {:error, :forbidden} ->
+        {:ok, mount_forbidden(socket, public_id)}
 
       {:error, :not_found} ->
         {:ok,
@@ -35,6 +40,27 @@ defmodule TainaWeb.FilePreviewLive do
          |> Phoenix.LiveView.redirect(to: ~p"/arquivos")}
     end
   end
+
+  # Casa de outra pessoa: a pessoa nao le o conteudo, mas vemos a quem pedir.
+  defp mount_forbidden(socket, public_id) do
+    case Ybira.fetch_access_target(socket.assigns.current_scope, public_id) do
+      {:ok, target} ->
+        socket
+        |> assign(:page_title, gettext("Pedir acesso"))
+        |> assign(:access_target, target)
+        |> assign(:show_request_modal, false)
+
+      {:error, :already_readable} ->
+        Phoenix.LiveView.push_navigate(socket, to: ~p"/arquivos/#{public_id}")
+
+      {:error, :not_found} ->
+        socket
+        |> Phoenix.LiveView.put_flash(:error, gettext("Arquivo não encontrado."))
+        |> Phoenix.LiveView.redirect(to: ~p"/arquivos")
+    end
+  end
+
+  defp default_reason, do: gettext("Pedido de acesso pela tela do arquivo")
 
   @impl true
   def handle_event("copied", _params, socket) do
@@ -65,6 +91,96 @@ defmodule TainaWeb.FilePreviewLive do
         {:noreply, Phoenix.LiveView.put_flash(socket, :error, gettext("Não foi possível excluir o arquivo."))}
     end
   end
+
+  def handle_event("ask-zona", _params, socket) do
+    {:noreply, assign(socket, :show_zona, true)}
+  end
+
+  def handle_event("close-zona", _params, socket) do
+    {:noreply, assign(socket, :show_zona, false)}
+  end
+
+  def handle_event("confirm-zona", _params, socket) do
+    %{file: file, current_scope: scope} = socket.assigns
+
+    result =
+      case file.zona do
+        :casa -> Ybira.publicar_file(scope, file.public_id)
+        :praca -> Ybira.tirar_file_da_praca(scope, file.public_id)
+      end
+
+    case result do
+      {:ok, updated} ->
+        {:noreply,
+         socket
+         |> assign(:file, updated)
+         |> assign(:show_zona, false)
+         |> Phoenix.LiveView.put_flash(:info, zona_flash_ok(file.zona))}
+
+      {:error, _reason} ->
+        {:noreply,
+         socket
+         |> assign(:show_zona, false)
+         |> Phoenix.LiveView.put_flash(:error, zona_flash_error(file.zona))}
+    end
+  end
+
+  def handle_event("ask-access", _params, socket) do
+    {:noreply, assign(socket, :show_request_modal, true)}
+  end
+
+  def handle_event("close-access", _params, socket) do
+    {:noreply, assign(socket, :show_request_modal, false)}
+  end
+
+  def handle_event("request-access", _params, socket) do
+    target = socket.assigns.access_target
+    scope = socket.assigns.current_scope
+
+    case Maraca.request_access(scope.ava, target.owner, "ybira_file", target.file_public_id, default_reason()) do
+      {:ok, _request} ->
+        {:noreply,
+         socket
+         |> Phoenix.LiveView.put_flash(:info, gettext("Pedido enviado. Você vê o andamento em Meus pedidos."))
+         |> Phoenix.LiveView.push_navigate(to: ~p"/conta/meus-pedidos")}
+
+      {:error, :already_has_access} ->
+        {:noreply, Phoenix.LiveView.push_navigate(socket, to: ~p"/arquivos/#{target.file_public_id}")}
+
+      {:error, :cannot_request_own} ->
+        {:noreply, Phoenix.LiveView.push_navigate(socket, to: ~p"/arquivos/#{target.file_public_id}")}
+
+      {:error, _reason} ->
+        {:noreply,
+         socket
+         |> assign(:show_request_modal, false)
+         |> Phoenix.LiveView.put_flash(:error, gettext("Não foi possível enviar o pedido agora."))}
+    end
+  end
+
+  defp own?(scope, file), do: scope.ava.id == file.ava_id
+
+  defp readability_line(:praca), do: gettext("Todos os moradores veem.")
+  defp readability_line(:casa), do: gettext("Só você, e quem você deixar.")
+
+  defp zona_action_label(:casa), do: gettext("Publicar na praça")
+  defp zona_action_label(:praca), do: gettext("Tirar da praça")
+
+  defp zona_confirm_title(:casa, name), do: gettext("Publicar \"%{name}\" na praça?", name: name)
+  defp zona_confirm_title(:praca, name), do: gettext("Tirar \"%{name}\" da praça?", name: name)
+
+  defp zona_confirm_body(:casa), do: gettext("Todos os moradores vão poder ver. Você pode tirar da praça quando quiser.")
+
+  defp zona_confirm_body(:praca), do: gettext("Volta a ser só seu. Só você, e quem você deixar, vê de novo.")
+
+  defp zona_confirm_primary(:casa), do: gettext("Publicar")
+  defp zona_confirm_primary(:praca), do: gettext("Tirar da praça")
+
+  defp zona_flash_ok(:casa), do: gettext("Publicado na praça.")
+  defp zona_flash_ok(:praca), do: gettext("Tirado da praça.")
+
+  defp zona_flash_error(:casa), do: gettext("Não foi possível publicar na praça.")
+  defp zona_flash_error(:praca), do: gettext("Não foi possível tirar da praça.")
 
   defp media_kind("image/" <> _rest), do: :image
   defp media_kind("video/" <> _rest), do: :video
@@ -99,6 +215,53 @@ defmodule TainaWeb.FilePreviewLive do
   end
 
   @impl true
+  def render(%{access_target: _target} = assigns) do
+    ~H"""
+    <Layouts.app
+      flash={@flash}
+      current_scope={@current_scope}
+      active_tab={:files}
+      storage_stats={assigns[:storage_stats]}
+      account_alert={assigns[:account_alert] || false}
+    >
+      <Layouts.app_bar title={@access_target.filename} back={~p"/arquivos"} />
+
+      <div class="col gap-4 mx-auto w-full measure">
+        <.empty_state
+          icon="shield"
+          title={gettext("Esta casa é particular")}
+          hint={
+            gettext(
+              "Só quem mora aqui vê este arquivo. Para abrir, peça acesso e a pessoa decide. O Tainá ainda não criptografa: é promessa de software, não cadeado."
+            )
+          }
+        >
+          <.button variant="primary" phx-click="ask-access">{gettext("Pedir acesso")}</.button>
+        </.empty_state>
+      </div>
+
+      <.modal id="request-access" show={@show_request_modal} on_cancel={JS.push("close-access")}>
+        <h2 class="type-h3 mb-2">
+          {gettext("Pedir acesso a \"%{name}\"?", name: @access_target.filename)}
+        </h2>
+        <p class="type-body text-secondary mb-6">
+          {gettext(
+            "Quem guarda este arquivo vai receber seu pedido e decide se abre. Você só verá o conteúdo se a pessoa deixar."
+          )}
+        </p>
+        <div class="row gap-3">
+          <.button variant="secondary" size="md" class="flex-1" phx-click="close-access">
+            {gettext("Cancelar")}
+          </.button>
+          <.button variant="primary" size="md" class="flex-1" phx-click="request-access">
+            {gettext("Pedir acesso")}
+          </.button>
+        </div>
+      </.modal>
+    </Layouts.app>
+    """
+  end
+
   def render(assigns) do
     ~H"""
     <Layouts.app
@@ -106,6 +269,7 @@ defmodule TainaWeb.FilePreviewLive do
       current_scope={@current_scope}
       active_tab={:files}
       storage_stats={assigns[:storage_stats]}
+      account_alert={assigns[:account_alert] || false}
     >
       <Layouts.app_bar title={@file.original_filename} back={~p"/arquivos"}>
         <:action>
@@ -146,6 +310,7 @@ defmodule TainaWeb.FilePreviewLive do
         <.card>
           <h2 class="type-h3 mb-1">{@file.original_filename}</h2>
           <p class="type-body-sm text-muted">{file_meta(@file)}</p>
+          <p class="type-body-sm text-muted">{readability_line(@file.zona)}</p>
           <hr class="divider my-4" />
           <div class="row between">
             <a href={~p"/files/#{@file.public_id}"} download class="viewer__action">
@@ -161,6 +326,15 @@ defmodule TainaWeb.FilePreviewLive do
             >
               <.icon name="link" size={20} />
               <span>{gettext("Link")}</span>
+            </button>
+            <button
+              :if={own?(@current_scope, @file)}
+              type="button"
+              class="viewer__action"
+              phx-click="ask-zona"
+            >
+              <.icon name="share" size={20} />
+              <span>{zona_action_label(@file.zona)}</span>
             </button>
             <button type="button" class="viewer__action viewer__action--danger" phx-click="ask-delete">
               <.icon name="trash" size={20} />
@@ -211,6 +385,19 @@ defmodule TainaWeb.FilePreviewLive do
         on_confirm="confirm-delete"
         on_cancel={JS.push("close-confirm")}
       />
+
+      <.modal id="confirm-zona" show={@show_zona} on_cancel={JS.push("close-zona")}>
+        <h2 class="type-h3 mb-2">{zona_confirm_title(@file.zona, @file.original_filename)}</h2>
+        <p class="type-body text-secondary mb-6">{zona_confirm_body(@file.zona)}</p>
+        <div class="row gap-3">
+          <.button variant="secondary" size="md" class="flex-1" phx-click="close-zona">
+            {gettext("Cancelar")}
+          </.button>
+          <.button variant="primary" size="md" class="flex-1" phx-click="confirm-zona">
+            {zona_confirm_primary(@file.zona)}
+          </.button>
+        </div>
+      </.modal>
     </Layouts.app>
     """
   end

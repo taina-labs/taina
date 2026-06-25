@@ -102,6 +102,7 @@ defmodule TainaWeb.UploadLive do
       current_scope={@current_scope}
       active_tab={:files}
       storage_stats={assigns[:storage_stats]}
+      account_alert={assigns[:account_alert] || false}
     >
       <Layouts.app_bar title={gettext("Enviar arquivos")} back={back_path(@folder)} />
 

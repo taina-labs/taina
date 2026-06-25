@@ -705,6 +705,21 @@ defmodule Taina.Maraca.Behaviour do
   @callback list_my_requests(Ava.t()) :: [AccessRequest.t()]
 
   @doc """
+  Inscreve o processo chamador no topico PubSub de eventos do Ava (RFC_003 D4).
+
+  Recebe `{:access_requested, _}` (quando alguem pede acesso a um recurso seu) e
+  `{:access_request_approved, _}` / `{:access_request_denied, _}` (a decisao sobre
+  um pedido que voce fez). Uma LiveView se inscreve uma vez e trata so as
+  mensagens da sua tela.
+
+  ## Retorno
+
+    * `:ok` - inscricao registrada
+    * `{:error, term()}` - falha ao registrar no PubSub
+  """
+  @callback subscribe_to_my_events(Ava.t()) :: :ok | {:error, term()}
+
+  @doc """
   Verifica se o Ava é zelador(a) na sua Tekoa.
   """
   @callback zelador?(Ava.t()) :: boolean()

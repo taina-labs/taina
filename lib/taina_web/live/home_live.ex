@@ -75,6 +75,7 @@ defmodule TainaWeb.HomeLive do
       current_scope={@current_scope}
       active_tab={:home}
       storage_stats={assigns[:storage_stats]}
+      account_alert={assigns[:account_alert] || false}
     >
       <div class="row between mb-6">
         <div>

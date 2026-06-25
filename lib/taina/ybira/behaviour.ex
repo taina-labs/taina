@@ -52,6 +52,21 @@ defmodule Taina.Ybira.Behaviour do
   @callback get_file(Scope.t(), String.t()) :: {:ok, File.t()} | {:error, :not_found | :forbidden}
 
   @doc """
+  Carrega os dados de quem guarda um arquivo, para a tela de "Pedir acesso"
+  (RFC_003 D4). Usado quando `get_file/2` devolve `{:error, :forbidden}`: a
+  pessoa nao le o conteudo, mas precisa saber a quem pedir e qual e o arquivo.
+
+  Carrega o `File` (nao deletado) pelo `public_id` na Tekoa do scope. Inexistente
+  vira `{:error, :not_found}`. Se quem pede ja pode ler (praca, dono ou permissao
+  explicita), volta `{:error, :already_readable}` para o chamador redirecionar ao
+  preview. Caso contrario devolve `{:ok, %{owner, file_public_id, filename}}` com
+  o dono ja carregado (com a Tekoa, que `Maraca.request_access/5` precisa).
+  """
+  @callback fetch_access_target(Scope.t(), String.t()) ::
+              {:ok, %{owner: Taina.Maraca.Ava.t(), file_public_id: String.t(), filename: String.t()}}
+              | {:error, :not_found | :already_readable}
+
+  @doc """
   Lista arquivos não-deletados de uma pasta (`public_id`) ou da raiz (`nil`),
   mais novos primeiro, paginados por cursor.
 

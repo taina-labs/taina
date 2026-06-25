@@ -89,6 +89,7 @@ defmodule TainaWeb.StorageLive do
       current_scope={@current_scope}
       active_tab={:account}
       storage_stats={assigns[:storage_stats]}
+      account_alert={assigns[:account_alert] || false}
     >
       <Layouts.app_bar title={gettext("Armazenamento")} back={~p"/conta"} />
 

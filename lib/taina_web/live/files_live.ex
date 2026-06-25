@@ -20,28 +20,34 @@ defmodule TainaWeb.FilesLive do
     folder_public_id = params["folder_id"]
     sort = parse_sort(params["sort"])
     view = if params["view"] == "grid", do: :grid, else: :list
+    zona = parse_zona(params["zona"])
     scope = socket.assigns.current_scope
 
     case load_folder(scope, folder_public_id) do
       {:ok, folder} ->
         case Ybira.list_folder_contents(scope, folder_public_id, sort: sort) do
           {:ok, %{folders: folders, files: files, next_cursor: next_cursor}} ->
+            zona_folders = for_zona(folders, zona)
+            zona_files = for_zona(files, zona)
+
             {:noreply,
              socket
              |> assign(:page_title, (folder && folder.name) || gettext("Arquivos"))
              |> assign(:folder, folder)
              |> assign(:folder_public_id, folder_public_id)
-             |> assign(:folders, folders)
+             |> assign(:folders, zona_folders)
              |> assign(:next_cursor, next_cursor)
-             |> assign(:item_count, length(folders) + length(files))
+             |> assign(:item_count, length(zona_folders) + length(zona_files))
              |> assign(:sort, sort)
              |> assign(:view, view)
+             |> assign(:zona, zona)
              |> assign(:modal, nil)
              |> assign(:rename_target, nil)
              |> assign(:move_target, nil)
              |> assign(:all_folders, [])
              |> assign(:confirm, nil)
-             |> stream(:files, files, reset: true)}
+             |> assign(:zona_confirm, nil)
+             |> stream(:files, zona_files, reset: true)}
 
           {:error, _reason} ->
             {:noreply,
@@ -63,16 +69,18 @@ defmodule TainaWeb.FilesLive do
 
   @impl true
   def handle_event("load-more", _params, socket) do
-    %{next_cursor: offset, folder_public_id: folder_public_id, sort: sort} = socket.assigns
+    %{next_cursor: offset, folder_public_id: folder_public_id, sort: sort, zona: zona} = socket.assigns
 
     if offset do
       case Ybira.list_folder_contents(socket.assigns.current_scope, folder_public_id, sort: sort, offset: offset) do
         {:ok, %{files: files, next_cursor: next_cursor}} ->
+          zona_files = for_zona(files, zona)
+
           {:noreply,
            socket
            |> assign(:next_cursor, next_cursor)
-           |> assign(:item_count, socket.assigns.item_count + length(files))
-           |> stream(:files, files)}
+           |> assign(:item_count, socket.assigns.item_count + length(zona_files))
+           |> stream(:files, zona_files)}
 
         {:error, _reason} ->
           {:noreply, Phoenix.LiveView.put_flash(socket, :error, gettext("Não foi possível carregar mais itens."))}
@@ -212,10 +220,51 @@ defmodule TainaWeb.FilesLive do
     {:noreply, assign(socket, :confirm, nil)}
   end
 
-  # Recarrega a pasta atual reaproveitando o handle_params, preservando ordem/visão.
+  # `zona` aqui e a zona ATUAL do item: a acao oferecida e sempre a oposta.
+  def handle_event("ask-zona", %{"kind" => kind, "id" => id, "name" => name, "zona" => zona}, socket) do
+    {:noreply, assign(socket, :zona_confirm, %{kind: kind, id: id, name: name, zona: parse_zona(zona)})}
+  end
+
+  def handle_event("close-zona", _params, socket) do
+    {:noreply, assign(socket, :zona_confirm, nil)}
+  end
+
+  def handle_event("confirm-zona", _params, %{assigns: %{zona_confirm: %{kind: kind, id: id, zona: zona}}} = socket) do
+    scope = socket.assigns.current_scope
+
+    result =
+      case {kind, zona} do
+        {"file", :casa} -> Ybira.publicar_file(scope, id)
+        {"file", :praca} -> Ybira.tirar_file_da_praca(scope, id)
+        {"folder", :casa} -> Ybira.publicar_folder(scope, id)
+        {"folder", :praca} -> Ybira.tirar_folder_da_praca(scope, id)
+        _ -> {:error, :invalid_kind}
+      end
+
+    case result do
+      {:ok, _} ->
+        {:noreply,
+         socket
+         |> assign(:zona_confirm, nil)
+         |> Phoenix.LiveView.put_flash(:info, zona_flash_ok(zona))
+         |> refresh()}
+
+      {:error, _reason} ->
+        {:noreply,
+         socket
+         |> assign(:zona_confirm, nil)
+         |> Phoenix.LiveView.put_flash(:error, zona_flash_error(zona))}
+    end
+  end
+
+  def handle_event("confirm-zona", _params, socket) do
+    {:noreply, assign(socket, :zona_confirm, nil)}
+  end
+
+  # Recarrega a pasta atual reaproveitando o handle_params, preservando ordem/visão/zona.
   defp refresh(socket) do
     Phoenix.LiveView.push_patch(socket,
-      to: browse_path(socket.assigns.folder_public_id, socket.assigns.sort, socket.assigns.view)
+      to: browse_path(socket.assigns.folder_public_id, socket.assigns.sort, socket.assigns.view, socket.assigns.zona)
     )
   end
 
@@ -242,15 +291,39 @@ defmodule TainaWeb.FilesLive do
   defp sort_arrow_icon({_field, :asc}), do: "chevron-up"
   defp sort_arrow_icon({_field, :desc}), do: "chevron-down"
 
-  defp browse_path(folder_public_id, sort, view) do
+  defp browse_path(folder_public_id, sort, view, zona) do
     params = %{sort: sort_param(sort)}
     params = if view == :grid, do: Map.put(params, :view, "grid"), else: params
+    params = if zona == :casa, do: Map.put(params, :zona, "casa"), else: params
 
     case folder_public_id do
       nil -> ~p"/arquivos?#{params}"
       id -> ~p"/arquivos/pasta/#{id}?#{params}"
     end
   end
+
+  # --- zonas casa/praca (RFC_003 D1/D2) ---
+
+  # Particao client-side: a leitura ja trouxe as duas zonas, aqui so escolhemos
+  # qual aba mostrar. Ausencia do parametro cai em praca (commons por padrao).
+  defp parse_zona("casa"), do: :casa
+  defp parse_zona(_default), do: :praca
+
+  defp for_zona(items, zona), do: Enum.filter(items, &(&1.zona == zona))
+
+  defp own?(scope, item), do: scope.ava.id == item.ava_id
+
+  defp readability_line(:praca), do: gettext("Todos os moradores veem.")
+  defp readability_line(:casa), do: gettext("Só você, e quem você deixar.")
+
+  defp zona_action(:casa), do: {gettext("Publicar na praça"), "publicar"}
+  defp zona_action(:praca), do: {gettext("Tirar da praça"), "tirar-da-praca"}
+
+  defp zona_flash_ok(:casa), do: gettext("Publicado na praça.")
+  defp zona_flash_ok(:praca), do: gettext("Tirado da praça.")
+
+  defp zona_flash_error(:casa), do: gettext("Não foi possível publicar na praça.")
+  defp zona_flash_error(:praca), do: gettext("Não foi possível tirar da praça.")
 
   defp normalize_target(target) when target in [nil, ""], do: nil
   defp normalize_target(target), do: target
@@ -279,6 +352,7 @@ defmodule TainaWeb.FilesLive do
       current_scope={@current_scope}
       active_tab={:files}
       storage_stats={assigns[:storage_stats]}
+      account_alert={assigns[:account_alert] || false}
     >
       <div class="row between mb-2">
         <h1 class="type-h1">{gettext("Arquivos")}</h1>
@@ -304,13 +378,13 @@ defmodule TainaWeb.FilesLive do
 
       <div class="row between mb-3">
         <.menu id="sort-menu" icon="list" label={gettext("Ordenar")}>
-          <:item click={JS.patch(browse_path(@folder_public_id, toggle_sort(:name, @sort), @view))}>
+          <:item click={JS.patch(browse_path(@folder_public_id, toggle_sort(:name, @sort), @view, @zona))}>
             {gettext("Nome")}
           </:item>
-          <:item click={JS.patch(browse_path(@folder_public_id, toggle_sort(:date, @sort), @view))}>
+          <:item click={JS.patch(browse_path(@folder_public_id, toggle_sort(:date, @sort), @view, @zona))}>
             {gettext("Data")}
           </:item>
-          <:item click={JS.patch(browse_path(@folder_public_id, toggle_sort(:size, @sort), @view))}>
+          <:item click={JS.patch(browse_path(@folder_public_id, toggle_sort(:size, @sort), @view, @zona))}>
             {gettext("Tamanho")}
           </:item>
         </.menu>
@@ -322,10 +396,21 @@ defmodule TainaWeb.FilesLive do
           <.icon_button
             name="grid"
             label={gettext("Alternar grade/lista")}
-            phx-click={JS.patch(browse_path(@folder_public_id, @sort, if(@view == :grid, do: :list, else: :grid)))}
+            phx-click={
+              JS.patch(browse_path(@folder_public_id, @sort, if(@view == :grid, do: :list, else: :grid), @zona))
+            }
           />
         </div>
       </div>
+
+      <.segmented>
+        <:option patch={browse_path(@folder_public_id, @sort, @view, :praca)} current={@zona == :praca}>
+          {gettext("Praça")}
+        </:option>
+        <:option patch={browse_path(@folder_public_id, @sort, @view, :casa)} current={@zona == :casa}>
+          {gettext("Casa")}
+        </:option>
+      </.segmented>
 
       <nav class="breadcrumb mb-4" id="ybira-breadcrumb">
         <.link navigate={~p"/arquivos"} data-drop-folder="">{gettext("Início")}</.link>
@@ -349,6 +434,7 @@ defmodule TainaWeb.FilesLive do
               <.service_square service="ybira" icon="folder" size="lg" />
               <p class="tile__title">{folder.name}</p>
               <p class="tile__meta">{gettext("Pasta")}</p>
+              <p class="tile__meta">{readability_line(folder.zona)}</p>
             </.link>
 
             <div id="files-grid" phx-update="stream" class="contents">
@@ -362,6 +448,7 @@ defmodule TainaWeb.FilesLive do
                 <.service_square service={service} icon={icon} size="lg" />
                 <p class="tile__title">{file.original_filename}</p>
                 <p class="tile__meta">{file_meta(file)}</p>
+                <p class="tile__meta">{readability_line(file.zona)}</p>
               </.link>
             </div>
           </div>
@@ -370,7 +457,7 @@ defmodule TainaWeb.FilesLive do
             <.list_row
               :for={folder <- @folders}
               title={folder.name}
-              meta={gettext("Pasta")}
+              meta={"#{gettext("Pasta")} / #{readability_line(folder.zona)}"}
               navigate={~p"/arquivos/pasta/#{folder.public_id}"}
               draggable="true"
               data-drag-id={folder.public_id}
@@ -381,7 +468,13 @@ defmodule TainaWeb.FilesLive do
                 <.service_square service="ybira" icon="folder" />
               </:leading>
               <:actions>
-                <.item_menu kind="folder" id={folder.public_id} name={folder.name} />
+                <.item_menu
+                  kind="folder"
+                  id={folder.public_id}
+                  name={folder.name}
+                  zona={folder.zona}
+                  own?={own?(@current_scope, folder)}
+                />
               </:actions>
             </.list_row>
 
@@ -390,7 +483,7 @@ defmodule TainaWeb.FilesLive do
                 :for={{dom_id, file} <- @streams.files}
                 id={dom_id}
                 title={file.original_filename}
-                meta={file_meta(file)}
+                meta={"#{file_meta(file)} / #{readability_line(file.zona)}"}
                 navigate={~p"/arquivos/#{file.public_id}"}
                 draggable="true"
                 data-drag-id={file.public_id}
@@ -401,7 +494,13 @@ defmodule TainaWeb.FilesLive do
                   <.service_square service={service} icon={icon} />
                 </:leading>
                 <:actions>
-                  <.item_menu kind="file" id={file.public_id} name={file.original_filename} />
+                  <.item_menu
+                    kind="file"
+                    id={file.public_id}
+                    name={file.original_filename}
+                    zona={file.zona}
+                    own?={own?(@current_scope, file)}
+                  />
                 </:actions>
               </.list_row>
             </div>
@@ -414,10 +513,17 @@ defmodule TainaWeb.FilesLive do
       </div>
 
       <.empty_state
-        :if={@item_count == 0}
+        :if={@item_count == 0 and @zona == :praca}
         icon="folder"
-        title={gettext("Pasta vazia")}
-        hint={gettext("Envie arquivos ou crie uma pasta para organizar.")}
+        title={gettext("A praça está vazia")}
+        hint={gettext("Publique um arquivo ou pasta para começar a memória da comunidade.")}
+      />
+
+      <.empty_state
+        :if={@item_count == 0 and @zona == :casa}
+        icon="folder"
+        title={gettext("Sua casa está vazia")}
+        hint={gettext("Aqui ficam seus arquivos. Só você vê, até deixar alguém entrar.")}
       >
         <.button variant="primary" size="md" navigate={upload_path(@folder_public_id)}>
           {gettext("Enviar arquivos")}
@@ -534,18 +640,58 @@ defmodule TainaWeb.FilesLive do
         on_confirm="confirm-delete"
         on_cancel={JS.push("close-modal")}
       />
+
+      <.modal id="confirm-zona" show={@zona_confirm != nil} on_cancel={JS.push("close-zona")}>
+        <div :if={@zona_confirm}>
+          <h2 class="type-h3 mb-2">{zona_confirm_title(@zona_confirm)}</h2>
+          <p class="type-body text-secondary mb-2">{zona_confirm_body(@zona_confirm.zona)}</p>
+          <p :if={@zona_confirm.kind == "folder" and @zona_confirm.zona == :casa} class="type-body text-secondary mb-6">
+            {gettext("Só a pasta entra na praça. Os arquivos dentro dela continuam como estão.")}
+          </p>
+          <div class="row gap-3">
+            <.button variant="secondary" size="md" class="flex-1" phx-click="close-zona">
+              {gettext("Cancelar")}
+            </.button>
+            <.button variant="primary" size="md" class="flex-1" phx-click="confirm-zona">
+              {zona_confirm_primary(@zona_confirm.zona)}
+            </.button>
+          </div>
+        </div>
+      </.modal>
     </Layouts.app>
     """
   end
+
+  # Texto do dialogo: a zona guardada e a ATUAL; a copia descreve a acao oposta.
+  defp zona_confirm_title(%{zona: :casa, name: name}), do: gettext("Publicar \"%{name}\" na praça?", name: name)
+  defp zona_confirm_title(%{zona: :praca, name: name}), do: gettext("Tirar \"%{name}\" da praça?", name: name)
+
+  defp zona_confirm_body(:casa), do: gettext("Todos os moradores vão poder ver. Você pode tirar da praça quando quiser.")
+
+  defp zona_confirm_body(:praca), do: gettext("Volta a ser só seu. Só você, e quem você deixar, vê de novo.")
+
+  defp zona_confirm_primary(:casa), do: gettext("Publicar")
+  defp zona_confirm_primary(:praca), do: gettext("Tirar da praça")
 
   # Menu de ações compartilhado entre lista e grade.
   attr :kind, :string, required: true
   attr :id, :string, required: true
   attr :name, :string, required: true
+  attr :zona, :atom, required: true
+  attr :own?, :boolean, required: true
 
   defp item_menu(assigns) do
+    assigns = assign(assigns, :zona_label, elem(zona_action(assigns.zona), 0))
+
     ~H"""
     <.menu id={"item-menu-#{@id}"} label={gettext("Mais opções")}>
+      <:item
+        :if={@own?}
+        icon="share"
+        click={JS.push("ask-zona", value: %{kind: @kind, id: @id, name: @name, zona: @zona})}
+      >
+        {@zona_label}
+      </:item>
       <:item icon="pencil" click={JS.push("open-rename", value: %{kind: @kind, id: @id, name: @name})}>
         {gettext("Renomear")}
       </:item>

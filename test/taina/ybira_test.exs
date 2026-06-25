@@ -481,4 +481,47 @@ defmodule Taina.YbiraTest do
 
   defp listed_file_ids({:ok, %{items: items}}), do: Enum.map(items, & &1.public_id)
   defp recent_ids({:ok, files}), do: Enum.map(files, & &1.public_id)
+
+  # --- ZEETECH-71: alvo do pedido de acesso (RFC_003 D4) ---
+
+  describe "fetch_access_target/2" do
+    test "forbidden casa returns the owner, file id and filename" do
+      {tekoa, a, b, _z} = three_avas()
+      {:ok, file} = Ybira.upload(a, tmp_upload_fixture("oi", "particular.txt"))
+
+      assert {:ok, target} = Ybira.fetch_access_target(b, file.public_id)
+      assert target.owner.id == a.ava.id
+      assert target.file_public_id == file.public_id
+      assert target.filename == "particular.txt"
+      # `request_access/5` precisa do dono com a Tekoa carregada.
+      assert %Tekoa{id: tekoa_id} = target.owner.tekoa
+      assert tekoa_id == tekoa.id
+    end
+
+    test "praca, own and granted files are already readable" do
+      {tekoa, a, b, _z} = three_avas()
+      c = Scope.new(active_ava_fixture(tekoa), tekoa)
+
+      {:ok, praca} = Ybira.upload(a, tmp_upload_fixture())
+      {:ok, _} = Ybira.publicar_file(a, praca.public_id)
+      assert {:error, :already_readable} = Ybira.fetch_access_target(b, praca.public_id)
+
+      {:ok, own} = Ybira.upload(a, tmp_upload_fixture())
+      assert {:error, :already_readable} = Ybira.fetch_access_target(a, own.public_id)
+
+      {:ok, granted} = Ybira.upload(a, tmp_upload_fixture())
+      {:ok, _} = Maraca.grant_permission(a.ava, c.ava, :read, "ybira_file", granted.public_id)
+      assert {:error, :already_readable} = Ybira.fetch_access_target(c, granted.public_id)
+    end
+
+    test "missing and deleted files are not found" do
+      {_tekoa, a, b, _z} = three_avas()
+
+      assert {:error, :not_found} = Ybira.fetch_access_target(b, "inexistente12")
+
+      {:ok, file} = Ybira.upload(a, tmp_upload_fixture())
+      {:ok, _} = Ybira.delete_file(a, file.public_id)
+      assert {:error, :not_found} = Ybira.fetch_access_target(b, file.public_id)
+    end
+  end
 end
