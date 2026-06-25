@@ -40,6 +40,7 @@ defmodule Taina.Ybira.File do
           metadata: map(),
           public_id: String.t() | nil,
           deleted_at: DateTime.t() | nil,
+          zona: :casa | :praca,
           ava_id: integer(),
           ava: Ava.t() | NotLoaded.t() | nil,
           tekoa_id: integer(),
@@ -61,6 +62,7 @@ defmodule Taina.Ybira.File do
     field :metadata, :map, default: %{}
     field :public_id, PublicId, autogenerate: true
     field :deleted_at, :utc_datetime_usec
+    field :zona, Ecto.Enum, values: ~w(casa praca)a, default: :casa
 
     belongs_to :ava, Ava
     belongs_to :tekoa, Tekoa
@@ -110,6 +112,7 @@ defmodule Taina.Ybira.File do
       :file_hash,
       :metadata,
       :deleted_at,
+      :zona,
       :ava_id,
       :tekoa_id,
       :folder_id
@@ -157,5 +160,14 @@ defmodule Taina.Ybira.File do
   """
   def restore_changeset(file) do
     change(file, deleted_at: nil)
+  end
+
+  @doc """
+  Move o arquivo entre as zonas casa e praca (RFC_003 D1). `publicar` e
+  `tirar_da_praca` no contexto Ybira usam este changeset. Idempotente: setar a
+  zona atual de novo e um no-op valido.
+  """
+  def zona_changeset(file, zona) when zona in ~w(casa praca)a do
+    change(file, zona: zona)
   end
 end

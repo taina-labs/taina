@@ -20,6 +20,7 @@ defmodule Taina.Jaci do
   import Ecto.Query
 
   alias Taina.Jaci.Timeline
+  alias Taina.Maraca
   alias Taina.Repo
   alias Taina.Scope
   alias Taina.Ybira.File, as: YbiraFile
@@ -40,7 +41,9 @@ defmodule Taina.Jaci do
     Repo.with_tekoa(scope.tekoa.public_id, fn ->
       query =
         from f in YbiraFile,
+          as: :readable,
           where: is_nil(f.deleted_at) and (like(f.mime_type, "image/%") or like(f.mime_type, "video/%")),
+          where: ^Maraca.readable_dynamic(scope.ava, "ybira_file"),
           # id serial monótono = ordem de upload; alinha com o cursor (id-only).
           order_by: [desc: f.id]
 
@@ -52,7 +55,7 @@ defmodule Taina.Jaci do
   @impl true
   def timeline(%Scope{} = scope, opts \\ []) do
     Repo.with_tekoa(scope.tekoa.public_id, fn ->
-      {photos, next_cursor} = fetch_timeline_page(opts)
+      {photos, next_cursor} = fetch_timeline_page(scope, opts)
       {:ok, %{groups: Timeline.group_by_date(photos), next_cursor: next_cursor}}
     end)
   end
@@ -89,12 +92,14 @@ defmodule Taina.Jaci do
 
   # --- Linha do tempo: keyset composto (data efetiva, id) ---
 
-  defp fetch_timeline_page(opts) do
+  defp fetch_timeline_page(%Scope{} = scope, opts) do
     limit = Keyword.get(opts, :limit, @default_limit)
 
     base =
       from f in YbiraFile,
+        as: :readable,
         where: is_nil(f.deleted_at) and (like(f.mime_type, "image/%") or like(f.mime_type, "video/%")),
+        where: ^Maraca.readable_dynamic(scope.ava, "ybira_file"),
         order_by: [desc: effective_ts(f), desc: f.id],
         select: %{file: f, ts: effective_ts(f)}
 

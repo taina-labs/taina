@@ -3,15 +3,18 @@ defmodule TainaWeb.FileThumbnailTest do
 
   import Taina.Fixtures
 
+  alias Taina.Scope
   alias Taina.Ybira
 
   @moduletag capture_log: true
 
   setup do
-    scope = scope_fixture()
-    {:ok, photo} = Ybira.upload(scope, tmp_image_fixture(filename: "p.jpg"))
-    {:ok, photo} = Ybira.get_file(scope, photo.public_id)
-    %{ava: scope.ava, photo: photo}
+    tekoa = tekoa_fixture()
+    owner = Scope.new(active_ava_fixture(tekoa), tekoa)
+    other = Scope.new(active_ava_fixture(tekoa), tekoa)
+    {:ok, photo} = Ybira.upload(owner, tmp_image_fixture(filename: "p.jpg"))
+    {:ok, photo} = Ybira.get_file(owner, photo.public_id)
+    %{owner: owner, other: other, ava: owner.ava, photo: photo}
   end
 
   test "serves a generated thumbnail as webp", %{conn: conn, ava: ava, photo: photo} do
@@ -32,5 +35,20 @@ defmodule TainaWeb.FileThumbnailTest do
     conn = get(conn, ~p"/files/#{photo.public_id}/thumbnail/sm")
 
     assert conn.status == 401
+  end
+
+  test "403 for another resident's casa thumbnail, then 200 once published", %{
+    owner: owner,
+    other: other,
+    photo: photo
+  } do
+    conn = build_conn() |> log_in(other.ava) |> get(~p"/files/#{photo.public_id}/thumbnail/sm")
+    assert conn.status == 403
+
+    {:ok, _} = Ybira.publicar_file(owner, photo.public_id)
+
+    conn = build_conn() |> log_in(other.ava) |> get(~p"/files/#{photo.public_id}/thumbnail/sm")
+    assert conn.status == 200
+    assert get_resp_header(conn, "content-type") == ["image/webp"]
   end
 end

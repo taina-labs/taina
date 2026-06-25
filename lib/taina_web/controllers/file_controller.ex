@@ -24,6 +24,7 @@ defmodule TainaWeb.FileController do
       serve_file(conn, file)
     else
       {:error, :not_authenticated} -> send_resp(conn, 401, "")
+      {:error, :forbidden} -> send_resp(conn, 403, "")
       {:error, :not_found} -> send_resp(conn, 404, "")
     end
   end
@@ -44,6 +45,7 @@ defmodule TainaWeb.FileController do
       |> send_file(200, path)
     else
       {:error, :not_authenticated} -> send_resp(conn, 401, "")
+      {:error, :forbidden} -> send_resp(conn, 403, "")
       _ -> send_resp(conn, 404, "")
     end
   end

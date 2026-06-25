@@ -33,6 +33,7 @@ defmodule Taina.Ybira do
 
   import Ecto.Query
 
+  alias Taina.Maraca
   alias Taina.Maraca.Ava
   alias Taina.Maraca.Tekoa
   alias Taina.Repo
@@ -132,7 +133,7 @@ defmodule Taina.Ybira do
 
       case Repo.one(query) do
         nil -> {:error, :not_found}
-        file -> {:ok, file}
+        file -> authorize_read(scope, "ybira_file", file)
       end
     end)
   end
@@ -142,7 +143,9 @@ defmodule Taina.Ybira do
     Repo.with_tekoa(scope.tekoa.public_id, fn ->
       base =
         from f in Ybira.File,
+          as: :readable,
           where: is_nil(f.deleted_at),
+          where: ^Maraca.readable_dynamic(scope.ava, "ybira_file"),
           order_by: [desc: f.inserted_at, desc: f.id]
 
       query =
@@ -227,6 +230,24 @@ defmodule Taina.Ybira do
     end)
   end
 
+  @impl true
+  def publicar_file(%Scope{} = scope, file_public_id) when is_binary(file_public_id) do
+    Repo.with_tekoa(scope.tekoa.public_id, fn ->
+      with {:ok, file} <- fetch_owned_file(scope, file_public_id) do
+        Repo.update(Ybira.File.zona_changeset(file, :praca))
+      end
+    end)
+  end
+
+  @impl true
+  def tirar_file_da_praca(%Scope{} = scope, file_public_id) when is_binary(file_public_id) do
+    Repo.with_tekoa(scope.tekoa.public_id, fn ->
+      with {:ok, file} <- fetch_owned_file(scope, file_public_id) do
+        Repo.update(Ybira.File.zona_changeset(file, :casa))
+      end
+    end)
+  end
+
   ## Pastas
 
   @impl true
@@ -253,7 +274,7 @@ defmodule Taina.Ybira do
     Repo.with_tekoa(scope.tekoa.public_id, fn ->
       case Repo.one(folder_by_public_id(public_id)) do
         nil -> {:error, :not_found}
-        folder -> {:ok, folder}
+        folder -> authorize_read(scope, "ybira_folder", folder)
       end
     end)
   end
@@ -289,6 +310,24 @@ defmodule Taina.Ybira do
   end
 
   @impl true
+  def publicar_folder(%Scope{} = scope, public_id) when is_binary(public_id) do
+    Repo.with_tekoa(scope.tekoa.public_id, fn ->
+      with {:ok, folder} <- fetch_folder(scope, public_id) do
+        Repo.update(Ybira.Folder.zona_changeset(folder, :praca))
+      end
+    end)
+  end
+
+  @impl true
+  def tirar_folder_da_praca(%Scope{} = scope, public_id) when is_binary(public_id) do
+    Repo.with_tekoa(scope.tekoa.public_id, fn ->
+      with {:ok, folder} <- fetch_folder(scope, public_id) do
+        Repo.update(Ybira.Folder.zona_changeset(folder, :casa))
+      end
+    end)
+  end
+
+  @impl true
   def list_folder_contents(%Scope{} = scope, folder_public_id \\ nil, opts \\ []) do
     sort = normalize_sort(Keyword.get(opts, :sort))
     limit = Keyword.get(opts, :limit, @default_limit)
@@ -296,11 +335,20 @@ defmodule Taina.Ybira do
 
     Repo.with_tekoa(scope.tekoa.public_id, fn ->
       with {:ok, folder_id} <- resolve_folder_id(folder_public_id) do
-        folders = folder_id |> folders_in() |> apply_folder_sort(sort) |> Repo.all()
+        readable_folders = Maraca.readable_dynamic(scope.ava, "ybira_folder")
+        readable_files = Maraca.readable_dynamic(scope.ava, "ybira_file")
+
+        folders =
+          folder_id
+          |> folders_in()
+          |> where(^readable_folders)
+          |> apply_folder_sort(sort)
+          |> Repo.all()
 
         {files, next_cursor} =
           folder_id
           |> files_in()
+          |> where(^readable_files)
           |> apply_file_sort(sort)
           |> paginate_offset(limit, offset)
 
@@ -322,7 +370,14 @@ defmodule Taina.Ybira do
   @impl true
   def list_folders(%Scope{} = scope) do
     Repo.with_tekoa(scope.tekoa.public_id, fn ->
-      {:ok, Repo.all(from d in Ybira.Folder, where: is_nil(d.deleted_at), order_by: [asc: d.name])}
+      query =
+        from d in Ybira.Folder,
+          as: :readable,
+          where: is_nil(d.deleted_at),
+          where: ^Maraca.readable_dynamic(scope.ava, "ybira_folder"),
+          order_by: [asc: d.name]
+
+      {:ok, Repo.all(query)}
     end)
   end
 
@@ -354,7 +409,9 @@ defmodule Taina.Ybira do
       files =
         Repo.all(
           from f in Ybira.File,
+            as: :readable,
             where: is_nil(f.deleted_at),
+            where: ^Maraca.readable_dynamic(scope.ava, "ybira_file"),
             order_by: [desc: f.id],
             limit: ^limit
         )
@@ -555,6 +612,17 @@ defmodule Taina.Ybira do
   # precisar, pede via `Maraca.request_access/5` e o dono aprova.
   defp owner?(%Scope{ava: %Ava{id: id}}, owner_id), do: id == owner_id
 
+  # Regra de leitura das duas zonas (RFC_003 D2) para um recurso ja carregado:
+  # praca OU dono OU permissao explicita. Devolve {:error, :forbidden} para casa
+  # nao autorizada, distinto de :not_found.
+  defp authorize_read(%Scope{} = scope, resource_type, resource) do
+    if Maraca.can_read?(scope.ava, resource.zona, resource.ava_id, resource_type, resource.public_id) do
+      {:ok, resource}
+    else
+      {:error, :forbidden}
+    end
+  end
+
   # Mover `folder_id` para baixo de `new_parent_id` fecharia um ciclo se
   # `folder_id` for o próprio `new_parent_id` ou um ancestral dele.
   defp ensure_acyclic(_folder_id, nil), do: :ok
@@ -625,11 +693,15 @@ defmodule Taina.Ybira do
   end
 
   # Conteúdo da pasta (sem ordenação, quem chama aplica `apply_*_sort`).
-  defp folders_in(nil), do: from(d in Ybira.Folder, where: is_nil(d.parent_id) and is_nil(d.deleted_at))
-  defp folders_in(folder_id), do: from(d in Ybira.Folder, where: d.parent_id == ^folder_id and is_nil(d.deleted_at))
+  defp folders_in(nil), do: from(d in Ybira.Folder, as: :readable, where: is_nil(d.parent_id) and is_nil(d.deleted_at))
 
-  defp files_in(nil), do: from(f in Ybira.File, where: is_nil(f.folder_id) and is_nil(f.deleted_at))
-  defp files_in(folder_id), do: from(f in Ybira.File, where: f.folder_id == ^folder_id and is_nil(f.deleted_at))
+  defp folders_in(folder_id),
+    do: from(d in Ybira.Folder, as: :readable, where: d.parent_id == ^folder_id and is_nil(d.deleted_at))
+
+  defp files_in(nil), do: from(f in Ybira.File, as: :readable, where: is_nil(f.folder_id) and is_nil(f.deleted_at))
+
+  defp files_in(folder_id),
+    do: from(f in Ybira.File, as: :readable, where: f.folder_id == ^folder_id and is_nil(f.deleted_at))
 
   # Ordenação dinâmica (nome/data/tamanho x asc/desc), com `id` como desempate
   # estável. A paginação aqui é por offset (não keyset), o que permite qualquer

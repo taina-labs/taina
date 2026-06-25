@@ -3,14 +3,17 @@ defmodule TainaWeb.FileControllerTest do
 
   import Taina.Fixtures
 
+  alias Taina.Scope
   alias Taina.Ybira
 
   @contents "conteudo do arquivo para download"
 
   setup do
-    scope = scope_fixture()
-    {:ok, ybira_file} = Ybira.upload(scope, tmp_upload_fixture(@contents, "a.txt"))
-    %{ava: scope.ava, ybira_file: ybira_file}
+    tekoa = tekoa_fixture()
+    owner = Scope.new(active_ava_fixture(tekoa), tekoa)
+    other = Scope.new(active_ava_fixture(tekoa), tekoa)
+    {:ok, ybira_file} = Ybira.upload(owner, tmp_upload_fixture(@contents, "a.txt"))
+    %{owner: owner, other: other, ava: owner.ava, ybira_file: ybira_file}
   end
 
   defp authed(conn, ava), do: log_in(conn, ava)
@@ -61,5 +64,32 @@ defmodule TainaWeb.FileControllerTest do
     conn = conn |> authed(ava) |> get(~p"/files/desconhecido1")
 
     assert conn.status == 404
+  end
+
+  test "403 for another resident's casa file", %{conn: conn, other: other, ybira_file: ybira_file} do
+    conn = conn |> authed(other.ava) |> get(~p"/files/#{ybira_file.public_id}")
+
+    assert conn.status == 403
+  end
+
+  test "200 once the file is published to the praca", %{
+    conn: conn,
+    owner: owner,
+    other: other,
+    ybira_file: ybira_file
+  } do
+    {:ok, _} = Ybira.publicar_file(owner, ybira_file.public_id)
+
+    conn = conn |> authed(other.ava) |> get(~p"/files/#{ybira_file.public_id}")
+
+    assert conn.status == 200
+    assert response(conn, 200) == @contents
+  end
+
+  test "200 for the owner's own casa file (no lockout)", %{conn: conn, ava: ava, ybira_file: ybira_file} do
+    conn = conn |> authed(ava) |> get(~p"/files/#{ybira_file.public_id}")
+
+    assert conn.status == 200
+    assert response(conn, 200) == @contents
   end
 end

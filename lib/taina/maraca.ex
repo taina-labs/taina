@@ -439,6 +439,57 @@ defmodule Taina.Maraca do
     end
   end
 
+  @doc """
+  Pode `ava` ler este recurso ja carregado? Regra de leitura das duas zonas
+  (RFC_003 D2): `praca OU dono OU permissao explicita`. O zelador nao tem atalho.
+
+  Recebe a `zona` e o `owner_id` que o chamador (Ybira/Jaci) ja tem em maos no
+  struct, entao nao re-consulta o dono e so toca a tabela de permissoes como
+  ultimo recurso. Difere de `authorize?/4`, que resolve o dono por `public_id` e
+  desconhece zona; aqui a zona e a parte nova e o motor (dono OU permissao)
+  continua o mesmo.
+
+  Roda dentro do `with_tekoa` do chamador (a consulta de permissao precisa do
+  contexto RLS); chame-a so de dentro de um `Repo.with_tekoa/2` ja aberto.
+  """
+  @impl true
+  @spec can_read?(Ava.t(), :casa | :praca, integer(), String.t(), String.t()) :: boolean()
+  def can_read?(%Ava{} = ava, zona, owner_id, resource_type, public_id)
+      when zona in ~w(casa praca)a and is_integer(owner_id) and is_binary(resource_type) and is_binary(public_id) do
+    zona == :praca or ava.id == owner_id or
+      has_permission?(ava, :read, resource_type, public_id)
+  end
+
+  @doc """
+  Filtro de leitura para listagens, regra das duas zonas (RFC_003 D2) no nivel da
+  query, sem N+1. Devolve um `Ecto.Query.dynamic` que so deixa passar linhas
+  legiveis por `ava`: `zona == :praca OU ava_id == ava.id OU public_id em
+  permissoes(:read)`.
+
+  O chamador deve marcar o schema do recurso com `as: :readable` no `from` e
+  aplicar `where: ^Maraca.readable_dynamic(ava, resource_type)`. A subconsulta de
+  permissoes nao depende do binding externo, entao funciona tanto numa listagem
+  simples (Ybira) quanto numa que faz `select` de mapa (linha do tempo do Jaci).
+
+  Pressupoe o contexto RLS aberto (`with_tekoa`); a subconsulta de permissoes e
+  escopada por Tekoa pelas policies.
+  """
+  @impl true
+  @spec readable_dynamic(Ava.t(), String.t()) :: Ecto.Query.dynamic_expr()
+  def readable_dynamic(%Ava{} = ava, resource_type) when is_binary(resource_type) do
+    permitted =
+      from p in Permission,
+        where: p.ava_id == ^ava.id,
+        where: p.action == :read,
+        where: p.resource_type == ^resource_type,
+        select: p.resource_id
+
+    dynamic(
+      [readable: r],
+      r.zona == :praca or r.ava_id == ^ava.id or r.public_id in subquery(permitted)
+    )
+  end
+
   @impl true
   def grant_permission(%Ava{} = granter, %Ava{} = recipient, action, resource_type, resource_id) do
     if action in @grantable_actions do

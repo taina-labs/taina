@@ -44,8 +44,12 @@ defmodule Taina.Ybira.Behaviour do
 
   @doc """
   Busca um arquivo (não deletado) pelo `public_id`, dentro da Tekoa do scope.
+
+  Aplica a regra de leitura das duas zonas: a casa de outro morador (sem
+  permissão explícita) volta `{:error, :forbidden}`, distinto de
+  `{:error, :not_found}` (o arquivo não existe nessa Tekoa).
   """
-  @callback get_file(Scope.t(), String.t()) :: {:ok, File.t()} | {:error, :not_found}
+  @callback get_file(Scope.t(), String.t()) :: {:ok, File.t()} | {:error, :not_found | :forbidden}
 
   @doc """
   Lista arquivos não-deletados de uma pasta (`public_id`) ou da raiz (`nil`),
@@ -92,6 +96,19 @@ defmodule Taina.Ybira.Behaviour do
               {:ok, File.t()} | {:error, :not_found}
 
   @doc """
+  Publica um arquivo na praca (casa -> praca, RFC_003 D1): torna-o legivel por
+  todo morador. Apenas o dono (o zelador nao tem atalho). Reversivel via
+  `tirar_file_da_praca/2`. Idempotente. Nao cascateia para pastas.
+  """
+  @callback publicar_file(Scope.t(), String.t()) :: {:ok, File.t()} | {:error, :not_found}
+
+  @doc """
+  Tira um arquivo da praca (praca -> casa): volta a ser privado, so o dono e
+  quem tem permissao explicita le. Apenas o dono. Idempotente.
+  """
+  @callback tirar_file_da_praca(Scope.t(), String.t()) :: {:ok, File.t()} | {:error, :not_found}
+
+  @doc """
   Cria uma pasta. `attrs` aceita `:name` e, opcionalmente, `:parent_public_id`
   (a pasta-pai; `nil` cria na raiz). `parent_public_id` inexistente vira
   `{:error, :not_found}`.
@@ -101,8 +118,12 @@ defmodule Taina.Ybira.Behaviour do
 
   @doc """
   Busca uma pasta (não deletada) pelo `public_id`.
+
+  Aplica a regra de leitura das duas zonas: a casa de outro morador (sem
+  permissão explícita) volta `{:error, :forbidden}`, distinto de
+  `{:error, :not_found}` (a pasta não existe nessa Tekoa).
   """
-  @callback get_folder(Scope.t(), String.t()) :: {:ok, Folder.t()} | {:error, :not_found}
+  @callback get_folder(Scope.t(), String.t()) :: {:ok, Folder.t()} | {:error, :not_found | :forbidden}
 
   @doc """
   Renomeia uma pasta. Apenas o dono.
@@ -124,6 +145,18 @@ defmodule Taina.Ybira.Behaviour do
   é o `PurgeTrash`.
   """
   @callback delete_folder(Scope.t(), String.t()) :: {:ok, :deleted} | {:error, :not_found}
+
+  @doc """
+  Publica uma pasta na praca (casa -> praca): a *listagem da propria pasta* passa
+  a ser legivel por todo morador. **Nao cascateia** para os filhos (RFC_003 D1);
+  cada arquivo/subpasta carrega a propria zona. Apenas o dono. Idempotente.
+  """
+  @callback publicar_folder(Scope.t(), String.t()) :: {:ok, Folder.t()} | {:error, :not_found}
+
+  @doc """
+  Tira uma pasta da praca (praca -> casa). Apenas o dono. Idempotente.
+  """
+  @callback tirar_folder_da_praca(Scope.t(), String.t()) :: {:ok, Folder.t()} | {:error, :not_found}
 
   @doc """
   Lista o conteúdo de uma pasta (`public_id`) ou da raiz (`nil`): subpastas (todas)

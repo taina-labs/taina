@@ -27,6 +27,9 @@ defmodule Taina.Jaci.Behaviour do
   Lista as fotos não-deletadas da Tekoa para a grade, **mais recém-enviadas
   primeiro** (`inserted_at DESC`), paginadas por cursor de keyset.
 
+  Aplica a regra de leitura das duas zonas (RFC_003 D2): so retorna fotos da
+  praca, do proprio Ava, ou com permissao explicita.
+
   ## Opções
 
     * `:limit` - itens por página (default: 50)
@@ -38,6 +41,9 @@ defmodule Taina.Jaci.Behaviour do
   Linha do tempo: fotos ordenadas pela **data de captura** (EXIF quando houver,
   senão data de upload), mais recentes primeiro, agrupadas por dia e paginadas
   por cursor de keyset composto `(data_efetiva, id)`.
+
+  Aplica a regra de leitura das duas zonas (RFC_003 D2): so retorna fotos da
+  praca, do proprio Ava, ou com permissao explicita.
 
   ## Opções
 

@@ -453,6 +453,20 @@ defmodule Taina.Maraca.Behaviour do
   @callback authorize!(Ava.t(), atom(), String.t(), String.t()) :: :ok
 
   @doc """
+  Regra de leitura das duas zonas (RFC_003 D2) para um recurso ja carregado:
+  `praca OU dono OU permissao explicita`. Recebe a zona e o owner_id que o
+  chamador ja tem, sem re-consultar o dono. Chamar dentro de um `with_tekoa`
+  aberto. Ver `Taina.Maraca.can_read?/5`.
+  """
+  @callback can_read?(Ava.t(), :casa | :praca, integer(), String.t(), String.t()) :: boolean()
+
+  @doc """
+  `Ecto.Query.dynamic` para filtrar listagens pela regra de leitura, sem N+1.
+  Aplicar com binding nomeado `as: :readable`. Ver `Taina.Maraca.readable_dynamic/2`.
+  """
+  @callback readable_dynamic(Ava.t(), String.t()) :: Ecto.Query.dynamic_expr()
+
+  @doc """
   Concede permissão de granter a recipient.
 
   ## Regras de Negócio

@@ -4,6 +4,8 @@ defmodule Taina.JaciTest do
   import Taina.Fixtures
 
   alias Taina.Jaci
+  alias Taina.Maraca
+  alias Taina.Scope
   alias Taina.Ybira
   alias Taina.Ybira.File, as: YbiraFile
 
@@ -73,6 +75,58 @@ defmodule Taina.JaciTest do
       assert [%{date: ~D[2023-07-15], photos: photos}] = groups
       assert length(photos) == 2
     end
+  end
+
+  # --- ZEETECH-70: regra de leitura das duas zonas ---
+
+  describe "read rule across zones" do
+    test "list_photos hides another resident's casa photo until it is published" do
+      tekoa = tekoa_fixture()
+      a = Scope.new(active_ava_fixture(tekoa), tekoa)
+      b = Scope.new(active_ava_fixture(tekoa), tekoa)
+      z = Scope.new(zelador_fixture(tekoa), tekoa)
+      {:ok, photo} = Ybira.upload(a, tmp_image_fixture(filename: "p.jpg"))
+
+      refute photo.public_id in photo_ids(Jaci.list_photos(b))
+      refute photo.public_id in photo_ids(Jaci.list_photos(z))
+      assert photo.public_id in photo_ids(Jaci.list_photos(a))
+
+      {:ok, _} = Ybira.publicar_file(a, photo.public_id)
+
+      assert photo.public_id in photo_ids(Jaci.list_photos(b))
+      assert photo.public_id in photo_ids(Jaci.list_photos(z))
+    end
+
+    test "list_photos shows a casa photo to an Ava with an explicit :read grant" do
+      tekoa = tekoa_fixture()
+      a = Scope.new(active_ava_fixture(tekoa), tekoa)
+      b = Scope.new(active_ava_fixture(tekoa), tekoa)
+      {:ok, photo} = Ybira.upload(a, tmp_image_fixture(filename: "p.jpg"))
+
+      {:ok, _} = Maraca.grant_permission(a.ava, b.ava, :read, "ybira_file", photo.public_id)
+
+      assert photo.public_id in photo_ids(Jaci.list_photos(b))
+    end
+
+    test "timeline hides another resident's casa photo until it is published" do
+      tekoa = tekoa_fixture()
+      a = Scope.new(active_ava_fixture(tekoa), tekoa)
+      b = Scope.new(active_ava_fixture(tekoa), tekoa)
+      {:ok, photo} = Ybira.upload(a, tmp_image_fixture(filename: "p.jpg"))
+
+      refute photo.public_id in timeline_ids(Jaci.timeline(b))
+      assert photo.public_id in timeline_ids(Jaci.timeline(a))
+
+      {:ok, _} = Ybira.publicar_file(a, photo.public_id)
+
+      assert photo.public_id in timeline_ids(Jaci.timeline(b))
+    end
+  end
+
+  defp photo_ids({:ok, %{items: items}}), do: Enum.map(items, & &1.public_id)
+
+  defp timeline_ids({:ok, %{groups: groups}}) do
+    Enum.flat_map(groups, fn %{photos: photos} -> Enum.map(photos, & &1.public_id) end)
   end
 
   # Sobrescreve o metadata para simular EXIF (a imagem gerada não tem). Operação

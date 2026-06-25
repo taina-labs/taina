@@ -28,6 +28,7 @@ defmodule Taina.Ybira.Folder do
           name: String.t(),
           public_id: String.t() | nil,
           deleted_at: DateTime.t() | nil,
+          zona: :casa | :praca,
           ava_id: integer(),
           ava: Ava.t() | NotLoaded.t() | nil,
           tekoa_id: integer(),
@@ -43,6 +44,7 @@ defmodule Taina.Ybira.Folder do
     field :name, :string
     field :public_id, PublicId, autogenerate: true
     field :deleted_at, :utc_datetime_usec
+    field :zona, Ecto.Enum, values: ~w(casa praca)a, default: :casa
 
     belongs_to :ava, Ava
     belongs_to :tekoa, Tekoa
@@ -70,7 +72,7 @@ defmodule Taina.Ybira.Folder do
   """
   def changeset(folder, attrs) do
     folder
-    |> cast(attrs, [:name, :ava_id, :tekoa_id, :parent_id])
+    |> cast(attrs, [:name, :zona, :ava_id, :tekoa_id, :parent_id])
     |> validate_required([:name, :ava_id, :tekoa_id])
     |> validate_length(:name, min: 1, max: 255)
     |> foreign_key_constraint(:ava_id)
@@ -84,5 +86,14 @@ defmodule Taina.Ybira.Folder do
   """
   def delete_changeset(folder) do
     change(folder, deleted_at: DateTime.utc_now())
+  end
+
+  @doc """
+  Move a pasta entre as zonas casa e praca (RFC_003 D1). `publicar` e
+  `tirar_da_praca` no contexto Ybira usam este changeset. Idempotente: setar a
+  zona atual de novo e um no-op valido.
+  """
+  def zona_changeset(folder, zona) when zona in ~w(casa praca)a do
+    change(folder, zona: zona)
   end
 end

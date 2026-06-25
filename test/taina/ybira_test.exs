@@ -3,7 +3,9 @@ defmodule Taina.YbiraTest do
 
   import Taina.Fixtures
 
+  alias Taina.Maraca
   alias Taina.Maraca.Tekoa
+  alias Taina.Scope
   alias Taina.Ybira
 
   describe "upload/3" do
@@ -28,7 +30,7 @@ defmodule Taina.YbiraTest do
     test "rejects upload beyond the tekoa quota" do
       tekoa = tekoa_fixture(%{storage_quota_bytes: 4})
       ava = ava_fixture(tekoa)
-      scope = Taina.Scope.new(ava, tekoa)
+      scope = Scope.new(ava, tekoa)
       tmp = tmp_upload_fixture("mais que quatro bytes")
 
       assert {:error, :storage_quota_exceeded} = Ybira.upload(scope, tmp)
@@ -115,7 +117,7 @@ defmodule Taina.YbiraTest do
     test "only the owner can delete" do
       scope = scope_fixture()
       other = ava_fixture(scope.tekoa)
-      other_scope = Taina.Scope.new(other, scope.tekoa)
+      other_scope = Scope.new(other, scope.tekoa)
       {:ok, file} = Ybira.upload(scope, tmp_upload_fixture())
 
       assert {:error, :not_found} = Ybira.delete_file(other_scope, file.public_id)
@@ -276,7 +278,7 @@ defmodule Taina.YbiraTest do
     test "reports used and quota bytes for the tekoa" do
       tekoa = tekoa_fixture(%{storage_quota_bytes: 1000})
       ava = ava_fixture(tekoa)
-      scope = Taina.Scope.new(ava, tekoa)
+      scope = Scope.new(ava, tekoa)
       {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("12345", "n.txt"))
 
       assert {:ok, %{used_bytes: used, quota_bytes: 1000}} = Ybira.storage_stats(scope)
@@ -306,4 +308,177 @@ defmodule Taina.YbiraTest do
       assert "apenas uma Tekoa por instância (ver RFC 002, D2)" in errors_on(changeset).name
     end
   end
+
+  # --- ZEETECH-69: zonas casa/praca ---
+
+  # Tres avas ativos numa unica Tekoa: A (dono), B (outro morador), Z (zelador).
+  defp three_avas do
+    tekoa = tekoa_fixture()
+    a = active_ava_fixture(tekoa)
+    b = active_ava_fixture(tekoa)
+    z = zelador_fixture(tekoa)
+    {tekoa, Scope.new(a, tekoa), Scope.new(b, tekoa), Scope.new(z, tekoa)}
+  end
+
+  describe "zona padrao" do
+    test "a new file starts in :casa" do
+      {_tekoa, a, _b, _z} = three_avas()
+
+      assert {:ok, file} = Ybira.upload(a, tmp_upload_fixture())
+      assert file.zona == :casa
+    end
+  end
+
+  describe "publicar_file/2 e tirar_file_da_praca/2" do
+    test "round-trip casa -> praca -> casa" do
+      {_tekoa, a, _b, _z} = three_avas()
+      {:ok, file} = Ybira.upload(a, tmp_upload_fixture())
+
+      assert {:ok, %{zona: :praca}} = Ybira.publicar_file(a, file.public_id)
+      assert {:ok, %{zona: :casa}} = Ybira.tirar_file_da_praca(a, file.public_id)
+    end
+
+    test "only the owner can publish; another morador and the zelador get not_found" do
+      {_tekoa, a, b, z} = three_avas()
+      {:ok, file} = Ybira.upload(a, tmp_upload_fixture())
+
+      assert {:error, :not_found} = Ybira.publicar_file(b, file.public_id)
+      assert {:error, :not_found} = Ybira.publicar_file(z, file.public_id)
+    end
+
+    test "publishing is idempotent" do
+      {_tekoa, a, _b, _z} = three_avas()
+      {:ok, file} = Ybira.upload(a, tmp_upload_fixture())
+
+      assert {:ok, %{zona: :praca}} = Ybira.publicar_file(a, file.public_id)
+      assert {:ok, %{zona: :praca}} = Ybira.publicar_file(a, file.public_id)
+    end
+  end
+
+  describe "publicar_folder/2 e tirar_folder_da_praca/2" do
+    test "round-trip and owner-gating" do
+      {_tekoa, a, b, z} = three_avas()
+      {:ok, folder} = Ybira.create_folder(a, %{name: "publica"})
+
+      assert {:ok, %{zona: :praca}} = Ybira.publicar_folder(a, folder.public_id)
+      assert {:ok, %{zona: :casa}} = Ybira.tirar_folder_da_praca(a, folder.public_id)
+
+      assert {:error, :not_found} = Ybira.publicar_folder(b, folder.public_id)
+      assert {:error, :not_found} = Ybira.publicar_folder(z, folder.public_id)
+    end
+
+    test "publishing a folder does not cascade to its children" do
+      {_tekoa, a, _b, _z} = three_avas()
+      {:ok, folder} = Ybira.create_folder(a, %{name: "album"})
+      {:ok, child} = Ybira.upload(a, tmp_upload_fixture(), folder_id: folder.id)
+
+      assert {:ok, %{zona: :praca}} = Ybira.publicar_folder(a, folder.public_id)
+
+      assert {:ok, refetched} = Ybira.get_file(a, child.public_id)
+      assert refetched.zona == :casa
+    end
+  end
+
+  describe "move_file/3 keeps zona" do
+    test "moving a casa file into a praca folder leaves the file in :casa" do
+      {_tekoa, a, _b, _z} = three_avas()
+      {:ok, folder} = Ybira.create_folder(a, %{name: "destino"})
+      {:ok, _} = Ybira.publicar_folder(a, folder.public_id)
+      {:ok, file} = Ybira.upload(a, tmp_upload_fixture())
+
+      assert {:ok, moved} = Ybira.move_file(a, file.public_id, folder.public_id)
+      assert moved.zona == :casa
+    end
+  end
+
+  # --- ZEETECH-70: regra de leitura das duas zonas ---
+
+  describe "read rule across zones" do
+    test "praca item is readable by any morador and the zelador" do
+      {_tekoa, a, b, z} = three_avas()
+      {:ok, file} = Ybira.upload(a, tmp_upload_fixture())
+      {:ok, _} = Ybira.publicar_file(a, file.public_id)
+
+      assert {:ok, _} = Ybira.get_file(b, file.public_id)
+      assert {:ok, _} = Ybira.get_file(z, file.public_id)
+
+      assert file.public_id in listed_file_ids(Ybira.list_files(b))
+      assert file.public_id in listed_file_ids(Ybira.list_files(z))
+      assert file.public_id in recent_ids(Ybira.list_recent(b))
+    end
+
+    test "casa item is readable only by the owner" do
+      {_tekoa, a, b, z} = three_avas()
+      {:ok, file} = Ybira.upload(a, tmp_upload_fixture())
+
+      assert {:ok, _} = Ybira.get_file(a, file.public_id)
+      assert file.public_id in listed_file_ids(Ybira.list_files(a))
+
+      assert {:error, :forbidden} = Ybira.get_file(b, file.public_id)
+      assert {:error, :forbidden} = Ybira.get_file(z, file.public_id)
+
+      refute file.public_id in listed_file_ids(Ybira.list_files(b))
+      refute file.public_id in listed_file_ids(Ybira.list_files(z))
+    end
+
+    test "casa item is readable by an Ava with an explicit :read grant" do
+      {tekoa, a, b, _z} = three_avas()
+      c = Scope.new(active_ava_fixture(tekoa), tekoa)
+      {:ok, file} = Ybira.upload(a, tmp_upload_fixture())
+
+      {:ok, _} = Maraca.grant_permission(a.ava, b.ava, :read, "ybira_file", file.public_id)
+
+      assert {:ok, _} = Ybira.get_file(b, file.public_id)
+      assert file.public_id in listed_file_ids(Ybira.list_files(b))
+
+      assert {:error, :forbidden} = Ybira.get_file(c, file.public_id)
+      refute file.public_id in listed_file_ids(Ybira.list_files(c))
+    end
+
+    test "the zelador has no shortcut into another resident's casa" do
+      {_tekoa, a, _b, z} = three_avas()
+      {:ok, file} = Ybira.upload(a, tmp_upload_fixture())
+
+      assert {:error, :forbidden} = Ybira.get_file(z, file.public_id)
+
+      refute file.public_id in listed_file_ids(Ybira.list_files(z))
+      refute file.public_id in recent_ids(Ybira.list_recent(z))
+
+      {:ok, %{files: files}} = Ybira.list_folder_contents(z)
+      refute file.public_id in Enum.map(files, & &1.public_id)
+    end
+
+    test ":forbidden is distinct from :not_found" do
+      {_tekoa, a, b, _z} = three_avas()
+      {:ok, file} = Ybira.upload(a, tmp_upload_fixture())
+
+      assert {:error, :forbidden} = Ybira.get_file(b, file.public_id)
+      assert {:error, :not_found} = Ybira.get_file(b, "inexistente12")
+    end
+
+    test "casa folder is hidden from other moradores in list_folders" do
+      {_tekoa, a, b, _z} = three_avas()
+      {:ok, casa} = Ybira.create_folder(a, %{name: "privada"})
+      {:ok, praca} = Ybira.create_folder(a, %{name: "publica"})
+      {:ok, _} = Ybira.publicar_folder(a, praca.public_id)
+
+      {:ok, folders} = Ybira.list_folders(b)
+      ids = Enum.map(folders, & &1.public_id)
+      assert praca.public_id in ids
+      refute casa.public_id in ids
+    end
+
+    test "a praca folder does not leak its casa children when another morador lists it" do
+      {_tekoa, a, b, _z} = three_avas()
+      {:ok, folder} = Ybira.create_folder(a, %{name: "album"})
+      {:ok, _} = Ybira.publicar_folder(a, folder.public_id)
+      {:ok, child} = Ybira.upload(a, tmp_upload_fixture(), folder_id: folder.id)
+
+      {:ok, %{files: files}} = Ybira.list_folder_contents(b, folder.public_id)
+      refute child.public_id in Enum.map(files, & &1.public_id)
+    end
+  end
+
+  defp listed_file_ids({:ok, %{items: items}}), do: Enum.map(items, & &1.public_id)
+  defp recent_ids({:ok, files}), do: Enum.map(files, & &1.public_id)
 end
