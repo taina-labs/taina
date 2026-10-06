@@ -36,7 +36,13 @@ jobs:
       contents: read
       packages: write
     steps:
+      # Check out the tag, not the branch tip. release-please pushes the
+      # release commit and tags it in the same moment, but pinning to the tag
+      # means the image provably corresponds to that tag even if another commit
+      # lands on main first.
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release-please.outputs.tag_name }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
