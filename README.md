@@ -32,6 +32,10 @@ Em desenvolvimento ativo, seguindo a [RFC 002](https://github.com/taina-labs/tek
 uma Tekoa (comunidade) por instância. Documentação completa e guias no
 repositório [Tekoá](https://github.com/taina-labs/tekoa).
 
+O [roadmap](https://github.com/taina-labs/tekoa/blob/main/ROADMAP.md) diz o que
+está pronto e o que ainda falta para o `0.1.0`, separado entre bloqueadores de
+lançamento e o que é apenas recomendado.
+
 ## Tecnologia
 
 - Elixir 1.20 / OTP 28, Phoenix 1.8
@@ -48,14 +52,22 @@ o repositório de orquestração: ele baixa a imagem publicada e sobe tudo com u
 comando (`./install.sh`), com HTTPS automático via Caddy e atualização em um
 passo (`./update.sh`).
 
+O passo a passo do zero, para quem nunca fez isso, está no
+[guia de instalação](https://github.com/taina-labs/tekoa/blob/main/guias/instalacao.md).
+
 A imagem multi-arch (amd64 e arm64 para o Raspberry Pi 5) é publicada em
-`ghcr.io/taina-labs/taina` a cada release.
+`ghcr.io/taina-labs/taina` a cada release. Até a primeira release existir, dá
+para montar a imagem na própria caixa a partir do código: o
+`build-image.sh` do Oka faz isso e escreve um `docker-compose.override.yml`
+que o Compose lê sozinho.
 
 Guias do operador (no repositório [Tekoá](https://github.com/taina-labs/tekoa)):
 
+- Instalação (do zero, em menos de 30 minutos): `guias/instalacao.md`.
 - Acesso remoto (Tailscale recomendado, Headscale soberano, WireGuard avançado):
   `guias/acesso-remoto.md`.
 - Runbook de backup e restauração (procedimento e ensaio): `guias/runbook-backup-restore.md`.
+- Hardware e montagem: `guias/compras-hardware.md`.
 
 ## Patrocinadores
 
