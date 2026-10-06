@@ -1,0 +1,148 @@
+name: docker smoke
+
+# Verifica que a imagem de produção sobe de verdade.
+#
+# O CI (ci.yml) roda os testes contra o código compilado no runner. Isso não
+# pega o que quebra na hora de instalar numa caixa: diretório que o release cria
+# sem dono, variável de ambiente faltando no runtime, healthcheck apontando para
+# a porta errada, migração que não roda no boot. Esses problemas só aparecem
+# quando o container sobe, e até agora ninguém tinha um job que fizesse isso.
+#
+# Um caso concreto: o Dockerfile criava /app/storage com o dono correto mas não
+# /app/backups. O volume de backup nascia root-owned, o processo rodava como
+# nobody, e o backup agendado falhava com :eacces registrando só "Backup
+# falhou". Nenhum teste pegou isso, porque nenhum teste subia o container.
+#
+# O que este job faz, espelhando o que o oka/install.sh faz na máquina do
+# operador: sobe o release, deixa as migrações rodarem no boot, e pergunta ao
+# /health se o app e o banco estão de pé. Se o roteiro de instalação quebrar
+# para a pessoa, quebra aqui antes.
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  # Constrói a imagem exatamente como a release constrói, mas só para a
+  # arquitetura do runner. O multi-arch é verificado pelo job de push.
+  #
+  # Só roda quando a release existe (mesma condição do job de docker em
+  # release-please.yml), porque antes disso não há tag para checar.
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout the release tag
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # load: true deixa a imagem no daemon do runner em vez de só no registry,
+      # que é o que permite ao job seguinte subir o container a partir dela.
+      - name: Build the production image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: taina:smoke
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  smoke:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Start a Postgres for the app
+        run: |
+          docker network create taina_smoke
+          docker run -d --name smoke_db --network taina_smoke \
+            -e POSTGRES_USER=taina \
+            -e POSTGRES_PASSWORD=taina \
+            -e POSTGRES_DB=taina \
+            postgres:18-alpine
+          # Espera o banco aceitar conexão, que é o que o compose faz pelo
+          # healthcheck antes de subir o app.
+          for i in $(seq 1 30); do
+            if docker exec smoke_db pg_isready -U taina >/dev/null 2>&1; then
+              echo "banco pronto"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "o banco não subiu a tempo"
+          docker logs smoke_db
+          exit 1
+
+      - name: Run the release's own start command
+        run: |
+          # Mesmo comando do CMD do Dockerfile: migrações no boot e depois o
+          # servidor. Se o Taina.Release.migrate não rodar, o banco fica vazio e
+          # o healthcheck do app falha aqui.
+          docker run -d --name smoke_app --network taina_smoke \
+            -e DATABASE_URL=ecto://taina:taina@smoke_db/taina \
+            -e SECRET_KEY_BASE=smoke-test-secret-key-base-not-for-production-use \
+            -e PHX_HOST=localhost \
+            -e PHX_SERVER=true \
+            -e PORT=4000 \
+            -e STORAGE_ROOT=/app/storage \
+            -e BACKUP_ENABLED=false \
+            -e BACKUP_DIR=/app/backups \
+            -v taina_smoke_storage:/app/storage \
+            -v taina_smoke_backups:/app/backups \
+            taina:smoke
+
+      - name: Wait for the app to report healthy
+        run: |
+          # Mesmo caminho do install.sh: de dentro do container, porque a porta
+          # 4000 não é publicada e o /health só responde 200 quando o banco
+          # também respondeu.
+          for i in $(seq 1 60); do
+            if docker exec smoke_app curl -fsS http://localhost:4000/health; then
+              echo ""
+              echo "app saudável"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "o app não ficou saudável a tempo"
+          echo "=== logs do app"
+          docker logs smoke_app
+          echo "=== logs do banco"
+          docker logs smoke_db
+          exit 1
+
+      - name: The volumes must be writable by the runtime user
+        run: |
+          # O container roda como nobody. Se um diretório de dados nascer
+          # root-owned no volume, o app sobe e só falha na hora de escrever, que
+          # é o pior jeito de falhar: saúde no healthcheck, erro no backup das
+          # quatro da manhã. Checamos os dois caminhos de escrita antes de
+          # declarar o job verde.
+          docker exec smoke_app sh -c 'touch /app/storage/.probe && rm /app/storage/.probe' \
+            || { echo "app/storage não é gravável pelo nobody"; exit 1; }
+          docker exec smoke_app sh -c 'touch /app/backups/.probe && rm /app/backups/.probe' \
+            || { echo "app/backups não é gravável pelo nobody"; exit 1; }
+          echo "storage e backups graváveis"
+
+      - name: Logs when it fails
+        if: failure()
+        run: |
+          echo "=== app"
+          docker logs smoke_app 2>&1 || true
+          echo "=== banco"
+          docker logs smoke_db 2>&1 || true
+
+      - name: Clean up
+        if: always()
+        run: |
+          docker rm -f smoke_app smoke_db 2>/dev/null || true
+          docker network rm taina_smoke 2>/dev/null || true
+          docker volume rm -f taina_smoke_storage taina_smoke_backups 2>/dev/null || true
