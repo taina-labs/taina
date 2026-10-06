@@ -1,9 +1,18 @@
-version: "3.8"
-
+# Compose v2 (this repo's stack, and what CI's Docker builds assume). The
+# obsolete `version:` key is deliberately absent: Compose v2 warns about it and
+# ignores it.
+#
+# For a real box use oka instead: it adds Caddy for HTTPS and only exposes one
+# port. This file exists for local development.
 services:
   db:
     image: postgres:18-alpine
     restart: unless-stopped
+    logging: &logging
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -62,6 +71,7 @@ services:
       # - /app/deps
       # - /app/assets/node_modules
     restart: unless-stopped
+    logging: *logging
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
       interval: 30s

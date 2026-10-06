@@ -98,8 +98,14 @@ ENV LC_ALL en_US.UTF-8
 WORKDIR "/app"
 RUN chown nobody /app
 
-# Create directory for uploads (Ybira file storage)
-RUN mkdir -p /app/storage && chown nobody:nogroup /app/storage
+# Create the writable data directories (Ybira file storage, Nhaman backups).
+# Both are mounted over by named volumes in docker-compose. Docker seeds an
+# empty named volume with the image's contents and ownership, so creating them
+# here with the runtime user's ownership is what makes them writable once
+# mounted. Missing /app/backups means the volume mounts root-owned and the
+# nobody user cannot write a backup (Nhaman logs "Backup falhou" and moves on).
+RUN mkdir -p /app/storage /app/backups \
+    && chown nobody:nogroup /app/storage /app/backups
 
 # Set runner ENV
 ENV MIX_ENV="prod"
