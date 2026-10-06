@@ -50,7 +50,7 @@ defmodule Taina.Ybira.Workers.PurgeTrashTest do
     assert Repo.get(Folder, recent.id, skip_tekoa_id: true)
   end
 
-  defp days_ago(n), do: DateTime.add(DateTime.utc_now(), -n * @seconds_per_day, :second)
+  defp days_ago(n), do: DateTime.shift(DateTime.utc_now(), second: -n * @seconds_per_day)
 
   defp backdate(schema, id, deleted_at) do
     Repo.update_all(

@@ -98,7 +98,7 @@ defmodule Taina.MaracaTest do
     test "expired invite token is rejected", %{tekoa: tekoa, zelador: zelador} do
       {:ok, invited} = Maraca.invite_user(zelador, tekoa)
 
-      eight_days_ago = DateTime.add(DateTime.utc_now(), -8, :day)
+      eight_days_ago = DateTime.shift(DateTime.utc_now(), day: -8)
 
       Repo.with_tekoa(tekoa.public_id, fn ->
         {:ok,
@@ -242,7 +242,7 @@ defmodule Taina.MaracaTest do
       scope = Scope.new(zelador, tekoa)
       {:ok, with_token} = Maraca.mint_reset_link(scope, member)
 
-      two_hours_ago = DateTime.add(DateTime.utc_now(), -2, :hour)
+      two_hours_ago = DateTime.shift(DateTime.utc_now(), hour: -2)
 
       Repo.with_tekoa(tekoa.public_id, fn ->
         {:ok,

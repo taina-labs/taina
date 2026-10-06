@@ -19,7 +19,7 @@ defmodule Taina.Ybira.Workers.PurgeTrash do
 
   @impl Oban.Worker
   def perform(%Oban.Job{}) do
-    cutoff = DateTime.add(DateTime.utc_now(), -@cutoff_days * @seconds_per_day, :second)
+    cutoff = DateTime.shift(DateTime.utc_now(), second: -@cutoff_days * @seconds_per_day)
     {:ok, purged} = Ybira.purge_deleted_files(cutoff)
     Logger.info("PurgeTrash: #{purged} arquivo(s) apagado(s) (cutoff #{DateTime.to_iso8601(cutoff)})")
     :ok
