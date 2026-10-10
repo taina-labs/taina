@@ -20,13 +20,15 @@ ARG RUNNER_IMAGE="debian:${DEBIAN_VERSION}"
 
 FROM ${BUILDER_IMAGE} as builder
 
-# Install build dependencies
+# Install build dependencies.
+#
+# No Node.js. The asset pipeline is the esbuild hex package alone, which fetches
+# its own standalone binary, and there is no package.json, so nothing here runs
+# node or npm (see the `assets.deploy` alias in mix.exs). The step that installed
+# Node through the NodeSource script also failed every build: Docker runs RUN
+# under /bin/sh (dash on Debian), which rejects the bash-only `set -o pipefail`
+# with exit 2 before curl ran.
 RUN apt-get update -y && apt-get install --no-install-recommends -y build-essential git curl \
-    && apt-get clean && rm -f /var/lib/apt/lists/*_*
-
-# Install Node.js for asset building
-RUN set -o pipefail && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get install -y nodejs \
     && apt-get clean && rm -f /var/lib/apt/lists/*_*
 
 # Prepare build dir
