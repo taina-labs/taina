@@ -461,7 +461,15 @@ defmodule Taina.Ybira do
   @impl true
   def count_files(%Scope{} = scope) do
     Repo.with_tekoa(scope.tekoa.public_id, fn ->
-      {:ok, Repo.aggregate(from(f in Ybira.File, where: is_nil(f.deleted_at)), :count)}
+      {:ok,
+       Repo.aggregate(
+         from(f in Ybira.File,
+           as: :readable,
+           where: is_nil(f.deleted_at),
+           where: ^Maraca.readable_dynamic(scope.ava, "ybira_file")
+         ),
+         :count
+       )}
     end)
   end
 
@@ -471,7 +479,9 @@ defmodule Taina.Ybira do
       count =
         Repo.aggregate(
           from(f in Ybira.File,
-            where: is_nil(f.deleted_at) and like(f.mime_type, "image/%")
+            as: :readable,
+            where: is_nil(f.deleted_at) and like(f.mime_type, "image/%"),
+            where: ^Maraca.readable_dynamic(scope.ava, "ybira_file")
           ),
           :count
         )
@@ -485,10 +495,13 @@ defmodule Taina.Ybira do
     Repo.with_tekoa(scope.tekoa.public_id, fn ->
       rows =
         Repo.all(
-          from f in Ybira.File,
+          from(f in Ybira.File,
+            as: :readable,
             where: is_nil(f.deleted_at),
+            where: ^Maraca.readable_dynamic(scope.ava, "ybira_file"),
             group_by: fragment("split_part(?, '/', 1)", f.mime_type),
             select: {fragment("split_part(?, '/', 1)", f.mime_type), sum(f.file_size_bytes)}
+          )
         )
 
       {:ok, classify_storage_kinds(rows)}
@@ -543,40 +556,59 @@ defmodule Taina.Ybira do
 
   @impl true
   def purge_deleted_files(%DateTime{} = cutoff) do
-    files =
-      Repo.all(
-        from(f in Ybira.File, where: not is_nil(f.deleted_at) and f.deleted_at < ^cutoff),
-        skip_tekoa_id: true
-      )
+    # Job de sistema que cruza todas as Tekoas: sem a válvula, as policies
+    # esconderiam as linhas do papel de aplicação (não-superuser em produção)
+    # e a lixeira nunca esvaziaria -- silenciosamente, com `{:ok, 0}`. A
+    # válvula cobre SÓ o banco (leitura dos expirados e expurgo das pastas):
+    # os bytes em disco são apagados fora de qualquer transação, em
+    # `purge_file/1`.
+    {:ok, files} =
+      Repo.with_system(fn ->
+        files =
+          Repo.all(
+            from(f in Ybira.File, where: not is_nil(f.deleted_at) and f.deleted_at < ^cutoff),
+            skip_tekoa_id: true
+          )
 
-    Enum.each(files, fn file ->
-      {:ok, _} =
+        # Pastas na lixeira só guardam metadados (sem bytes nem cota), apaga em lote.
+        # `delete_folder/2` faz soft delete em cascata; sem isto, os registros de
+        # pasta ficariam para sempre com `deleted_at` preenchido.
+        Repo.delete_all(
+          from(d in Ybira.Folder, where: not is_nil(d.deleted_at) and d.deleted_at < ^cutoff),
+          skip_tekoa_id: true
+        )
+
+        {:ok, files}
+      end)
+
+    Enum.each(files, &purge_file/1)
+
+    {:ok, length(files)}
+  end
+
+  # Um arquivo da lixeira: registro e cota caem numa transação própria, sob a
+  # válvula de sistema (o papel de aplicação cruza as policies de delete), e o
+  # binário vai embora DEPOIS, fora de qualquer transação. Invariante de
+  # crash: o banco fica sempre consistente (registro e cota são da mesma
+  # transação); o pior caso é byte órfão no disco se o processo morrer entre o
+  # commit e o `File.rm` -- logamos para dar visibilidade a problemas
+  # recorrentes de disco.
+  defp purge_file(file) do
+    {:ok, _} =
+      Repo.with_system(fn ->
         Repo.transaction(fn ->
           Repo.delete!(file)
           adjust_storage_used(file.tekoa_id, -file.file_size_bytes, skip_tekoa_id: true)
         end)
+      end)
 
-      # Fora da transação: se o disco falhar, o registro já foi (sem órfão no
-      # banco). Pior caso é um arquivo solto no disco, não inconsistência, mas
-      # logamos para dar visibilidade a problemas recorrentes de disco.
-      with {:error, reason} <- Elixir.File.rm(file.filepath) do
-        Logger.warning("PurgeTrash: falha ao remover arquivo do disco",
-          path: file.filepath,
-          file_id: file.id,
-          reason: reason
-        )
-      end
-    end)
-
-    # Pastas na lixeira só guardam metadados (sem bytes nem cota), apaga em lote.
-    # `delete_folder/2` faz soft delete em cascata; sem isto, os registros de
-    # pasta ficariam para sempre com `deleted_at` preenchido.
-    Repo.delete_all(
-      from(d in Ybira.Folder, where: not is_nil(d.deleted_at) and d.deleted_at < ^cutoff),
-      skip_tekoa_id: true
-    )
-
-    {:ok, length(files)}
+    with {:error, reason} <- Elixir.File.rm(file.filepath) do
+      Logger.warning("PurgeTrash: falha ao remover arquivo do disco",
+        path: file.filepath,
+        file_id: file.id,
+        reason: reason
+      )
+    end
   end
 
   ## --- Helpers internos ---

@@ -3,6 +3,7 @@ defmodule Taina.YbiraStatsTest do
 
   import Taina.Fixtures
 
+  alias Taina.Scope
   alias Taina.Ybira
 
   setup do
@@ -49,6 +50,33 @@ defmodule Taina.YbiraStatsTest do
 
     test "tudo zerado sem arquivos", %{scope: scope} do
       assert {:ok, %{photos: 0, videos: 0, documents: 0, others: 0}} = Ybira.storage_stats_by_kind(scope)
+    end
+  end
+
+  # Fato da máquina (uso/cota) é comunitário; o detalhe por tipo segue a regra
+  # de leitura das duas zonas (RFC_003 D2): a casa de outra pessoa não conta
+  # para quem não pode ler, até a publicação na praça.
+  describe "agregados legíveis (RFC_003 D2)" do
+    test "arquivo na casa de outro morador só entra quando publicado na praça", %{scope: scope} do
+      outra = active_ava_fixture(scope.tekoa)
+      outra_scope = Scope.new(outra, scope.tekoa)
+      {:ok, img} = Ybira.upload(outra_scope, tmp_image_fixture(filename: "casa.jpg"))
+
+      # Uso e cota seguem o fato da máquina: comunitários.
+      assert {:ok, %{used_bytes: used}} = Ybira.storage_stats(scope)
+      assert used == img.file_size_bytes
+
+      assert {:ok, 0} = Ybira.count_files(scope)
+      assert {:ok, 0} = Ybira.count_photos(scope)
+      assert {:ok, %{photos: 0, videos: 0, documents: 0, others: 0}} = Ybira.storage_stats_by_kind(scope)
+
+      {:ok, _} = Ybira.publicar_file(outra_scope, img.public_id)
+
+      assert {:ok, 1} = Ybira.count_files(scope)
+      assert {:ok, 1} = Ybira.count_photos(scope)
+
+      assert {:ok, %{photos: photos, videos: 0, documents: 0, others: 0}} = Ybira.storage_stats_by_kind(scope)
+      assert photos == img.file_size_bytes
     end
   end
 end

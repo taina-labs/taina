@@ -222,21 +222,23 @@ defmodule Taina.Ybira.Behaviour do
   @callback list_recent(Scope.t(), keyword) :: {:ok, [File.t()]}
 
   @doc """
-  Conta os arquivos ativos (fora da lixeira) da Tekoa do scope, card
-  "Arquivos" da home.
+  Conta os arquivos ativos (fora da lixeira) legíveis pelo ava do scope (praça,
+  casa própria, ou permissão explícita), card "Arquivos" da home.
   """
   @callback count_files(Scope.t()) :: {:ok, non_neg_integer}
 
   @doc """
-  Conta as fotos ativas (`mime_type image/*`, fora da lixeira), card "Fotos"
-  da home.
+  Conta as fotos ativas (`mime_type image/*`, fora da lixeira) legíveis pelo
+  ava do scope (praça, casa própria, ou permissão explícita), card "Fotos" da
+  home.
   """
   @callback count_photos(Scope.t()) :: {:ok, non_neg_integer}
 
   @doc """
-  Uso de armazenamento por categoria de mídia (tela "Armazenamento" e card da
-  home desktop): bytes somados de arquivos ativos, agrupados em `:photos`,
-  `:videos`, `:documents` e `:others`.
+  Uso de armazenamento por categoria de mídia, dos arquivos legíveis pelo ava
+  do scope (praça, casa própria, ou permissão explícita): bytes somados de
+  arquivos ativos, agrupados em `:photos`, `:videos`, `:documents` e `:others`.
+  Difere de `storage_stats/1`, que fica comunitário (fato da máquina).
   """
   @callback storage_stats_by_kind(Scope.t()) ::
               {:ok,

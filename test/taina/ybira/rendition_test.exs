@@ -4,6 +4,7 @@ defmodule Taina.Ybira.Workers.RenditionTest do
   import Taina.Fixtures
 
   alias Taina.Ybira
+  alias Taina.Ybira.Workers.Rendition
 
   @moduletag capture_log: true
 
@@ -33,5 +34,61 @@ defmodule Taina.Ybira.Workers.RenditionTest do
     {:ok, doc} = Ybira.get_file(scope, doc.public_id)
 
     refute Map.has_key?(doc.metadata, "thumbnails")
+  end
+
+  describe "render_file/2" do
+    setup do
+      %{scope: scope_fixture()}
+    end
+
+    test "regera a thumbnail que sumiu do disco", %{scope: scope} do
+      {:ok, photo} = Ybira.upload(scope, tmp_image_fixture(width: 50, height: 40, filename: "r.jpg"))
+      {:ok, photo} = Ybira.get_file(scope, photo.public_id)
+      %{"sm" => sm, "md" => md} = photo.metadata["thumbnails"]
+
+      File.rm!(sm)
+      File.rm!(md)
+
+      assert :ok = Rendition.render_file(photo.id, scope.tekoa.public_id)
+      assert File.exists?(sm)
+      assert File.exists?(md)
+    end
+
+    test "arquivo apagado volta {:error, :gone}", %{scope: scope} do
+      {:ok, photo} = Ybira.upload(scope, tmp_image_fixture(width: 50, height: 40, filename: "g.jpg"))
+
+      {:ok, _} = Ybira.delete_file(scope, photo.public_id)
+
+      assert {:error, :gone} = Rendition.render_file(photo.id, scope.tekoa.public_id)
+    end
+
+    test "arquivo corrompido volta {:error, _} sem derrubar", %{scope: scope} do
+      {:ok, photo} = Ybira.upload(scope, tmp_image_fixture(width: 50, height: 40, filename: "c.jpg"))
+
+      # bytes destruídos por baixo: o processamento falha, o registro fica
+      File.write!(photo.filepath, "não é imagem nenhuma")
+
+      assert {:error, _reason} = Rendition.render_file(photo.id, scope.tekoa.public_id)
+    end
+  end
+
+  describe "mix taina.thumbnails.regenerate" do
+    setup do
+      %{scope: scope_fixture()}
+    end
+
+    test "regera as miniaturas de uma tekoa, com resumo", %{scope: scope} do
+      {:ok, photo} = Ybira.upload(scope, tmp_image_fixture(width: 50, height: 40, filename: "t.jpg"))
+      {:ok, photo} = Ybira.get_file(scope, photo.public_id)
+      %{"sm" => sm, "md" => md} = photo.metadata["thumbnails"]
+
+      File.rm!(sm)
+      File.rm!(md)
+
+      Mix.Task.run("taina.thumbnails.regenerate", ["--tekoa", scope.tekoa.public_id])
+
+      assert File.exists?(sm)
+      assert File.exists?(md)
+    end
   end
 end

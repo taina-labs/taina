@@ -19,6 +19,8 @@ defmodule Taina.Ybira.Workers.Rendition do
 
   use Oban.Worker, queue: :default, max_attempts: 3
 
+  import Ecto.Query
+
   alias Taina.Repo
   alias Taina.Ybira.File, as: YbiraFile
   alias Taina.Ybira.Media
@@ -29,16 +31,43 @@ defmodule Taina.Ybira.Workers.Rendition do
   # a visualização fullscreen. Os caminhos vão para `metadata["thumbnails"]`.
   @sizes %{"sm" => 400, "md" => 1600}
 
+  @doc """
+  Gera as renditions de um arquivo de imagem pelo `id`, dentro da Tekoa de
+  `tekoa_public_id` (abre o `Repo.with_tekoa/2` por conta própria).
+
+  Ponto de entrada tanto do job (`perform/1`) quanto do mix task
+  `taina.thumbnails.regenerate`. Arquivo que não existe nessa Tekoa (apagado,
+  expurgado ou de outra comunidade) volta `{:error, :gone}`; falha de
+  processamento volta `{:error, reason}`; sucesso volta `:ok`.
+  """
+  def render_file(file_id, tekoa_public_id) do
+    result =
+      Repo.with_tekoa(tekoa_public_id, fn ->
+        case Repo.one(from(f in YbiraFile, where: f.id == ^file_id and is_nil(f.deleted_at))) do
+          # Arquivo deletado (lixeira ou expurgo) entre o upload e o
+          # processamento, nada a fazer.
+          nil ->
+            {:error, :gone}
+
+          # `transact` exige {:ok,_}/{:error,_} e o `render/2` devolve :ok no
+          # sucesso, então embrulhamos aqui e desembrulhamos na saída.
+          file ->
+            {:ok, render(file, tekoa_public_id)}
+        end
+      end)
+
+    case result do
+      {:ok, :ok} -> :ok
+      {:ok, {:error, reason}} -> {:error, reason}
+      {:error, _reason} = error -> error
+    end
+  end
+
   @impl Oban.Worker
   def perform(%Oban.Job{args: %{"file_id" => file_id, "tekoa_public_id" => tekoa_public_id}}) do
-    Repo.with_tekoa(tekoa_public_id, fn ->
-      case Repo.get(YbiraFile, file_id) do
-        # Arquivo deletado entre o upload e o processamento, nada a fazer.
-        nil -> {:ok, :gone}
-        file -> {:ok, render(file, tekoa_public_id)}
-      end
-    end)
-
+    # Best-effort: falha de rendition não vira retentativa nem job morto
+    # barulhento, a foto existe, só não ganha thumbnail.
+    _ = render_file(file_id, tekoa_public_id)
     :ok
   end
 
@@ -64,7 +93,7 @@ defmodule Taina.Ybira.Workers.Rendition do
             errors: inspect(changeset.errors)
           )
 
-          :ok
+          {:error, changeset}
       end
     else
       error ->
@@ -73,12 +102,12 @@ defmodule Taina.Ybira.Workers.Rendition do
           reason: inspect(error)
         )
 
-        :error
+        error
     end
   rescue
     e ->
       Logger.warning("Rendition: exceção ao processar", file_id: file.id, reason: inspect(e))
-      :error
+      {:error, e}
   end
 
   defp generate_thumbnails(%YbiraFile{} = file, tekoa_public_id) do
