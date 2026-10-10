@@ -26,6 +26,9 @@ defmodule Taina.Maraca.Event do
           :invite_created
           | :invite_accepted
           | :member_deactivated
+          | :member_role_changed
+          | :member_reactivated
+          | :reset_link_created
           | :published_to_praca
           | :moved_between_zones
           | :access_requested
@@ -45,10 +48,12 @@ defmodule Taina.Maraca.Event do
           inserted_at: NaiveDateTime.t() | nil
         }
 
-  # Vocabulário de atos do mural (RFC_003 seção 6): convite, zonas casa/praca,
+  # Vocabulário de atos do mural (RFC_003 seção 6): convite, papéis (mudança de
+  # papel e reativação), reset de senha mediado pelo zelador, zonas casa/praca,
   # pedidos de acesso e cota. Mesma palavra no banco, no contexto e na tela.
-  @event_types ~w(invite_created invite_accepted member_deactivated published_to_praca
-    moved_between_zones access_requested access_granted access_denied quota_changed)a
+  @event_types ~w(invite_created invite_accepted member_deactivated member_role_changed
+    member_reactivated reset_link_created published_to_praca moved_between_zones
+    access_requested access_granted access_denied quota_changed)a
 
   @schema_prefix "maraca"
   schema "events" do

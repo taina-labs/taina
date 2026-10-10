@@ -54,6 +54,27 @@ defmodule Taina.MuralTest do
 
       assert {:ok, %{events: []}} = Maraca.list_events(Scope.new(zelador, tekoa))
     end
+
+    # Camada 3 da transparência (RFC_003 seção 6): o substrato de telemetria
+    # sobe com a app (métrica `taina.maraca.event.count`), a caixa é soberana,
+    # nada sai dela. O teste se prende ao evento direto do `:telemetry`.
+    test "evento gravado emite telemetria com o tipo, sem ids de tekoa/ava", %{tekoa: tekoa, zelador: zelador} do
+      handler_id = "mural-telemetry-#{System.unique_integer([:positive])}"
+
+      :ok =
+        :telemetry.attach(
+          handler_id,
+          [:taina, :maraca, :event],
+          fn event, measurements, metadata, _config -> send(self(), {event, measurements, metadata}) end,
+          nil
+        )
+
+      on_exit(fn -> :telemetry.detach(handler_id) end)
+
+      assert :ok = Maraca.record_event(tekoa.public_id, zelador.id, :invite_created, %{"role" => "morador"})
+
+      assert_received {[:taina, :maraca, :event], %{count: 1}, %{type: :invite_created}}
+    end
   end
 
   describe "list_events/2" do
@@ -109,6 +130,36 @@ defmodule Taina.MuralTest do
       assert :invite_created in types
     end
 
+    test "aceite de convite de zelador registra o papel", %{tekoa: tekoa, zelador: zelador} do
+      assert {:ok, invited} = Maraca.invite_user(zelador, tekoa, role: :zelador)
+
+      assert {:ok, _accepted} =
+               Maraca.accept_invite(invited.invite_token, %{
+                 "username" => "joana",
+                 "display_name" => "Joana",
+                 "password" => "senhasegura123",
+                 "password_confirmation" => "senhasegura123"
+               })
+
+      assert {:ok, %{events: events}} = Maraca.list_events(Scope.new(zelador, tekoa))
+      accepted = Enum.find(events, &(&1.type == :invite_accepted))
+      assert accepted.payload["role"] == "zelador"
+    end
+
+    test "link de nova senha registra o membro para quem foi gerado", %{
+      tekoa: tekoa,
+      zelador: zelador,
+      morador: morador
+    } do
+      scope = Scope.new(zelador, tekoa)
+
+      assert {:ok, _ava} = Maraca.mint_reset_link(scope, morador)
+
+      assert {:ok, %{events: [event]}} = Maraca.list_events(scope)
+      assert event.type == :reset_link_created
+      assert event.payload["member"] == "Bruno"
+    end
+
     test "zonas casa/praca registram publicação e retirada com o nome", %{tekoa: tekoa, zelador: zelador} do
       scope = Scope.new(zelador, tekoa)
       path = tmp_upload_fixture("conteúdo", "estatuto.pdf")
@@ -158,6 +209,29 @@ defmodule Taina.MuralTest do
       assert {:ok, %{events: [event]}} = Maraca.list_events(scope)
       assert event.type == :member_deactivated
       assert event.payload["member"] == "Bruno"
+    end
+
+    test "mudança de papel registra o membro e o papel novo", %{tekoa: tekoa, zelador: zelador, morador: morador} do
+      scope = Scope.new(zelador, tekoa)
+
+      assert {:ok, _member} = Maraca.update_member_role(scope, morador.public_id, :zelador)
+
+      assert {:ok, %{events: [event]}} = Maraca.list_events(scope)
+      assert event.type == :member_role_changed
+      assert event.payload["member"] == "Bruno"
+      assert event.payload["role"] == "zelador"
+    end
+
+    test "reativar conta registra a conta reativada", %{tekoa: tekoa, zelador: zelador, morador: morador} do
+      scope = Scope.new(zelador, tekoa)
+      assert {:ok, _member} = Maraca.deactivate_member(scope, morador.public_id)
+      assert {:ok, _member} = Maraca.reactivate_member(scope, morador.public_id)
+
+      # O mais novo vem primeiro: [member_reactivated, member_deactivated].
+      assert {:ok, %{events: [reactivated, deactivated]}} = Maraca.list_events(scope)
+      assert reactivated.type == :member_reactivated
+      assert reactivated.payload["member"] == "Bruno"
+      assert deactivated.type == :member_deactivated
     end
 
     test "mudança de cota registra de quanto para quanto", %{tekoa: tekoa, zelador: zelador} do

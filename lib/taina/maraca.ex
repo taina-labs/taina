@@ -68,11 +68,17 @@ defmodule Taina.Maraca do
 
   @impl true
   def bootstrap(tekoa_attrs, zelador_attrs) do
-    if Repo.exists?(Tekoa, skip_tekoa_id: true) do
-      {:error, :already_bootstrapped}
-    else
-      Repo.transact(fn -> create_tekoa_with_zelador(tekoa_attrs, zelador_attrs) end)
-    end
+    # Consulta e escrita de sistema: roda antes de haver qualquer contexto
+    # RLS (a Tekoa nem existe ainda), então cruza as políticas pela válvula.
+    # A checagem de existência entra na mesma transação do insert: duas
+    # inicializações concorrentes não podem ambas passar do `if`.
+    Repo.with_system(fn ->
+      if Repo.exists?(Tekoa, skip_tekoa_id: true) do
+        {:error, :already_bootstrapped}
+      else
+        create_tekoa_with_zelador(tekoa_attrs, zelador_attrs)
+      end
+    end)
   end
 
   defp create_tekoa_with_zelador(tekoa_attrs, zelador_attrs) do
@@ -98,15 +104,22 @@ defmodule Taina.Maraca do
 
   @impl true
   def bootstrapped? do
-    Repo.exists?(Tekoa, skip_tekoa_id: true)
+    # Consulta de sistema: sem a válvula, o papel de aplicação (RLS ativo)
+    # veria zero Tekoas e responderia "não bootstrapado" para sempre.
+    {:ok, exists?} =
+      Repo.with_system(fn -> {:ok, Repo.exists?(Tekoa, skip_tekoa_id: true)} end)
+
+    exists?
   end
 
   @impl true
   def get_tekoa do
-    case Repo.one(Tekoa, skip_tekoa_id: true) do
-      %Tekoa{} = tekoa -> {:ok, tekoa}
-      nil -> {:error, :not_bootstrapped}
-    end
+    Repo.with_system(fn ->
+      case Repo.one(Tekoa, skip_tekoa_id: true) do
+        %Tekoa{} = tekoa -> {:ok, tekoa}
+        nil -> {:error, :not_bootstrapped}
+      end
+    end)
   end
 
   ## Membros
@@ -174,9 +187,13 @@ defmodule Taina.Maraca do
         end)
 
       # Registro do mural depois da transação do aceite: uma falha na escrita
-      # do ledger não pode derrubar a conta que acabou de ser criada.
+      # do ledger não pode derrubar a conta que acabou de ser criada. O papel
+      # vai no payload para o aceite de um zelador ser legível na hora da
+      # concessão (o papel é o do convite, decidido em `invite_user/3`).
       with {:ok, _accepted} <- result do
-        record_event(tekoa_public_id, ava.id, :invite_accepted, %{})
+        record_event(tekoa_public_id, ava.id, :invite_accepted, %{
+          "role" => Atom.to_string(ava.role)
+        })
       end
 
       result
@@ -278,16 +295,20 @@ defmodule Taina.Maraca do
 
   # Revalida a cada request/mount: uma conta desativada pelo zelador deixa de
   # resolver, então a sessão ainda aberta cai no próximo acesso -- honra o
-  # "não vai mais conseguir entrar" da tela de membros.
+  # "não vai mais conseguir entrar" da tela de membros. Consulta de sistema
+  # (`skip_tekoa_id: true` + válvula): roda antes de haver contexto RLS, no
+  # request que o próprio contexto constrói.
   defp resolve_session_ava(public_id) when is_binary(public_id) do
-    case Repo.get_by(Ava, [public_id: public_id], skip_tekoa_id: true) do
-      %Ava{deactivated_at: nil} = ava ->
-        tekoa = Repo.get!(Tekoa, ava.tekoa_id, skip_tekoa_id: true)
-        {:ok, %{ava | tekoa: tekoa}}
+    Repo.with_system(fn ->
+      case Repo.get_by(Ava, [public_id: public_id], skip_tekoa_id: true) do
+        %Ava{deactivated_at: nil} = ava ->
+          tekoa = Repo.get!(Tekoa, ava.tekoa_id, skip_tekoa_id: true)
+          {:ok, %{ava | tekoa: tekoa}}
 
-      _ ->
-        {:error, :not_authenticated}
-    end
+        _ ->
+          {:error, :not_authenticated}
+      end
+    end)
   end
 
   defp resolve_session_ava(_public_id), do: {:error, :not_authenticated}
@@ -323,7 +344,16 @@ defmodule Taina.Maraca do
   @impl true
   def update_member_role(%Scope{} = scope, member_public_id, role) do
     with :ok <- ensure_zelador(scope) do
-      Repo.with_tekoa(scope.tekoa.public_id, fn -> do_update_role(member_public_id, role) end)
+      result = Repo.with_tekoa(scope.tekoa.public_id, fn -> do_update_role(member_public_id, role) end)
+
+      with {:ok, member} <- result do
+        record_event(scope.tekoa.public_id, scope.ava.id, :member_role_changed, %{
+          "member" => ava_name(member),
+          "role" => Atom.to_string(role)
+        })
+      end
+
+      result
     end
   end
 
@@ -345,7 +375,15 @@ defmodule Taina.Maraca do
   @impl true
   def reactivate_member(%Scope{} = scope, member_public_id) do
     with :ok <- ensure_zelador(scope) do
-      Repo.with_tekoa(scope.tekoa.public_id, fn -> do_reactivate(member_public_id) end)
+      result = Repo.with_tekoa(scope.tekoa.public_id, fn -> do_reactivate(member_public_id) end)
+
+      with {:ok, member} <- result do
+        record_event(scope.tekoa.public_id, scope.ava.id, :member_reactivated, %{
+          "member" => ava_name(member)
+        })
+      end
+
+      result
     end
   end
 
@@ -428,7 +466,17 @@ defmodule Taina.Maraca do
   @impl true
   def mint_reset_link(%Scope{} = scope, %Ava{} = member) do
     if zelador?(scope.ava) do
-      Repo.with_tekoa(scope.tekoa.public_id, fn -> do_mint_reset_link(scope, member) end)
+      result = Repo.with_tekoa(scope.tekoa.public_id, fn -> do_mint_reset_link(scope, member) end)
+
+      # O registro vai no mural depois da transação, com o nome do membro para
+      # quem o link foi gerado (padrão dos demais atos do zelador).
+      with {:ok, %Ava{} = with_token} <- result do
+        record_event(scope.tekoa.public_id, scope.ava.id, :reset_link_created, %{
+          "member" => ava_name(with_token)
+        })
+      end
+
+      result
     else
       {:error, :unauthorized}
     end
@@ -593,14 +641,23 @@ defmodule Taina.Maraca do
 
   @impl true
   def list_permissions(resource_type, resource_id) do
-    query =
-      from p in Permission,
-        where: p.resource_type == ^resource_type,
-        where: p.resource_id == ^resource_id
+    # Listagem de sistema: o zelador vê as permissões de um recurso cruzando
+    # o contexto (quem pode ler um arquivo de outro, por exemplo, não é
+    # visível pela policy do próprio solicitante).
+    {:ok, permissions} =
+      Repo.with_system(fn ->
+        permissions =
+          from(p in Permission,
+            where: p.resource_type == ^resource_type,
+            where: p.resource_id == ^resource_id
+          )
+          |> Repo.all(skip_tekoa_id: true)
+          |> Repo.preload([:ava, :granted_by], skip_tekoa_id: true)
 
-    query
-    |> Repo.all(skip_tekoa_id: true)
-    |> Repo.preload([:ava, :granted_by], skip_tekoa_id: true)
+        {:ok, permissions}
+      end)
+
+    permissions
   end
 
   ## Acesso do zelador (com aprovação do dono)
@@ -663,7 +720,7 @@ defmodule Taina.Maraca do
       end)
 
     with {:ok, permission} <- result do
-      requester = Repo.get(Ava, permission.ava_id, skip_tekoa_id: true)
+      requester = system_ava(permission.ava_id)
 
       record_event(tekoa_public_id(owner), owner.id, :access_granted, %{
         "requester" => ava_name(requester)
@@ -684,7 +741,7 @@ defmodule Taina.Maraca do
       end)
 
     with {:ok, request} <- result do
-      requester = Repo.get(Ava, request.requester_id, skip_tekoa_id: true)
+      requester = system_ava(request.requester_id)
 
       record_event(tekoa_public_id(owner), owner.id, :access_denied, %{
         "requester" => ava_name(requester)
@@ -763,6 +820,9 @@ defmodule Taina.Maraca do
 
     case result do
       {:ok, _event} ->
+        # Camada 3 da transparência (RFC_003 seção 6): métrica na caixa, sem
+        # reporter para fora. O tipo no metadata, nunca ids de tekoa/ava.
+        :telemetry.execute([:taina, :maraca, :event], %{count: 1}, %{type: type})
         :ok
 
       {:error, reason} ->
@@ -854,7 +914,15 @@ defmodule Taina.Maraca do
   end
 
   defp find_by_token(hash_field, token) when is_binary(token) do
-    Repo.get_by(Ava, [{hash_field, Ava.hash_token(token)}], skip_tekoa_id: true)
+    # Consulta de sistema (`skip_tekoa_id: true` + válvula): usada no login e
+    # no aceite/reset, antes de haver contexto RLS -- a busca é justamente o
+    # que constrói o contexto.
+    {:ok, ava} =
+      Repo.with_system(fn ->
+        {:ok, Repo.get_by(Ava, [{hash_field, Ava.hash_token(token)}], skip_tekoa_id: true)}
+      end)
+
+    ava
   end
 
   defp find_by_token(_hash_field, _token), do: nil
@@ -868,11 +936,29 @@ defmodule Taina.Maraca do
   defp tekoa_public_id(%Ava{tekoa: %Tekoa{public_id: public_id}}), do: public_id
 
   defp tekoa_public_id(%Ava{tekoa_id: tekoa_id}) do
-    Repo.get!(Tekoa, tekoa_id, skip_tekoa_id: true).public_id
+    # Consulta de sistema: resolve o public_id da Tekoa antes de abrir o
+    # contexto (o contexto é justamente este public_id).
+    {:ok, public_id} =
+      Repo.with_system(fn ->
+        {:ok, Repo.get!(Tekoa, tekoa_id, skip_tekoa_id: true).public_id}
+      end)
+
+    public_id
+  end
+
+  # Re-busca de Ava fora do contexto de Tekoa, pós-transação (mural e
+  # notificação do pedido de acesso): em produção as policies de RLS
+  # esconderiam a linha do papel de aplicação sem contexto, então a busca
+  # cruza pela válvula. Devolve `%Ava{}` ou `nil`, como o `Repo.get/3` que
+  # substitui nos sites de sistema.
+  defp system_ava(ava_id) do
+    {:ok, ava} = Repo.with_system(fn -> {:ok, Repo.get(Ava, ava_id, skip_tekoa_id: true)} end)
+
+    ava
   end
 
   defp notify_requester(requester_ava_id, message) do
-    case Repo.get(Ava, requester_ava_id, skip_tekoa_id: true) do
+    case system_ava(requester_ava_id) do
       nil -> :ok
       %Ava{} = requester -> notify(requester.public_id, message)
     end

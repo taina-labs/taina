@@ -68,6 +68,73 @@ defmodule TainaWeb.MuralLiveTest do
     refute has_element?(lv, "#mural-events input")
   end
 
+  test "aceite de convite de zelador diz que a pessoa entrou para cuidar da máquina", %{
+    conn: conn,
+    tekoa: tekoa,
+    zelador: zelador
+  } do
+    assert {:ok, invited} = Maraca.invite_user(zelador, tekoa, role: :zelador)
+
+    assert {:ok, _accepted} =
+             Maraca.accept_invite(invited.invite_token, %{
+               "username" => "joana",
+               "display_name" => "Joana",
+               "password" => "senhasegura123",
+               "password_confirmation" => "senhasegura123"
+             })
+
+    {:ok, _lv, html} = conn |> log_in(zelador) |> live(~p"/mural")
+
+    assert html =~ "Joana entrou na comunidade para cuidar da máquina."
+  end
+
+  test "aceite antigo (sem papel no registro) continua com a frase genérica", %{
+    conn: conn,
+    tekoa: tekoa,
+    morador: morador
+  } do
+    :ok = Maraca.record_event(tekoa.public_id, morador.id, :invite_accepted, %{})
+
+    {:ok, _lv, html} = conn |> log_in(morador) |> live(~p"/mural")
+
+    assert html =~ "Bruno entrou na comunidade."
+  end
+
+  test "link de nova senha vira frase com quem gerou e para quem", %{
+    conn: conn,
+    tekoa: tekoa,
+    zelador: zelador,
+    morador: morador
+  } do
+    scope = Scope.new(zelador, tekoa)
+    assert {:ok, _ava} = Maraca.mint_reset_link(scope, morador)
+
+    {:ok, _lv, html} = conn |> log_in(zelador) |> live(~p"/mural")
+
+    assert html =~ "Ana gerou um link de nova senha para Bruno."
+  end
+
+  test "atos do zelador sobre papéis viram frases de cuidado da máquina", %{
+    conn: conn,
+    tekoa: tekoa,
+    zelador: zelador,
+    morador: morador
+  } do
+    scope = Scope.new(zelador, tekoa)
+
+    assert {:ok, _} = Maraca.update_member_role(scope, morador.public_id, :zelador)
+    assert {:ok, _} = Maraca.deactivate_member(scope, morador.public_id)
+    assert {:ok, _} = Maraca.reactivate_member(scope, morador.public_id)
+    assert {:ok, _} = Maraca.update_member_role(scope, morador.public_id, :morador)
+
+    {:ok, _lv, html} = conn |> log_in(zelador) |> live(~p"/mural")
+
+    # ganhou o papel, e depois voltou a ser morador
+    assert html =~ "Ana deu a Bruno o cuidado da máquina."
+    assert html =~ "Ana tirou de Bruno o cuidado da máquina."
+    assert html =~ "Ana reativou a conta de Bruno."
+  end
+
   test "pagina com 'carregar mais' quando passa da primeira página", %{conn: conn, tekoa: tekoa, morador: morador} do
     # 55 atos do sistema: a primeira página (50) deixa resto.
     for i <- 1..55 do

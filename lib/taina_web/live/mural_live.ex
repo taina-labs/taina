@@ -123,8 +123,22 @@ defmodule TainaWeb.MuralLive do
     end
   end
 
+  # O papel do convite, gravado no aceite, decide a frase: quem entra para
+  # cuidar da máquina merece a frase certa na hora da concessão. Eventos
+  # antigos (payload vazio) caem na frase genérica.
+  defp sentence(%Event{type: :invite_accepted, payload: %{"role" => "zelador"}} = event),
+    do: gettext("%{actor} entrou na comunidade para cuidar da máquina.", actor: actor_label(event))
+
   defp sentence(%Event{type: :invite_accepted} = event),
     do: gettext("%{actor} entrou na comunidade.", actor: actor_label(event))
+
+  # O zelador não vê nem define a senha nova, só gera o link: o ato é dele,
+  # o destino é o membro nomeado no payload.
+  defp sentence(%Event{type: :reset_link_created, payload: %{"member" => member}} = event) when is_binary(member),
+    do: gettext("%{actor} gerou um link de nova senha para %{member}.", actor: actor_label(event), member: member)
+
+  defp sentence(%Event{type: :reset_link_created} = event),
+    do: gettext("%{actor} gerou um link de nova senha para um membro da comunidade.", actor: actor_label(event))
 
   defp sentence(%Event{type: :member_deactivated} = event) do
     case event.payload["member"] do
@@ -132,6 +146,27 @@ defmodule TainaWeb.MuralLive do
       member -> gettext("%{actor} desativou a conta de %{member}.", actor: actor_label(event), member: member)
     end
   end
+
+  # Papel do membro depois da mudança: ganhou o cuidado ("deu a") ou voltou a
+  # ser morador ("tirou de"). Sem nome/papel no payload, frase genérica.
+  defp sentence(%Event{type: :member_role_changed, payload: %{"member" => member, "role" => "zelador"}} = event)
+       when is_binary(member) do
+    gettext("%{actor} deu a %{member} o cuidado da máquina.", actor: actor_label(event), member: member)
+  end
+
+  defp sentence(%Event{type: :member_role_changed, payload: %{"member" => member, "role" => "morador"}} = event)
+       when is_binary(member) do
+    gettext("%{actor} tirou de %{member} o cuidado da máquina.", actor: actor_label(event), member: member)
+  end
+
+  defp sentence(%Event{type: :member_role_changed} = event),
+    do: gettext("%{actor} mudou o papel de um membro da comunidade.", actor: actor_label(event))
+
+  defp sentence(%Event{type: :member_reactivated, payload: %{"member" => member}} = event) when is_binary(member),
+    do: gettext("%{actor} reativou a conta de %{member}.", actor: actor_label(event), member: member)
+
+  defp sentence(%Event{type: :member_reactivated} = event),
+    do: gettext("%{actor} reativou uma conta.", actor: actor_label(event))
 
   defp sentence(%Event{type: :published_to_praca, payload: %{"kind" => "folder", "name" => name}} = event),
     do: gettext("%{actor} publicou a pasta \"%{name}\" na praça.", actor: actor_label(event), name: name)

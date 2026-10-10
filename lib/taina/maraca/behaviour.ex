@@ -273,6 +273,9 @@ defmodule Taina.Maraca.Behaviour do
     * `{:error, :not_found}` - Membro não existe na Tekoa
     * `{:error, :last_zelador}` - Tentou rebaixar o último zelador ativo
     * `{:error, %Ecto.Changeset{}}` - Papel inválido
+
+  Registra `:member_role_changed` no mural (RFC_003 seção 6), depois do ato
+  commitado.
   """
   @callback update_member_role(Scope.t(), String.t(), :zelador | :morador) ::
               {:ok, Ava.t()}
@@ -314,6 +317,9 @@ defmodule Taina.Maraca.Behaviour do
     * `{:ok, %Ava{}}` - Conta reativada
     * `{:error, :unauthorized}` - Quem pediu não é zelador
     * `{:error, :not_found}` - Membro não existe na Tekoa
+
+  Registra `:member_reactivated` no mural (RFC_003 seção 6), depois do ato
+  commitado.
   """
   @callback reactivate_member(Scope.t(), String.t()) ::
               {:ok, Ava.t()} | {:error, :unauthorized | :not_found}
