@@ -94,13 +94,13 @@ jobs:
 
           # O guard de existência fica no shell de propósito: o psql não
           # substitui :'var' dentro de blocos DO $$, então o guard do oka
-          # também fica no shell. Consultamos o catálogo antes e passamos a
-          # senha pelo :'app_password', que o psql escapa.
+          # também fica no shell. A senha vai literal porque -c entrega a
+          # string crua ao servidor: interpolação de :'var' só acontece na
+          # entrada lida por stdin/-f, nunca em -c. Aqui a senha é fixa.
           if [ "$(psql_cmd -tAc "SELECT 1 FROM pg_roles WHERE rolname = '$APP_ROLE'")" = "1" ]; then
             echo "papel $APP_ROLE já existe; seguindo sem alterar"
           else
-            psql_cmd -v app_password=taina \
-              -c "CREATE ROLE $APP_ROLE LOGIN PASSWORD :'app_password' NOSUPERUSER NOBYPASSRLS;"
+            psql_cmd -c "CREATE ROLE $APP_ROLE LOGIN PASSWORD 'taina' NOSUPERUSER NOBYPASSRLS;"
           fi
 
           # CONNECT: abrir conexão no banco. CREATE (no database): criar os
@@ -120,9 +120,12 @@ jobs:
           #
           # BACKUP_DATABASE_URL fica de fora de propósito: sem ele, o backup
           # usa a própria DATABASE_URL (papel único), que é o caso de dev/CI.
+          #
+          # SECRET_KEY_BASE com >= 64 bytes: Plug.Session.COOKIE recusa menos
+          # que isso e a primeira rota que grava sessão (/login) devolve 500.
           docker run -d --name smoke_app --network taina_smoke \
             -e DATABASE_URL=ecto://taina_app:taina@smoke_db/taina \
-            -e SECRET_KEY_BASE=smoke-test-secret-key-base-not-for-production-use \
+            -e SECRET_KEY_BASE=smoke-test-secret-key-base-0123456789abcdef0123456789abcdef0123456789 \
             -e PHX_HOST=localhost \
             -e PHX_SERVER=true \
             -e PORT=4000 \
@@ -213,10 +216,14 @@ jobs:
           [ "$as_superuser" = "1" ] \
             || { echo "superusuário viu $as_superuser tekoa(s), esperado 1"; exit 1; }
 
+          # CASE com texto explícito: `rolsuper || rolbypassrls` traz o
+          # booleano como 'false' (cast para texto), não na forma t/f, então
+          # concatenar e comparar com "f|f" nunca bate. Um rótulo fixo não
+          # depende da forma textual do booleano.
           flags=$(docker exec smoke_db psql -U taina -d taina \
-            -tAc "SELECT rolsuper || '|' || rolbypassrls FROM pg_roles WHERE rolname = 'taina_app'")
-          [ "$flags" = "f|f" ] \
-            || { echo "taina_app com superpoderes (rolsuper|rolbypassrls = $flags)"; exit 1; }
+            -tAc "SELECT CASE WHEN rolsuper OR rolbypassrls THEN 'yes' ELSE 'no' END FROM pg_roles WHERE rolname = 'taina_app'")
+          [ "$flags" = "no" ] \
+            || { echo "taina_app com superpoderes (rolsuper OR rolbypassrls = $flags)"; exit 1; }
 
           echo "RLS aplicado: taina_app vê 0 sem contexto, superusuário vê 1, papel sem superpoderes"
 
