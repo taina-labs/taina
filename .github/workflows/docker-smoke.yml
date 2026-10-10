@@ -159,7 +159,18 @@ jobs:
           # interface: prova que o caminho de bootstrap funciona com o papel
           # de aplicação sob RLS (as policies precisam da válvula de sistema
           # para a consulta de existência e para os inserts sem contexto).
-          docker exec smoke_app /app/bin/taina eval '{:ok, %{tekoa: _}} = Taina.Maraca.bootstrap(%{name: "Smoke Tekoa", storage_quota_bytes: 1073741824}, %{username: "smoke", display_name: "Smoke", password: "smoke-pass-123", password_confirmation: "smoke-pass-123"})'
+          #
+          # eval não sobe a aplicação, então o Repo não estaria de pé e
+          # bootstrap explodiria com "could not lookup Ecto repo". Subimos só
+          # o Repo aqui; a chamada então roda igual à do request web. O migrate
+          # do boot funciona pelo mesmo motivo: Ecto.Migrator.with_repo sobe o
+          # Repo antes de migrar.
+          docker exec smoke_app /app/bin/taina eval '
+            {:ok, _} = Application.ensure_all_started(:ecto)
+            {:ok, _} = Application.ensure_all_started(:postgrex)
+            {:ok, _} = Taina.Repo.start_link()
+            {:ok, %{tekoa: _}} = Taina.Maraca.bootstrap(%{name: "Smoke Tekoa", storage_quota_bytes: 1073741824}, %{username: "smoke", display_name: "Smoke", password: "smoke-pass-123", password_confirmation: "smoke-pass-123"})
+          '
           echo "bootstrap headless OK"
 
       - name: Login as the app role and load an authenticated page
