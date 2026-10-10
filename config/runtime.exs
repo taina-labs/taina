@@ -33,6 +33,21 @@ if config_env() == :prod do
   host = System.get_env("PHX_HOST") || "example.com"
   port = String.to_integer(System.get_env("PORT") || "4000")
 
+  # Interface que o listener HTTP usa. Padrão 0.0.0.0: no container a porta é
+  # publicada em loopback pelo Docker. O módulo NixOS aponta para 127.0.0.1,
+  # já que o proxy reverso roda na mesma caixa.
+  bind_ip =
+    case :inet.parse_address(String.to_charlist(System.get_env("BIND_IP") || "0.0.0.0")) do
+      {:ok, ip} -> ip
+      {:error, _} -> raise "BIND_IP is not a valid IP address"
+    end
+
+  # Esquema e porta das URLs que o app monta (convites, links). Padrão https na
+  # 443, que é o caso atrás de um proxy com TLS. Numa caixa sem proxy, aponte
+  # para http na porta do próprio listener.
+  url_scheme = System.get_env("PHX_URL_SCHEME") || "https"
+  url_port = String.to_integer(System.get_env("PHX_URL_PORT") || "443")
+
   # Ajuste de fila do pool (RFC_ARQUITETURA): uma query espera no máximo 50ms
   # na fila, checando a cada 1s se a fila encheu. No teto de 20 conexões do
   # Postgres da caixa, é o que evita request acumulando sem ninguém notar.
@@ -52,9 +67,9 @@ if config_env() == :prod do
   config :taina, TainaWeb.Endpoint, check_origin: false
 
   config :taina, TainaWeb.Endpoint,
-    url: [host: host, port: 443, scheme: "https"],
+    url: [host: host, port: url_port, scheme: url_scheme],
     http: [
-      ip: {0, 0, 0, 0, 0, 0, 0, 0},
+      ip: bind_ip,
       port: port
     ],
     secret_key_base: secret_key_base
