@@ -49,6 +49,10 @@ defmodule Taina.Release do
 
     validate_identifier!(app_role)
 
+    # This runs via `bin/taina eval`, where the release's applications are
+    # loaded but not started. Postgrex needs DBConnection's supervision up.
+    {:ok, _} = Application.ensure_all_started(:postgrex)
+
     {:ok, conn} = Postgrex.start_link([])
 
     try do
