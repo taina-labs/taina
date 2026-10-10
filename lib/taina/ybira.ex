@@ -258,20 +258,26 @@ defmodule Taina.Ybira do
 
   @impl true
   def publicar_file(%Scope{} = scope, file_public_id) when is_binary(file_public_id) do
-    Repo.with_tekoa(scope.tekoa.public_id, fn ->
-      with {:ok, file} <- fetch_owned_file(scope, file_public_id) do
-        Repo.update(Ybira.File.zona_changeset(file, :praca))
-      end
-    end)
+    result =
+      Repo.with_tekoa(scope.tekoa.public_id, fn ->
+        with {:ok, file} <- fetch_owned_file(scope, file_public_id) do
+          Repo.update(Ybira.File.zona_changeset(file, :praca))
+        end
+      end)
+
+    record_file_event(result, scope, :published_to_praca)
   end
 
   @impl true
   def tirar_file_da_praca(%Scope{} = scope, file_public_id) when is_binary(file_public_id) do
-    Repo.with_tekoa(scope.tekoa.public_id, fn ->
-      with {:ok, file} <- fetch_owned_file(scope, file_public_id) do
-        Repo.update(Ybira.File.zona_changeset(file, :casa))
-      end
-    end)
+    result =
+      Repo.with_tekoa(scope.tekoa.public_id, fn ->
+        with {:ok, file} <- fetch_owned_file(scope, file_public_id) do
+          Repo.update(Ybira.File.zona_changeset(file, :casa))
+        end
+      end)
+
+    record_file_event(result, scope, :moved_between_zones)
   end
 
   ## Pastas
@@ -337,20 +343,26 @@ defmodule Taina.Ybira do
 
   @impl true
   def publicar_folder(%Scope{} = scope, public_id) when is_binary(public_id) do
-    Repo.with_tekoa(scope.tekoa.public_id, fn ->
-      with {:ok, folder} <- fetch_folder(scope, public_id) do
-        Repo.update(Ybira.Folder.zona_changeset(folder, :praca))
-      end
-    end)
+    result =
+      Repo.with_tekoa(scope.tekoa.public_id, fn ->
+        with {:ok, folder} <- fetch_folder(scope, public_id) do
+          Repo.update(Ybira.Folder.zona_changeset(folder, :praca))
+        end
+      end)
+
+    record_folder_event(result, scope, :published_to_praca)
   end
 
   @impl true
   def tirar_folder_da_praca(%Scope{} = scope, public_id) when is_binary(public_id) do
-    Repo.with_tekoa(scope.tekoa.public_id, fn ->
-      with {:ok, folder} <- fetch_folder(scope, public_id) do
-        Repo.update(Ybira.Folder.zona_changeset(folder, :casa))
-      end
-    end)
+    result =
+      Repo.with_tekoa(scope.tekoa.public_id, fn ->
+        with {:ok, folder} <- fetch_folder(scope, public_id) do
+          Repo.update(Ybira.Folder.zona_changeset(folder, :casa))
+        end
+      end)
+
+    record_folder_event(result, scope, :moved_between_zones)
   end
 
   @impl true
@@ -506,6 +518,29 @@ defmodule Taina.Ybira do
   defp to_integer(%Decimal{} = bytes), do: Decimal.to_integer(bytes)
   defp to_integer(bytes) when is_integer(bytes), do: bytes
 
+  ## Jobs (saúde da caixa, painel)
+
+  # Trabalho em espera ou em execução; `scheduled` é o cron no calendário, não
+  # trabalho atrasado (ver `pending_job_counts/0` no behaviour).
+  @job_pending_states ~w(available executing retryable)
+
+  @impl true
+  def pending_job_counts do
+    %{
+      renditions: count_pending_jobs("Taina.Ybira.Workers.Rendition"),
+      trash_purge: count_pending_jobs("Taina.Ybira.Workers.PurgeTrash")
+    }
+  end
+
+  # A fila do Oban é infraestrutura da caixa: tabela `oban_jobs`, isenta do
+  # contexto de Tekoa em `Repo.prepare_query/3` (ver `@infra_table_prefixes`).
+  defp count_pending_jobs(worker) do
+    Repo.aggregate(
+      from(j in Oban.Job, where: j.worker == ^worker, where: j.state in ^@job_pending_states),
+      :count
+    )
+  end
+
   @impl true
   def purge_deleted_files(%DateTime{} = cutoff) do
     files =
@@ -545,6 +580,33 @@ defmodule Taina.Ybira do
   end
 
   ## --- Helpers internos ---
+
+  # Registro no mural (RFC_003 seção 6, camada 1) das mudanças de zona do Ybira.
+  # Roda DEPOIS da transação do ato, com o resultado do ato em mãos: a escrita do
+  # ledger é consequência -- `Maraca.record_event/4` engole as próprias falhas
+  # (log, não rollback), então uma zona já trocada nunca é desfeita porque o
+  # registro não deu conta.
+  defp record_file_event({:ok, %Ybira.File{original_filename: name}} = result, %Scope{} = scope, type) do
+    Maraca.record_event(scope.tekoa.public_id, scope.ava.id, type, %{
+      "kind" => "file",
+      "name" => name
+    })
+
+    result
+  end
+
+  defp record_file_event(result, _scope, _type), do: result
+
+  defp record_folder_event({:ok, %Ybira.Folder{name: name}} = result, %Scope{} = scope, type) do
+    Maraca.record_event(scope.tekoa.public_id, scope.ava.id, type, %{
+      "kind" => "folder",
+      "name" => name
+    })
+
+    result
+  end
+
+  defp record_folder_event(result, _scope, _type), do: result
 
   defp quota_check(tekoa_id, byte_size) do
     tekoa = Repo.get!(Tekoa, tekoa_id)

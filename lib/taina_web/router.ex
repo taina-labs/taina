@@ -72,6 +72,8 @@ defmodule TainaWeb.Router do
       live "/membros", MembersLive
       live "/membros/convidar", InviteLive
       live "/armazenamento", StorageLive
+      live "/mural", MuralLive
+      live "/saude", SaudeLive
       live "/conta", AccountLive
       live "/conta/pedidos", AccessRequestsLive
       live "/conta/meus-pedidos", MyRequestsLive

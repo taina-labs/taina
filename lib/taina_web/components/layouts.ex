@@ -15,7 +15,7 @@ defmodule TainaWeb.Layouts do
 
   @doc """
   Shell autenticado. `active_tab` marca o item ativo na navegação
-  (`:home`, `:files`, `:photos`, `:members`, `:account`).
+  (`:home`, `:files`, `:photos`, `:members`, `:mural`, `:saude`, `:account`).
   `storage_stats` (opcional) alimenta o mini-card de armazenamento da sidebar.
   `account_alert` acende um ponto na aba Conta quando há pedido esperando.
   """
@@ -29,7 +29,7 @@ defmodule TainaWeb.Layouts do
   def app(assigns) do
     ~H"""
     <.flash_group flash={@flash} />
-    <div class="shell">
+    <div id="app-shell" class="shell" phx-hook="NavShortcuts">
       <aside class="sidebar">
         <.link navigate={~p"/"} class="sidebar__logo">
           <.icon name="spark" size={22} /> Tainá
@@ -48,6 +48,18 @@ defmodule TainaWeb.Layouts do
             icon="user"
             active={@active_tab == :members}
             label={gettext("Membros")}
+          />
+          <.sidebar_item
+            navigate={~p"/mural"}
+            icon="mural"
+            active={@active_tab == :mural}
+            label={gettext("Mural")}
+          />
+          <.sidebar_item
+            navigate={~p"/saude"}
+            icon="saude"
+            active={@active_tab == :saude}
+            label={gettext("Saúde")}
           />
           <.sidebar_item
             navigate={~p"/conta"}
@@ -84,6 +96,18 @@ defmodule TainaWeb.Layouts do
           label={gettext("Arquivos")}
         />
         <.bottom_nav_item navigate={~p"/fotos"} icon="image" active={@active_tab == :photos} label={gettext("Fotos")} />
+        <.bottom_nav_item
+          navigate={~p"/mural"}
+          icon="mural"
+          active={@active_tab == :mural}
+          label={gettext("Mural")}
+        />
+        <.bottom_nav_item
+          navigate={~p"/saude"}
+          icon="saude"
+          active={@active_tab == :saude}
+          label={gettext("Saúde")}
+        />
         <.bottom_nav_item
           navigate={~p"/conta"}
           icon="user"

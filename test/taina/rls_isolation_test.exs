@@ -62,6 +62,17 @@ defmodule Taina.RlsIsolationTest do
       [tekoa_id]
     )
 
+    # Uma linha no mural da Tekoa de prova (RFC_003 seção 6): o ledger é dado
+    # de Tekoa como qualquer outro, a sonda precisa ver isolado também aqui.
+    Postgrex.query!(
+      admin,
+      """
+      INSERT INTO maraca.events (tekoa_id, ava_id, type, payload, public_id, inserted_at)
+      VALUES ($1, NULL, 'invite_created', '{}', 'evt_rls_probe', now())
+      """,
+      [tekoa_id]
+    )
+
     probe_opts =
       Keyword.merge(admin_opts,
         username: @probe_role,
@@ -84,6 +95,7 @@ defmodule Taina.RlsIsolationTest do
   test "restricted role sees nothing without tekoa context", %{probe: probe} do
     assert %{rows: [[0]]} = Postgrex.query!(probe, "SELECT count(*) FROM maraca.tekoas", [])
     assert %{rows: [[0]]} = Postgrex.query!(probe, "SELECT count(*) FROM maraca.avas", [])
+    assert %{rows: [[0]]} = Postgrex.query!(probe, "SELECT count(*) FROM maraca.events", [])
   end
 
   test "restricted role sees only the current tekoa with context set", %{
@@ -97,10 +109,12 @@ defmodule Taina.RlsIsolationTest do
         ])
 
         %{rows: rows} = Postgrex.query!(conn, "SELECT public_id FROM maraca.tekoas", [])
-        rows
+        mural = Postgrex.query!(conn, "SELECT type FROM maraca.events", [])
+        %{rows: mural_rows} = mural
+        rows ++ mural_rows
       end)
 
-    assert rows == [[tekoa_public_id]]
+    assert rows == [[tekoa_public_id], ["invite_created"]]
   end
 
   test "restricted role sees nothing with a wrong tekoa context", %{probe: probe} do
@@ -109,7 +123,8 @@ defmodule Taina.RlsIsolationTest do
         Postgrex.query!(conn, "SELECT set_config('app.current_tekoa_id', 'tekoa_errada', true)", [])
 
         %{rows: [[count]]} = Postgrex.query!(conn, "SELECT count(*) FROM maraca.avas", [])
-        count
+        %{rows: [[events]]} = Postgrex.query!(conn, "SELECT count(*) FROM maraca.events", [])
+        count + events
       end)
 
     assert count == 0

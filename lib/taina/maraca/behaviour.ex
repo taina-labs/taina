@@ -3,6 +3,7 @@ defmodule Taina.Maraca.Behaviour do
 
   alias Taina.Maraca.AccessRequest
   alias Taina.Maraca.Ava
+  alias Taina.Maraca.Event
   alias Taina.Maraca.Permission
   alias Taina.Maraca.Tekoa
   alias Taina.Scope
@@ -789,4 +790,58 @@ defmodule Taina.Maraca.Behaviour do
     * `{:ok, count}` - Total de membros
   """
   @callback count_members(Scope.t()) :: {:ok, non_neg_integer()}
+
+  @doc """
+  Registra um ato no mural (RFC_003 seção 6, camada 1), o ledger append-only
+  do "quem fez o quê".
+
+  ## Regras de Negócio
+
+  - Chamada pelos caminhos que já executam o ato (convite, aceite, zonas,
+    pedidos de acesso, cota), DEPOIS da transação do ato commitar
+  - A escrita do ledger é consequência, nunca parte do ato: se falhar,
+    registra no log e devolve `:ok` -- o ato do morador não pode ser
+    desfeito porque o registro não deu conta
+  - `ava_id` é `nil` para atos do sistema (sem autor morador)
+
+  ## Parâmetros
+
+    * `tekoa_public_id` - public_id da Tekoa (chave do contexto RLS)
+    * `ava_id` - id do autor do ato, ou `nil` para o sistema
+    * `type` - o ato, do vocabulário fixo (`Taina.Maraca.Event`)
+    * `payload` - detalhes que a frase do mural precisa
+
+  ## Retorno
+
+    * `:ok` - sempre; falha vai para o log, nunca para o chamador
+
+  ## Exemplos
+
+      iex> record_event(tekoa.public_id, zelador.id, :invite_created, %{"role" => "morador"})
+      :ok
+  """
+  @callback record_event(String.t(), integer() | nil, Event.event_type(), map()) :: :ok
+
+  @doc """
+  Lê o mural da Tekoa do scope, do mais recente para o mais antigo.
+
+  ## Regras de Negócio
+
+  - Leitura scope-first, isolada por RLS como todo dado de Tekoa
+  - Paginação por offset (`limit:`, `offset:`), o mural é append-only e a
+    ordem é fixa (inserted_at desc)
+  - Pré-carrega o autor (`:ava`) para a frase "quem fez o quê"
+
+  ## Parâmetros
+
+    * `scope` - quem lê e em qual Tekoa
+    * `opts` - `:limit` (padrão 50) e `:offset` (padrão 0)
+
+  ## Retorno
+
+    * `{:ok, %{events: [%Event{}], next_offset: offset | nil}}` - a página e
+      o offset da próxima (`nil` quando acabou)
+  """
+  @callback list_events(Scope.t(), keyword()) ::
+              {:ok, %{events: [Event.t()], next_offset: non_neg_integer() | nil}}
 end

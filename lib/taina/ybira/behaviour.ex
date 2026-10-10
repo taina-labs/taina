@@ -241,4 +241,17 @@ defmodule Taina.Ybira.Behaviour do
   @callback storage_stats_by_kind(Scope.t()) ::
               {:ok,
                %{photos: non_neg_integer, videos: non_neg_integer, documents: non_neg_integer, others: non_neg_integer}}
+
+  @doc """
+  Contagem de jobs pendentes do Ybira (tela "Saúde da comunidade"): miniaturas
+  ainda sendo geradas (worker `Rendition`) e expurgo da lixeira em andamento
+  (worker `PurgeTrash`).
+
+  Sem scope de propósito: a fila do Oban é infraestrutura da caixa (tabela
+  `oban_jobs`, isenta do contexto RLS em `Repo.prepare_query/3`), não dado de
+  Tekoa. "Pendente" é trabalho em espera ou em execução (`available`,
+  `executing`, `retryable`); o agendado no cron (`scheduled`) é calendário, não
+  trabalho atrasado.
+  """
+  @callback pending_job_counts() :: %{renditions: non_neg_integer(), trash_purge: non_neg_integer()}
 end

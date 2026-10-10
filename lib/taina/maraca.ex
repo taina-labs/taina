@@ -34,6 +34,7 @@ defmodule Taina.Maraca do
   alias Ecto.Changeset
   alias Taina.Maraca.AccessRequest
   alias Taina.Maraca.Ava
+  alias Taina.Maraca.Event
   alias Taina.Maraca.Permission
   alias Taina.Maraca.Tekoa
   alias Taina.Maraca.UnauthorizedError
@@ -41,9 +42,12 @@ defmodule Taina.Maraca do
   alias Taina.Repo
   alias Taina.Scope
 
+  require Logger
+
   @invitation_max_age_seconds 7 * 24 * 60 * 60
   @reset_max_age_seconds 60 * 60
   @grantable_actions ~w(read write delete)a
+  @event_page_limit 50
 
   # Janela de força bruta de login, por (tekoa, username): no máximo
   # @login_rate_limit tentativas a cada @login_rate_scale_ms. Folgado o
@@ -139,9 +143,20 @@ defmodule Taina.Maraca do
         role: Keyword.get(opts, :role, :morador)
       }
 
-      Repo.with_tekoa(tekoa.public_id, fn ->
-        Repo.insert(Ava.invitation_changeset(%Ava{}, attrs))
-      end)
+      result =
+        Repo.with_tekoa(tekoa.public_id, fn ->
+          Repo.insert(Ava.invitation_changeset(%Ava{}, attrs))
+        end)
+
+      # O mural registra o convite só depois do ato commitar: a escrita do
+      # ledger é consequência, falhar nela não desfaz o convite.
+      with {:ok, _ava} <- result do
+        record_event(tekoa.public_id, zelador.id, :invite_created, %{
+          "role" => Atom.to_string(attrs.role)
+        })
+      end
+
+      result
     else
       {:error, :not_zelador}
     end
@@ -151,9 +166,20 @@ defmodule Taina.Maraca do
   def accept_invite(token, attrs) do
     with %Ava{} = ava <- find_by_token(:invite_token_hash, token),
          false <- token_expired?(ava.invite_sent_at, @invitation_max_age_seconds) do
-      Repo.with_tekoa(tekoa_public_id(ava), fn ->
-        Repo.update(Ava.accept_invite_changeset(ava, attrs))
-      end)
+      tekoa_public_id = tekoa_public_id(ava)
+
+      result =
+        Repo.with_tekoa(tekoa_public_id, fn ->
+          Repo.update(Ava.accept_invite_changeset(ava, attrs))
+        end)
+
+      # Registro do mural depois da transação do aceite: uma falha na escrita
+      # do ledger não pode derrubar a conta que acabou de ser criada.
+      with {:ok, _accepted} <- result do
+        record_event(tekoa_public_id, ava.id, :invite_accepted, %{})
+      end
+
+      result
     else
       _ -> {:error, :invalid_token}
     end
@@ -271,12 +297,22 @@ defmodule Taina.Maraca do
   @impl true
   def update_tekoa_quota(%Scope{} = scope, quota_bytes) when is_integer(quota_bytes) do
     if zelador?(scope.ava) do
-      Repo.with_tekoa(scope.tekoa.public_id, fn ->
-        Tekoa
-        |> Repo.get!(scope.tekoa.id)
-        |> Tekoa.changeset(%{storage_quota_bytes: quota_bytes})
-        |> Repo.update()
-      end)
+      result =
+        Repo.with_tekoa(scope.tekoa.public_id, fn ->
+          Tekoa
+          |> Repo.get!(scope.tekoa.id)
+          |> Tekoa.changeset(%{storage_quota_bytes: quota_bytes})
+          |> Repo.update()
+        end)
+
+      with {:ok, _tekoa} <- result do
+        record_event(scope.tekoa.public_id, scope.ava.id, :quota_changed, %{
+          "from" => scope.tekoa.storage_quota_bytes,
+          "to" => quota_bytes
+        })
+      end
+
+      result
     else
       {:error, :unauthorized}
     end
@@ -294,7 +330,15 @@ defmodule Taina.Maraca do
   @impl true
   def deactivate_member(%Scope{} = scope, member_public_id) do
     with :ok <- ensure_zelador(scope) do
-      Repo.with_tekoa(scope.tekoa.public_id, fn -> do_deactivate(member_public_id) end)
+      result = Repo.with_tekoa(scope.tekoa.public_id, fn -> do_deactivate(member_public_id) end)
+
+      with {:ok, member} <- result do
+        record_event(scope.tekoa.public_id, scope.ava.id, :member_deactivated, %{
+          "member" => ava_name(member)
+        })
+      end
+
+      result
     end
   end
 
@@ -589,6 +633,10 @@ defmodule Taina.Maraca do
           end)
 
         with {:ok, request} <- result do
+          record_event(tekoa_public_id(requester), requester.id, :access_requested, %{
+            "owner" => ava_name(owner)
+          })
+
           notify(owner.public_id, {:access_requested, request})
           {:ok, request}
         end
@@ -615,6 +663,12 @@ defmodule Taina.Maraca do
       end)
 
     with {:ok, permission} <- result do
+      requester = Repo.get(Ava, permission.ava_id, skip_tekoa_id: true)
+
+      record_event(tekoa_public_id(owner), owner.id, :access_granted, %{
+        "requester" => ava_name(requester)
+      })
+
       notify_requester(permission.ava_id, {:access_request_approved, permission})
       {:ok, permission}
     end
@@ -630,6 +684,12 @@ defmodule Taina.Maraca do
       end)
 
     with {:ok, request} <- result do
+      requester = Repo.get(Ava, request.requester_id, skip_tekoa_id: true)
+
+      record_event(tekoa_public_id(owner), owner.id, :access_denied, %{
+        "requester" => ava_name(requester)
+      })
+
       notify_requester(request.requester_id, {:access_request_denied, request})
       {:ok, request}
     end
@@ -683,6 +743,70 @@ defmodule Taina.Maraca do
     Phoenix.PubSub.subscribe(Taina.PubSub, "maraca:ava:" <> pid)
   end
 
+  ## Mural (transparência, RFC_003 seção 6)
+
+  @impl true
+  def record_event(tekoa_public_id, ava_id, type, payload)
+      when is_binary(tekoa_public_id) and (is_integer(ava_id) or is_nil(ava_id)) do
+    result =
+      Repo.with_tekoa(tekoa_public_id, fn ->
+        case Repo.get_by(Tekoa, public_id: tekoa_public_id) do
+          %Tekoa{id: tekoa_id} ->
+            %Event{}
+            |> Event.changeset(%{tekoa_id: tekoa_id, ava_id: ava_id, type: type, payload: payload})
+            |> Repo.insert()
+
+          nil ->
+            {:error, :tekoa_not_found}
+        end
+      end)
+
+    case result do
+      {:ok, _event} ->
+        :ok
+
+      {:error, reason} ->
+        Logger.warning("Mural: falha ao registrar evento (o ato já aconteceu), #{inspect(type)}",
+          reason: inspect(reason)
+        )
+
+        :ok
+    end
+  rescue
+    e ->
+      Logger.warning("Mural: exceção ao registrar evento (o ato já aconteceu), #{inspect(type)}",
+        reason: inspect(e)
+      )
+
+      :ok
+  end
+
+  @impl true
+  def list_events(%Scope{} = scope, opts \\ []) do
+    limit = Keyword.get(opts, :limit, @event_page_limit)
+    offset = Keyword.get(opts, :offset, 0)
+
+    Repo.with_tekoa(scope.tekoa.public_id, fn ->
+      query =
+        from e in Event,
+          where: e.tekoa_id == ^scope.tekoa.id,
+          order_by: [desc: e.inserted_at, desc: e.id],
+          preload: [:ava]
+
+      rows =
+        query
+        |> limit(^(limit + 1))
+        |> offset(^offset)
+        |> Repo.all()
+
+      if length(rows) > limit do
+        {:ok, %{events: Enum.take(rows, limit), next_offset: offset + limit}}
+      else
+        {:ok, %{events: rows, next_offset: nil}}
+      end
+    end)
+  end
+
   ## Predicados
 
   @impl true
@@ -698,6 +822,12 @@ defmodule Taina.Maraca do
   def activated?(%Ava{}), do: true
 
   ## Helpers internos
+
+  # Nome social do Ava para as frases do mural: nome de exibição quando existe,
+  # senão o nome de usuário. Convite pendente (sem nome ainda) cai em nil e o
+  # mural decide o que mostrar.
+  defp ava_name(%Ava{} = ava), do: ava.display_name || ava.username
+  defp ava_name(_other), do: nil
 
   defp owner_of?(%Ava{} = ava, resource_type, resource_id) do
     case Map.fetch(@owned_resources, resource_type) do
