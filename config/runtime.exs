@@ -33,10 +33,23 @@ if config_env() == :prod do
   host = System.get_env("PHX_HOST") || "example.com"
   port = String.to_integer(System.get_env("PORT") || "4000")
 
+  # Ajuste de fila do pool (RFC_ARQUITETURA): uma query espera no máximo 50ms
+  # na fila, checando a cada 1s se a fila encheu. No teto de 20 conexões do
+  # Postgres da caixa, é o que evita request acumulando sem ninguém notar.
+  config :taina, Taina.Repo,
+    queue_target: 50,
+    queue_interval: 1000
+
   config :taina, Taina.Repo,
     url: database_url,
     pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10"),
     socket_options: maybe_ipv6
+
+  # A caixa é alcançada por nomes arbitrários (endereço de LAN, MagicDNS do
+  # Tailscale, domínio próprio): qualquer allowlist de origin quebra um desses
+  # caminhos. Desligado de propósito: a sessão é SameSite=Lax e os params de
+  # LiveView são assinados, o que cobre o vetor que check_origin mitiga.
+  config :taina, TainaWeb.Endpoint, check_origin: false
 
   config :taina, TainaWeb.Endpoint,
     url: [host: host, port: 443, scheme: "https"],
@@ -47,10 +60,15 @@ if config_env() == :prod do
     secret_key_base: secret_key_base
 
   # Scheduled backups (Nhaman). Off unless BACKUP_ENABLED is truthy; BACKUP_DIR
-  # should point at a mounted USB disk or an rclone-synced path.
+  # should point at a mounted USB disk or an rclone-synced path. BACKUP_DATABASE_URL
+  # is the superuser connection (postgresql:// scheme) pg_dump/pg_restore use:
+  # in production the app's own DATABASE_URL is the restricted taina_app role,
+  # which cannot read other roles' objects during a restore. Unset (dev/CI,
+  # single postgres role), the backup falls back to the Repo URL.
   config :taina, :backup,
     enabled: System.get_env("BACKUP_ENABLED") in ~w(true 1),
-    dir: System.get_env("BACKUP_DIR") || "/app/backups"
+    dir: System.get_env("BACKUP_DIR") || "/app/backups",
+    database_url: System.get_env("BACKUP_DATABASE_URL")
 
   config :taina, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 

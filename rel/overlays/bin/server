@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+cd -P -- "$(dirname -- "$0")"
+export PHX_SERVER=true
+exec ./taina start

@@ -102,6 +102,76 @@ defmodule Taina.Repo do
   end
 
   @doc """
+  Executa uma função como operação de sistema, cruzando as políticas RLS.
+
+  A válvula que espelha, no banco, o que `skip_tekoa_id: true` espelha na
+  aplicação. Em produção a aplicação conecta como um papel sem superpoderes
+  (`NOSUPERUSER NOBYPASSRLS`), então **toda** query cruza as políticas RLS,
+  inclusive as de sistema. `skip_tekoa_id: true` só isenta a query da exceção
+  de contexto em `prepare_query/3`; no banco, sem contexto definido, as
+  policies esconderiam as linhas. `with_system/1` abre uma transação e define
+  `app.bypass_rls = 'on'`, o que faz a política de cada tabela passar a valer
+  (o `OR current_setting('app.bypass_rls', true) = 'on'` nas políticas).
+
+  1. Inicia uma transação
+  2. Define a variável PostgreSQL `app.bypass_rls` como `'on'`, **só para a
+     transação** (o terceiro argumento de `set_config/3`)
+  3. Executa o callback fornecido
+  4. Ao fim, a válvula morre com a transação: nada vaza para a conexão
+
+  O callback deve retornar `{:ok, valor}` ou `{:error, motivo}` (contrato de
+  `Repo.transact/1`): `{:error, _}` desfaz a transação.
+
+  ## Quando usar
+
+  Somente nas mesmas operações que hoje declaram `skip_tekoa_id: true`:
+  bootstrap de autenticação, resolução de sessão pré-contexto, jobs e tarefas
+  administrativas que cruzam Tekoas. Nenhuma trilha movida por pedido de
+  usuário deve passar por aqui: o caminho normal continua sendo `with_tekoa/2`
+  com o contexto da comunidade. Se um dia duas válvulas disputarem o mesmo
+  site, o problema é de desenho, não de uma delas faltar.
+
+  ## Segurança
+
+  A válvula é do nível da aplicação, não do banco: quem se conecta como
+  superuser (dev e teste, papel `postgres`) ignora RLS por definição e ela é
+  no-op. Ela existe para o papel de produção (`taina_app`), que não tem como
+  escalar além do que `app.bypass_rls` permitir, e ele só é `'on'` dentro da
+  transação que o próprio sistema abriu, nunca num request de morador.
+
+  Nunca chame `with_system/1` dentro de `with_tekoa/2`: o Ecto absorve a
+  transação aninhada em vez de criar um savepoint, então a válvula vazaria
+  para o resto da transação externa (as queries de morador seguintes cruzariam
+  as políticas). Chamar assim levanta erro.
+
+  ## Exemplos
+
+      # Bootstrap: saber se já existe comunidade, cruzando o RLS
+      iex> Repo.with_system(fn -> {:ok, Repo.exists?(Tekoa, skip_tekoa_id: true)} end)
+      {:ok, true}
+
+      # Job de sistema que cruza todas as Tekoas
+      iex> Repo.with_system(fn -> {:ok, Repo.all(Taina.Ybira.File, skip_tekoa_id: true)} end)
+      {:ok, [%File{}, %File{}]}
+  """
+  def with_system(cb) do
+    if in_tekoa_context?() do
+      raise """
+      `with_system/1` dentro de `with_tekoa/2`: o Ecto absorve a transação \
+      aninhada em vez de criar um savepoint, então a válvula de sistema \
+      vazaria para o resto da transação externa e as queries de morador \
+      seguintes cruzariam as políticas RLS. Operações de sistema devem rodar \
+      fora de `with_tekoa/2`.
+      """
+    end
+
+    transact(fn ->
+      SQL.query!(__MODULE__, "SELECT set_config('app.bypass_rls', 'on', true)", [])
+      cb.()
+    end)
+  end
+
+  @doc """
   Rede de segurança do isolamento multi-tenant.
 
   Toda query (`all`, `one`, `get*`, `update_all`, `delete_all`, preloads)
@@ -124,7 +194,7 @@ defmodule Taina.Repo do
       opts[:skip_tekoa_id] || opts[:schema_migration] ->
         {query, opts}
 
-      is_binary(Process.get(@tekoa_context_key)) ->
+      in_tekoa_context?() ->
         {query, opts}
 
       infra_query?(query) ->
@@ -140,6 +210,11 @@ defmodule Taina.Repo do
         """
     end
   end
+
+  # Espelho exato da chave que `with_tekoa/2` põe no dicionário do processo:
+  # se está aqui (não nil), estamos dentro de um contexto de Tekoa, e é o que
+  # `with_system/1` usa para se recusar aninhado.
+  defp in_tekoa_context?, do: is_binary(Process.get(@tekoa_context_key))
 
   # Isenta apenas tabelas de infraestrutura, identificadas pelo nome (ex.:
   # `oban_jobs`, `oban_peers`). Lê só o nome da tabela na cláusula `from`, sem

@@ -53,14 +53,16 @@ defmodule Taina.RlsIsolationTest do
         [tekoa_public_id]
       )
 
-    Postgrex.query!(
-      admin,
-      """
-      INSERT INTO maraca.avas (tekoa_id, username, inserted_at, updated_at)
-      VALUES ($1, 'rlsprobe', now(), now())
-      """,
-      [tekoa_id]
-    )
+    %{rows: [[ava_id]]} =
+      Postgrex.query!(
+        admin,
+        """
+        INSERT INTO maraca.avas (tekoa_id, username, inserted_at, updated_at)
+        VALUES ($1, 'rlsprobe', now(), now())
+        RETURNING id
+        """,
+        [tekoa_id]
+      )
 
     # Uma linha no mural da Tekoa de prova (RFC_003 seção 6): o ledger é dado
     # de Tekoa como qualquer outro, a sonda precisa ver isolado também aqui.
@@ -71,6 +73,19 @@ defmodule Taina.RlsIsolationTest do
       VALUES ($1, NULL, 'invite_created', '{}', 'evt_rls_probe', now())
       """,
       [tekoa_id]
+    )
+
+    # Uma linha no Ybira também: a válvula de sistema (`app.bypass_rls`) e o
+    # contexto de Tekoa valem para todos os schemas com RLS, não só Maracá.
+    Postgrex.query!(
+      admin,
+      """
+      INSERT INTO ybira.files
+        (tekoa_id, ava_id, filename, original_filename, filepath, mime_type, file_size_bytes, inserted_at, updated_at)
+      VALUES
+        ($1, $2, 'probe.txt', 'probe.txt', 'storage/probe.txt', 'text/plain', 0, now(), now())
+      """,
+      [tekoa_id, ava_id]
     )
 
     probe_opts =
@@ -96,6 +111,27 @@ defmodule Taina.RlsIsolationTest do
     assert %{rows: [[0]]} = Postgrex.query!(probe, "SELECT count(*) FROM maraca.tekoas", [])
     assert %{rows: [[0]]} = Postgrex.query!(probe, "SELECT count(*) FROM maraca.avas", [])
     assert %{rows: [[0]]} = Postgrex.query!(probe, "SELECT count(*) FROM maraca.events", [])
+    assert %{rows: [[0]]} = Postgrex.query!(probe, "SELECT count(*) FROM ybira.files", [])
+  end
+
+  test "bypass_rls valve sees the rows without tekoa context", %{probe: probe} do
+    # A válvula que `Repo.with_system/1` usa: `set_config(..., true)` vale só
+    # dentro da transação. A sonda não tem contexto de Tekoa e ainda assim
+    # vê as linhas -- é o que permite as consultas de sistema no papel
+    # restrito de produção.
+    {:ok, counts} =
+      Postgrex.transaction(probe, fn conn ->
+        Postgrex.query!(conn, "SELECT set_config('app.bypass_rls', 'on', true)", [])
+
+        %{rows: [[tekoas]]} = Postgrex.query!(conn, "SELECT count(*) FROM maraca.tekoas", [])
+        %{rows: [[files]]} = Postgrex.query!(conn, "SELECT count(*) FROM ybira.files", [])
+        {tekoas, files}
+      end)
+
+    assert counts == {1, 1}
+
+    # A válvula morre com a transação: fora dela, a sonda volta a não ver nada.
+    assert %{rows: [[0]]} = Postgrex.query!(probe, "SELECT count(*) FROM maraca.tekoas", [])
   end
 
   test "restricted role sees only the current tekoa with context set", %{
@@ -110,11 +146,12 @@ defmodule Taina.RlsIsolationTest do
 
         %{rows: rows} = Postgrex.query!(conn, "SELECT public_id FROM maraca.tekoas", [])
         mural = Postgrex.query!(conn, "SELECT type FROM maraca.events", [])
+        %{rows: [[files]]} = Postgrex.query!(conn, "SELECT count(*) FROM ybira.files", [])
         %{rows: mural_rows} = mural
-        rows ++ mural_rows
+        rows ++ mural_rows ++ [[files]]
       end)
 
-    assert rows == [[tekoa_public_id], ["invite_created"]]
+    assert rows == [[tekoa_public_id], ["invite_created"], [1]]
   end
 
   test "restricted role sees nothing with a wrong tekoa context", %{probe: probe} do

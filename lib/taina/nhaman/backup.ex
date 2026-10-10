@@ -117,6 +117,13 @@ defmodule Taina.Nhaman.Backup do
   **Destrutivo:** `pg_restore --clean` derruba e recria os objetos do banco e o
   `storage_root` é substituído pela árvore arquivada. Use em drills e recuperação.
 
+  O dump grava o dono de cada objeto e o `pg_restore` os repõe: em produção
+  (oka pós-split) os objetos já são do papel restrito `taina_app`, então o
+  restore pela conexão de superusuário devolve a propriedade a ele. Em dev/CI
+  o papel é o mesmo dos dois lados, então é no-op. Sem os donos gravados, os
+  objetos nasceriam dono de quem executou o restore e o app restrito ficaria
+  sem ser dono do próprio banco.
+
   Opções: `:storage_root`, `:database_url` (mesmos defaults de `run/1`).
   """
   def restore(archive_path, opts \\ []) do
@@ -229,7 +236,6 @@ defmodule Taina.Nhaman.Backup do
   def pg_dump_args(db_url, dump_path) do
     [
       "--format=custom",
-      "--no-owner",
       "--no-privileges",
       "--file=#{dump_path}",
       "--dbname=#{db_url}"
@@ -241,7 +247,6 @@ defmodule Taina.Nhaman.Backup do
     [
       "--clean",
       "--if-exists",
-      "--no-owner",
       "--no-privileges",
       "--dbname=#{db_url}",
       dump_path
@@ -249,16 +254,27 @@ defmodule Taina.Nhaman.Backup do
   end
 
   @doc """
-  URL de conexão `postgresql://…` derivada da config do `Taina.Repo` (usa `:url`
-  quando presente, senão monta a partir dos campos discretos). Consumida pelo
-  `pg_dump`/`pg_restore`.
+  URL de conexão para o `pg_dump`/`pg_restore`/`psql`.
+
+  Prefere a config `:backup, :database_url` (`BACKUP_DATABASE_URL`): em
+  produção o app conecta como o papel restrito `taina_app`, que não dá conta
+  de restaurar objetos de outros papéis, então o dump/restore roda pela
+  conexão de superusuário. Sem essa config (dev/CI, papel único), cai na URL
+  do próprio `Taina.Repo` (usa `:url` quando presente, senão monta a partir
+  dos campos discretos).
   """
   def database_url do
-    config = Application.fetch_env!(:taina, Taina.Repo)
+    case Keyword.get(config(), :database_url) do
+      url when is_binary(url) ->
+        url
 
-    case config[:url] do
-      url when is_binary(url) -> url
-      _ -> build_url(config)
+      _ ->
+        config = Application.fetch_env!(:taina, Taina.Repo)
+
+        case config[:url] do
+          url when is_binary(url) -> url
+          _ -> build_url(config)
+        end
     end
   end
 
