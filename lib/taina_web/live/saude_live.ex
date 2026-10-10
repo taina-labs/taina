@@ -102,10 +102,12 @@ defmodule TainaWeb.SaudeLive do
   # linha diz o seu estado.
   defp assign_painel(socket, scope) do
     with {:ok, stats} <- Ybira.storage_stats(scope),
+         {:ok, trash} <- Ybira.trash_stats(scope),
          {:ok, members} <- Maraca.list_members(scope) do
       socket
       |> assign(:painel, %{
         stats: stats,
+        trash: trash,
         members: members,
         jobs: Ybira.pending_job_counts(),
         last_backup: Backup.last_backup(),
@@ -126,6 +128,7 @@ defmodule TainaWeb.SaudeLive do
   # presente; contagem zerada não mostra linha ("0" não é fato, é número).
   defp painel_rows(%Scope{} = scope, %{
          stats: stats,
+         trash: trash,
          members: members,
          jobs: jobs,
          last_backup: last_backup,
@@ -133,7 +136,7 @@ defmodule TainaWeb.SaudeLive do
        }) do
     Enum.reject(
       [
-        disk_row(stats),
+        disk_row(stats, trash),
         backup_row(last_backup, scope),
         jobs_row(jobs),
         residents_row(members),
@@ -144,11 +147,13 @@ defmodule TainaWeb.SaudeLive do
     )
   end
 
-  defp disk_row(%{used_bytes: used, quota_bytes: nil}) do
-    row("disk", gettext("Disco"), [gettext("%{used} usados. Sem limite definido.", used: format_bytes(used))])
+  defp disk_row(%{used_bytes: used, quota_bytes: nil}, trash) do
+    row("disk", gettext("Disco"), [
+      gettext("%{used} usados. Sem limite definido.", used: format_bytes(used)) | trash_line(trash)
+    ])
   end
 
-  defp disk_row(%{used_bytes: used, quota_bytes: quota}) when is_integer(quota) do
+  defp disk_row(%{used_bytes: used, quota_bytes: quota}, trash) when is_integer(quota) do
     free = max(quota - used, 0)
 
     body = [
@@ -157,6 +162,7 @@ defmodule TainaWeb.SaudeLive do
         total: format_bytes(quota),
         free: format_bytes(free)
       )
+      | trash_line(trash)
     ]
 
     if quota > 0 and used / quota * 100 >= @disk_warning_percent do
@@ -169,6 +175,22 @@ defmodule TainaWeb.SaudeLive do
     else
       row("disk", gettext("Disco"), body)
     end
+  end
+
+  # A lixeira ainda conta na cota até o expurgo: dita em agregado (bytes e
+  # contagem, sem nomes nem donos, RFC_003), explica a diferença entre os
+  # "usados" e o conteúdo vivo. Vazia não mostra linha ("0" não é fato).
+  defp trash_line(%{count: 0}), do: []
+
+  defp trash_line(%{count: count, bytes: bytes}) do
+    [
+      ngettext(
+        "%{size} na lixeira esperando a limpeza (1 arquivo).",
+        "%{size} na lixeira esperando a limpeza (%{count} arquivos).",
+        count,
+        size: format_bytes(bytes)
+      )
+    ]
   end
 
   defp backup_row({:ok, %{at: at, bytes: bytes}}, _scope) do

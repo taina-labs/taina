@@ -148,6 +148,44 @@ defmodule Taina.YbiraTest do
 
       assert {:error, :not_found} = Ybira.restore_file(scope, file.public_id)
     end
+
+    test "trash stays owner-only: the zelador does not see a morador's trash" do
+      tekoa = tekoa_fixture()
+      zelador = zelador_fixture(tekoa)
+      morador = active_ava_fixture(tekoa)
+      morador_scope = Scope.new(morador, tekoa)
+      zelador_scope = Scope.new(zelador, tekoa)
+
+      {:ok, file} = Ybira.upload(morador_scope, tmp_upload_fixture("x", "arquivo_da_casa.txt"))
+      {:ok, _} = Ybira.delete_file(morador_scope, file.public_id)
+
+      assert {:ok, %{items: []}} = Ybira.list_trash(zelador_scope)
+      assert {:ok, %{items: [trashed]}} = Ybira.list_trash(morador_scope)
+      assert trashed.id == file.id
+    end
+  end
+
+  describe "trash_stats/1" do
+    test "aggregates the tekoa's trash in count and bytes, without owners" do
+      tekoa = tekoa_fixture()
+      a = active_ava_fixture(tekoa)
+      b = active_ava_fixture(tekoa)
+
+      {:ok, f1} = Ybira.upload(Scope.new(a, tekoa), tmp_upload_fixture("aaa", "a.txt"))
+      {:ok, f2} = Ybira.upload(Scope.new(b, tekoa), tmp_upload_fixture("bbbbb", "b.txt"))
+      {:ok, _} = Ybira.delete_file(Scope.new(a, tekoa), f1.public_id)
+      {:ok, _} = Ybira.delete_file(Scope.new(b, tekoa), f2.public_id)
+
+      assert {:ok, stats} = Ybira.trash_stats(Scope.new(a, tekoa))
+      assert stats.count == 2
+      assert stats.bytes == f1.file_size_bytes + f2.file_size_bytes
+    end
+
+    test "empty trash aggregates to zero" do
+      scope = scope_fixture()
+
+      assert {:ok, %{count: 0, bytes: 0}} = Ybira.trash_stats(scope)
+    end
   end
 
   describe "upload/3 MIME detection (magic bytes)" do

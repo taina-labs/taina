@@ -255,6 +255,21 @@ defmodule Taina.Ybira do
   end
 
   @impl true
+  def trash_stats(%Scope{} = scope) do
+    Repo.with_tekoa(scope.tekoa.public_id, fn ->
+      stats =
+        Repo.one(
+          from(f in Ybira.File,
+            where: not is_nil(f.deleted_at),
+            select: %{count: count(f.id), bytes: sum(f.file_size_bytes)}
+          )
+        )
+
+      {:ok, %{count: stats.count, bytes: to_integer(stats.bytes)}}
+    end)
+  end
+
+  @impl true
   def rename_file(%Scope{} = scope, file_public_id, new_name) when is_binary(file_public_id) do
     Repo.with_tekoa(scope.tekoa.public_id, fn ->
       with {:ok, file} <- fetch_owned_file(scope, file_public_id) do

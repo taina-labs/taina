@@ -93,8 +93,23 @@ defmodule Taina.Ybira.Behaviour do
 
   @doc """
   Lista os arquivos do scope que estão na lixeira, paginados (ver `list_files/3`).
+
+  Só o dono vê a própria lixeira, de propósito (RFC_003): o nome de um arquivo
+  na lixeira é tão sensível quanto o de um arquivo vivo, e o zelador não tem
+  atalho para a casa de ninguém -- a lixeira é a mesma casa, esperando a
+  limpeza. A transparência que cabe a quem cuida da máquina é o agregado da
+  Tekoa, sem nomes e sem donos: `trash_stats/1`.
   """
   @callback list_trash(Scope.t(), keyword) :: {:ok, page(File.t())}
+
+  @doc """
+  A lixeira da Tekoa em agregado, sem nomes nem donos (RFC_003): quantos
+  arquivos esperam a limpeza e quantos bytes deles ainda contam na cota (a
+  devolução só acontece no expurgo, após 30 dias). Explica a diferença entre
+  os "usados" do disco e o conteúdo vivo, para quem cuida da máquina, sem
+  abrir a casa de ninguém.
+  """
+  @callback trash_stats(Scope.t()) :: {:ok, %{count: non_neg_integer, bytes: non_neg_integer}}
 
   @doc """
   Renomeia um arquivo (muda só o `original_filename`; os bytes e o nome no disco
