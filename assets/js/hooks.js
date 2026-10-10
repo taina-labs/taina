@@ -142,4 +142,32 @@ const FlashAutoDismiss = {
   },
 };
 
-export default { Clipboard, ViewerNav, DragClass, Share, FlashAutoDismiss, DnD };
+// Atalhos de navegação Cmd/Ctrl+1..5 (briefing, desktop): só empurra o número
+// para o servidor, que resolve o destino. O hook não guarda estado de
+// navegação; a tela Conta documenta os pares.
+const NavShortcuts = {
+  mounted() {
+    this.onKey = (e) => {
+      if (e.altKey || !(e.metaKey || e.ctrlKey)) return;
+      const index = Number(e.key);
+      if (index >= 1 && index <= 5) {
+        e.preventDefault();
+        this.pushEvent("shortcut", { index });
+      }
+    };
+    window.addEventListener("keydown", this.onKey);
+  },
+  destroyed() {
+    window.removeEventListener("keydown", this.onKey);
+  },
+};
+
+export default {
+  Clipboard,
+  ViewerNav,
+  DragClass,
+  Share,
+  FlashAutoDismiss,
+  DnD,
+  NavShortcuts,
+};

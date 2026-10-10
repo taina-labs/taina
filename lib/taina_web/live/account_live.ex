@@ -3,6 +3,10 @@ defmodule TainaWeb.AccountLive do
   Hub "Conta" (aba do bottom-nav mobile): cartão da pessoa logada e atalhos
   para membros, convites, armazenamento, lixeira e sair. Não tem board próprio
   no Penpot, composto com os componentes de linha do design system.
+
+  Aqui também mora a documentação dos atalhos de teclado (Cmd+1..5, briefing
+  desktop): os pares espelham `TainaWeb.Hooks`, que resolve o destino no
+  servidor.
   """
 
   use TainaWeb, :live_view
@@ -13,6 +17,18 @@ defmodule TainaWeb.AccountLive do
   @impl true
   def mount(_params, _session, socket) do
     {:ok, assign(socket, :page_title, gettext("Conta"))}
+  end
+
+  # Pares do cartão de atalhos: espelham `TainaWeb.Hooks.shortcut_path/1`
+  # (1 a 5, ordem da sidebar). Se um lado mudar, o outro acompanha.
+  defp shortcut_rows do
+    [
+      {gettext("Início"), "Cmd+1"},
+      {gettext("Arquivos"), "Cmd+2"},
+      {gettext("Fotos"), "Cmd+3"},
+      {gettext("Membros"), "Cmd+4"},
+      {gettext("Conta"), "Cmd+5"}
+    ]
   end
 
   @impl true
@@ -88,6 +104,19 @@ defmodule TainaWeb.AccountLive do
             <:actions><.icon name="chevron-right" size={18} class="text-faint" /></:actions>
           </.list_row>
         </div>
+
+        <.card>
+          <p class="type-label mb-1">{gettext("Atalhos do teclado")}</p>
+          <p class="type-body-sm text-muted mb-4">
+            {gettext("No Mac, segure Cmd e aperte o número. No Windows e no Linux, segure Ctrl.")}
+          </p>
+          <div class="col gap-2">
+            <div class="row between" :for={{label, key} <- shortcut_rows()}>
+              <span class="type-body-sm">{label}</span>
+              <span class="type-mono-sm text-muted">{key}</span>
+            </div>
+          </div>
+        </.card>
 
         <.link href={~p"/logout"} method="delete" class="btn btn--danger btn--md w-full">
           <.icon name="logout" size={18} /> {gettext("Sair")}

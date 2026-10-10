@@ -1,5 +1,7 @@
 /* Cascas de página: shell autenticado (bottom-nav mobile / sidebar desktop)
-   e layout de auth (céu noturno com horizonte). Um breakpoint só: 768px. */
+   e layout de auth (céu noturno com horizonte). Breakpoints: 768 (sidebar),
+   1024 (desktop: mais respiro, multi-painel das telas de trabalho) e 1440
+   (desktop largo: conteúdo mais largo, com teto). */
 
 /* ---------- shell autenticado ---------- */
 
@@ -52,6 +54,11 @@
 
 .appbar__title {
   flex: 1;
+  /* nome de arquivo longo encolhe com reticências, não empurra as ações */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   text-align: center;
   font-family: var(--font-family-display);
   font-size: var(--font-size-lg);
@@ -189,6 +196,26 @@
   .shell__content {
     max-width: 1160px;
     padding: var(--space-6);
+    padding-bottom: var(--space-12);
+  }
+}
+
+/* 1024 (desktop): mais respiro no conteúdo. As telas de trabalho (arquivos)
+   abrem o multi-painel aqui. */
+@media (min-width: 1024px) {
+  .shell__content {
+    padding: var(--space-8);
+    padding-bottom: var(--space-12);
+  }
+}
+
+/* 1440 (desktop largo): conteúdo mais largo e arejado, mas com teto: no 4K o
+   conteúdo para nesse limite, nunca estica de borda a borda. A tipografia não
+   pula degrau: o espaço extra é respiro, não fonte maior com vazios. */
+@media (min-width: 1440px) {
+  .shell__content {
+    max-width: 1280px;
+    padding: var(--space-10);
     padding-bottom: var(--space-12);
   }
 }

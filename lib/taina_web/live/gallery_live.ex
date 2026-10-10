@@ -1,9 +1,11 @@
 defmodule TainaWeb.GalleryLive do
   @moduledoc """
   Jaci-lite (telas "Jaci - Grade", "Jaci - Linha do tempo" e "Jaci -
-  Visualizador"): grade 3/6 colunas com scroll infinito (`phx-viewport-bottom`
-  + cursor keyset do Jaci), linha do tempo agrupada por dia e visualizador
-  fullscreen com navegação por teclado/swipe (hook `ViewerNav`).
+  Visualizador"): grade 2/6/8/10 colunas (mobile/tablet/desktop/largo) com
+  scroll infinito (`phx-viewport-bottom` + cursor keyset do Jaci), linha do
+  tempo agrupada por dia e visualizador fullscreen com navegação por
+  teclado/swipe (hook `ViewerNav`); no desktop (1024+) o visualizador ganha
+  uma barra de fotos vizinhas no lugar de só setas.
 
   Thumbnails: `/files/:id/thumbnail/sm` (grade) e `md` (visualizador), o
   worker `Rendition` gera depois do upload; enquanto não há thumbnail, o
@@ -209,6 +211,24 @@ defmodule TainaWeb.GalleryLive do
 
   defp viewer_index(ids, %{public_id: id}), do: (Enum.find_index(ids, &(&1 == id)) || 0) + 1
 
+  # Janela de fotos vizinhas para a barra do visualizador (desktop): um trecho
+  # curto em volta da atual, não a lista inteira. `{id, posição}` para o rótulo
+  # acessível de cada miniatura.
+  @rail_window 10
+
+  defp rail_window(ids, current_id) do
+    case Enum.find_index(ids, &(&1 == current_id)) do
+      nil ->
+        []
+
+      index ->
+        first = max(index - @rail_window, 0)
+        last = min(index + @rail_window, length(ids) - 1)
+
+        for i <- first..last, do: {Enum.at(ids, i), i + 1}
+    end
+  end
+
   defp video?(%{mime_type: mime}), do: String.starts_with?(mime, "video/")
 
   defp photo_date(file) do
@@ -353,6 +373,18 @@ defmodule TainaWeb.GalleryLive do
             <.icon name="chevron-right" size={28} />
           </button>
         </div>
+
+        <nav :if={length(@photo_ids) > 1} class="viewer__rail" aria-label={gettext("Fotos vizinhas")}>
+          <.link
+            :for={{id, position} <- rail_window(@photo_ids, @current.public_id)}
+            patch={~p"/fotos/#{id}"}
+            class="viewer__rail-item"
+            aria-current={id == @current.public_id}
+            aria-label={gettext("Foto %{index} de %{total}", index: position, total: length(@photo_ids))}
+          >
+            <span class="viewer__rail-thumb" style={"background-image: url('#{~p"/files/#{id}/thumbnail/sm"}')"}></span>
+          </.link>
+        </nav>
 
         <p class="viewer__caption">{@current.original_filename}</p>
 
