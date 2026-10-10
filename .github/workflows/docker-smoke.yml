@@ -94,13 +94,13 @@ jobs:
 
           # O guard de existência fica no shell de propósito: o psql não
           # substitui :'var' dentro de blocos DO $$, então o guard do oka
-          # também fica no shell. Consultamos o catálogo antes e passamos a
-          # senha pelo :'app_password', que o psql escapa.
+          # também fica no shell. A senha vai literal porque -c entrega a
+          # string crua ao servidor: interpolação de :'var' só acontece na
+          # entrada lida por stdin/-f, nunca em -c. Aqui a senha é fixa.
           if [ "$(psql_cmd -tAc "SELECT 1 FROM pg_roles WHERE rolname = '$APP_ROLE'")" = "1" ]; then
             echo "papel $APP_ROLE já existe; seguindo sem alterar"
           else
-            psql_cmd -v app_password=taina \
-              -c "CREATE ROLE $APP_ROLE LOGIN PASSWORD :'app_password' NOSUPERUSER NOBYPASSRLS;"
+            psql_cmd -c "CREATE ROLE $APP_ROLE LOGIN PASSWORD 'taina' NOSUPERUSER NOBYPASSRLS;"
           fi
 
           # CONNECT: abrir conexão no banco. CREATE (no database): criar os
