@@ -171,7 +171,6 @@
 .field input:focus,
 .field select:focus,
 .field textarea:focus {
-  outline: none;
   border-color: var(--brand-primary);
 }
 
@@ -222,10 +221,6 @@
   background: none;
   border: none;
   color: var(--text-primary);
-}
-
-.search input:focus {
-  outline: none;
 }
 
 /* ---------- cards ---------- */

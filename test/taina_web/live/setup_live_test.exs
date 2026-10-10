@@ -33,7 +33,7 @@ defmodule TainaWeb.SetupLiveTest do
       |> render_submit(%{"setup" => %{"username" => "ana", "password" => "frase-longa-segura"}})
 
     # passo 3: resumo + form final apontando para o POST /setup
-    assert html =~ "Onde guardar os arquivos"
+    assert html =~ "O disco da comunidade"
     assert html =~ "Quilombo do Café, zelador(a) ana, disco interno"
     assert has_element?(lv, ~s(form[action="/setup"]))
     assert has_element?(lv, ~s(input[name="setup[password_confirmation]"]))

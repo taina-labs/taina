@@ -179,6 +179,16 @@ defmodule TainaWeb.FilesLiveTest do
       assert html =~ "A praça está vazia"
     end
 
+    test "pasta na casa de outro morador volta ao início com o aviso", %{conn: conn, scope: scope, ava: ava} do
+      outra = active_ava_fixture(scope.tekoa, %{username: "outra"})
+      {:ok, folder} = Ybira.create_folder(Scope.new(outra, scope.tekoa), %{name: "Rascunhos"})
+
+      assert {:error, {_kind, %{to: to}}} =
+               conn |> log_in(ava) |> live(~p"/arquivos/pasta/#{folder.public_id}")
+
+      assert to == "/arquivos"
+    end
+
     test "erro ao publicar mostra flash e nao quebra", %{conn: conn, scope: scope, ava: ava} do
       {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("oi", "doc.txt"))
       {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/arquivos?zona=casa")

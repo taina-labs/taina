@@ -20,7 +20,7 @@ defmodule TainaWeb.HomeLiveTest do
     {:ok, _lv, html} = conn |> log_in(ava) |> live(~p"/")
 
     assert html =~ "Quilombo do Café"
-    assert html =~ "Armazenamento"
+    assert html =~ "Espaço da comunidade"
     assert html =~ "Recentes"
     assert html =~ file.original_filename
   end

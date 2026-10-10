@@ -59,4 +59,12 @@ defmodule TainaWeb.GalleryLiveTest do
 
     assert {:error, :not_found} = Ybira.get_file(scope, second.public_id)
   end
+
+  test "foto na casa de outro morador leva para a tela de pedir acesso", %{conn: conn, ava: ava, scope: scope} do
+    outra = active_ava_fixture(scope.tekoa, %{username: "outra"})
+    {:ok, file} = Ybira.upload(Scope.new(outra, scope.tekoa), tmp_image_fixture(filename: "particular.jpg"))
+
+    assert {:error, {_kind, %{to: to}}} = conn |> log_in(ava) |> live(~p"/fotos/#{file.public_id}")
+    assert to == "/arquivos/#{file.public_id}"
+  end
 end

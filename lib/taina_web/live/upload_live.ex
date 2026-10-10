@@ -31,21 +31,35 @@ defmodule TainaWeb.UploadLive do
        max_file_size: @max_file_size,
        auto_upload: true,
        progress: &handle_progress/3
+     )
+     # Segunda entrada (RFC 002, Fase 3): a câmera do celular. Entrada à parte
+     # para não tirar do usuário a escolha de arquivos existentes na entrada
+     # principal (um único input com `capture` travaria o celular na câmera).
+     # Os dois envios caem no mesmo `finish_upload/2`.
+     |> allow_upload(:camera,
+       accept: :any,
+       max_entries: 10,
+       max_file_size: @max_file_size,
+       auto_upload: true,
+       progress: &handle_progress/3
      )}
   end
 
   defp resolve_folder(_scope, nil), do: nil
 
+  # Pasta inexistente ou casa de outra pessoa: sobe para a raiz. A pasta de
+  # destino é escolhida em tela, então basta não travar o envio.
   defp resolve_folder(scope, public_id) do
     case Ybira.get_folder(scope, public_id) do
       {:ok, folder} -> folder
-      {:error, :not_found} -> nil
+      {:error, _reason} -> nil
     end
   end
 
-  # Consome cada arquivo assim que termina de subir; o resultado vai para a
-  # lista CONCLUÍDO (ou para os erros, sem derrubar os demais envios).
-  defp handle_progress(:files, entry, socket) do
+  # Consome cada arquivo assim que termina de subir, de qualquer um dos dois
+  # envios (arquivos ou câmera); o resultado vai para a lista CONCLUÍDO (ou
+  # para os erros, sem derrubar os demais envios).
+  defp handle_progress(_name, entry, socket) do
     if entry.done?, do: finish_upload(entry, socket), else: {:noreply, socket}
   end
 
@@ -77,14 +91,14 @@ defmodule TainaWeb.UploadLive do
   def handle_event("validate", _params, socket), do: {:noreply, socket}
 
   def handle_event("cancel", %{"ref" => ref}, socket) do
-    {:noreply, cancel_upload(socket, :files, ref)}
+    {:noreply, cancel_any(socket, ref)}
   end
 
   def handle_event("cancel-all", _params, socket) do
     socket =
-      Enum.reduce(socket.assigns.uploads.files.entries, socket, fn entry, socket ->
-        cancel_upload(socket, :files, entry.ref)
-      end)
+      socket.assigns.uploads
+      |> uploading_entries()
+      |> Enum.reduce(socket, fn entry, socket -> cancel_any(socket, entry.ref) end)
 
     {:noreply, socket}
   end
@@ -92,7 +106,27 @@ defmodule TainaWeb.UploadLive do
   defp back_path(nil), do: ~p"/arquivos"
   defp back_path(folder), do: ~p"/arquivos/pasta/#{folder.public_id}"
 
-  defp uploading?(uploads), do: uploads.files.entries != []
+  # --- core puro: dados -> dados ---
+
+  # O evento traz só o ref, sem dizer de qual dos dois envios a entrada veio;
+  # procuramos em qual lista ela está.
+  defp cancel_any(socket, ref) do
+    uploads = socket.assigns.uploads
+
+    cond do
+      Enum.any?(uploads.files.entries, &(&1.ref == ref)) -> cancel_upload(socket, :files, ref)
+      Enum.any?(uploads.camera.entries, &(&1.ref == ref)) -> cancel_upload(socket, :camera, ref)
+      true -> socket
+    end
+  end
+
+  # A fila "Enviando" junta as duas entradas, arquivos e câmera.
+  defp uploading_entries(uploads), do: uploads.files.entries ++ uploads.camera.entries
+
+  defp uploading?(uploads), do: uploading_entries(uploads) != []
+
+  # Erros de configuração (tamanho, quantidade) somados dos dois envios.
+  defp config_errors(uploads), do: upload_errors(uploads.files) ++ upload_errors(uploads.camera)
 
   @impl true
   def render(assigns) do
@@ -122,14 +156,23 @@ defmodule TainaWeb.UploadLive do
             </span>
             <.live_file_input upload={@uploads.files} class="sr-only" />
           </label>
+
+          <label id="camera-input" class="dropzone hide-desktop mt-3">
+            <.icon name="image" size={28} />
+            <span class="type-label text-primary">{gettext("Tirar foto com a câmera")}</span>
+            <span class="type-caption text-muted">
+              {gettext("A foto começa na sua casa. Publique na praça para todos verem.")}
+            </span>
+            <.live_file_input upload={@uploads.camera} capture="environment" class="sr-only" />
+          </label>
         </form>
 
         <div :if={uploading?(@uploads)}>
           <p class="type-overline text-faint mb-2">
-            {gettext("Enviando (%{count})", count: length(@uploads.files.entries))}
+            {gettext("Enviando (%{count})", count: length(uploading_entries(@uploads)))}
           </p>
           <div class="list">
-            <.list_row :for={entry <- @uploads.files.entries} title={entry.client_name}>
+            <.list_row :for={entry <- uploading_entries(@uploads)} title={entry.client_name}>
               <:leading>
                 <% {service, icon} = file_visual(entry.client_type || "") %>
                 <.service_square service={service} icon={icon} />
@@ -140,10 +183,10 @@ defmodule TainaWeb.UploadLive do
               </:actions>
             </.list_row>
           </div>
-          <div :for={entry <- @uploads.files.entries} class="mt-1">
+          <div :for={entry <- uploading_entries(@uploads)} class="mt-1">
             <.progress value={entry.progress} />
           </div>
-          <p :for={err <- upload_errors(@uploads.files)} class="field__error mt-2">
+          <p :for={err <- config_errors(@uploads)} class="field__error mt-2">
             {upload_config_error(err)}
           </p>
         </div>

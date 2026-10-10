@@ -79,6 +79,11 @@ defmodule TainaWeb.GalleryLive do
         |> assign(:current, file)
         |> assign_new_ids(public_id)
 
+      # Casa de outra pessoa: a tela de preview é quem explica o "Pedir
+      # acesso"; aqui só levamos a pessoa até lá.
+      {:error, :forbidden} ->
+        Phoenix.LiveView.push_navigate(socket, to: ~p"/arquivos/#{public_id}")
+
       {:error, :not_found} ->
         socket
         |> Phoenix.LiveView.put_flash(:error, gettext("Foto não encontrada."))

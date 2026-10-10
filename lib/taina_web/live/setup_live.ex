@@ -175,9 +175,9 @@ defmodule TainaWeb.SetupLive do
       <div :if={@step == 3} class="col flex-1">
         <.icon_button name="chevron-left" label={gettext("Voltar")} phx-click="back" />
         <div class="col gap-3 mt-4 mb-6">
-          <h1 class="type-h1">{gettext("Onde guardar os arquivos")}</h1>
+          <h1 class="type-h1">{gettext("O disco da comunidade")}</h1>
           <p class="type-body text-secondary">
-            {gettext("Escolha o disco onde a comunidade vai morar. Dá pra mudar depois nas configurações.")}
+            {gettext("Este é o disco da comunidade. Ele é escolhido na instalação da caixa e não pode ser trocado por aqui.")}
           </p>
           <.steps current={3} />
           <p class="type-overline text-faint">{gettext("Passo 3 de 3: armazenamento")}</p>
@@ -199,7 +199,7 @@ defmodule TainaWeb.SetupLive do
             <.icon name="download" size={22} class="text-muted" />
             <div class="flex-1">
               <p class="type-label">{gettext("Disco USB externo")}</p>
-              <p class="type-body-sm text-muted">{gettext("Em breve. Conecte e monte o dispositivo")}</p>
+              <p class="type-body-sm text-muted">{gettext("Disco externo se prepara na instalação, não por aqui.")}</p>
             </div>
             <span class="radio-card__ring"></span>
           </div>

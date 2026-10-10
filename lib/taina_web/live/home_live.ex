@@ -18,13 +18,11 @@ defmodule TainaWeb.HomeLive do
     # mostramos a tela com as listas vazias (o empty_state assume o lugar) em
     # vez de derrubar a LiveView.
     {recent, ok?} = unwrap(Ybira.list_recent(scope, limit: 4), [])
-    {by_kind, ok?} = unwrap(Ybira.storage_stats_by_kind(scope), [], ok?)
 
     socket =
       socket
       |> assign(:page_title, gettext("Início"))
       |> assign(:recent, recent)
-      |> assign(:by_kind, by_kind)
 
     {:ok, maybe_warn(socket, ok?)}
   end
@@ -55,13 +53,12 @@ defmodule TainaWeb.HomeLive do
     end
   end
 
-  defp segments(by_kind, %{used_bytes: used}) when used > 0 do
-    for {kind, bytes} <- Enum.sort_by(by_kind, fn {_k, b} -> -b end), bytes > 0 do
-      {Atom.to_string(kind), bytes / used}
-    end
-  end
+  # O mesmo cálculo do card "Espaço da comunidade" (files_live): quanto do
+  # espaço da comunidade está em uso, 0..100. Sem cota definida, barra zerada.
+  defp storage_percent(%{used_bytes: used, quota_bytes: quota}) when is_integer(quota) and quota > 0,
+    do: round(used / quota * 100)
 
-  defp segments(_by_kind, _stats), do: []
+  defp storage_percent(_stats), do: 0
 
   defp recent_meta(file) do
     "#{file_kind(file.mime_type)}, #{format_bytes(file.file_size_bytes)}, #{relative_time(file.inserted_at)}"
@@ -89,13 +86,12 @@ defmodule TainaWeb.HomeLive do
 
       <.card :if={@storage_stats} class="mb-6">
         <div class="row between mb-3">
-          <p class="type-label">{gettext("Armazenamento")}</p>
+          <p class="type-label">{gettext("Espaço da comunidade")}</p>
           <p :if={@storage_stats.quota_bytes} class="type-caption text-success">
             {format_bytes(@storage_stats.quota_bytes - @storage_stats.used_bytes)} {gettext("livres")}
           </p>
         </div>
-        <.progress :if={segments(@by_kind, @storage_stats) != []} segments={segments(@by_kind, @storage_stats)} />
-        <.progress :if={segments(@by_kind, @storage_stats) == []} value={0} />
+        <.progress value={storage_percent(@storage_stats)} />
         <p class="type-caption text-muted mt-3">
           {gettext("%{used} de %{total} usados",
             used: format_bytes(@storage_stats.used_bytes),

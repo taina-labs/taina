@@ -67,6 +67,17 @@ defmodule TainaWeb.FilesLive do
          socket
          |> Phoenix.LiveView.put_flash(:error, gettext("Pasta não encontrada."))
          |> Phoenix.LiveView.push_navigate(to: ~p"/arquivos")}
+
+      # Casa de outra pessoa: a pasta em si não é para os nossos olhos, volta
+      # ao início com o porquê.
+      {:error, :forbidden} ->
+        {:noreply,
+         socket
+         |> Phoenix.LiveView.put_flash(
+           :error,
+           gettext("Esta pasta é particular. Só quem a guardou, e quem essa pessoa deixar, vê.")
+         )
+         |> Phoenix.LiveView.push_navigate(to: ~p"/arquivos")}
     end
   end
 

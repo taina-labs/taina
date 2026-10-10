@@ -81,6 +81,11 @@ defmodule TainaWeb.StorageLive do
   defp quota_gb(%{quota_bytes: quota}) when is_integer(quota), do: div(quota, 1024 ** 3)
   defp quota_gb(_stats), do: nil
 
+  # Total do grupo "por tipo": a soma do que a pessoa consegue ver (praça,
+  # casa dela e o que foi compartilhado com ela). Não é o uso total da Tekoa;
+  # aquele é o número grande do card de cima ("Espaço da comunidade").
+  defp by_kind_total(by_kind), do: by_kind |> Map.values() |> Enum.sum()
+
   @impl true
   def render(assigns) do
     ~H"""
@@ -102,6 +107,7 @@ defmodule TainaWeb.StorageLive do
 
       <div :if={@stats} class="col gap-5 mx-auto w-full measure">
         <.card raised class="p-6">
+          <p class="type-overline text-faint">{gettext("Espaço da comunidade")}</p>
           <p class="type-display">{format_bytes(@stats.used_bytes)}</p>
           <div class="row between mt-1 mb-4">
             <p class="type-body-sm text-muted">
@@ -125,6 +131,12 @@ defmodule TainaWeb.StorageLive do
             <p class="type-label">{format_bytes(bytes)}</p>
           </div>
         </div>
+        <p class="type-caption text-faint">
+          {gettext("Total: %{total}", total: format_bytes(by_kind_total(@by_kind)))}
+        </p>
+        <p class="type-caption text-muted">
+          {gettext("Só entra o que está na praça, a sua casa e o que te deixarem ver. A casa dos outros fica de fora.")}
+        </p>
 
         <div :if={Maraca.zelador?(@current_scope.ava)}>
           <p class="type-overline text-faint mb-2">{gettext("Cota da comunidade")}</p>

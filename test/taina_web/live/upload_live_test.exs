@@ -64,4 +64,21 @@ defmodule TainaWeb.UploadLiveTest do
     # rejeição vale no domínio, não só na UI: nada foi persistido
     assert {:ok, %{items: []}} = Ybira.list_files(scope)
   end
+
+  test "entrada da câmera chega a CONCLUÍDO", %{conn: conn, scope: scope, ava: ava} do
+    {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/arquivos/enviar")
+
+    # JPEG de verdade: o Ybira detecta MIME pelos magic bytes, não pela extensão
+    content = File.read!(tmp_image_fixture(width: 8, height: 8))
+
+    input = file_input(lv, "#camera-input", :camera, [%{name: "foto-da-roca.jpg", content: content, type: "image/jpeg"}])
+    render_upload(input, "foto-da-roca.jpg")
+
+    html = render(lv)
+    assert html =~ "Concluído"
+    assert html =~ "foto-da-roca.jpg"
+
+    assert {:ok, %{items: [file]}} = Ybira.list_files(scope)
+    assert file.original_filename == "foto-da-roca.jpg"
+  end
 end
