@@ -2,6 +2,14 @@
 // verifique se um binding nativo (phx-viewport-*, phx-drop-target, JS.*)
 // já resolve.
 
+// Escrita na área de transferência: navigator.clipboard não existe em origens
+// inseguras (a instalação canônica é http://taina.local), então a promessa
+// nasce rejeitada quando a API não está disponível. Nunca lança no escuro.
+const writeClipboard = (text) =>
+  navigator.clipboard?.writeText
+    ? navigator.clipboard.writeText(text)
+    : Promise.reject(new Error("clipboard unavailable"));
+
 // Copia o atributo data-copy para a área de transferência e avisa o servidor
 // (feedback "copiado!" fica por conta do LiveView).
 const Clipboard = {
@@ -9,9 +17,9 @@ const Clipboard = {
     this.el.addEventListener("click", () => {
       const text = this.el.dataset.copy;
       if (!text) return;
-      navigator.clipboard
-        .writeText(text)
-        .then(() => this.pushEvent("copied", {}));
+      writeClipboard(text)
+        .then(() => this.pushEvent("copied", {}))
+        .catch(() => this.pushEvent("copy-failed", {}));
     });
   },
 };
@@ -27,10 +35,12 @@ const ViewerNav = {
     window.addEventListener("keydown", this.onKey);
 
     this.startX = null;
+    this.startY = null;
     this.el.addEventListener(
       "touchstart",
       (e) => {
         this.startX = e.touches[0].clientX;
+        this.startY = e.touches[0].clientY;
       },
       { passive: true },
     );
@@ -38,13 +48,26 @@ const ViewerNav = {
       "touchend",
       (e) => {
         if (this.startX === null) return;
-        const delta = e.changedTouches[0].clientX - this.startX;
-        if (delta > 48) this.pushEvent("prev", {});
-        if (delta < -48) this.pushEvent("next", {});
+        const dx = e.changedTouches[0].clientX - this.startX;
+        const dy = e.changedTouches[0].clientY - this.startY;
+        // Só gesto horizontal troca de foto; rolagem vertical não.
+        if (Math.abs(dx) > 48 && Math.abs(dx) > Math.abs(dy)) {
+          if (dx > 0) this.pushEvent("prev", {});
+          else this.pushEvent("next", {});
+        }
         this.startX = null;
+        this.startY = null;
       },
       { passive: true },
     );
+  },
+  updated() {
+    // Mantém a foto atual visível no meio da trilha. Aqui é só posicionamento
+    // de scroll, sem animação (o movimento é do CSS).
+    const current = this.el.querySelector(
+      '.viewer__rail-item[aria-current="true"]',
+    );
+    if (current) current.scrollIntoView({ inline: "center", block: "nearest" });
   },
   destroyed() {
     window.removeEventListener("keydown", this.onKey);
@@ -60,7 +83,11 @@ const DragClass = {
       e.preventDefault();
       toggle(true);
     });
-    this.el.addEventListener("dragleave", () => toggle(false));
+    this.el.addEventListener("dragleave", (e) => {
+      // Transição para um elemento interno da dropzone não é saída.
+      if (this.el.contains(e.relatedTarget)) return;
+      toggle(false);
+    });
     this.el.addEventListener("drop", () => toggle(false));
   },
 };
@@ -73,11 +100,18 @@ const Share = {
     this.el.addEventListener("click", () => {
       const { title, url } = this.el.dataset;
       if (navigator.share) {
-        navigator.share({ title, url }).catch(() => {});
+        navigator.share({ title, url }).catch((err) => {
+          // AbortError: a pessoa cancelou o compartilhamento, nada a fazer.
+          if (err?.name === "AbortError") return;
+          // Outro erro cai no fallback de copiar o link.
+          writeClipboard(url)
+            .then(() => this.pushEvent("copied", {}))
+            .catch(() => this.pushEvent("copy-failed", {}));
+        });
       } else {
-        navigator.clipboard
-          .writeText(url)
-          .then(() => this.pushEvent("copied", {}));
+        writeClipboard(url)
+          .then(() => this.pushEvent("copied", {}))
+          .catch(() => this.pushEvent("copy-failed", {}));
       }
     });
   },
@@ -131,11 +165,14 @@ const DnD = {
   },
 };
 
-// Auto-fecha o flash após 4s acionando o próprio phx-click do botão (que
-// limpa no servidor e esconde). Cancela o timer se o elemento sair antes.
+// Auto-fecha o flash informativo acionando o próprio phx-click do botão (que
+// limpa no servidor e esconde). Erro não fecha sozinho: espera a pessoa ler.
+// Cancela o timer se o elemento sair antes.
 const FlashAutoDismiss = {
   mounted() {
-    this.timer = setTimeout(() => this.el.click(), 4000);
+    if (this.el.classList.contains("flash--error")) return;
+    const timeout = Number(this.el.dataset.timeout) || 4000;
+    this.timer = setTimeout(() => this.el.click(), timeout);
   },
   destroyed() {
     clearTimeout(this.timer);
@@ -148,7 +185,8 @@ const FlashAutoDismiss = {
 const NavShortcuts = {
   mounted() {
     this.onKey = (e) => {
-      if (e.altKey || !(e.metaKey || e.ctrlKey)) return;
+      // e.repeat: tecla segurada não pode spammar o servidor.
+      if (e.repeat || e.altKey || !(e.metaKey || e.ctrlKey)) return;
       const index = Number(e.key);
       if (index >= 1 && index <= 5) {
         e.preventDefault();

@@ -81,7 +81,9 @@ defmodule TainaWeb.InviteLive do
 
       <div class="col gap-6 mx-auto w-full measure-sm">
         <%= if @invite_url do %>
-          <div class="qr-card">{qr_svg(@invite_url)}</div>
+          <div class="qr-card" role="img" aria-label={gettext("QR code do link de convite")}>
+            {qr_svg(@invite_url)}
+          </div>
           <p class="type-body-sm text-secondary text-center">
             {gettext("Aponte a câmera ou compartilhe o link abaixo")}
           </p>
@@ -109,34 +111,60 @@ defmodule TainaWeb.InviteLive do
             class="w-full"
             phx-hook="Share"
             data-url={@invite_url}
-            data-title={gettext("Convite para a nuvem da comunidade")}
+            data-title={gettext("Convite para a caixa da comunidade")}
           >
             {gettext("Compartilhar convite")}
           </.button>
           <button type="button" class="type-label text-brand text-center" phx-click="reset">
             {gettext("Convidar outra pessoa")}
           </button>
+          <p class="type-caption text-muted text-center">
+            {gettext("Qualquer pessoa com este link entra na comunidade. Compartilhe só com quem você quer convidar.")}
+          </p>
           <p class="type-caption text-faint text-center">
-            {gettext("Este convite expira em 7 dias, revogável a qualquer momento.")}
+            {gettext("Este convite expira em 7 dias.")}
           </p>
         <% else %>
           <form id="invite-form" phx-submit="generate" class="col gap-5">
             <div>
               <p class="type-overline text-faint mb-2">{gettext("Papel da pessoa convidada")}</p>
-              <div class="row gap-3">
-                <.chip selected={@role == "morador"} phx-click="set-role" phx-value-role="morador">
-                  {gettext("Morador(a)")}
-                </.chip>
-                <.chip selected={@role == "zelador"} phx-click="set-role" phx-value-role="zelador">
-                  {gettext("Zelador(a)")}
-                </.chip>
+              <div class="col gap-3" role="radiogroup" aria-label={gettext("Papel da pessoa convidada")}>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={to_string(@role == "morador")}
+                  class={["radio-card", @role == "morador" && "radio-card--selected"]}
+                  phx-click="set-role"
+                  phx-value-role="morador"
+                >
+                  <div class="flex-1">
+                    <p class="type-label">{gettext("Morador(a)")}</p>
+                    <p class="type-body-sm text-muted">{gettext("participa da comunidade")}</p>
+                  </div>
+                  <span class="radio-card__ring"></span>
+                </button>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={to_string(@role == "zelador")}
+                  class={["radio-card", @role == "zelador" && "radio-card--selected"]}
+                  phx-click="set-role"
+                  phx-value-role="zelador"
+                >
+                  <div class="flex-1">
+                    <p class="type-label">{gettext("Zelador(a)")}</p>
+                    <p class="type-body-sm text-muted">
+                      {gettext("também cuida da máquina. Para abrir a casa de alguém, pede acesso.")}
+                    </p>
+                  </div>
+                  <span class="radio-card__ring"></span>
+                </button>
               </div>
-              <p class="type-caption text-faint mt-2">
-                {gettext("Morador participa da comunidade. Zelador também cuida da máquina.")}
-              </p>
             </div>
 
-            <.button type="submit" variant="primary" class="w-full">{gettext("Gerar convite")}</.button>
+            <.button type="submit" variant="primary" class="w-full" phx-disable-with={gettext("Gerando...")}>
+              {gettext("Gerar convite")}
+            </.button>
           </form>
         <% end %>
       </div>

@@ -16,6 +16,9 @@ defmodule TainaWeb.MuralLive do
   alias Taina.Maraca.Ava
   alias Taina.Maraca.Event
   alias TainaWeb.Layouts
+  alias TainaWeb.Time
+
+  require Logger
 
   @impl true
   def mount(_params, _session, socket) do
@@ -51,8 +54,12 @@ defmodule TainaWeb.MuralLive do
     end
   end
 
-  # Carrega a primeira página sem derrubar a tela: se o mural falhar, flash e
-  # empty_state assumem o lugar (o mesmo degrader das outras telas internas).
+  def handle_event("retry", _params, socket) do
+    {:noreply, assign_events(socket)}
+  end
+
+  # Carrega a primeira página sem derrubar a tela: se o mural falhar, o
+  # empty_state com "Tentar de novo" assume o lugar (sem flash duplicado).
   defp assign_events(socket) do
     case Maraca.list_events(socket.assigns.current_scope) do
       {:ok, %{events: events, next_offset: next}} ->
@@ -66,9 +73,7 @@ defmodule TainaWeb.MuralLive do
         |> stream(:events, entries, reset: true)
 
       {:error, _reason} ->
-        socket
-        |> assign(:load_error, true)
-        |> Phoenix.LiveView.put_flash(:error, gettext("Não foi possível carregar o mural agora."))
+        assign(socket, :load_error, true)
     end
   end
 
@@ -77,10 +82,11 @@ defmodule TainaWeb.MuralLive do
   # Modela a página para o render: frase pronta, quando relativo, e o rótulo
   # do dia só na primeira ocorrência da data. `headed_dates` carrega as datas
   # que já ganharam rótulo, então uma data que continua de página anterior
-  # não repete o cabeçalho.
+  # não repete o cabeçalho. Datas no horário da comunidade (o banco grava em
+  # UTC; o dia de quem lê não é o dia do banco).
   defp page_entries(events, headed_dates) do
     Enum.map_reduce(events, headed_dates, fn event, headed ->
-      date = NaiveDateTime.to_date(event.inserted_at)
+      date = Time.local_date(event.inserted_at)
 
       if MapSet.member?(headed, date) do
         {entry(event, nil), headed}
@@ -95,17 +101,25 @@ defmodule TainaWeb.MuralLive do
       id: event.id,
       day_label: day_label,
       sentence: sentence(event),
-      ago: relative_time(event.inserted_at)
+      ago: ago_label(event.inserted_at)
     }
   end
 
   # Rótulo do grupo de dia, o mesmo da linha do tempo do Jaci.
   defp day_title(date) do
-    case Date.diff(Date.utc_today(), date) do
+    case Date.diff(Time.local_today(), date) do
       0 -> gettext("Hoje")
       1 -> gettext("Ontem")
       _days -> Calendar.strftime(date, "%d/%m/%Y")
     end
+  end
+
+  # Sob "Hoje"/"Ontem" a hora basta: repetir "hoje" em cada linha é eco, não
+  # informação. Dias mais velhos ficam com o tempo relativo do design system.
+  defp ago_label(at) do
+    if Date.diff(Time.local_today(), Time.local_date(at)) in 0..1,
+      do: Time.local_clock(at),
+      else: relative_time(at)
   end
 
   # Ator em início de frase: nome de exibição quando existe, senão o nome de
@@ -218,6 +232,16 @@ defmodule TainaWeb.MuralLive do
   defp sentence(%Event{type: :quota_changed} = event),
     do: gettext("%{actor} mudou o limite de armazenamento.", actor: actor_label(event))
 
+  # Evento de um type que a tela ainda não conhece: o mural é append-only e
+  # não pode derrubar por causa de uma frase faltando. A frase genérica
+  # mantém a linha no ar e o log marca o type para alguém escrever a frase
+  # dele (e telemetria acompanhar) sem perder o registro.
+  defp sentence(%Event{type: type} = event) do
+    Logger.warning("mural: evento sem frase mapeada", event_type: type, event_id: event.id)
+
+    gettext("%{actor} fez um ato registrado na comunidade.", actor: actor_label(event))
+  end
+
   @impl true
   def render(assigns) do
     ~H"""
@@ -232,20 +256,20 @@ defmodule TainaWeb.MuralLive do
         <div>
           <h1 class="type-h1 mb-2">{gettext("Mural")}</h1>
           <p class="type-body-sm text-muted">
-            {gettext("O que aconteceu na comunidade. Cada linha é escrita pelo ato em si: ninguém edita, ninguém apaga.")}
+            {gettext("O que aconteceu na comunidade. Cada linha registra um ato: ninguém edita, ninguém apaga.")}
           </p>
         </div>
 
         <div id="mural-events" phx-update="stream" class="col gap-5">
           <div :for={{dom_id, entry} <- @streams.events} id={dom_id} class="col gap-1">
-            <p :if={entry.day_label} class="type-overline text-faint">{entry.day_label}</p>
+            <p :if={entry.day_label} class="type-overline text-muted">{entry.day_label}</p>
             <p class="type-body text-secondary">{entry.sentence}</p>
-            <p class="type-caption text-faint">{entry.ago}</p>
+            <p class="type-caption text-muted">{entry.ago}</p>
           </div>
         </div>
 
         <div :if={@next_offset} id="mural-load-more" phx-viewport-bottom="load-more" class="center py-4">
-          <p class="type-caption text-faint">{gettext("Carregando mais...")}</p>
+          <p class="type-caption text-muted">{gettext("Carregando mais...")}</p>
         </div>
 
         <.empty_state
@@ -263,8 +287,10 @@ defmodule TainaWeb.MuralLive do
           :if={@load_error}
           icon="alert"
           title={gettext("Não foi possível carregar")}
-          hint={gettext("O mural não respondeu agora. Tente recarregar em instantes.")}
-        />
+          hint={gettext("O mural não respondeu agora.")}
+        >
+          <.button variant="secondary" phx-click="retry">{gettext("Tentar de novo")}</.button>
+        </.empty_state>
       </div>
     </Layouts.app>
     """

@@ -31,19 +31,19 @@ defmodule TainaWeb.FileThumbnailTest do
     assert conn.status == 404
   end
 
-  test "401 without a session", %{conn: conn, photo: photo} do
+  test "redirects to login without a session", %{conn: conn, photo: photo} do
     conn = get(conn, ~p"/files/#{photo.public_id}/thumbnail/sm")
 
-    assert conn.status == 401
+    assert redirected_to(conn, 302) == "/login"
   end
 
-  test "403 for another resident's casa thumbnail, then 200 once published", %{
+  test "redirects another resident's casa thumbnail to the file screen, then 200 once published", %{
     owner: owner,
     other: other,
     photo: photo
   } do
     conn = build_conn() |> log_in(other.ava) |> get(~p"/files/#{photo.public_id}/thumbnail/sm")
-    assert conn.status == 403
+    assert redirected_to(conn, 302) == "/arquivos/#{photo.public_id}"
 
     {:ok, _} = Ybira.publicar_file(owner, photo.public_id)
 

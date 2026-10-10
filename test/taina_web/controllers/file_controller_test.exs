@@ -54,10 +54,10 @@ defmodule TainaWeb.FileControllerTest do
     assert get_resp_header(conn, "content-range") == ["bytes */#{ybira_file.file_size_bytes}"]
   end
 
-  test "401 without a session", %{conn: conn, ybira_file: ybira_file} do
+  test "redirects to login without a session", %{conn: conn, ybira_file: ybira_file} do
     conn = get(conn, ~p"/files/#{ybira_file.public_id}")
 
-    assert conn.status == 401
+    assert redirected_to(conn, 302) == "/login"
   end
 
   test "404 for an unknown ybira_file", %{conn: conn, ava: ava} do
@@ -66,10 +66,10 @@ defmodule TainaWeb.FileControllerTest do
     assert conn.status == 404
   end
 
-  test "403 for another resident's casa file", %{conn: conn, other: other, ybira_file: ybira_file} do
+  test "redirects another resident's casa file to its screen", %{conn: conn, other: other, ybira_file: ybira_file} do
     conn = conn |> authed(other.ava) |> get(~p"/files/#{ybira_file.public_id}")
 
-    assert conn.status == 403
+    assert redirected_to(conn, 302) == "/arquivos/#{ybira_file.public_id}"
   end
 
   test "200 once the file is published to the praca", %{

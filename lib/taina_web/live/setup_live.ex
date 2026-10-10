@@ -2,7 +2,8 @@ defmodule TainaWeb.SetupLive do
   @moduledoc """
   Wizard de primeiro boot (3 passos): nome da comunidade, conta de quem cuida
   (zelador) e armazenamento. Os passos vivem aqui (validação ao vivo);
-  o submit final é um POST tradicional para `SetupController`, que faz
+  o submit final valida todos os passos (somente leitura) e só então solta o
+  POST tradicional para `SetupController` (`phx-trigger-action`), que faz
   `Maraca.bootstrap/2` e abre a sessão na mesma requisição.
 
   Deriva da RFC 002 (D2): só roda em instância virgem, se já existe Tekoa,
@@ -24,12 +25,31 @@ defmodule TainaWeb.SetupLive do
        socket
        |> assign(:page_title, gettext("Primeiros passos"))
        |> assign(:step, 1)
-       |> assign(:data, %{"community_name" => "", "username" => "", "display_name" => "", "password" => ""})
+       |> assign(
+         :data,
+         %{
+           "community_name" => "",
+           "username" => "",
+           "display_name" => "",
+           "password" => "",
+           "password_confirmation" => ""
+         }
+       )
        |> assign(:errors, %{})
+       |> assign(:trigger_submit, false)
        |> assign(:storage_root, Application.fetch_env!(:taina, :storage_root))
        |> assign(:free_space, free_space())}
     end
   end
+
+  # ?passo= na URL (refresh, retorno ao wizard): só aceita 1..3; fora disso
+  # mantém o passo atual.
+  @impl true
+  def handle_params(%{"passo" => passo}, _uri, %{assigns: %{step: current}} = socket) do
+    {:noreply, assign(socket, :step, step_from_passo(passo, current))}
+  end
+
+  def handle_params(_params, _uri, socket), do: {:noreply, socket}
 
   @impl true
   def handle_event("validate", %{"setup" => params}, socket) do
@@ -50,9 +70,35 @@ defmodule TainaWeb.SetupLive do
     end
   end
 
+  # Validação somente leitura de todos os passos antes de soltar o POST para o
+  # SetupController: erro de formulário volta para o passo do problema em vez
+  # de virar falha de changeset no servidor.
+  def handle_event("final", %{"setup" => params}, socket) do
+    data = Map.merge(socket.assigns.data, params)
+
+    case validate_all_steps(data) do
+      %{} = errors when map_size(errors) == 0 ->
+        {:noreply, assign(socket, :trigger_submit, true)}
+
+      errors ->
+        {:noreply, socket |> assign(:data, data) |> assign(:errors, errors) |> assign(:step, error_step(errors))}
+    end
+  end
+
+  def handle_event("final", _params, socket), do: {:noreply, socket}
+
   def handle_event("back", _params, socket) do
     {:noreply, assign(socket, :step, max(socket.assigns.step - 1, 1))}
   end
+
+  defp step_from_passo(passo, current) when is_binary(passo) do
+    case Integer.parse(passo) do
+      {step, ""} when step in 1..3 -> step
+      _other -> current
+    end
+  end
+
+  defp step_from_passo(_passo, current), do: current
 
   defp validate_step(1, data) do
     if String.trim(data["community_name"]) == "",
@@ -64,9 +110,32 @@ defmodule TainaWeb.SetupLive do
     %{}
     |> validate_presence(data, "username", gettext("escolha um nome de usuário"))
     |> validate_password(data)
+    |> validate_confirmation(data)
   end
 
   defp validate_step(_step, _data), do: %{}
+
+  defp validate_all_steps(data) do
+    1
+    |> validate_step(data)
+    |> Map.merge(validate_step(2, data))
+    |> Map.merge(validate_step(3, data))
+  end
+
+  # Primeiro passo que tem problema: para onde a validação final manda de volta.
+  defp error_step(errors) do
+    cond do
+      Map.has_key?(errors, "community_name") ->
+        1
+
+      Map.has_key?(errors, "username") or Map.has_key?(errors, "password") or
+          Map.has_key?(errors, "password_confirmation") ->
+        2
+
+      true ->
+        3
+    end
+  end
 
   defp validate_presence(errors, data, key, message) do
     if String.trim(data[key] || "") == "", do: Map.put(errors, key, message), else: errors
@@ -76,6 +145,12 @@ defmodule TainaWeb.SetupLive do
     if String.length(data["password"] || "") < 8,
       do: Map.put(errors, "password", gettext("a senha precisa de pelo menos 8 caracteres")),
       else: errors
+  end
+
+  defp validate_confirmation(errors, data) do
+    if data["password_confirmation"] == data["password"],
+      do: errors,
+      else: Map.put(errors, "password_confirmation", gettext("as duas senhas não são iguais"))
   end
 
   # Espaço livre no volume do storage, melhor esforço (`df` POSIX). Falhou?
@@ -102,7 +177,7 @@ defmodule TainaWeb.SetupLive do
       <div :if={@step == 1} class="col flex-1">
         <div class="col gap-4 text-center mt-10 mb-8 items-center">
           <.icon name="spark" size={48} class="spark" />
-          <h1 class="type-display">Tainá</h1>
+          <h1 id="step-heading-1" tabindex="-1" phx-mounted={JS.focus()} class="type-display">Tainá</h1>
           <p class="type-body text-secondary">
             {gettext("A estrela da manhã da sua comunidade. Arquivos e fotos, na sua casa, sob seu controle.")}
           </p>
@@ -122,19 +197,23 @@ defmodule TainaWeb.SetupLive do
             autofocus
           />
           <div class="flex-1"></div>
-          <.button type="submit" variant="primary" class="w-full">{gettext("Começar")}</.button>
+          <.button type="submit" variant="primary" class="w-full" phx-disable-with={gettext("Começar...")}>
+            {gettext("Começar")}
+          </.button>
         </form>
       </div>
 
       <div :if={@step == 2} class="col flex-1">
         <.icon_button name="chevron-left" label={gettext("Voltar")} phx-click="back" />
         <div class="col gap-3 mt-4 mb-6">
-          <h1 class="type-h1">{gettext("Crie a conta de quem cuida")}</h1>
+          <h1 id="step-heading-2" tabindex="-1" phx-mounted={JS.focus()} class="type-h1">
+            {gettext("Crie a conta de quem cuida")}
+          </h1>
           <p class="type-body text-secondary">
-            {gettext("Você é o primeiro zelador desta comunidade. Guarde bem este acesso. Ele cuida da máquina.")}
+            {gettext("Você é o primeiro zelador desta comunidade. Guarde bem este acesso: quem o tem cuida da máquina.")}
           </p>
           <.steps current={2} />
-          <p class="type-overline text-faint">{gettext("Passo 2 de 3: quem cuida")}</p>
+          <p class="type-label text-faint">{gettext("Passo 2 de 3: quem cuida")}</p>
         </div>
 
         <form id="setup-step-2" phx-change="validate" phx-submit="next" class="col gap-5 flex-1">
@@ -165,44 +244,57 @@ defmodule TainaWeb.SetupLive do
             placeholder={gettext("mínimo 8 caracteres")}
             icon="shield"
             help={gettext("Use uma frase longa que só você lembra.")}
+            autocomplete="new-password"
             errors={List.wrap(@errors["password"])}
           />
+          <.input
+            label={gettext("Confirme a senha")}
+            type="password"
+            name="setup[password_confirmation]"
+            id="setup_password_confirmation"
+            value={@data["password_confirmation"]}
+            placeholder={gettext("a mesma senha")}
+            autocomplete="new-password"
+            errors={List.wrap(@errors["password_confirmation"])}
+          />
           <div class="flex-1"></div>
-          <.button type="submit" variant="primary" class="w-full">{gettext("Continuar")}</.button>
+          <.button type="submit" variant="primary" class="w-full" phx-disable-with={gettext("Continuar...")}>
+            {gettext("Continuar")}
+          </.button>
         </form>
       </div>
 
       <div :if={@step == 3} class="col flex-1">
         <.icon_button name="chevron-left" label={gettext("Voltar")} phx-click="back" />
         <div class="col gap-3 mt-4 mb-6">
-          <h1 class="type-h1">{gettext("O disco da comunidade")}</h1>
+          <h1 id="step-heading-3" tabindex="-1" phx-mounted={JS.focus()} class="type-h1">
+            {gettext("O disco da comunidade")}
+          </h1>
           <p class="type-body text-secondary">
             {gettext("Este é o disco da comunidade. Ele é escolhido na instalação da caixa e não pode ser trocado por aqui.")}
           </p>
           <.steps current={3} />
-          <p class="type-overline text-faint">{gettext("Passo 3 de 3: armazenamento")}</p>
+          <p class="type-label text-faint">{gettext("Passo 3 de 3: armazenamento")}</p>
         </div>
 
         <div class="col gap-4 flex-1">
-          <div class="radio-card radio-card--selected">
-            <.icon name="shield" size={22} class="text-success" />
+          <.card class="row gap-3 items-center">
+            <.icon name="check" size={22} class="text-success" />
             <div class="flex-1">
               <p class="type-label">
                 {gettext("Disco interno")}{if @free_space, do: ", #{format_bytes(@free_space)} #{gettext("livres")}"}
               </p>
-              <p class="type-body-sm text-muted">{@storage_root} ({gettext("recomendado")})</p>
+              <p class="type-mono-sm text-muted">{@storage_root} ({gettext("recomendado")})</p>
             </div>
-            <span class="radio-card__ring"></span>
-          </div>
+          </.card>
 
-          <div class="radio-card" aria-disabled="true">
+          <.card class="row gap-3 items-center">
             <.icon name="download" size={22} class="text-muted" />
             <div class="flex-1">
               <p class="type-label">{gettext("Disco USB externo")}</p>
               <p class="type-body-sm text-muted">{gettext("Disco externo se prepara na instalação, não por aqui.")}</p>
             </div>
-            <span class="radio-card__ring"></span>
-          </div>
+          </.card>
 
           <.card class="mt-2">
             <p class="type-overline text-faint mb-2">{gettext("Resumo")}</p>
@@ -213,14 +305,16 @@ defmodule TainaWeb.SetupLive do
 
           <div class="flex-1"></div>
 
-          <form id="setup-submit" action={~p"/setup"} method="post" class="col">
+          <form id="setup-submit" phx-submit="final" phx-trigger-action={@trigger_submit} action={~p"/setup"} method="post" class="col">
             <input type="hidden" name="_csrf_token" value={get_csrf_token()} />
             <input type="hidden" name="setup[community_name]" value={@data["community_name"]} />
             <input type="hidden" name="setup[username]" value={@data["username"]} />
             <input type="hidden" name="setup[display_name]" value={@data["display_name"]} />
             <input type="hidden" name="setup[password]" value={@data["password"]} />
-            <input type="hidden" name="setup[password_confirmation]" value={@data["password"]} />
-            <.button type="submit" variant="service" class="w-full">{gettext("Criar minha nuvem")}</.button>
+            <input type="hidden" name="setup[password_confirmation]" value={@data["password_confirmation"]} />
+            <.button type="submit" variant="primary" class="w-full" phx-disable-with={gettext("Criar minha nuvem...")}>
+              {gettext("Criar minha nuvem")}
+            </.button>
           </form>
         </div>
       </div>

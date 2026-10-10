@@ -26,13 +26,19 @@ defmodule TainaWeb.GalleryLive do
      |> assign(:page_title, gettext("Fotos"))
      |> assign(:photo_ids, [])
      |> assign(:next_cursor, nil)
-     |> assign(:groups, [])
      |> assign(:timeline_cursor, nil)
      |> assign(:current, nil)
      |> assign(:loaded, false)
+     |> assign(:grid_stale, true)
+     |> assign(:grid_error, false)
+     |> assign(:timeline_error, false)
+     |> assign(:timeline_empty, true)
+     |> assign(:last_group, nil)
      |> assign(:show_confirm, false)
      |> assign(:show_details, false)
-     |> stream(:photos, [])}
+     |> stream(:photos, [])
+     |> stream_configure(:timeline_groups, dom_id: &timeline_dom_id/1)
+     |> stream(:timeline_groups, [])}
   end
 
   @impl true
@@ -44,28 +50,52 @@ defmodule TainaWeb.GalleryLive do
     end
   end
 
-  # Sempre recarrega ao entrar na grade: o container do stream (`phx-update`)
-  # é desmontado ao trocar de visão/visualizador, então um stream "lembrado"
-  # voltaria vazio. Recarregar do zero garante render e reseta o scroll.
-  defp ensure_grid(socket) do
-    {:ok, %{items: photos, next_cursor: cursor}} = Jaci.list_photos(socket.assigns.current_scope)
+  # A grade só recarrega quando ficou velha (`grid_stale`): fechar o
+  # visualizador volta para a grade sem refetch, então o stream segue montado
+  # e o scroll fica onde estava. Trocar para a linha do tempo desmonta o
+  # container do stream, por isso ela marca a grade como velha para a volta
+  # refazer do zero.
+  defp ensure_grid(%{assigns: %{grid_stale: false}} = socket) do
+    assign(socket, :current, nil)
+  end
 
-    socket
-    |> assign(:loaded, true)
-    |> assign(:current, nil)
-    |> assign(:next_cursor, cursor)
-    |> assign(:photo_ids, Enum.map(photos, & &1.public_id))
-    |> stream(:photos, photos, reset: true)
+  defp ensure_grid(socket) do
+    case Jaci.list_photos(socket.assigns.current_scope) do
+      {:ok, %{items: photos, next_cursor: cursor}} ->
+        socket
+        |> assign(:loaded, true)
+        |> assign(:current, nil)
+        |> assign(:next_cursor, cursor)
+        |> assign(:photo_ids, Enum.map(photos, & &1.public_id))
+        |> assign(:grid_error, false)
+        |> assign(:grid_stale, false)
+        |> stream(:photos, photos, reset: true)
+
+      {:error, _reason} ->
+        socket
+        |> assign(:loaded, true)
+        |> assign(:grid_error, true)
+        |> Phoenix.LiveView.put_flash(:error, gettext("Não foi possível carregar as fotos agora."))
+    end
   end
 
   defp ensure_timeline(socket) do
-    {:ok, %{groups: groups, next_cursor: cursor}} = Jaci.timeline(socket.assigns.current_scope)
+    case Jaci.timeline(socket.assigns.current_scope) do
+      {:ok, %{groups: groups, next_cursor: cursor}} ->
+        socket
+        |> assign(:current, nil)
+        |> assign(:last_group, List.last(groups))
+        |> assign(:timeline_cursor, cursor)
+        |> assign(:timeline_empty, groups == [])
+        |> assign(:photo_ids, timeline_photo_ids(groups))
+        |> assign(:timeline_error, false)
+        |> stream(:timeline_groups, groups, reset: true, dom_id: &timeline_dom_id/1)
 
-    socket
-    |> assign(:current, nil)
-    |> assign(:groups, groups)
-    |> assign(:timeline_cursor, cursor)
-    |> assign(:photo_ids, timeline_photo_ids(groups))
+      {:error, _reason} ->
+        socket
+        |> assign(:timeline_error, true)
+        |> Phoenix.LiveView.put_flash(:error, gettext("Não foi possível carregar as fotos agora."))
+    end
   end
 
   defp timeline_photo_ids(groups) do
@@ -102,39 +132,74 @@ defmodule TainaWeb.GalleryLive do
   def handle_event("load-more", _params, socket) do
     case {socket.assigns.live_action, socket.assigns.next_cursor, socket.assigns.timeline_cursor} do
       {:grid, cursor, _t} when is_binary(cursor) ->
-        {:ok, %{items: photos, next_cursor: next_cursor}} =
-          Jaci.list_photos(socket.assigns.current_scope, after_cursor: cursor)
+        case Jaci.list_photos(socket.assigns.current_scope, after_cursor: cursor) do
+          {:ok, %{items: photos, next_cursor: next_cursor}} ->
+            {:noreply,
+             socket
+             |> assign(:next_cursor, next_cursor)
+             |> assign(:photo_ids, socket.assigns.photo_ids ++ Enum.map(photos, & &1.public_id))
+             |> stream(:photos, photos)}
 
-        {:noreply,
-         socket
-         |> assign(:next_cursor, next_cursor)
-         |> assign(:photo_ids, socket.assigns.photo_ids ++ Enum.map(photos, & &1.public_id))
-         |> stream(:photos, photos)}
+          {:error, _reason} ->
+            {:noreply, Phoenix.LiveView.put_flash(socket, :error, gettext("Não foi possível carregar mais fotos agora."))}
+        end
 
       {:timeline, _g, cursor} when is_binary(cursor) ->
-        {:ok, %{groups: groups, next_cursor: next_cursor}} =
-          Jaci.timeline(socket.assigns.current_scope, after_cursor: cursor)
+        case Jaci.timeline(socket.assigns.current_scope, after_cursor: cursor) do
+          {:ok, %{groups: groups, next_cursor: next_cursor}} ->
+            {last_group, stream_page} = extend_timeline(socket.assigns.last_group, groups)
 
-        {:noreply,
-         socket
-         |> assign(:timeline_cursor, next_cursor)
-         |> assign(:photo_ids, socket.assigns.photo_ids ++ timeline_photo_ids(groups))
-         |> assign(:groups, merge_groups(socket.assigns.groups, groups))}
+            {:noreply,
+             socket
+             |> assign(:last_group, last_group)
+             |> assign(:timeline_cursor, next_cursor)
+             |> assign(:photo_ids, socket.assigns.photo_ids ++ timeline_photo_ids(groups))
+             |> stream(:timeline_groups, stream_page, dom_id: &timeline_dom_id/1)}
+
+          {:error, _reason} ->
+            {:noreply, Phoenix.LiveView.put_flash(socket, :error, gettext("Não foi possível carregar mais fotos agora."))}
+        end
 
       _other ->
         {:noreply, socket}
     end
   end
 
-  def handle_event("prev", _params, socket), do: {:noreply, step(socket, -1)}
-  def handle_event("next", _params, socket), do: {:noreply, step(socket, +1)}
+  # Setas e Escape do visualizador: enquanto um modal está por cima (confirmar
+  # exclusão, detalhes), a navegação espera. Um Escape não pode fechar o modal
+  # e sair do visualizador junto.
+  def handle_event("prev", _params, socket), do: {:noreply, guarded_step(socket, -1)}
+  def handle_event("next", _params, socket), do: {:noreply, guarded_step(socket, +1)}
 
   def handle_event("close", _params, socket) do
-    {:noreply, Phoenix.LiveView.push_patch(socket, to: ~p"/fotos")}
+    if modal_open?(socket.assigns) do
+      {:noreply, socket}
+    else
+      {:noreply, Phoenix.LiveView.push_patch(socket, to: ~p"/fotos")}
+    end
   end
 
   def handle_event("copied", _params, socket) do
     {:noreply, Phoenix.LiveView.put_flash(socket, :info, gettext("Link copiado!"))}
+  end
+
+  # A guarda de clipboard fica no hook (JS); quando ele não consegue copiar,
+  # a saída é a mão: selecionar o link e copiar por conta própria.
+  def handle_event("copy-failed", _params, socket) do
+    {:noreply,
+     Phoenix.LiveView.put_flash(
+       socket,
+       :error,
+       gettext("Não deu para copiar agora. Selecione o link e copie com a mão.")
+     )}
+  end
+
+  def handle_event("retry", _params, socket) do
+    case socket.assigns.live_action do
+      :grid -> {:noreply, ensure_grid(socket)}
+      :timeline -> {:noreply, ensure_timeline(socket)}
+      _other -> {:noreply, socket}
+    end
   end
 
   def handle_event("ask-delete", _params, socket) do
@@ -171,11 +236,19 @@ defmodule TainaWeb.GalleryLive do
     {:noreply, assign(socket, :show_confirm, false)}
   end
 
+  defp guarded_step(socket, delta) do
+    if modal_open?(socket.assigns), do: socket, else: step(socket, delta)
+  end
+
+  defp modal_open?(%{show_confirm: show_confirm, show_details: show_details}), do: show_confirm or show_details
+
   defp reset_gallery(socket) do
     socket
     |> assign(:loaded, false)
-    |> assign(:groups, [])
+    |> assign(:grid_stale, true)
     |> assign(:photo_ids, [])
+    |> assign(:last_group, nil)
+    |> assign(:timeline_empty, true)
   end
 
   defp step(socket, delta) do
@@ -192,19 +265,22 @@ defmodule TainaWeb.GalleryLive do
   end
 
   # Paginação pode partir um dia entre páginas; funde grupos adjacentes de
-  # mesma data (ver `Taina.Jaci.Timeline.group_by_date/1`).
-  defp merge_groups(groups, []), do: groups
-  defp merge_groups([], new_groups), do: new_groups
+  # mesma data (ver `Taina.Jaci.Timeline.group_by_date/1`). Devolve o último
+  # grupo do acumulado (tudo o que a fusão precisa guardar fora do stream) e
+  # a página pronta para o stream: quando o dia se repete, o grupo fundido
+  # entra com o mesmo id e atualiza o item no lugar, sem repetir o dia.
+  defp extend_timeline(nil, new_groups), do: {List.last(new_groups), new_groups}
 
-  defp merge_groups(groups, [first | rest] = new_groups) do
-    {head, [last]} = Enum.split(groups, -1)
-
-    if last.date == first.date do
-      head ++ [%{last | photos: last.photos ++ first.photos} | rest]
-    else
-      groups ++ new_groups
-    end
+  defp extend_timeline(%{date: date} = last_group, [%{date: date} = first | rest]) do
+    merged = %{first | photos: last_group.photos ++ first.photos}
+    {List.last([merged | rest]), [merged | rest]}
   end
+
+  defp extend_timeline(_last_group, new_groups), do: {List.last(new_groups), new_groups}
+
+  # Um id por dia: o stream atualiza o grupo fundido no lugar em vez de
+  # empilhar uma seção nova com o mesmo dia.
+  defp timeline_dom_id(group), do: "timeline-group-#{group.date}"
 
   defp group_title(date) do
     case Date.diff(Date.utc_today(), date) do
@@ -235,6 +311,24 @@ defmodule TainaWeb.GalleryLive do
   end
 
   defp video?(%{mime_type: mime}), do: String.starts_with?(mime, "video/")
+
+  # Troca progressiva do visualizador: o `md` carrega primeiro e o JS troca
+  # para o original depois. O original só entra no plano quando o tamanho
+  # cabe no orçamento do Pi; arquivo gigante demais trava a caixa por causa
+  # de um preview. O JS lê o `data-full` do `img`: sem atributo, sem troca.
+  @full_swap_cap_bytes 20 * 1024 * 1024
+
+  defp full_swap?(%{file_size_bytes: bytes}), do: bytes <= @full_swap_cap_bytes
+
+  # Tipo legível: "image/jpeg" vira "Imagem JPEG" (o kind do design system
+  # traduzido, o subtipo em maiúsculas). "application/pdf" vira só "PDF",
+  # sem repetir o subtipo quando ele já é o nome curto.
+  defp human_type(%{mime_type: mime_type}) do
+    kind = file_kind(mime_type)
+    subtype = mime_type |> String.split("/") |> List.last() |> String.upcase()
+
+    if kind == subtype, do: kind, else: "#{kind} #{subtype}"
+  end
 
   defp photo_date(file) do
     file
@@ -284,11 +378,11 @@ defmodule TainaWeb.GalleryLive do
         </div>
 
         <div :if={@next_cursor} id="grid-load-more" phx-viewport-bottom="load-more" class="center py-4">
-          <p class="type-caption text-faint">{gettext("Carregando mais...")}</p>
+          <p class="type-caption text-muted">{gettext("Carregando mais...")}</p>
         </div>
 
         <.empty_state
-          :if={@loaded && @photo_ids == []}
+          :if={@loaded && @photo_ids == [] and not @grid_error}
           icon="image"
           title={gettext("Nenhuma foto ainda")}
           hint={gettext("As imagens que a comunidade enviar aparecem aqui.")}
@@ -297,48 +391,80 @@ defmodule TainaWeb.GalleryLive do
             {gettext("Enviar fotos")}
           </.button>
         </.empty_state>
+
+        <.empty_state
+          :if={@grid_error}
+          icon="alert"
+          title={gettext("Não foi possível carregar")}
+          hint={gettext("As fotos não responderam agora.")}
+        >
+          <.button variant="secondary" phx-click="retry">{gettext("Tentar de novo")}</.button>
+        </.empty_state>
       </div>
 
       <div :if={@live_action == :timeline} class="mt-4 col gap-5">
-        <section :for={group <- @groups}>
-          <h2 class="type-h3 mb-2">
-            {group_title(group.date)}, {ngettext("%{count} foto", "%{count} fotos", length(group.photos))}
-          </h2>
-          <div class="photo-grid">
-            <.link
-              :for={photo <- group.photos}
-              patch={~p"/fotos/#{photo.public_id}"}
-              class="photo-grid__item"
-              aria-label={photo.original_filename}
-            >
-              <div :if={video?(photo)} class="photo-grid__video">
-                <.icon name="play" size={28} />
-              </div>
-              <img
-                :if={!video?(photo)}
-                src={~p"/files/#{photo.public_id}/thumbnail/sm"}
-                alt={photo.original_filename}
-                loading="lazy"
-              />
-            </.link>
-          </div>
-        </section>
+        <div id="timeline-groups" phx-update="stream" class="col gap-5">
+          <section :for={{dom_id, group} <- @streams.timeline_groups} id={dom_id}>
+            <h2 class="type-h3 mb-2">
+              {group_title(group.date)}, {ngettext("%{count} foto", "%{count} fotos", length(group.photos))}
+            </h2>
+            <div class="photo-grid">
+              <.link
+                :for={photo <- group.photos}
+                patch={~p"/fotos/#{photo.public_id}"}
+                class="photo-grid__item"
+                aria-label={photo.original_filename}
+              >
+                <div :if={video?(photo)} class="photo-grid__video">
+                  <.icon name="play" size={28} />
+                </div>
+                <img
+                  :if={!video?(photo)}
+                  src={~p"/files/#{photo.public_id}/thumbnail/sm"}
+                  alt={photo.original_filename}
+                  loading="lazy"
+                />
+              </.link>
+            </div>
+          </section>
+        </div>
 
         <div :if={@timeline_cursor} id="timeline-load-more" phx-viewport-bottom="load-more" class="center py-4">
-          <p class="type-caption text-faint">{gettext("Carregando mais...")}</p>
+          <p class="type-caption text-muted">{gettext("Carregando mais...")}</p>
         </div>
 
         <.empty_state
-          :if={@groups == []}
+          :if={@timeline_empty and not @timeline_error}
           icon="image"
           title={gettext("Nenhuma foto ainda")}
           hint={gettext("As imagens que a comunidade enviar aparecem aqui.")}
-        />
+        >
+          <.button variant="primary" size="md" navigate={~p"/arquivos/enviar"}>
+            {gettext("Enviar fotos")}
+          </.button>
+        </.empty_state>
+
+        <.empty_state
+          :if={@timeline_error}
+          icon="alert"
+          title={gettext("Não foi possível carregar")}
+          hint={gettext("As fotos não responderam agora.")}
+        >
+          <.button variant="secondary" phx-click="retry">{gettext("Tentar de novo")}</.button>
+        </.empty_state>
       </div>
 
-      <div :if={@current} id="viewer" class="viewer" phx-hook="ViewerNav">
+      <div
+        :if={@current}
+        id="viewer"
+        class="viewer"
+        role="dialog"
+        aria-modal="true"
+        aria-label={gettext("Visualizador de fotos")}
+        phx-hook="ViewerNav"
+      >
         <header class="row between p-4">
-          <.icon_button name="close" label={gettext("Fechar")} phx-click="close" />
+          <.icon_button name="close" label={gettext("Fechar")} id="viewer-close" phx-click="close" />
           <div class="text-center">
             <p class="type-label">{photo_date(@current)}</p>
             <p class="type-caption text-faint">
@@ -355,10 +481,17 @@ defmodule TainaWeb.GalleryLive do
         </header>
 
         <div class="viewer__stage">
-          <video :if={video?(@current)} controls src={~p"/files/#{@current.public_id}"}></video>
+          <video
+            :if={video?(@current)}
+            controls
+            preload="metadata"
+            playsinline
+            src={~p"/files/#{@current.public_id}"}
+          ></video>
           <img
             :if={!video?(@current)}
             src={~p"/files/#{@current.public_id}/thumbnail/md"}
+            data-full={full_swap?(@current) && url(~p"/files/#{@current.public_id}")}
             alt={@current.original_filename}
           />
           <button
@@ -382,6 +515,7 @@ defmodule TainaWeb.GalleryLive do
         <nav :if={length(@photo_ids) > 1} class="viewer__rail" aria-label={gettext("Fotos vizinhas")}>
           <.link
             :for={{id, position} <- rail_window(@photo_ids, @current.public_id)}
+            id={"rail-#{id}"}
             patch={~p"/fotos/#{id}"}
             class="viewer__rail-item"
             aria-current={id == @current.public_id}
@@ -439,14 +573,14 @@ defmodule TainaWeb.GalleryLive do
           </div>
           <div>
             <p class="type-caption text-faint">{gettext("Tipo")}</p>
-            <p class="type-mono-sm">{@current.mime_type}</p>
+            <p class="type-mono-sm">{human_type(@current)}</p>
           </div>
           <div>
             <p class="type-caption text-faint">{gettext("Tamanho")}</p>
             <p class="type-body">{format_bytes(@current.file_size_bytes)}</p>
           </div>
           <div>
-            <p class="type-caption text-faint">{gettext("SHA-256")}</p>
+            <p class="type-caption text-faint">{gettext("Impressão digital (SHA-256)")}</p>
             <p class="type-mono-sm truncate">{@current.file_hash}</p>
           </div>
           <div>

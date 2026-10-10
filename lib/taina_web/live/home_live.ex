@@ -1,7 +1,7 @@
 defmodule TainaWeb.HomeLive do
   @moduledoc """
-  Home "superapp": saudação, cartão de armazenamento, cards de serviço
-  (Arquivos/Fotos/Membros e Mensagens "em breve") e os envios recentes.
+  Home "superapp": visão geral dos serviços com acesso rápido (Arquivos, Fotos,
+  Moradores, Mural, Saúde), cartão de armazenamento e os envios recentes.
   Tela "Home - Superapp" (mobile) e "Desktop - Home" do Penpot.
   """
 
@@ -15,14 +15,16 @@ defmodule TainaWeb.HomeLive do
     scope = socket.assigns.current_scope
 
     # A home degrada em vez de cair: se o Ybira falhar, avisamos por flash e
-    # mostramos a tela com as listas vazias (o empty_state assume o lugar) em
-    # vez de derrubar a LiveView.
+    # mostramos a tela com as listas vazias em vez de derrubar a LiveView. O
+    # estado vazio só aparece quando a lista de verdade está vazia (recent_ok):
+    # com erro, o flash explica e o vazio não mente.
     {recent, ok?} = unwrap(Ybira.list_recent(scope, limit: 4), [])
 
     socket =
       socket
       |> assign(:page_title, gettext("Início"))
       |> assign(:recent, recent)
+      |> assign(:recent_ok, ok?)
 
     {:ok, maybe_warn(socket, ok?)}
   end
@@ -41,7 +43,7 @@ defmodule TainaWeb.HomeLive do
     )
   end
 
-  # Saudação pelo relógio da caixa, o servidor mora na casa da comunidade,
+  # Saudação pelo relógio da caixa: o servidor mora na casa da comunidade,
   # então o horário local do sistema é o horário local de quem usa.
   defp greeting do
     {_date, {hour, _min, _sec}} = :calendar.local_time()
@@ -53,6 +55,24 @@ defmodule TainaWeb.HomeLive do
     end
   end
 
+  # Serviços na ordem da navegação (sidebar). Moradores e Mural são Maracá:
+  # cada serviço tem o próprio acento, e Maracá fica neutro em vez de pegar
+  # emprestado o acento dos outros.
+  defp services do
+    [
+      {gettext("Arquivos"), gettext("Documentos e pastas"), "ybira", "folder", ~p"/arquivos"},
+      {gettext("Fotos"), gettext("Fotos e vídeos"), "jaci", "image", ~p"/fotos"},
+      {gettext("Moradores"), gettext("Quem faz parte"), "neutral", "user", ~p"/membros"},
+      {gettext("Mural"), gettext("O que aconteceu"), "neutral", "mural", ~p"/mural"},
+      {gettext("Saúde"), gettext("Estado da máquina"), "nhaman", "saude", ~p"/saude"}
+    ]
+  end
+
+  # Cota definida e maior que zero? Sem cota não há "livres" para medir: o card
+  # mostra só o uso e esconde a barra (nunca "X de 0 B usados").
+  defp quota?(%{quota_bytes: quota}) when is_integer(quota) and quota > 0, do: true
+  defp quota?(_stats), do: false
+
   # O mesmo cálculo do card "Espaço da comunidade" (files_live): quanto do
   # espaço da comunidade está em uso, 0..100. Sem cota definida, barra zerada.
   defp storage_percent(%{used_bytes: used, quota_bytes: quota}) when is_integer(quota) and quota > 0,
@@ -60,9 +80,37 @@ defmodule TainaWeb.HomeLive do
 
   defp storage_percent(_stats), do: 0
 
-  defp recent_meta(file) do
-    "#{file_kind(file.mime_type)}, #{format_bytes(file.file_size_bytes)}, #{relative_time(file.inserted_at)}"
+  # Quase cheia: 90% ou mais da cota em uso. Aviso em ambiente, nunca alarme:
+  # cor + ícone + frase, a cor nunca sozinha.
+  defp storage_low?(%{quota_bytes: quota} = stats) when is_integer(quota) and quota > 0, do: storage_percent(stats) >= 90
+
+  defp storage_low?(_stats), do: false
+
+  defp free_label(%{used_bytes: used, quota_bytes: quota} = stats) when is_integer(quota) and quota > 0 do
+    free = format_bytes(quota - used)
+
+    if storage_low?(stats) do
+      gettext("quase cheia: %{free} livres", free: free)
+    else
+      gettext("%{free} livres", free: free)
+    end
   end
+
+  # Meta da linha recente termina na zona, em palavra (nunca só cor):
+  # "Imagem, 2,4 MB, ontem, na praça".
+  defp recent_meta(file) do
+    [
+      file_kind(file.mime_type),
+      format_bytes(file.file_size_bytes),
+      relative_time(file.inserted_at),
+      zona_label(file.zona)
+    ]
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.join(", ")
+  end
+
+  defp zona_label(:praca), do: gettext("na praça")
+  defp zona_label(_zona), do: gettext("na casa")
 
   @impl true
   def render(assigns) do
@@ -79,28 +127,43 @@ defmodule TainaWeb.HomeLive do
           <p class="type-body text-secondary">{greeting()}</p>
           <h1 class="type-h1">{@current_scope.tekoa.name}</h1>
         </div>
-        <.link navigate={~p"/conta"} aria-label={gettext("Sua conta")}>
+        <.link navigate={~p"/conta"} class="p-1" aria-label={gettext("Sua conta")}>
           <.avatar name={@current_scope.ava.display_name || @current_scope.ava.username} />
+        </.link>
+      </div>
+
+      <div class="cards-grid mb-6">
+        <.link :for={{label, meta, service, icon, path} <- services()} navigate={path} class="service-card">
+          <.service_square service={service} icon={icon} size="lg" />
+          <p class="service-card__title">{label}</p>
+          <p class="service-card__meta">{meta}</p>
         </.link>
       </div>
 
       <.card :if={@storage_stats} class="mb-6">
         <div class="row between mb-3">
           <p class="type-label">{gettext("Espaço da comunidade")}</p>
-          <p :if={@storage_stats.quota_bytes} class="type-caption text-success">
-            {format_bytes(@storage_stats.quota_bytes - @storage_stats.used_bytes)} {gettext("livres")}
+          <p
+            :if={quota?(@storage_stats)}
+            class={["type-caption", if(storage_low?(@storage_stats), do: "text-warning", else: "text-success")]}
+          >
+            <.icon :if={storage_low?(@storage_stats)} name="alert" size={14} />
+            {free_label(@storage_stats)}
           </p>
         </div>
-        <.progress value={storage_percent(@storage_stats)} />
-        <p class="type-caption text-muted mt-3">
-          {gettext("%{used} de %{total} usados",
-            used: format_bytes(@storage_stats.used_bytes),
-            total: format_bytes(@storage_stats.quota_bytes)
-          )}
+        <.progress :if={quota?(@storage_stats)} value={storage_percent(@storage_stats)} />
+        <p :if={quota?(@storage_stats)} class="type-caption text-muted mt-3">
+          <span class="type-mono-sm">{format_bytes(@storage_stats.used_bytes)}</span>
+          {gettext("de")}
+          <span class="type-mono-sm">{format_bytes(@storage_stats.quota_bytes)}</span>
+          {gettext("usados")}
+        </p>
+        <p :if={!quota?(@storage_stats)} class="type-caption text-muted mt-3">
+          <span class="type-mono-sm">{format_bytes(@storage_stats.used_bytes)}</span> {gettext("em uso")}
         </p>
       </.card>
 
-      <p class="type-overline text-faint mb-3">{gettext("Recentes")}</p>
+      <p class="type-overline text-muted mb-3">{gettext("Recentes")}</p>
       <div class="list">
         <.list_row
           :for={file <- @recent}
@@ -119,7 +182,7 @@ defmodule TainaWeb.HomeLive do
       </div>
 
       <.empty_state
-        :if={@recent == []}
+        :if={@recent == [] and @recent_ok}
         icon="upload"
         title={gettext("Nada por aqui ainda")}
         hint={gettext("Envie o primeiro arquivo da comunidade.")}

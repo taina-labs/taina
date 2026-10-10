@@ -52,7 +52,7 @@ defmodule TainaWeb.SaudeLiveTest do
 
     # A caixa: nome da Tekoa e o endereço que a comunidade usa.
     assert html =~ "Esta é a caixa de #{tekoa.name}."
-    assert html =~ "Vocês acessam por localhost."
+    assert html =~ "A comunidade acessa por localhost."
 
     # Sem backup ainda: cuidado, não recusa, sem botão para morador.
     assert html =~ "Nenhum backup ainda."

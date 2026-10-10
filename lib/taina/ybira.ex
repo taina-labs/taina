@@ -217,11 +217,28 @@ defmodule Taina.Ybira do
       file = Repo.one(query)
 
       if file && owner?(scope, file.ava_id) do
-        Repo.update(Ybira.File.restore_changeset(file))
+        file
+        |> Ybira.File.restore_changeset()
+        |> restore_reachable()
+        |> Repo.update()
       else
         {:error, :not_found}
       end
     end)
+  end
+
+  # Restaurar um arquivo dentro de uma pasta que também está na lixeira o
+  # deixaria inalcançável: as listagens só andam por pastas vivas. Nesse caso
+  # o arquivo volta na raiz; a pasta, se o dono restaurar um dia, é outra
+  # operação (a lixeira de hoje é só de arquivos).
+  defp restore_reachable(changeset) do
+    folder_id = Ecto.Changeset.get_field(changeset, :folder_id)
+
+    parent_alive? =
+      is_nil(folder_id) or
+        Repo.exists?(from(d in Ybira.Folder, where: d.id == ^folder_id and is_nil(d.deleted_at)))
+
+    if parent_alive?, do: changeset, else: Ecto.Changeset.change(changeset, folder_id: nil)
   end
 
   @impl true
@@ -250,7 +267,7 @@ defmodule Taina.Ybira do
   def move_file(%Scope{} = scope, file_public_id, folder_public_id) when is_binary(file_public_id) do
     Repo.with_tekoa(scope.tekoa.public_id, fn ->
       with {:ok, file} <- fetch_owned_file(scope, file_public_id),
-           {:ok, folder_id} <- resolve_folder_id(folder_public_id) do
+           {:ok, folder_id} <- resolve_owned_folder_id(scope, folder_public_id) do
         Repo.update(Ybira.File.changeset(file, %{folder_id: folder_id}))
       end
     end)
@@ -288,18 +305,24 @@ defmodule Taina.Ybira do
     parent_public_id = fetch_attr(attrs, :parent_public_id)
 
     Repo.with_tekoa(scope.tekoa.public_id, fn ->
-      with {:ok, parent_id} <- resolve_folder_id(parent_public_id) do
-        Repo.insert(
-          Ybira.Folder.changeset(%Ybira.Folder{}, %{
-            name: name,
-            parent_id: parent_id,
-            ava_id: scope.ava.id,
-            tekoa_id: scope.tekoa.id
-          })
-        )
+      with {:ok, parent_id} <- resolve_owned_folder_id(scope, parent_public_id) do
+        base = %{
+          name: name,
+          parent_id: parent_id,
+          ava_id: scope.ava.id,
+          tekoa_id: scope.tekoa.id
+        }
+
+        Repo.insert(Ybira.Folder.changeset(%Ybira.Folder{}, with_zona(base, attrs)))
       end
     end)
   end
+
+  # A pasta nova herda a zona pedida (a aba ativa no navegador de arquivos);
+  # sem pedido, vale o default do schema (:casa). Só zonas conhecidas.
+  defp with_zona(attrs, %{zona: zona}) when zona in [:casa, :praca], do: Map.put(attrs, :zona, zona)
+  defp with_zona(attrs, %{"zona" => zona}) when zona in ["casa", "praca"], do: Map.put(attrs, :zona, zona)
+  defp with_zona(attrs, _attrs), do: attrs
 
   @impl true
   def get_folder(%Scope{} = scope, public_id) when is_binary(public_id) do
@@ -324,7 +347,7 @@ defmodule Taina.Ybira do
   def move_folder(%Scope{} = scope, public_id, new_parent_public_id) when is_binary(public_id) do
     Repo.with_tekoa(scope.tekoa.public_id, fn ->
       with {:ok, folder} <- fetch_folder(scope, public_id),
-           {:ok, new_parent_id} <- resolve_folder_id(new_parent_public_id),
+           {:ok, new_parent_id} <- resolve_owned_folder_id(scope, new_parent_public_id),
            :ok <- ensure_acyclic(folder.id, new_parent_id) do
         Repo.update(Ybira.Folder.changeset(folder, %{parent_id: new_parent_id}))
       end
@@ -705,6 +728,19 @@ defmodule Taina.Ybira do
     case Repo.one(folder_by_public_id(public_id)) do
       nil -> {:error, :not_found}
       folder -> {:ok, folder.id}
+    end
+  end
+
+  # Destino de mutação (criar dentro de, mover para): a pasta precisa existir
+  # E ser sua. A navegação (`list_folder_contents`) fica com a regra de
+  # leitura (praça OU dono OU permissão); aqui quem recebe o item é o dono do
+  # destino. `:not_found` para pasta alheia, sem vazar que ela existe.
+  defp resolve_owned_folder_id(_scope, nil), do: {:ok, nil}
+
+  defp resolve_owned_folder_id(%Scope{} = scope, public_id) when is_binary(public_id) do
+    case Repo.one(folder_by_public_id(public_id)) do
+      nil -> {:error, :not_found}
+      folder -> if owner?(scope, folder.ava_id), do: {:ok, folder.id}, else: {:error, :not_found}
     end
   end
 

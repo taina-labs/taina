@@ -49,7 +49,7 @@ defmodule TainaWeb.MembersLiveTest do
 
     html = render_click(lv, "set-role", %{"id" => member.public_id, "role" => "zelador"})
 
-    assert html =~ "Papel atualizado."
+    assert html =~ "agora é zelador(a). Registrado no mural."
   end
 
   test "zelador desativa e reativa um morador", %{conn: conn, zelador: zelador, member: member} do

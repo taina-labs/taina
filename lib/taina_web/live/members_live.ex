@@ -21,6 +21,7 @@ defmodule TainaWeb.MembersLive do
      |> assign(:reset_link, nil)
      |> assign(:reset_member, nil)
      |> assign(:confirm_deactivate, nil)
+     |> assign(:confirm_role, nil)
      |> assign_members()}
   end
 
@@ -54,10 +55,12 @@ defmodule TainaWeb.MembersLive do
 
   def handle_event("set-role", %{"id" => public_id, "role" => role}, socket) do
     role = String.to_existing_atom(role)
+    member = Enum.find(socket.assigns.members, &(&1.public_id == public_id))
+    socket = assign(socket, :confirm_role, nil)
 
     case Maraca.update_member_role(socket.assigns.current_scope, public_id, role) do
       {:ok, _ava} ->
-        {:noreply, socket |> assign_members() |> flash_info(gettext("Papel atualizado."))}
+        {:noreply, socket |> assign_members() |> flash_info(role_changed_message(member, role))}
 
       {:error, :last_zelador} ->
         {:noreply, flash_error(socket, last_zelador_message())}
@@ -67,13 +70,22 @@ defmodule TainaWeb.MembersLive do
     end
   end
 
-  def handle_event("ask-deactivate", %{"id" => public_id}, socket) do
+  # Mudar papel é ato de poder (RFC_003, seção 6): a promoção passa pela
+  # confirmação, como desativar. Rebaixar fica direto: tira poder, não dá.
+  def handle_event("ask-role", %{"id" => public_id, "role" => role}, socket) do
     member = Enum.find(socket.assigns.members, &(&1.public_id == public_id))
-    {:noreply, assign(socket, :confirm_deactivate, member)}
+    role = String.to_existing_atom(role)
+
+    {:noreply, assign(socket, :confirm_role, member && %{member: member, role: role})}
   end
 
   def handle_event("close-confirm", _params, socket) do
-    {:noreply, assign(socket, :confirm_deactivate, nil)}
+    {:noreply, assign(socket, confirm_deactivate: nil, confirm_role: nil)}
+  end
+
+  def handle_event("ask-deactivate", %{"id" => public_id}, socket) do
+    member = Enum.find(socket.assigns.members, &(&1.public_id == public_id))
+    {:noreply, assign(socket, :confirm_deactivate, member)}
   end
 
   def handle_event("deactivate", %{"id" => public_id}, socket) do
@@ -113,14 +125,32 @@ defmodule TainaWeb.MembersLive do
     gettext("A comunidade precisa de pelo menos um zelador ativo. Promova outra pessoa antes.")
   end
 
+  # A promoção é um ato de poder visível: o flash nomeia a pessoa e aponta o
+  # registro no mural (RFC_003, seção 6).
+  defp role_changed_message(%Ava{} = member, :zelador) do
+    gettext("%{name} agora é zelador(a). Registrado no mural.", name: display_name(member))
+  end
+
+  defp role_changed_message(_member, _role), do: gettext("Papel atualizado.")
+
+  # Busca sem sotaque: normaliza acentos (NFD + remove marcas) e procura no nome
+  # de exibição e no nome de usuário, então "joao" acha "João" e vice-versa.
   defp filtered(members, ""), do: members
 
   defp filtered(members, query) do
-    needle = String.downcase(query)
+    needle = normalize(query)
 
     Enum.filter(members, fn member ->
-      String.contains?(String.downcase(display_name(member)), needle)
+      String.contains?(normalize(display_name(member)), needle) or
+        String.contains?(normalize(member.username || ""), needle)
     end)
+  end
+
+  defp normalize(value) do
+    value
+    |> String.normalize(:nfd)
+    |> String.replace(~r/\p{M}/u, "")
+    |> String.downcase()
   end
 
   defp display_name(member) do
@@ -131,11 +161,17 @@ defmodule TainaWeb.MembersLive do
     cond do
       deactivated?(member) -> gettext("Conta desativada")
       member.id == scope.ava.id -> gettext("Você")
-      is_nil(member.activated_at) -> gettext("Convite pendente")
+      pending?(member) -> gettext("aguardando a pessoa aceitar")
       member.role == :zelador -> gettext("Quem cuida da máquina")
       true -> gettext("Entrou %{when}", when: relative_time(member.inserted_at))
     end
   end
+
+  # Convite ainda não aceito: a conta existe, a pessoa ainda não entrou.
+  defp pending?(member), do: is_nil(member.activated_at) and is_nil(member.deactivated_at)
+
+  defp role_label(:zelador), do: gettext("Zelador(a)")
+  defp role_label(:morador), do: gettext("Morador(a)")
 
   defp can_reset?(member, scope) do
     Maraca.zelador?(scope.ava) and member.id != scope.ava.id and not is_nil(member.activated_at)
@@ -166,6 +202,8 @@ defmodule TainaWeb.MembersLive do
       </Layouts.app_bar>
 
       <div class="col gap-4 mx-auto w-full measure">
+        <% shown = filtered(@members, @query) %>
+
         <form id="member-search-form" phx-change="search" class="search">
           <.icon name="search" size={20} />
           <input
@@ -173,30 +211,18 @@ defmodule TainaWeb.MembersLive do
             name="query"
             value={@query}
             placeholder={gettext("Buscar pessoa")}
+            aria-label={gettext("Buscar pessoa")}
             phx-debounce="200"
             autocomplete="off"
           />
         </form>
 
-        <div class="row between">
-          <p class="type-overline text-faint">
-            {ngettext("%{count} pessoa", "%{count} pessoas", length(@members))}
-          </p>
-          <.link
-            :if={Maraca.zelador?(@current_scope.ava)}
-            navigate={~p"/membros/convidar"}
-            class="type-label text-brand"
-          >
-            {gettext("Convidar")}
-          </.link>
-        </div>
+        <p class="type-overline text-muted">
+          {ngettext("%{count} pessoa", "%{count} pessoas", length(shown))}
+        </p>
 
         <div class="list">
-          <.list_row
-            :for={member <- filtered(@members, @query)}
-            title={display_name(member)}
-            meta={member_meta(member, @current_scope)}
-          >
+          <.list_row :for={member <- shown} title={display_name(member)} meta={member_meta(member, @current_scope)}>
             <:leading>
               <.avatar
                 name={display_name(member)}
@@ -204,7 +230,10 @@ defmodule TainaWeb.MembersLive do
               />
             </:leading>
             <:actions>
-              <.badge :if={member.role == :zelador} variant="zelador">{gettext("Zelador(a)")}</.badge>
+              <.badge :if={pending?(member)} variant="soon">{role_label(member.role)}</.badge>
+              <.badge :if={member.role == :zelador and not pending?(member)} variant="zelador">
+                {gettext("Zelador(a)")}
+              </.badge>
               <.icon_button
                 :if={can_reset?(member, @current_scope)}
                 name="link"
@@ -218,14 +247,14 @@ defmodule TainaWeb.MembersLive do
                 label={gettext("Ações da conta")}
               >
                 <:item
-                  :if={member.role == :morador}
+                  :if={member.role == :morador and not pending?(member)}
                   icon="shield"
-                  click={JS.push("set-role", value: %{id: member.public_id, role: "zelador"})}
+                  click={JS.push("ask-role", value: %{id: member.public_id, role: "zelador"})}
                 >
                   {gettext("Tornar zelador(a)")}
                 </:item>
                 <:item
-                  :if={member.role == :zelador}
+                  :if={member.role == :zelador and not pending?(member)}
                   icon="user"
                   click={JS.push("set-role", value: %{id: member.public_id, role: "morador"})}
                 >
@@ -252,11 +281,15 @@ defmodule TainaWeb.MembersLive do
         </div>
 
         <.empty_state
-          :if={filtered(@members, @query) == []}
+          :if={shown == []}
           icon="user"
           title={gettext("Ninguém por aqui")}
           hint={gettext("Nenhuma pessoa corresponde à busca.")}
-        />
+        >
+          <.button variant="secondary" size="sm" phx-click="search" phx-value-query="">
+            {gettext("Limpar busca")}
+          </.button>
+        </.empty_state>
       </div>
 
       <.modal id="reset-link-modal" show={@reset_link != nil} on_cancel={JS.push("close-reset")}>
@@ -289,6 +322,23 @@ defmodule TainaWeb.MembersLive do
         confirm_label={gettext("Desativar")}
         on_confirm={
           JS.push("deactivate", value: %{id: @confirm_deactivate && @confirm_deactivate.public_id})
+        }
+        on_cancel={JS.push("close-confirm")}
+      />
+
+      <.confirm_dialog
+        id="confirm-role"
+        show={@confirm_role != nil}
+        title={gettext("Tornar zelador(a)?")}
+        message={
+          gettext(
+            "%{name} vai poder gerar convites e links de redefinição de senha. Não ganha acesso à casa de ninguém. A mudança fica registrada no mural.",
+            name: @confirm_role && display_name(@confirm_role.member)
+          )
+        }
+        confirm_label={gettext("Tornar zelador(a)")}
+        on_confirm={
+          JS.push("set-role", value: %{id: @confirm_role && @confirm_role.member.public_id, role: "zelador"})
         }
         on_cancel={JS.push("close-confirm")}
       />

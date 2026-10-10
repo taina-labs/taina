@@ -153,14 +153,34 @@ defmodule TainaWeb.CoreComponents do
           name={@name}
           id={@id}
           value={Phoenix.HTML.Form.normalize_value(@type, @value)}
+          aria-invalid={@errors != [] && "true" || nil}
+          aria-describedby={input_describedby(@id, @help, @errors)}
           {@rest}
         />
         <.icon :if={@icon} name={@icon} size={20} />
       </div>
-      <span :if={@help && @errors == []} class="field__help">{@help}</span>
-      <span :for={error <- @errors} class="field__error">{error}</span>
+      <span :if={@help && @errors == []} class="field__help" id={"#{@id}-help"}>{@help}</span>
+      <span
+        :for={{error, index} <- Enum.with_index(@errors)}
+        class="field__error"
+        id={"#{@id}-error-#{index}"}
+        role="alert"
+      >{error}</span>
     </div>
     """
+  end
+
+  # O span de ajuda só entra quando não há erro (mesma condição do template).
+  defp input_describedby(nil, _help, _errors), do: nil
+
+  defp input_describedby(id, help, errors) do
+    help_ids = if help && errors == [], do: ["#{id}-help"], else: []
+    error_ids = Enum.with_index(errors, fn _error, index -> "#{id}-error-#{index}" end)
+
+    case help_ids ++ error_ids do
+      [] -> nil
+      ids -> Enum.join(ids, " ")
+    end
   end
 
   # ---------- cartões ----------
@@ -279,10 +299,12 @@ defmodule TainaWeb.CoreComponents do
   # ---------- progresso ----------
 
   @doc """
-  Barra de progresso. Para a versão segmentada (armazenamento por tipo),
-  passe `segments` como lista de `{cor, fração}`.
+  Barra de progresso. Aceita `value` como porcentagem (0..100) ou fração (0..1);
+  o preenchimento usa `transform: scaleX()`. Para a versão segmentada
+  (armazenamento por tipo), passe `segments` como lista de `{cor, fração}`.
   """
-  attr :value, :integer, default: nil, doc: "0..100"
+  attr :value, :any, default: nil, doc: "porcentagem 0..100 ou fração 0..1"
+  attr :label, :string, default: nil, doc: "rótulo acessível (aria-label)"
   attr :color, :string, default: nil, values: [nil, "success", "jaci", "sky", "ybira", "neutral"]
   attr :segments, :list, default: nil, doc: ~s|ex.: [{"jaci", 0.5}, {"sky", 0.3}]|
 
@@ -300,12 +322,32 @@ defmodule TainaWeb.CoreComponents do
   end
 
   def progress(assigns) do
+    assigns = assign(assigns, :percent, progress_percent(assigns.value))
+
     ~H"""
-    <div class="progress" role="progressbar" aria-valuenow={@value} aria-valuemin="0" aria-valuemax="100">
-      <div class={["progress__fill", @color && "progress__fill--#{@color}"]} style={"width: #{@value}%"}></div>
+    <div
+      class="progress"
+      role="progressbar"
+      aria-label={@label}
+      aria-valuenow={@percent}
+      aria-valuemin="0"
+      aria-valuemax="100"
+    >
+      <div
+        :if={@percent}
+        class={["progress__fill", @color && "progress__fill--#{@color}"]}
+        style={"width: 100%; transform-origin: left; transform: scaleX(#{@percent / 100})"}
+      >
+      </div>
     </div>
     """
   end
+
+  defp progress_percent(nil), do: nil
+  defp progress_percent(value) when is_float(value) and value <= 1.0, do: clamp_percent(value * 100)
+  defp progress_percent(value), do: clamp_percent(value)
+
+  defp clamp_percent(pct), do: pct |> max(0) |> min(100)
 
   # ---------- controle segmentado ----------
 
@@ -344,7 +386,11 @@ defmodule TainaWeb.CoreComponents do
 
   def steps(assigns) do
     ~H"""
-    <div class="steps" role="presentation">
+    <div
+      class="steps"
+      role="group"
+      aria-label={gettext("Passo %{current} de %{total}", current: @current, total: @total)}
+    >
       <span :for={step <- 1..@total} class={["steps__dot", step == @current && "steps__dot--current"]}></span>
     </div>
     """
@@ -353,16 +399,18 @@ defmodule TainaWeb.CoreComponents do
   # ---------- menu (kebab) ----------
 
   @doc """
-  Menu suspenso acionado por botão de ícone, fechado com clique fora.
+  Menu suspenso acionado por botão de ícone, fechado com clique fora e Esc.
+  O rótulo é opcional e cai no `aria-label` do gatilho; passe um mais específico
+  quando o contexto ajuda (ex.: `Mais opções para %{name}`).
 
-      <.menu id={"file-menu-\#{file.public_id}"} icon="kebab" label="Mais opções">
+      <.menu id={"file-menu-\#{file.public_id}"} label={gettext("Mais opções para %{name}", name: file.name)}>
         <:item icon="pencil" click={JS.push("rename", value: %{id: file.public_id})}>Renomear</:item>
         <:item icon="trash" danger click={JS.push("delete", value: %{id: file.public_id})}>Excluir</:item>
       </.menu>
   """
   attr :id, :string, required: true
   attr :icon, :string, default: "kebab"
-  attr :label, :string, required: true
+  attr :label, :string, default: gettext("Mais opções")
 
   slot :item, required: true do
     attr :icon, :string
@@ -372,23 +420,32 @@ defmodule TainaWeb.CoreComponents do
 
   def menu(assigns) do
     ~H"""
-    <div class="menu" id={@id} phx-click-away={JS.hide(to: "##{@id}-list")}>
+    <div
+      class="menu"
+      id={@id}
+      phx-click-away={JS.hide(to: "##{@id}-list")}
+      phx-window-keydown={JS.hide(to: "##{@id}-list")}
+      phx-key="escape"
+    >
       <button
         type="button"
         class="icon-btn"
         aria-label={@label}
-        aria-haspopup="menu"
-        phx-click={JS.toggle(to: "##{@id}-list", display: "flex")}
+        aria-haspopup="true"
+        aria-expanded="false"
+        phx-click={
+          JS.toggle(to: "##{@id}-list", display: "flex")
+          |> JS.toggle_attribute({"aria-expanded", "false", "true"})
+        }
       >
         <.icon name={@icon} size={20} />
       </button>
-      <div id={"#{@id}-list"} class="menu__list" role="menu">
+      <div id={"#{@id}-list"} class="menu__list">
         <button
           :for={item <- @item}
           type="button"
-          role="menuitem"
           class={["menu__item", item[:danger] && "menu__item--danger"]}
-          phx-click={js_exec_with(JS.hide(to: "##{@id}-list"), item.click)}
+          phx-click={JS.concat(JS.hide(to: "##{@id}-list"), item.click)}
         >
           <.icon :if={item[:icon]} name={item.icon} size={18} />
           {render_slot(item)}
@@ -398,23 +455,41 @@ defmodule TainaWeb.CoreComponents do
     """
   end
 
-  # JS.exec_with não existe; compomos as duas ações concatenando os comandos.
-  defp js_exec_with(%JS{ops: ops}, %JS{ops: more}), do: %JS{ops: ops ++ more}
-
   # ---------- modal ----------
 
   @doc """
   Modal (bottom sheet no mobile). Fecha em clique fora e Esc via `on_cancel`.
+  Foco entra no diálogo quando abre; o título deve ter id `\#{@id}-title`
+  (ou passe `labelledby` com o id do seu título).
   """
   attr :id, :string, required: true
   attr :show, :boolean, default: false
   attr :on_cancel, JS, default: %JS{}
+
+  attr :labelledby, :string,
+    default: nil,
+    doc: "id do título do diálogo; o padrão assume \"\#{@id}-title\""
+
   slot :inner_block, required: true
 
   def modal(assigns) do
     ~H"""
-    <div :if={@show} id={@id} class="modal-overlay" phx-window-keydown={@on_cancel} phx-key="escape">
-      <div class="modal" phx-click-away={@on_cancel} role="dialog" aria-modal="true">
+    <div
+      :if={@show}
+      id={@id}
+      class="modal-overlay"
+      phx-window-keydown={@on_cancel}
+      phx-key="escape"
+      phx-mounted={JS.focus_first(to: "##{@id}")}
+    >
+      <div
+        class="modal"
+        phx-click-away={@on_cancel}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={@labelledby || "#{@id}-title"}
+        tabindex="-1"
+      >
         {render_slot(@inner_block)}
       </div>
     </div>
@@ -423,6 +498,7 @@ defmodule TainaWeb.CoreComponents do
 
   @doc """
   Diálogo de confirmação (ações destrutivas). Reaproveita o `modal/1`.
+  Título e mensagem têm os padrões da promessa da lixeira (30 dias).
 
       <.confirm_dialog
         id="confirm-delete"
@@ -435,8 +511,8 @@ defmodule TainaWeb.CoreComponents do
   """
   attr :id, :string, required: true
   attr :show, :boolean, default: false
-  attr :title, :string, required: true
-  attr :message, :string, default: nil
+  attr :title, :string, default: gettext("Excluir?")
+  attr :message, :string, default: gettext("Vai para a lixeira. Dá para restaurar em até 30 dias.")
   attr :confirm_label, :string, default: nil
   attr :on_confirm, :any, required: true, doc: "evento (string) ou %JS{}"
   attr :on_cancel, :any, required: true
@@ -444,7 +520,7 @@ defmodule TainaWeb.CoreComponents do
   def confirm_dialog(assigns) do
     ~H"""
     <.modal id={@id} show={@show} on_cancel={@on_cancel}>
-      <h2 class="type-h3 mb-2">{@title}</h2>
+      <h2 id={"#{@id}-title"} class="type-h3 mb-2">{@title}</h2>
       <p :if={@message} class="type-body text-secondary mb-6">{@message}</p>
       <div class="row gap-3">
         <.button variant="secondary" size="md" class="flex-1" phx-click={@on_cancel}>
@@ -464,7 +540,7 @@ defmodule TainaWeb.CoreComponents do
 
   def flash_group(assigns) do
     ~H"""
-    <div class="flash-group">
+    <div class="flash-group" aria-live="polite">
       <.flash_message kind={:info} flash={@flash} />
       <.flash_message kind={:error} flash={@flash} />
     </div>
@@ -481,7 +557,9 @@ defmodule TainaWeb.CoreComponents do
       id={"flash-#{@kind}"}
       type="button"
       class={"flash flash--#{@kind}"}
-      phx-hook="FlashAutoDismiss"
+      role={if @kind == :error, do: "alert", else: "status"}
+      aria-live={if @kind == :error, do: "assertive", else: "polite"}
+      phx-hook={if @kind == :info, do: "FlashAutoDismiss"}
       phx-click={JS.push("lv:clear-flash", value: %{key: @kind}) |> JS.hide()}
       title={gettext("Fechar aviso")}
     >
@@ -506,6 +584,22 @@ defmodule TainaWeb.CoreComponents do
       <p :if={@hint} class="type-body-sm">{@hint}</p>
       {render_slot(@inner_block)}
     </div>
+    """
+  end
+
+  # ---------- esqueleto ----------
+
+  @doc """
+  Placeholder do estado de carregando, no formato do layout final (nunca
+  spinner circular). O CSS mora em `assets/css/components.css`.
+
+      <.skeleton class="h-4 w-32" />
+  """
+  attr :class, :string, default: ""
+
+  def skeleton(assigns) do
+    ~H"""
+    <div class={"skeleton " <> assigns.class}></div>
     """
   end
 

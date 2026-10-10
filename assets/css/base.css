@@ -76,9 +76,49 @@ a {
   text-decoration: none;
 }
 
+/* toque: tira o atraso do gesto e o flash de destaque no toque */
+a,
+button,
+.chip,
+.segmented__option,
+.icon-btn {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
 :focus-visible {
   outline: var(--border-thick) solid var(--brand-primary);
   outline-offset: 2px;
+}
+
+/* skip link: "pular para o conteúdo", invisível até receber foco de teclado */
+.skip-link {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+.skip-link:focus-visible {
+  position: fixed;
+  top: var(--space-3);
+  left: var(--space-3);
+  /* acima da casca (30), abaixo de visualizador (50), modal (55) e flash (60) */
+  z-index: 40;
+  width: auto;
+  height: auto;
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  overflow: visible;
+  clip: auto;
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  border-radius: var(--radius-md);
+  font-weight: var(--font-weight-medium);
 }
 
 ::placeholder {
@@ -173,7 +213,9 @@ a {
 
 .type-mono-sm {
   font-family: var(--font-family-mono);
-  font-size: 0.8125rem;
+  font-size: var(--font-size-mono-sm);
   font-weight: var(--font-weight-regular);
   line-height: 1.4;
+  /* números de dados (cotas, contagens) alinham em coluna */
+  font-variant-numeric: tabular-nums;
 }

@@ -37,7 +37,7 @@ defmodule TainaWeb.MyRequestsLiveTest do
     {:ok, _lv, html} = conn |> log_in(requester) |> live(~p"/conta/meus-pedidos")
 
     assert html =~ "Joana"
-    assert html =~ "Esperando"
+    assert html =~ "esperando"
   end
 
   test "approval refreshes the list and flashes", %{conn: conn, owner: owner, requester: requester, target_file: file} do
@@ -47,7 +47,7 @@ defmodule TainaWeb.MyRequestsLiveTest do
     {:ok, _} = Maraca.approve_access_request(owner, req.id)
 
     html = render(lv)
-    assert html =~ "Seu pedido foi aprovado"
+    assert html =~ "Pedido aprovado"
     refute html =~ "Joana"
   end
 

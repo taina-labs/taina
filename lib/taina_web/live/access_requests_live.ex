@@ -1,22 +1,22 @@
 defmodule TainaWeb.AccessRequestsLive do
   @moduledoc """
   Caixa de pedidos do dono ("Conta -> Pedidos", RFC_003 D4): quem pediu para
-  abrir um arquivo seu. O dono aprova (libera leitura) ou nega (a pessoa pode
-  pedir de novo depois). Sem board proprio no Penpot, composto com os
-  componentes de linha do design system.
+  abrir um arquivo seu, com o arquivo nomeado e o motivo explicado. O dono
+  aprova (libera leitura) ou nega (a pessoa pode pedir de novo depois). Sem
+  board proprio no Penpot, composto com os componentes de linha do design
+  system.
   """
 
   use TainaWeb, :live_view
 
   alias Taina.Maraca
+  alias Taina.Ybira
   alias TainaWeb.Layouts
 
   @impl true
   def mount(_params, _session, socket) do
-    scope = socket.assigns.current_scope
-
-    if connected?(socket), do: Maraca.subscribe_to_my_events(scope.ava)
-
+    # A inscrição no tópico do Ava já acontece no shell (`TainaWeb.Hooks`);
+    # inscrever de novo entrega cada evento duas vezes.
     {:ok,
      socket
      |> assign(:page_title, gettext("Pedidos"))
@@ -26,12 +26,15 @@ defmodule TainaWeb.AccessRequestsLive do
 
   @impl true
   def handle_event("approve", %{"id" => id}, socket) do
-    case Maraca.approve_access_request(socket.assigns.current_scope.ava, String.to_integer(id)) do
+    numeric_id = String.to_integer(id)
+    message = approved_message(socket.assigns.requests, socket.assigns.file_names, numeric_id)
+
+    case Maraca.approve_access_request(socket.assigns.current_scope.ava, numeric_id) do
       {:ok, _permission} ->
         {:noreply,
          socket
          |> remove_request(id)
-         |> Phoenix.LiveView.put_flash(:info, gettext("Acesso liberado. A pessoa já pode ler."))}
+         |> Phoenix.LiveView.put_flash(:info, message)}
 
       {:error, reason} ->
         {:noreply, handle_decision_error(socket, reason, id, &approve_error/1)}
@@ -70,11 +73,14 @@ defmodule TainaWeb.AccessRequestsLive do
   # --- shell imperativo: assign/stream/put_flash ---
 
   defp assign_requests(socket) do
-    requests = Maraca.list_access_requests(socket.assigns.current_scope.ava)
+    scope = socket.assigns.current_scope
+    requests = Maraca.list_access_requests(scope.ava)
 
     socket
+    |> assign(:requests, requests)
+    |> assign(:file_names, file_names(scope, requests))
     |> assign(:any_requests?, requests != [])
-    |> assign(:account_alert, account_alert?(socket.assigns.current_scope))
+    |> assign(:account_alert, account_alert?(scope))
     |> stream(:requests, requests, reset: true)
   end
 
@@ -91,10 +97,15 @@ defmodule TainaWeb.AccessRequestsLive do
   end
 
   defp remove_request(socket, id) do
+    scope = socket.assigns.current_scope
+    requests = Enum.reject(socket.assigns.requests, &(&1.id == String.to_integer(id)))
+
     socket
     |> stream_delete(:requests, %{id: id})
-    |> assign(:any_requests?, Maraca.list_access_requests(socket.assigns.current_scope.ava) != [])
-    |> assign(:account_alert, account_alert?(socket.assigns.current_scope))
+    |> assign(:requests, requests)
+    |> assign(:file_names, file_names(scope, requests))
+    |> assign(:any_requests?, requests != [])
+    |> assign(:account_alert, account_alert?(scope))
   end
 
   # --- core puro: dados -> dados ---
@@ -103,15 +114,56 @@ defmodule TainaWeb.AccessRequestsLive do
     Maraca.list_access_requests(scope.ava) != [] or Maraca.list_my_requests(scope.ava) != []
   end
 
+  # Nome do arquivo de cada pedido, resolvido no escopo do dono (o pedido traz
+  # o public_id; o dono pode ler o próprio arquivo). Arquivo que não existe
+  # mais vira rótulo neutro, nunca erro de tela.
+  defp file_names(scope, requests) do
+    requests
+    |> Enum.filter(&(&1.resource_type == "ybira_file"))
+    |> Enum.uniq_by(& &1.resource_id)
+    |> Map.new(fn request -> {request.resource_id, resolve_file_name(scope, request.resource_id)} end)
+  end
+
+  defp resolve_file_name(scope, resource_id) do
+    case Ybira.get_file(scope, resource_id) do
+      {:ok, file} -> file.original_filename
+      _error -> gettext("arquivo apagado")
+    end
+  end
+
+  defp file_display_name(file_names, request) do
+    Map.get(file_names, request.resource_id, gettext("arquivo apagado"))
+  end
+
   defp requester_name(request) do
     request.requester.display_name || request.requester.username
   end
 
-  defp request_subtitle(request) do
-    gettext("%{name} pediu acesso, %{when}",
-      name: requester_name(request),
-      when: relative_time(request.inserted_at)
-    )
+  # "Ana pediu acesso a relatorio.pdf, há 3 dias." O motivo vem na sequência e
+  # a linha quebra naturalmente: a decisão precisa do porquê à vista.
+  defp request_meta(request, file_names) do
+    base =
+      gettext("%{name} pediu acesso a %{file}, %{when}",
+        name: requester_name(request),
+        file: file_display_name(file_names, request),
+        when: relative_time(request.inserted_at)
+      )
+
+    case request.reason do
+      nil -> base
+      reason -> base <> " " <> gettext("Motivo: %{reason}", reason: reason)
+    end
+  end
+
+  # Flash da aprovação nomeia o arquivo: a decisão é sobre aquele arquivo, não
+  # sobre "um pedido".
+  defp approved_message(requests, file_names, id) do
+    request = Enum.find(requests, &(&1.id == id))
+
+    case request && Map.fetch(file_names, request.resource_id) do
+      {:ok, file} -> gettext("Acesso a %{file} liberado. A pessoa já pode ler.", file: file)
+      _other -> gettext("Acesso liberado. A pessoa já pode ler.")
+    end
   end
 
   defp approve_error(:not_owner), do: gettext("Este pedido não é seu para decidir.")
@@ -134,7 +186,12 @@ defmodule TainaWeb.AccessRequestsLive do
 
       <div class="col gap-4 mx-auto w-full measure">
         <div class="list" id="requests" phx-update="stream">
-          <.list_row :for={{dom_id, request} <- @streams.requests} id={dom_id} title={requester_name(request)} meta={request_subtitle(request)}>
+          <.list_row
+            :for={{dom_id, request} <- @streams.requests}
+            id={dom_id}
+            title={requester_name(request)}
+            meta={request_meta(request, @file_names)}
+          >
             <:leading><.avatar name={requester_name(request)} /></:leading>
             <:actions>
               <.button variant="ghost" size="sm" phx-click="ask-deny" phx-value-id={request.id}>

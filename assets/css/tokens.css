@@ -119,11 +119,16 @@
   /* ---------- semantic ---------- */
   --bg-app: var(--color-night-900);
   --bg-deep: var(--color-night-950);
+  --bg-qr: var(--color-star-50);
 
   --surface-default: var(--color-night-800);
   --surface-raised: var(--color-night-700);
   --surface-high: var(--color-night-600);
   --surface-overlay: rgb(10 16 31 / 0.88);
+  --surface-dim: var(--color-night-500);
+  --surface-scrim: rgb(6 10 20 / var(--opacity-scrim));
+  --surface-scrim-strong: rgb(6 10 20 / 0.5);
+  --surface-tint-brand: rgb(242 166 90 / 0.08);
 
   --border-subtle: var(--color-night-700);
   --border-default: var(--color-night-600);
@@ -142,9 +147,13 @@
 
   --service-ybira: var(--color-forest-500);
   --service-ybira-soft: var(--color-forest-900);
+  --service-ybira-hover: var(--color-forest-400);
+  --service-ybira-tint: var(--color-forest-300);
   --service-jaci: var(--color-moon-500);
   --service-jaci-soft: var(--color-moon-900);
+  --service-jaci-tint: var(--color-moon-400);
   --service-nhaman: var(--color-sky-500);
+  --service-video: var(--color-sky-300);
   --service-guara: var(--color-guara-500);
 
   --feedback-success: var(--color-forest-400);
@@ -152,11 +161,29 @@
   --feedback-error: var(--color-red-500);
   --feedback-info: var(--color-sky-500);
 
+  /* translucent tints for the deterministic avatar colors (hash -> 0..3) */
+  --avatar-tint-0: rgb(242 166 90 / 0.16);
+  --avatar-tint-1: rgb(63 161 113 / 0.16);
+  --avatar-tint-2: rgb(227 188 102 / 0.16);
+  --avatar-tint-3: rgb(91 163 245 / 0.16);
+
   /* larguras de leitura: containers centrados das telas internas */
   --measure-sm: 480px;
   --measure-md: 560px;
   --measure: 640px;
   --measure-wide: 720px;
+  --measure-card: 420px;
+  --measure-shell: 1160px;
+  --measure-shell-wide: 1280px;
+
+  /* component sizes, shells and grid gaps (semantic) */
+  --font-size-mono-sm: 0.8125rem;
+  --size-sidebar: 248px;
+  --size-menu-min: 180px;
+  --size-qr: 200px;
+  --gap-photo: 2px;
+  --size-badge: 24px;
+  --size-progress: 6px;
 
   /* preenchimento dos campos de formulario (night-800 translucido) */
   --field-bg: rgb(15 23 41 / 0.6);

@@ -41,6 +41,7 @@ defmodule TainaWeb.ResetPasswordLive do
           placeholder={gettext("mínimo 8 caracteres")}
           icon="shield"
           help={gettext("Use uma frase longa que só você lembra.")}
+          autocomplete="new-password"
           required
           minlength="8"
         />
@@ -51,6 +52,7 @@ defmodule TainaWeb.ResetPasswordLive do
           id="reset_password_confirmation"
           value=""
           placeholder={gettext("a mesma senha")}
+          autocomplete="new-password"
           required
           minlength="8"
         />

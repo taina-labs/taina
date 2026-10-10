@@ -47,7 +47,7 @@ defmodule TainaWeb.Layouts do
             navigate={~p"/membros"}
             icon="user"
             active={@active_tab == :members}
-            label={gettext("Membros")}
+            label={gettext("Moradores")}
           />
           <.sidebar_item
             navigate={~p"/mural"}
@@ -110,8 +110,8 @@ defmodule TainaWeb.Layouts do
         />
         <.bottom_nav_item
           navigate={~p"/conta"}
-          icon="user"
-          active={@active_tab in [:account, :members]}
+          icon="shield"
+          active={@active_tab == :account}
           alert={@account_alert}
           label={gettext("Conta")}
         />
@@ -145,7 +145,7 @@ defmodule TainaWeb.Layouts do
     ~H"""
     <.link navigate={@navigate} class="bottom-nav__item" aria-current={@active && "page"} aria-label={nav_label(@label, @alert)}>
       <.icon name={@icon} size={22} />
-      <span>{@label}</span>
+      <span class="bottom-nav__label">{@label}</span>
       <span :if={@alert} class="nav-dot" aria-hidden="true"></span>
     </.link>
     """

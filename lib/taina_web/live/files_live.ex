@@ -132,13 +132,15 @@ defmodule TainaWeb.FilesLive do
   end
 
   def handle_event("open-move", %{"kind" => kind, "id" => id, "name" => name}, socket) do
+    # O seletor so oferece pastas SUAS: mover para pasta alheia o servidor
+    # recusa, entao a UI nao pode oferecer.
     case Ybira.list_folders(socket.assigns.current_scope) do
       {:ok, folders} ->
         {:noreply,
          socket
          |> assign(:modal, "move")
          |> assign(:move_target, %{kind: kind, id: id, name: name})
-         |> assign(:all_folders, folders)}
+         |> assign(:all_folders, Enum.filter(folders, &own?(socket.assigns.current_scope, &1)))}
 
       {:error, _reason} ->
         {:noreply, Phoenix.LiveView.put_flash(socket, :error, gettext("Não foi possível abrir as pastas."))}
@@ -154,10 +156,19 @@ defmodule TainaWeb.FilesLive do
      |> assign(:confirm, nil)}
   end
 
+  # Soltar arquivos do sistema em qualquer canto da tela: o hook JS empurra o
+  # evento, o destino mora aqui (upload da pasta atual). O hook só sinaliza.
+  def handle_event("drop-files", _params, socket) do
+    {:noreply, Phoenix.LiveView.push_navigate(socket, to: upload_path(socket.assigns.folder_public_id))}
+  end
+
   def handle_event("create-folder", %{"folder" => %{"name" => name}}, socket) do
+    # A pasta nova herda a zona que a pessoa esta vendo: na aba praca, nasce
+    # na praca; no default (casa), na casa.
     case Ybira.create_folder(socket.assigns.current_scope, %{
            name: name,
-           parent_public_id: socket.assigns.folder_public_id
+           parent_public_id: socket.assigns.folder_public_id,
+           zona: socket.assigns.zona
          }) do
       {:ok, _folder} ->
         {:noreply, socket |> Phoenix.LiveView.put_flash(:info, gettext("Pasta criada.")) |> refresh()}
@@ -335,7 +346,8 @@ defmodule TainaWeb.FilesLive do
   defp browse_path(folder_public_id, sort, view, zona, peek) do
     params = %{sort: sort_param(sort)}
     params = if view == :grid, do: Map.put(params, :view, "grid"), else: params
-    params = if zona == :casa, do: Map.put(params, :zona, "casa"), else: params
+    # Com o default na casa, quem precisa de marca na URL e a praca.
+    params = if zona == :praca, do: Map.put(params, :zona, "praca"), else: params
     params = if peek, do: Map.put(params, :arquivo, peek), else: params
 
     case folder_public_id do
@@ -361,19 +373,51 @@ defmodule TainaWeb.FilesLive do
   defp image?("image/" <> _rest), do: true
   defp image?(_mime), do: false
 
+  # Miniatura pronta: o caminho mora no `metadata` quando a Rendition rodou
+  # (mesma fonte do FileController); sem ela, a caixa do serviço entra no lugar.
+  defp thumbnail?(file), do: get_in(file.metadata, ["thumbnails", "md"]) != nil
+
+  # Dimensões intrínsecas para o <img>: as do original valem para o thumbnail
+  # (mesma proporção), e o layout não pula enquanto a imagem carrega.
+  defp peek_dimension(file, "width") do
+    case file.metadata do
+      %{"width" => w, "height" => _h} -> w
+      _ -> nil
+    end
+  end
+
+  defp peek_dimension(file, "height") do
+    case file.metadata do
+      %{"width" => _w, "height" => h} -> h
+      _ -> nil
+    end
+  end
+
   # --- zonas casa/praca (RFC_003 D1/D2) ---
 
   # Particao client-side: a leitura ja trouxe as duas zonas, aqui so escolhemos
-  # qual aba mostrar. Ausencia do parametro cai em praca (commons por padrao).
-  defp parse_zona("casa"), do: :casa
-  defp parse_zona(_default), do: :praca
+  # qual aba mostrar. Conteudo novo nasce na casa, e a listagem acompanha:
+  # ausencia do parametro cai em casa, a praca e marcada explicitamente
+  # (?zona=praca). Se caisse na praca antes, o upload "sumia" da tela.
+  defp parse_zona("praca"), do: :praca
+  defp parse_zona(_casa_default), do: :casa
 
   defp for_zona(items, zona), do: Enum.filter(items, &(&1.zona == zona))
 
   defp own?(scope, item), do: scope.ava.id == item.ava_id
 
+  # Criar pasta no início é sempre possível; dentro de pasta alheia, o
+  # servidor recusa, então o botão nem aparece (não oferecer o que rejeita).
+  defp can_create_here?(_scope, nil), do: true
+  defp can_create_here?(scope, folder), do: own?(scope, folder)
+
   defp readability_line(:praca), do: gettext("Todos os moradores veem.")
   defp readability_line(:casa), do: gettext("Só você, e quem você deixar.")
+
+  # Versão curta para as linhas de lista: a linha de meta trunca com
+  # reticências, e a zona nunca pode ser a parte que fica de fora.
+  defp readability_short(:praca), do: gettext("Todos veem")
+  defp readability_short(:casa), do: gettext("Só você")
 
   defp zona_action(:casa), do: {gettext("Publicar na praça"), "publicar"}
   defp zona_action(:praca), do: {gettext("Tirar da praça"), "tirar-da-praca"}
@@ -424,6 +468,7 @@ defmodule TainaWeb.FilesLive do
           />
           <.icon_button name="trash" label={gettext("Lixeira")} navigate={~p"/arquivos/lixeira"} />
           <.icon_button
+            :if={can_create_here?(@current_scope, @folder)}
             name="folder-plus"
             label={gettext("Nova pasta")}
             phx-click="open-modal"
@@ -480,13 +525,17 @@ defmodule TainaWeb.FilesLive do
       </.segmented>
 
       <nav class="breadcrumb mb-4" id="ybira-breadcrumb">
-        <.link navigate={~p"/arquivos"} data-drop-folder="">{gettext("Início")}</.link>
+        <.link navigate={~p"/arquivos"} class="breadcrumb__link" data-drop-folder="">{gettext("Início")}</.link>
         <span :if={@folder} class="breadcrumb__sep"><.icon name="chevron-right" size={14} /></span>
         <span :if={@folder} class="breadcrumb__current text-primary">{@folder.name}</span>
       </nav>
 
       <p class="type-body-sm text-muted mb-3">
-        {ngettext("%{count} item", "%{count} itens", @item_count)}
+        <%= if @next_cursor do %>
+          {ngettext("%{count} item carregado", "%{count} itens carregados", @item_count)}
+        <% else %>
+          {ngettext("%{count} item", "%{count} itens", @item_count)}
+        <% end %>
       </p>
 
       <div id="ybira-dnd" phx-hook="DnD" class="files-split">
@@ -525,7 +574,7 @@ defmodule TainaWeb.FilesLive do
               <.list_row
                 :for={folder <- @folders}
                 title={folder.name}
-                meta={"#{gettext("Pasta")} / #{readability_line(folder.zona)}"}
+                meta={"#{gettext("Pasta")} / #{readability_short(folder.zona)}"}
                 navigate={~p"/arquivos/pasta/#{folder.public_id}"}
                 draggable="true"
                 data-drag-id={folder.public_id}
@@ -551,7 +600,7 @@ defmodule TainaWeb.FilesLive do
                   :for={{dom_id, file} <- @streams.files}
                   id={dom_id}
                   title={file.original_filename}
-                  meta={"#{file_meta(file)} / #{readability_line(file.zona)}"}
+                  meta={"#{file_meta(file)} / #{readability_short(file.zona)}"}
                   navigate={~p"/arquivos/#{file.public_id}"}
                   draggable="true"
                   data-drag-id={file.public_id}
@@ -595,19 +644,25 @@ defmodule TainaWeb.FilesLive do
                   phx-click={JS.patch(browse_path(@folder_public_id, @sort, @view, @zona, nil))}
                 />
               </div>
+              <% has_thumb = image?(@peek.mime_type) and thumbnail?(@peek) %>
+              <% {service, icon} = file_visual(@peek.mime_type) %>
               <img
-                :if={image?(@peek.mime_type)}
+                :if={has_thumb}
                 src={~p"/files/#{@peek.public_id}/thumbnail/md"}
                 alt={@peek.original_filename}
                 class="files-split__thumb"
+                loading="lazy"
+                width={peek_dimension(@peek, "width")}
+                height={peek_dimension(@peek, "height")}
               />
+              <.service_square :if={!has_thumb} service={service} icon={icon} size="lg" />
               <div class="col gap-1">
                 <p class="type-body-sm text-muted">{file_meta(@peek)}</p>
                 <p class="type-body-sm text-muted">{readability_line(@peek.zona)}</p>
               </div>
               <div class="col gap-2">
                 <.button
-                  variant="primary"
+                  variant="secondary"
                   size="md"
                   class="w-full"
                   navigate={~p"/arquivos/#{@peek.public_id}"}
@@ -638,8 +693,9 @@ defmodule TainaWeb.FilesLive do
         </aside>
       </div>
 
-      <div :if={@next_cursor} id="load-more" phx-viewport-bottom="load-more" class="center py-4">
-        <p class="type-caption text-faint">{gettext("Carregando mais...")}</p>
+      <div :if={@next_cursor} id="load-more" phx-viewport-bottom="load-more" class="list-row" aria-hidden="true">
+        <span class="service-square service-square--neutral skeleton"></span>
+        <span class="skeleton flex-1" style="height: var(--space-4);"></span>
       </div>
 
       <.empty_state
@@ -655,6 +711,9 @@ defmodule TainaWeb.FilesLive do
         title={gettext("Sua casa está vazia")}
         hint={gettext("Aqui ficam seus arquivos. Só você vê, até deixar alguém entrar.")}
       >
+        <p class="type-body-sm text-muted">
+          {gettext("Isso é promessa de software e confiança: o Tainá ainda não criptografa.")}
+        </p>
         <.button variant="primary" size="md" navigate={upload_path(@folder_public_id)}>
           {gettext("Enviar arquivos")}
         </.button>
@@ -751,7 +810,7 @@ defmodule TainaWeb.FilesLive do
               {gettext("%{free} livres", free: format_bytes(storage_free(@storage_stats)))}
             </span>
           </div>
-          <p class="type-caption text-faint mt-3">
+          <p class="type-caption text-muted mt-3">
             {gettext("Quando o espaço acabar, quem cuida da comunidade pode aumentar o limite.")}
           </p>
           <.button variant="secondary" size="md" navigate={~p"/armazenamento"} class="w-full mt-4">
@@ -766,7 +825,7 @@ defmodule TainaWeb.FilesLive do
         id="confirm-delete"
         show={@confirm != nil}
         title={confirm_title(@confirm)}
-        message={gettext("Vai para a lixeira. Dá para restaurar em até 30 dias.")}
+        message={confirm_message(@confirm)}
         on_confirm="confirm-delete"
         on_cancel={JS.push("close-modal")}
       />
@@ -803,7 +862,9 @@ defmodule TainaWeb.FilesLive do
   defp zona_confirm_primary(:casa), do: gettext("Publicar")
   defp zona_confirm_primary(:praca), do: gettext("Tirar da praça")
 
-  # Menu de ações compartilhado entre lista e grade.
+  # Menu de ações compartilhado entre lista e grade. Só o dono renomeia, move,
+  # exclui e publica: para quem não é dono, nada daqui funciona no servidor,
+  # então o menu nem aparece (a linha continua abrindo pelo link).
   attr :kind, :string, required: true
   attr :id, :string, required: true
   attr :name, :string, required: true
@@ -814,12 +875,8 @@ defmodule TainaWeb.FilesLive do
     assigns = assign(assigns, :zona_label, elem(zona_action(assigns.zona), 0))
 
     ~H"""
-    <.menu id={"item-menu-#{@id}"} label={gettext("Mais opções")}>
-      <:item
-        :if={@own?}
-        icon="share"
-        click={JS.push("ask-zona", value: %{kind: @kind, id: @id, name: @name, zona: @zona})}
-      >
+    <.menu :if={@own?} id={"item-menu-#{@id}"} label={gettext("Mais opções")}>
+      <:item icon="share" click={JS.push("ask-zona", value: %{kind: @kind, id: @id, name: @name, zona: @zona})}>
         {@zona_label}
       </:item>
       <:item icon="pencil" click={JS.push("open-rename", value: %{kind: @kind, id: @id, name: @name})}>
@@ -838,4 +895,13 @@ defmodule TainaWeb.FilesLive do
   defp confirm_title(%{kind: "folder", name: name}), do: gettext("Excluir a pasta \"%{name}\"?", name: name)
   defp confirm_title(%{kind: "file", name: name}), do: gettext("Excluir \"%{name}\"?", name: name)
   defp confirm_title(_confirm), do: gettext("Excluir?")
+
+  # A pasta vai para a lixeira com o que tem dentro, mas a restauração é do
+  # conteúdo, um a um: a pasta em si não volta (o Ybira não expõe isso ainda).
+  # A cópia não promete o que o sistema não faz.
+  defp confirm_message(%{kind: "folder"}),
+    do: gettext("A pasta e o que tem dentro vão para a lixeira. Os arquivos voltam um a um; a pasta em si, não.")
+
+  defp confirm_message(%{kind: "file"}), do: gettext("Vai para a lixeira. Dá para restaurar em até 30 dias.")
+  defp confirm_message(_confirm), do: gettext("Vai para a lixeira.")
 end

@@ -17,14 +17,19 @@ defmodule TainaWeb.UploadLive do
 
   @impl true
   def mount(params, _session, socket) do
-    folder = resolve_folder(socket.assigns.current_scope, params["pasta"])
+    {folder, folder_note} = resolve_folder(socket.assigns.current_scope, params["pasta"])
+
+    socket =
+      socket
+      |> assign(:page_title, gettext("Enviar arquivos"))
+      |> assign(:folder, folder)
+      |> assign(:free_space, free_space_text(socket.assigns.storage_stats))
+      |> assign(:done, [])
+      |> assign(:failed, [])
+      |> maybe_flash_folder_note(folder_note)
 
     {:ok,
      socket
-     |> assign(:page_title, gettext("Enviar arquivos"))
-     |> assign(:folder, folder)
-     |> assign(:done, [])
-     |> assign(:failed, [])
      |> allow_upload(:files,
        accept: :any,
        max_entries: 10,
@@ -45,16 +50,30 @@ defmodule TainaWeb.UploadLive do
      )}
   end
 
-  defp resolve_folder(_scope, nil), do: nil
+  defp resolve_folder(_scope, nil), do: {nil, nil}
 
-  # Pasta inexistente ou casa de outra pessoa: sobe para a raiz. A pasta de
-  # destino é escolhida em tela, então basta não travar o envio.
+  # Pasta inexistente ou casa de outra pessoa: sobe para a raiz sem travar o
+  # envio; o flash explica por que a pasta sumiu do cabeçalho.
   defp resolve_folder(scope, public_id) do
     case Ybira.get_folder(scope, public_id) do
-      {:ok, folder} -> folder
-      {:error, _reason} -> nil
+      {:ok, folder} ->
+        {folder, nil}
+
+      {:error, _reason} ->
+        {nil, gettext("A pasta original não está mais disponível. O envio vai para o início.")}
     end
   end
+
+  defp maybe_flash_folder_note(socket, nil), do: socket
+  defp maybe_flash_folder_note(socket, note), do: Phoenix.LiveView.put_flash(socket, :error, note)
+
+  # Espaço livre da comunidade, em texto humano. Sem cota configurada não há
+  # "livres" para mostrar (a cota infinita não avisa).
+  defp free_space_text(%{quota_bytes: quota, used_bytes: used}) when is_integer(quota) do
+    gettext("Espaço livre da comunidade: %{free}.", free: format_bytes(max(quota - used, 0)))
+  end
+
+  defp free_space_text(_stats), do: nil
 
   # Consome cada arquivo assim que termina de subir, de qualquer um dos dois
   # envios (arquivos ou câmera); o resultado vai para a lista CONCLUÍDO (ou
@@ -83,9 +102,15 @@ defmodule TainaWeb.UploadLive do
   defp upload_opts(entry, nil), do: [filename: entry.client_name]
   defp upload_opts(entry, folder), do: [filename: entry.client_name, folder_id: folder.id]
 
-  defp upload_error(:mime_not_allowed), do: gettext("tipo de arquivo não permitido")
-  defp upload_error(:storage_quota_exceeded), do: gettext("a cota de armazenamento acabou")
-  defp upload_error(_reason), do: gettext("falha no envio")
+  # Cada erro explica o que houve e dá a saída (tom-de-voz: erros com saída,
+  # sem culpa). A saída comum é a caixa de envio, no topo da tela.
+  defp upload_error(:mime_not_allowed),
+    do: gettext("Não aceitamos este tipo de arquivo. Use imagens, PDFs, texto, áudio, vídeo ou ZIP.")
+
+  defp upload_error(:storage_quota_exceeded),
+    do: gettext("O espaço da comunidade acabou. Quem cuida da máquina pode aumentar o limite.")
+
+  defp upload_error(_reason), do: gettext("O envio falhou. Toque na caixa acima para tentar de novo.")
 
   @impl true
   def handle_event("validate", _params, socket), do: {:noreply, socket}
@@ -103,7 +128,9 @@ defmodule TainaWeb.UploadLive do
     {:noreply, socket}
   end
 
-  defp back_path(nil), do: ~p"/arquivos"
+  # Onde os arquivos caíram: na pasta alvo, ou no início já na aba casa (o
+  # default da listagem). Cair na praça faria o recém-chegado "sumir" da tela.
+  defp back_path(nil), do: ~p"/arquivos?#{[zona: "casa"]}"
   defp back_path(folder), do: ~p"/arquivos/pasta/#{folder.public_id}"
 
   # --- core puro: dados -> dados ---
@@ -151,8 +178,11 @@ defmodule TainaWeb.UploadLive do
             <.icon name="upload" size={28} />
             <span class="type-label text-primary">{gettext("Arraste arquivos aqui")}</span>
             <span class="type-label text-brand">{gettext("ou toque para escolher")}</span>
-            <span class="type-caption text-faint">
-              {gettext("Imagens, PDFs e vídeos. Até 2 GB por arquivo")}
+            <span class="type-caption text-muted">
+              {gettext("Os arquivos entram na sua casa. Publique na praça quando quiser.")}
+            </span>
+            <span class="type-caption text-muted">
+              {gettext("Imagens, PDFs, texto, áudio, vídeo e ZIP; até 2 GB por arquivo.")}
             </span>
             <.live_file_input upload={@uploads.files} class="sr-only" />
           </label>
@@ -167,8 +197,10 @@ defmodule TainaWeb.UploadLive do
           </label>
         </form>
 
+        <p :if={@free_space} class="type-caption text-muted">{@free_space}</p>
+
         <div :if={uploading?(@uploads)}>
-          <p class="type-overline text-faint mb-2">
+          <p class="type-overline text-muted mb-2">
             {gettext("Enviando (%{count})", count: length(uploading_entries(@uploads)))}
           </p>
           <div class="list">
@@ -203,7 +235,7 @@ defmodule TainaWeb.UploadLive do
         </div>
 
         <div :if={@done != []}>
-          <p class="type-overline text-faint mb-2">{gettext("Concluído (%{count})", count: length(@done))}</p>
+          <p class="type-overline text-muted mb-2">{gettext("Concluído (%{count})", count: length(@done))}</p>
           <div class="list">
             <.list_row
               :for={file <- @done}
@@ -224,24 +256,30 @@ defmodule TainaWeb.UploadLive do
         </div>
 
         <div class="col gap-3 mt-4">
-          <.button variant="primary" class="w-full" navigate={back_path(@folder)}>
-            {gettext("Concluir")}
-          </.button>
-          <button
-            :if={uploading?(@uploads)}
-            type="button"
-            class="type-label text-secondary text-center"
-            phx-click="cancel-all"
-          >
-            {gettext("Cancelar tudo")}
-          </button>
+          <%= if uploading?(@uploads) do %>
+            <button type="button" class="btn btn--primary w-full" disabled>
+              {gettext("Concluir")}
+            </button>
+            <p class="type-caption text-muted text-center">
+              {gettext("Envio em andamento. Espere terminar para não perder arquivos.")}
+            </p>
+            <.button variant="ghost" size="sm" phx-click="cancel-all">
+              {gettext("Cancelar tudo")}
+            </.button>
+          <% else %>
+            <.button variant="primary" class="w-full" navigate={back_path(@folder)}>
+              {gettext("Concluir")}
+            </.button>
+          <% end %>
         </div>
       </div>
     </Layouts.app>
     """
   end
 
-  defp upload_config_error(:too_large), do: gettext("arquivo maior que 2 GB")
-  defp upload_config_error(:too_many_files), do: gettext("no máximo 10 arquivos por vez")
-  defp upload_config_error(_err), do: gettext("falha no envio")
+  defp upload_config_error(:too_large), do: gettext("O arquivo passa de 2 GB, o limite por arquivo.")
+
+  defp upload_config_error(:too_many_files), do: gettext("São no máximo 10 arquivos por vez. Envie o resto em seguida.")
+
+  defp upload_config_error(_err), do: gettext("O envio falhou. Toque na caixa acima para tentar de novo.")
 end

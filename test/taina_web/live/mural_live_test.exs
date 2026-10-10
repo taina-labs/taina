@@ -37,7 +37,10 @@ defmodule TainaWeb.MuralLiveTest do
     {:ok, _lv, html} = conn |> log_in(zelador) |> live(~p"/mural")
 
     assert html =~ "Ana publicou o arquivo &quot;estatuto.pdf&quot; na praça."
-    assert html =~ "hoje"
+    # sob "Hoje"/"Ontem" a hora basta: o dia nao se repete em cada linha
+    assert html =~ "Hoje"
+    assert html =~ ~r/\d{2}:\d{2}/
+    refute html =~ "hoje"
   end
 
   test "pedido de acesso vira frase com quem pediu e de quem", %{

@@ -15,6 +15,7 @@
   flex: 1;
   width: 100%;
   padding: var(--space-4);
+  padding-top: calc(var(--space-4) + env(safe-area-inset-top));
   padding-bottom: calc(var(--size-nav-mobile) + var(--space-6));
   /* `backwards` (não `both`): aplica o estado inicial antes de começar, mas
      NÃO persiste o `transform` ao terminar, um transform permanente criaria
@@ -24,8 +25,8 @@
 }
 
 /* Transição suave de página: cada navegação (live_redirect) remonta o
-   conteúdo, então a animação toca de novo. Respeita quem pediu menos
-   movimento. */
+   conteúdo, então a animação toca de novo (shell e card de auth). Respeita
+   quem pediu menos movimento. */
 @keyframes page-in {
   from {
     opacity: 0;
@@ -39,7 +40,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .shell__content {
+  .shell__content,
+  .auth-layout__card {
     animation: none;
   }
 }
@@ -71,6 +73,13 @@
   flex-shrink: 0;
 }
 
+/* a appbar é mobile-only: no desktop a sidebar e a topbar assumem a navegação */
+@media (min-width: 768px) {
+  .appbar {
+    display: none;
+  }
+}
+
 /* navegação inferior (mobile) */
 .bottom-nav {
   position: fixed;
@@ -86,6 +95,7 @@
 
 .bottom-nav__item {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -94,6 +104,15 @@
   color: var(--text-muted);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-medium);
+}
+
+/* 6 destinos em telas de 320px: o rótulo encolhe com reticências, nunca
+   empurra a navegação */
+.bottom-nav__label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .bottom-nav__item[aria-current="page"] {
@@ -121,12 +140,13 @@
   .sidebar {
     display: flex;
     flex-direction: column;
-    width: 248px;
+    width: var(--size-sidebar);
     flex-shrink: 0;
     position: sticky;
     top: 0;
     height: 100dvh;
     padding: var(--space-4);
+    padding-top: calc(var(--space-4) + env(safe-area-inset-top));
     background: var(--bg-deep);
     border-right: var(--border-hairline) solid var(--border-subtle);
   }
@@ -194,7 +214,7 @@
   }
 
   .shell__content {
-    max-width: 1160px;
+    max-width: var(--measure-shell);
     padding: var(--space-6);
     padding-bottom: var(--space-12);
   }
@@ -214,7 +234,9 @@
    pula degrau: o espaço extra é respiro, não fonte maior com vazios. */
 @media (min-width: 1440px) {
   .shell__content {
-    max-width: 1280px;
+    max-width: var(--measure-shell-wide);
+    /* centrado: o teto de largura não empilha o respiro todo à direita */
+    margin-inline: auto;
     padding: var(--space-10);
     padding-bottom: var(--space-12);
   }
@@ -300,12 +322,15 @@
 
 .auth-layout__card {
   width: 100%;
-  max-width: 420px;
+  max-width: var(--measure-card);
   display: flex;
   flex-direction: column;
   flex: 1;
   position: relative;
   z-index: 1;
+  /* mesma entrada do shell; `backwards` (não `both`) evita persistir o
+     transform, que criaria containing block para `position: fixed` interno */
+  animation: page-in 220ms ease backwards;
 }
 
 /* a "estrela da manhã" do logo */

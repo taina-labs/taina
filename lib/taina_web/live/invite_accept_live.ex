@@ -3,7 +3,8 @@ defmodule TainaWeb.InviteAcceptLive do
   Aceite de convite: a pessoa convidada escolhe nome e senha. O submit é um
   POST tradicional para `InviteController.accept` (`accept_invite/2` + sessão
   na mesma requisição). O token só é validado de verdade no submit, aqui ele
-  apenas viaja na URL.
+  apenas viaja na URL. Campos não secretos voltam preenchidos pela query
+  quando o POST falha (senha nunca viaja na URL).
   """
 
   use TainaWeb, :live_view
@@ -16,6 +17,14 @@ defmodule TainaWeb.InviteAcceptLive do
      socket
      |> assign(:page_title, gettext("Aceitar convite"))
      |> assign(:token, token)}
+  end
+
+  # Campos não secretos voltam pela URL quando o POST falha (o
+  # `InviteController` redireciona com ?username=...); a pessoa não redigita
+  # tudo e a senha nunca viaja na URL.
+  @impl true
+  def handle_params(params, _uri, socket) do
+    {:noreply, assign(socket, :prefill, Map.take(params, ["username", "display_name"]))}
   end
 
   @impl true
@@ -36,7 +45,7 @@ defmodule TainaWeb.InviteAcceptLive do
           label={gettext("Seu nome de usuário")}
           name="account[username]"
           id="account_username"
-          value=""
+          value={@prefill["username"]}
           placeholder={gettext("ex.: joao")}
           help={gettext("Sem espaços. É com ele que você entra na comunidade.")}
           autocapitalize="none"
@@ -47,7 +56,7 @@ defmodule TainaWeb.InviteAcceptLive do
           label={gettext("Nome de exibição (opcional)")}
           name="account[display_name]"
           id="account_display_name"
-          value=""
+          value={@prefill["display_name"]}
           placeholder={gettext("ex.: João Mendes")}
           help={gettext("Como seu nome aparece para a comunidade.")}
         />
@@ -60,6 +69,7 @@ defmodule TainaWeb.InviteAcceptLive do
           placeholder={gettext("mínimo 8 caracteres")}
           icon="shield"
           help={gettext("Use uma frase longa que só você lembra.")}
+          autocomplete="new-password"
           required
           minlength="8"
         />
@@ -70,6 +80,7 @@ defmodule TainaWeb.InviteAcceptLive do
           id="account_password_confirmation"
           value=""
           placeholder={gettext("a mesma senha")}
+          autocomplete="new-password"
           required
           minlength="8"
         />

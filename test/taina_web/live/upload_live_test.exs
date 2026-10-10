@@ -59,7 +59,7 @@ defmodule TainaWeb.UploadLiveTest do
 
     html = render(lv)
     assert html =~ "Falharam"
-    assert html =~ "tipo de arquivo não permitido"
+    assert html =~ "Não aceitamos este tipo de arquivo. Use imagens, PDFs, texto, áudio, vídeo ou ZIP."
 
     # rejeição vale no domínio, não só na UI: nada foi persistido
     assert {:ok, %{items: []}} = Ybira.list_files(scope)

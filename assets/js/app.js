@@ -18,9 +18,14 @@ const liveSocket = new LiveSocket("/live", Socket, {
   hooks,
 });
 
-// Barra de progresso nas navegações live e em uploads longos.
+// Barra de progresso nas navegações live e em uploads longos. A cor vem do
+// token de marca no tokens.css, sem hex cru no JS.
+const brandPrimary = getComputedStyle(document.documentElement)
+  .getPropertyValue("--brand-primary")
+  .trim();
+
 topbar.config({
-  barColors: { 0: "#F2A65A" },
+  barColors: { 0: brandPrimary },
   shadowColor: "rgba(6, 10, 20, .4)",
 });
 window.addEventListener("phx:page-loading-start", (_info) => topbar.show(300));

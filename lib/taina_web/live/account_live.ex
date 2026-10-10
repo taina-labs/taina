@@ -16,7 +16,22 @@ defmodule TainaWeb.AccountLive do
 
   @impl true
   def mount(_params, _session, socket) do
+    socket = assign_alerts(socket, socket.assigns.current_scope)
     {:ok, assign(socket, :page_title, gettext("Conta"))}
+  end
+
+  # O ponto total da nav (a aba Conta) vem do hook compartilhado; aqui a tela
+  # separa entrada (Pedidos) de saída (Meus pedidos) para o ponto cair na linha
+  # certa. Eventos do Ava (PubSub, já inscritos no shell) recomputam na hora.
+  defp assign_alerts(socket, scope) do
+    socket
+    |> assign(:incoming_alert, Maraca.list_access_requests(scope.ava) != [])
+    |> assign(:outgoing_alert, Maraca.list_my_requests(scope.ava) != [])
+  end
+
+  @impl true
+  def handle_info(_message, socket) do
+    {:noreply, assign_alerts(socket, socket.assigns.current_scope)}
   end
 
   # Pares do cartão de atalhos: espelham `TainaWeb.Hooks.shortcut_path/1`
@@ -26,7 +41,7 @@ defmodule TainaWeb.AccountLive do
       {gettext("Início"), "Cmd+1"},
       {gettext("Arquivos"), "Cmd+2"},
       {gettext("Fotos"), "Cmd+3"},
-      {gettext("Membros"), "Cmd+4"},
+      {gettext("Moradores"), "Cmd+4"},
       {gettext("Conta"), "Cmd+5"}
     ]
   end
@@ -59,9 +74,9 @@ defmodule TainaWeb.AccountLive do
             meta={gettext("quem pediu para abrir seus arquivos")}
             navigate={~p"/conta/pedidos"}
           >
-            <:leading><.service_square service="nhaman" icon="shield" /></:leading>
+            <:leading><.service_square service="neutral" icon="shield" /></:leading>
             <:actions>
-              <span :if={@account_alert} class="nav-dot" aria-hidden="true"></span>
+              <span :if={@incoming_alert} class="nav-dot" aria-hidden="true"></span>
               <.icon name="chevron-right" size={18} class="text-faint" />
             </:actions>
           </.list_row>
@@ -71,12 +86,15 @@ defmodule TainaWeb.AccountLive do
             meta={gettext("o que você está esperando")}
             navigate={~p"/conta/meus-pedidos"}
           >
-            <:leading><.service_square service="ybira" icon="folder" /></:leading>
-            <:actions><.icon name="chevron-right" size={18} class="text-faint" /></:actions>
+            <:leading><.service_square service="neutral" icon="folder" /></:leading>
+            <:actions>
+              <span :if={@outgoing_alert} class="nav-dot" aria-hidden="true"></span>
+              <.icon name="chevron-right" size={18} class="text-faint" />
+            </:actions>
           </.list_row>
 
-          <.list_row title={gettext("Membros")} meta={gettext("quem faz parte da comunidade")} navigate={~p"/membros"}>
-            <:leading><.service_square service="nhaman" icon="user" /></:leading>
+          <.list_row title={gettext("Moradores")} meta={gettext("quem faz parte da comunidade")} navigate={~p"/membros"}>
+            <:leading><.service_square service="neutral" icon="user" /></:leading>
             <:actions><.icon name="chevron-right" size={18} class="text-faint" /></:actions>
           </.list_row>
 
@@ -86,7 +104,7 @@ defmodule TainaWeb.AccountLive do
             meta={gettext("link + QR code")}
             navigate={~p"/membros/convidar"}
           >
-            <:leading><.service_square service="ybira" icon="qr" /></:leading>
+            <:leading><.service_square service="neutral" icon="qr" /></:leading>
             <:actions><.icon name="chevron-right" size={18} class="text-faint" /></:actions>
           </.list_row>
 
@@ -105,7 +123,7 @@ defmodule TainaWeb.AccountLive do
           </.list_row>
         </div>
 
-        <.card>
+        <.card class="desktop-only">
           <p class="type-label mb-1">{gettext("Atalhos do teclado")}</p>
           <p class="type-body-sm text-muted mb-4">
             {gettext("No Mac, segure Cmd e aperte o número. No Windows e no Linux, segure Ctrl.")}

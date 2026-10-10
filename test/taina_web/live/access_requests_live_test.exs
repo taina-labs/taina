@@ -38,7 +38,7 @@ defmodule TainaWeb.AccessRequestsLiveTest do
 
     html = render(lv)
     refute html =~ "Maria"
-    assert html =~ "Acesso liberado"
+    assert html =~ "Acesso a doc.txt liberado"
     assert Maraca.authorize?(requester, :read, "ybira_file", file.public_id)
   end
 

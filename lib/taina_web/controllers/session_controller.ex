@@ -21,7 +21,7 @@ defmodule TainaWeb.SessionController do
 
       {:error, _reason} ->
         conn
-        |> put_flash(:error, gettext("Nome ou senha incorretos."))
+        |> put_flash(:error, gettext("Nome ou senha incorretos. Tente de novo ou fale com quem cuida da comunidade."))
         |> redirect(to: ~p"/login")
     end
   end
@@ -30,7 +30,7 @@ defmodule TainaWeb.SessionController do
   # invalida em vez de estourar FunctionClauseError (500).
   def create(conn, _params) do
     conn
-    |> put_flash(:error, gettext("Nome ou senha incorretos."))
+    |> put_flash(:error, gettext("Nome ou senha incorretos. Tente de novo ou fale com quem cuida da comunidade."))
     |> redirect(to: ~p"/login")
   end
 

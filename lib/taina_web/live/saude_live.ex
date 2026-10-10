@@ -10,8 +10,10 @@ defmodule TainaWeb.SaudeLive do
   passo (fazer um backup agora) onde ele existe.
 
   A verificação de atualizações é opt-in e desligada por padrão (soberana,
-  RFC_003 D6, ver `Taina.Nhaman.Update`); o status é computado uma vez por
-  mount (`assign_new`, sem re-GET na passagem HTTP -> WebSocket).
+  RFC_003 D6, ver `Taina.Nhaman.Update`). Quando ligada, é um GET na
+  internet: ele não pode segurar o primeiro desenho no Pi. O mount decide só
+  o estado barato (desligada, ou "verificando") e, quando conectado, uma
+  `Task` busca a resposta e entra por `handle_info`.
   """
 
   use TainaWeb, :live_view
@@ -23,6 +25,7 @@ defmodule TainaWeb.SaudeLive do
   alias Taina.Scope
   alias Taina.Ybira
   alias TainaWeb.Layouts
+  alias TainaWeb.Time
 
   # Limite "acabando" do disco: 90% da cota. Aviso ambiente, não alarme.
   @disk_warning_percent 90
@@ -31,15 +34,44 @@ defmodule TainaWeb.SaudeLive do
   def mount(_params, _session, socket) do
     scope = socket.assigns.current_scope
 
+    # Estado barato do mount: desligada usa o status direto (sem rede);
+    # ligada, o GET fica para a Task (abaixo), com "verificando" no lugar.
+    update_status = if Update.enabled?(), do: checking_status(), else: Update.status()
+
     socket =
       socket
       |> assign(:page_title, gettext("Saúde da comunidade"))
       |> assign(:load_error, false)
-      |> assign_new(:update_status, fn -> Update.status() end)
+      |> assign(:update_status, update_status)
       |> assign_painel(scope)
+
+    socket =
+      if connected?(socket) and Update.enabled?() do
+        me = self()
+
+        {:ok, _pid} = Task.start_link(fn -> send(me, {:update_status, Update.status()}) end)
+
+        socket
+      else
+        socket
+      end
 
     {:ok, socket}
   end
+
+  # Resposta do GET opt-in: troca a linha "verificando" pelo resultado de
+  # verdade, sem reconsultar o banco (o resto do painel fica como está).
+  @impl true
+  def handle_info({:update_status, status}, socket) do
+    painel = socket.assigns.painel && %{socket.assigns.painel | update_status: status}
+
+    {:noreply,
+     socket
+     |> assign(:update_status, status)
+     |> assign(:painel, painel)}
+  end
+
+  defp checking_status, do: %{running: Update.running_version(), result: :checking}
 
   @impl true
   def handle_event("run-backup", _params, socket) do
@@ -60,9 +92,14 @@ defmodule TainaWeb.SaudeLive do
     end
   end
 
+  def handle_event("retry", _params, socket) do
+    {:noreply, assign_painel(socket, socket.assigns.current_scope)}
+  end
+
   # Carrega os fatos que vêm do banco (disco, moradores, jobs) sem derrubar a
-  # tela: se falharem, flash e empty_state assumem o lugar. Backup e
-  # atualização têm degradação própria, cada linha diz o seu estado.
+  # tela: se falharem, o empty_state com "Tentar de novo" assume o lugar
+  # (sem flash duplicado). Backup e atualização têm degradação própria, cada
+  # linha diz o seu estado.
   defp assign_painel(socket, scope) do
     with {:ok, stats} <- Ybira.storage_stats(scope),
          {:ok, members} <- Maraca.list_members(scope) do
@@ -80,10 +117,6 @@ defmodule TainaWeb.SaudeLive do
         socket
         |> assign(:painel, nil)
         |> assign(:load_error, true)
-        |> Phoenix.LiveView.put_flash(
-          :error,
-          gettext("Não foi possível carregar a saúde agora. Tente recarregar em instantes.")
-        )
     end
   end
 
@@ -127,7 +160,12 @@ defmodule TainaWeb.SaudeLive do
     ]
 
     if quota > 0 and used / quota * 100 >= @disk_warning_percent do
-      row("disk", gettext("Disco"), body, gettext("O espaço está acabando."))
+      row(
+        "disk",
+        gettext("Disco"),
+        body,
+        gettext("O espaço está acabando. Quem cuida da máquina pode aumentar o limite.")
+      )
     else
       row("disk", gettext("Disco"), body)
     end
@@ -165,8 +203,13 @@ defmodule TainaWeb.SaudeLive do
       else: row("shield", gettext("Último backup"), body)
   end
 
+  # Ilegível não é beco sem saída: diz o estado e nomeia o próximo passo e o
+  # ator, o mesmo falar das outras linhas.
   defp backup_row({:error, :unreadable}, _scope) do
-    row("shield", gettext("Último backup"), [gettext("Não foi possível ler os backups agora.")])
+    row("shield", gettext("Último backup"), [
+      gettext("Não foi possível ler os backups agora."),
+      gettext("Fale com quem cuida da máquina se persistir.")
+    ])
   end
 
   # Jobs em espera ou em andamento: contagem com substantivo, zerado não
@@ -178,7 +221,7 @@ defmodule TainaWeb.SaudeLive do
         ngettext("1 miniatura ainda sendo gerada", "%{count} miniaturas ainda sendo geradas", renditions)
       end)
       |> maybe_append(trash_purge > 0, fn ->
-        ngettext("1 expurgo da lixeira em andamento", "%{count} expurgos da lixeira em andamento", trash_purge)
+        ngettext("1 limpeza da lixeira em andamento", "%{count} limpezas da lixeira em andamento", trash_purge)
       end)
 
     if body == [], do: nil, else: row("clock", gettext("Trabalhos da caixa"), body)
@@ -212,9 +255,18 @@ defmodule TainaWeb.SaudeLive do
     ])
   end
 
+  defp update_row(%{running: running, result: :checking}) do
+    row("restore", gettext("Atualização"), [
+      gettext("A caixa está na versão %{version}. A verificação de versão mais nova está em andamento.",
+        version: running
+      )
+    ])
+  end
+
   defp update_row(%{running: running, result: {:update_available, latest}}) do
     row("restore", gettext("Atualização"), [
-      gettext("Há uma versão mais nova (%{latest}). A caixa está na %{version}.", latest: latest, version: running)
+      gettext("Há uma versão mais nova (%{latest}). A caixa está na %{version}.", latest: latest, version: running),
+      gettext("Quem cuida da máquina pode atualizar a caixa.")
     ])
   end
 
@@ -233,7 +285,7 @@ defmodule TainaWeb.SaudeLive do
   defp identity_row(%Scope{} = scope) do
     row("home", gettext("A caixa"), [
       gettext("Esta é a caixa de %{tekoa}.", tekoa: scope.tekoa.name),
-      gettext("Vocês acessam por %{address}.", address: box_address())
+      gettext("A comunidade acessa por %{address}.", address: box_address())
     ])
   end
 
@@ -261,10 +313,11 @@ defmodule TainaWeb.SaudeLive do
     Enum.join(Enum.reverse(rest), ", ") <> " #{gettext("e")} #{last}"
   end
 
-  # "Quando" do backup (DateTime UTC), o mesmo passo do `relative_time/1` do
-  # design system, que só recebe NaiveDateTime.
+  # "Quando" do backup, no horário da comunidade: o mesmo passo do
+  # `relative_time/1` do design system, que só recebe NaiveDateTime (e conta
+  # o dia em UTC; aqui o dia é o de quem lê).
   defp ago(%DateTime{} = at) do
-    days = Date.diff(Date.utc_today(), DateTime.to_date(at))
+    days = Date.diff(Time.local_today(), Time.local_date(at))
 
     cond do
       days <= 0 -> gettext("hoje")
@@ -303,8 +356,10 @@ defmodule TainaWeb.SaudeLive do
           :if={@load_error}
           icon="alert"
           title={gettext("Não foi possível carregar")}
-          hint={gettext("A saúde da caixa não respondeu agora. Tente recarregar em instantes.")}
-        />
+          hint={gettext("A saúde da caixa não respondeu agora.")}
+        >
+          <.button variant="secondary" phx-click="retry">{gettext("Tentar de novo")}</.button>
+        </.empty_state>
 
         <div :if={not @load_error} class="painel-grid">
           <.card :for={row <- painel_rows(@current_scope, @painel)} raised class="col gap-2">
@@ -329,7 +384,7 @@ defmodule TainaWeb.SaudeLive do
         </div>
 
         <.card :if={Maraca.zelador?(@current_scope.ava)}>
-          <.link navigate={~p"/painel-do-zelador"} class="row between w-full">
+          <.link navigate={~p"/painel-do-zelador"} class="row between w-full py-3">
             <span class="row gap-3 type-label">
               <.icon name="disk" size={20} class="text-muted" />
               {gettext("Painel da máquina")}
@@ -337,7 +392,7 @@ defmodule TainaWeb.SaudeLive do
             <.icon name="chevron-right" size={18} class="text-faint" />
           </.link>
           <p class="type-body-sm text-muted mt-2">
-            {gettext("Gráficos e trabalhos técnicos da caixa, para quem cuida dela.")}
+            {gettext("Gráficos e trabalhos técnicos da caixa, para quem cuida da máquina.")}
           </p>
         </.card>
       </div>

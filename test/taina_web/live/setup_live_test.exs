@@ -27,10 +27,26 @@ defmodule TainaWeb.SetupLiveTest do
     html = lv |> element("form") |> render_submit(%{"setup" => %{"username" => "ana", "password" => "curta"}})
     assert html =~ "pelo menos 8 caracteres"
 
+    # passo 2: as duas senhas precisam ser iguais
     html =
       lv
       |> element("form")
-      |> render_submit(%{"setup" => %{"username" => "ana", "password" => "frase-longa-segura"}})
+      |> render_submit(%{
+        "setup" => %{"username" => "ana", "password" => "frase-longa-segura", "password_confirmation" => "outra-coisa"}
+      })
+
+    assert html =~ "as duas senhas não são iguais"
+
+    html =
+      lv
+      |> element("form")
+      |> render_submit(%{
+        "setup" => %{
+          "username" => "ana",
+          "password" => "frase-longa-segura",
+          "password_confirmation" => "frase-longa-segura"
+        }
+      })
 
     # passo 3: resumo + form final apontando para o POST /setup
     assert html =~ "O disco da comunidade"

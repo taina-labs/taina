@@ -189,6 +189,26 @@ defmodule TainaWeb.FilePreviewLive do
   defp media_kind("text/" <> _rest), do: :text
   defp media_kind(_mime), do: :other
 
+  # Dimensões intrínsecas para o <img> (metadata da Rendition): o layout não
+  # pula enquanto a imagem carrega. Vídeo não tem metadata equivalente hoje.
+  defp file_dimension(file, "width") do
+    case file.metadata do
+      %{"width" => w, "height" => _h} -> w
+      _ -> nil
+    end
+  end
+
+  defp file_dimension(file, "height") do
+    case file.metadata do
+      %{"width" => _w, "height" => h} -> h
+      _ -> nil
+    end
+  end
+
+  # `inserted_at` é UTC e não sabemos o fuso de quem lê; exibir a hora em UTC
+  # seria mentir, então a tela mostra só a data.
+  defp sent_date(%{inserted_at: at}), do: Calendar.strftime(at, "%d/%m/%Y")
+
   # Pré-visualização de texto: lê até 256 KB do disco (o suficiente para a tela;
   # arquivos maiores mostram o começo). Falha de leitura: sem preview, cai no
   # ícone genérico.
@@ -224,7 +244,7 @@ defmodule TainaWeb.FilePreviewLive do
       storage_stats={assigns[:storage_stats]}
       account_alert={assigns[:account_alert] || false}
     >
-      <Layouts.app_bar title={@access_target.filename} back={~p"/arquivos"} />
+      <Layouts.app_bar title={gettext("Pedir acesso")} back={~p"/arquivos"} />
 
       <div class="col gap-4 mx-auto w-full measure">
         <.empty_state
@@ -281,9 +301,14 @@ defmodule TainaWeb.FilePreviewLive do
         <div class="surface-raised radius-lg center media-frame">
           <%= case media_kind(@file.mime_type) do %>
             <% :image -> %>
-              <img src={~p"/files/#{@file.public_id}"} alt={@file.original_filename} />
+              <img
+                src={~p"/files/#{@file.public_id}"}
+                alt={@file.original_filename}
+                width={file_dimension(@file, "width")}
+                height={file_dimension(@file, "height")}
+              />
             <% :video -> %>
-              <video controls src={~p"/files/#{@file.public_id}"} class="w-full"></video>
+              <video controls playsinline src={~p"/files/#{@file.public_id}"} class="w-full"></video>
             <% :audio -> %>
               <audio controls src={~p"/files/#{@file.public_id}"} class="w-full p-4"></audio>
             <% :pdf -> %>
@@ -295,15 +320,26 @@ defmodule TainaWeb.FilePreviewLive do
               </iframe>
             <% :text -> %>
               <pre :if={@text_preview} class="text-preview">{@text_preview}</pre>
-              <div :if={!@text_preview} class="empty-state">
-                <.icon name="file" size={40} />
-                <p class="type-body-sm">{gettext("pré-visualização indisponível")}</p>
-              </div>
+              <.empty_state
+                :if={!@text_preview}
+                icon="file"
+                title={gettext("Pré-visualização indisponível")}
+                hint={gettext("O arquivo está intacto; baixe para ler por inteiro.")}
+              >
+                <.button variant="secondary" href={~p"/files/#{@file.public_id}"} download>
+                  {gettext("Baixar")}
+                </.button>
+              </.empty_state>
             <% :other -> %>
-              <div class="empty-state">
-                <.icon name="file" size={40} />
-                <p class="type-body-sm">{gettext("pré-visualização indisponível")}</p>
-              </div>
+              <.empty_state
+                icon="file"
+                title={gettext("Pré-visualização indisponível")}
+                hint={gettext("O arquivo está intacto; baixe para abrir no seu dispositivo.")}
+              >
+                <.button variant="secondary" href={~p"/files/#{@file.public_id}"} download>
+                  {gettext("Baixar")}
+                </.button>
+              </.empty_state>
           <% end %>
         </div>
 
@@ -336,12 +372,17 @@ defmodule TainaWeb.FilePreviewLive do
               <.icon name="share" size={20} />
               <span>{zona_action_label(@file.zona)}</span>
             </button>
-            <button type="button" class="viewer__action viewer__action--danger" phx-click="ask-delete">
+            <button
+              :if={own?(@current_scope, @file)}
+              type="button"
+              class="viewer__action viewer__action--danger"
+              phx-click="ask-delete"
+            >
               <.icon name="trash" size={20} />
               <span>{gettext("Excluir")}</span>
             </button>
             <button type="button" class="viewer__action" phx-click="toggle-details">
-              <.icon name="shield" size={20} />
+              <.icon name="info" size={20} />
               <span>{gettext("Detalhes")}</span>
             </button>
           </div>
@@ -352,24 +393,25 @@ defmodule TainaWeb.FilePreviewLive do
         <h2 class="type-h3 mb-4">{gettext("Detalhes")}</h2>
         <div class="col gap-3">
           <div>
-            <p class="type-caption text-faint">{gettext("Nome original")}</p>
+            <p class="type-caption text-muted">{gettext("Nome original")}</p>
             <p class="type-body">{@file.original_filename}</p>
           </div>
           <div>
-            <p class="type-caption text-faint">{gettext("Tipo")}</p>
-            <p class="type-mono-sm">{@file.mime_type}</p>
+            <p class="type-caption text-muted">{gettext("Tipo")}</p>
+            <p class="type-body">{file_kind(@file.mime_type)}</p>
+            <p class="type-mono-sm text-muted">{@file.mime_type}</p>
           </div>
           <div>
-            <p class="type-caption text-faint">{gettext("Tamanho")}</p>
+            <p class="type-caption text-muted">{gettext("Tamanho")}</p>
             <p class="type-body">{format_bytes(@file.file_size_bytes)}</p>
           </div>
           <div>
-            <p class="type-caption text-faint">{gettext("SHA-256")}</p>
+            <p class="type-caption text-muted">{gettext("Impressão digital (SHA-256)")}</p>
             <p class="type-mono-sm truncate">{@file.file_hash}</p>
           </div>
           <div>
-            <p class="type-caption text-faint">{gettext("Enviado em")}</p>
-            <p class="type-body">{Calendar.strftime(@file.inserted_at, "%d/%m/%Y %H:%M")}</p>
+            <p class="type-caption text-muted">{gettext("Enviado em")}</p>
+            <p class="type-body">{sent_date(@file)}</p>
           </div>
         </div>
         <.button variant="secondary" class="w-full mt-6" phx-click="toggle-details">

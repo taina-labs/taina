@@ -23,9 +23,8 @@ defmodule TainaWeb.StorageLive do
      |> load_stats()}
   end
 
-  # Carrega as estatisticas sem derrubar a tela: se o dominio falhar, avisamos
-  # por flash e marcamos `load_error` para o render cair no empty_state em vez
-  # de quebrar no match.
+  # Carrega as estatisticas sem derrubar a tela: se o dominio falhar, o
+  # empty_state com "Tentar de novo" assume o lugar (sem flash duplicado).
   defp load_stats(socket) do
     scope = socket.assigns.current_scope
 
@@ -41,33 +40,60 @@ defmodule TainaWeb.StorageLive do
         |> assign(:stats, nil)
         |> assign(:by_kind, [])
         |> assign(:load_error, true)
-        |> Phoenix.LiveView.put_flash(:error, gettext("Não foi possível carregar o armazenamento agora."))
     end
   end
 
   @impl true
+  def handle_event("retry", _params, socket) do
+    {:noreply, load_stats(socket)}
+  end
+
   def handle_event("toggle-quota-modal", _params, socket) do
     {:noreply, assign(socket, :show_quota_modal, !socket.assigns.show_quota_modal)}
   end
 
   def handle_event("update-quota", %{"quota" => %{"gigabytes" => gb}}, socket) do
-    with {gigabytes, ""} when gigabytes > 0 <- Integer.parse(gb),
-         {:ok, _tekoa} <-
-           Maraca.update_tekoa_quota(socket.assigns.current_scope, gigabytes * 1024 ** 3) do
-      {:noreply,
-       socket
-       |> assign(:show_quota_modal, false)
-       |> Phoenix.LiveView.put_flash(:info, gettext("Cota atualizada."))
-       |> load_stats()}
-    else
-      _error ->
-        {:noreply, Phoenix.LiveView.put_flash(socket, :error, gettext("Não foi possível atualizar a cota."))}
+    case parse_gigabytes(gb) do
+      {:ok, gigabytes} ->
+        case Maraca.update_tekoa_quota(socket.assigns.current_scope, gigabytes * 1024 ** 3) do
+          {:ok, _tekoa} ->
+            {:noreply,
+             socket
+             |> assign(:show_quota_modal, false)
+             |> Phoenix.LiveView.put_flash(:info, gettext("Cota atualizada."))
+             |> load_stats()}
+
+          {:error, _reason} ->
+            {:noreply,
+             Phoenix.LiveView.put_flash(socket, :error, gettext("Não foi possível salvar agora. Tente de novo."))}
+        end
+
+      # Número inteiro, sem vírgula: "50" vale, "50,5" e "" não. Erro de
+      # escrita e erro de salvamento são falas diferentes.
+      :error ->
+        {:noreply, Phoenix.LiveView.put_flash(socket, :error, gettext("Escreva um número inteiro de GB, sem vírgula."))}
     end
   end
 
+  defp parse_gigabytes(gb) do
+    case Integer.parse(gb) do
+      {gigabytes, ""} when gigabytes > 0 -> {:ok, gigabytes}
+      _other -> :error
+    end
+  end
+
+  # Fração da barra por tipo. As cores são as classes sancionadas do
+  # `.progress__fill`, as mesmas da legenda (`legend-dot`): fotos=Jaci,
+  # vídeos=azul, documentos=Ybira, resto neutro. Sem o vínculo, a barra
+  # inteira pintava de âmbar e meia caixa vazia parecia cheia.
+  defp segment_fill(:photos), do: "jaci"
+  defp segment_fill(:videos), do: "sky"
+  defp segment_fill(:documents), do: "ybira"
+  defp segment_fill(:others), do: "neutral"
+
   defp segments(by_kind, %{used_bytes: used}) when used > 0 do
     for {kind, bytes} <- Enum.sort_by(by_kind, fn {_k, b} -> -b end), bytes > 0 do
-      {Atom.to_string(kind), bytes / used}
+      {segment_fill(kind), bytes / used}
     end
   end
 
@@ -77,6 +103,20 @@ defmodule TainaWeb.StorageLive do
   defp kind_label(:videos), do: gettext("Vídeos")
   defp kind_label(:documents), do: gettext("Documentos")
   defp kind_label(:others), do: gettext("Outros")
+
+  # "X livres" verde quando o espaço dá folga; âmbar quando sobra pouco (10%
+  # ou menos). A palavra "livres" e o número acompanham a cor: cor nunca
+  # sozinha.
+  defp free_class(%{used_bytes: used, quota_bytes: quota}) when is_integer(quota) and quota > 0 do
+    if (quota - used) / quota <= 0.1, do: "text-warning", else: "text-success"
+  end
+
+  defp free_class(_stats), do: "text-success"
+
+  # Cota nil não é "0 B" (número que mente): é ausência de limite, dita como
+  # estado, o mesmo falar da Saúde.
+  defp quota_label(nil), do: gettext("Sem limite definido.")
+  defp quota_label(quota), do: format_bytes(quota)
 
   defp quota_gb(%{quota_bytes: quota}) when is_integer(quota), do: div(quota, 1024 ** 3)
   defp quota_gb(_stats), do: nil
@@ -102,25 +142,36 @@ defmodule TainaWeb.StorageLive do
         :if={@load_error}
         icon="alert"
         title={gettext("Não foi possível carregar")}
-        hint={gettext("O uso de armazenamento não respondeu agora. Tente recarregar em instantes.")}
-      />
+        hint={gettext("O armazenamento não respondeu agora.")}
+      >
+        <.button variant="secondary" phx-click="retry">{gettext("Tentar de novo")}</.button>
+      </.empty_state>
 
       <div :if={@stats} class="col gap-5 mx-auto w-full measure">
         <.card raised class="p-6">
-          <p class="type-overline text-faint">{gettext("Espaço da comunidade")}</p>
-          <p class="type-display">{format_bytes(@stats.used_bytes)}</p>
+          <p class="type-overline text-muted">{gettext("Espaço da comunidade")}</p>
+          <p class="type-display" style="font-family: var(--font-family-mono)">
+            {format_bytes(@stats.used_bytes)}
+          </p>
           <div class="row between mt-1 mb-4">
-            <p class="type-body-sm text-muted">
+            <p :if={@stats.quota_bytes} class="type-body-sm text-muted">
               {gettext("de %{total} usados", total: format_bytes(@stats.quota_bytes))}
             </p>
-            <p :if={@stats.quota_bytes} class="type-body-sm text-success">
+            <p :if={is_nil(@stats.quota_bytes)} class="type-body-sm text-muted">
+              {gettext("Sem limite definido.")}
+            </p>
+            <p :if={@stats.quota_bytes} class={["type-body-sm", free_class(@stats)]}>
               {format_bytes(@stats.quota_bytes - @stats.used_bytes)} {gettext("livres")}
             </p>
           </div>
           <.progress :if={segments(@by_kind, @stats) != []} segments={segments(@by_kind, @stats)} />
           <.progress :if={segments(@by_kind, @stats) == []} value={0} />
-          <p class="type-caption text-faint mt-3">{gettext("Uso por tipo")}</p>
+          <p class="type-caption text-muted mt-3">{gettext("Uso por tipo")}</p>
         </.card>
+
+        <p class="type-caption text-muted">
+          {gettext("Só entra o que está na praça, a sua casa e o que te deixarem ver. A casa dos outros fica de fora.")}
+        </p>
 
         <div class="list">
           <div :for={{kind, bytes} <- Enum.sort_by(@by_kind, fn {_k, b} -> -b end)} class="list-row">
@@ -128,22 +179,19 @@ defmodule TainaWeb.StorageLive do
             <div class="list-row__body">
               <p class="type-body">{kind_label(kind)}</p>
             </div>
-            <p class="type-label">{format_bytes(bytes)}</p>
+            <p class="type-mono-sm">{format_bytes(bytes)}</p>
           </div>
         </div>
-        <p class="type-caption text-faint">
-          {gettext("Total: %{total}", total: format_bytes(by_kind_total(@by_kind)))}
-        </p>
         <p class="type-caption text-muted">
-          {gettext("Só entra o que está na praça, a sua casa e o que te deixarem ver. A casa dos outros fica de fora.")}
+          {gettext("Soma do que você vê: %{total}", total: format_bytes(by_kind_total(@by_kind)))}
         </p>
 
         <div :if={Maraca.zelador?(@current_scope.ava)}>
-          <p class="type-overline text-faint mb-2">{gettext("Cota da comunidade")}</p>
+          <p class="type-overline text-muted mb-2">{gettext("Cota da comunidade")}</p>
           <button type="button" class="card row between w-full" phx-click="toggle-quota-modal">
             <span class="type-body">{gettext("Limite total")}</span>
             <span class="row gap-2 type-label text-brand">
-              {format_bytes(@stats.quota_bytes)} <.icon name="chevron-right" size={16} />
+              {quota_label(@stats.quota_bytes)} <.icon name="chevron-right" size={16} />
             </span>
           </button>
         </div>
@@ -158,6 +206,7 @@ defmodule TainaWeb.StorageLive do
             name="quota[gigabytes]"
             id="quota_gigabytes"
             value={quota_gb(@stats)}
+            help={gettext("Um número inteiro, em GB. Exemplo: 50")}
             inputmode="numeric"
             required
           />

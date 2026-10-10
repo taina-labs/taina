@@ -35,12 +35,24 @@ defmodule TainaWeb.LoginLive do
      Phoenix.LiveView.put_flash(
        socket,
        :info,
-       gettext("Fale com quem cuida da sua comunidade. Ela gera um link para você criar uma senha nova.")
+       gettext("Fale com quem cuida da sua comunidade. Essa pessoa gera um link para você criar uma senha nova.")
      )}
   end
 
   def handle_event("toggle-invite-help", _params, socket) do
     {:noreply, assign(socket, :show_invite_help, !socket.assigns.show_invite_help)}
+  end
+
+  # Quem tem só o código do convite (sem o link completo) entra direto na tela
+  # de aceite: o código é o que vem depois de /convite/ no link do QR code.
+  def handle_event("open-invite", %{"code" => code}, socket) do
+    code = String.trim(code || "")
+
+    if code == "" do
+      {:noreply, socket}
+    else
+      {:noreply, Phoenix.LiveView.push_navigate(socket, to: ~p"/convite/#{code}")}
+    end
   end
 
   @impl true
@@ -57,7 +69,7 @@ defmodule TainaWeb.LoginLive do
       <form id="login-form" action={~p"/login"} method="post" class="col gap-4">
         <input type="hidden" name="_csrf_token" value={get_csrf_token()} />
         <.input
-          label={gettext("Seu nome")}
+          label={gettext("Nome de usuário")}
           type="text"
           name="username"
           id="login_username"
@@ -75,9 +87,10 @@ defmodule TainaWeb.LoginLive do
           value=""
           placeholder={gettext("sua senha")}
           icon="shield"
+          autocomplete="current-password"
           required
         />
-        <button type="button" class="type-label text-brand text-right" phx-click="forgot-password">
+        <button type="button" class="type-label text-brand text-right py-3" phx-click="forgot-password">
           {gettext("Esqueci minha senha")}
         </button>
         <.button type="submit" variant="primary" class="w-full mt-2">{gettext("Entrar")}</.button>
@@ -94,12 +107,26 @@ defmodule TainaWeb.LoginLive do
       </.button>
 
       <.modal id="invite-help" show={@show_invite_help} on_cancel={JS.push("toggle-invite-help")}>
-        <h2 class="type-h3 mb-3">{gettext("Como entrar com um convite")}</h2>
+        <h2 id="invite-help-title" class="type-h3 mb-3">{gettext("Como entrar com um convite")}</h2>
         <p class="type-body text-secondary mb-4">
           {gettext(
-            "Quem administra a comunidade te manda um link (ou um QR code). É só abrir o link neste aparelho. A criação da conta acontece lá."
+            "Quem cuida da comunidade te manda um link (ou um QR code). É só abrir o link neste aparelho. A criação da conta acontece lá."
           )}
         </p>
+        <form id="invite-code-form" phx-submit="open-invite" class="col gap-3 mb-4">
+          <.input
+            label={gettext("Tem só o código?")}
+            name="code"
+            id="invite_code"
+            placeholder={gettext("digite o código do convite")}
+            help={gettext("É o que aparece no link ou no QR code.")}
+            autocapitalize="none"
+            required
+          />
+          <.button type="submit" variant="primary" class="w-full" phx-disable-with={gettext("Abrindo...")}>
+            {gettext("Abrir convite")}
+          </.button>
+        </form>
         <.button variant="secondary" class="w-full" phx-click="toggle-invite-help">
           {gettext("Entendi")}
         </.button>

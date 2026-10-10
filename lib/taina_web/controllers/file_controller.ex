@@ -23,8 +23,10 @@ defmodule TainaWeb.FileController do
          {:ok, file} <- Ybira.get_file(scope, public_id) do
       serve_file(conn, file)
     else
-      {:error, :not_authenticated} -> send_resp(conn, 401, "")
-      {:error, :forbidden} -> send_resp(conn, 403, "")
+      # Casa de outra pessoa: o navegador recebe uma página, não um 403 vazio.
+      # A tela do arquivo é que mostra o porquê e o caminho (Pedir acesso).
+      {:error, :forbidden} -> redirect(conn, to: ~p"/arquivos/#{public_id}")
+      {:error, :not_authenticated} -> redirect(conn, to: ~p"/login")
       {:error, :not_found} -> send_resp(conn, 404, "")
     end
   end
@@ -44,8 +46,10 @@ defmodule TainaWeb.FileController do
       |> put_resp_header("cache-control", "private, max-age=86400")
       |> send_file(200, path)
     else
-      {:error, :not_authenticated} -> send_resp(conn, 401, "")
-      {:error, :forbidden} -> send_resp(conn, 403, "")
+      # Mesma regra do download: sem página em branco; quem não pode ler o
+      # arquivo é levado à tela dele (Pedir acesso).
+      {:error, :forbidden} -> redirect(conn, to: ~p"/arquivos/#{public_id}")
+      {:error, :not_authenticated} -> redirect(conn, to: ~p"/login")
       _ -> send_resp(conn, 404, "")
     end
   end

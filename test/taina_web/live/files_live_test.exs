@@ -30,7 +30,8 @@ defmodule TainaWeb.FilesLiveTest do
     {:ok, _lv, html} = conn |> log_in(ava) |> live(~p"/arquivos/pasta/#{folder.public_id}")
 
     assert html =~ "Fotos da comunidade"
-    assert html =~ "A praça está vazia"
+    # a pasta nova nasce na casa, e a listagem abre na casa por padrao
+    assert html =~ "Sua casa está vazia"
   end
 
   test "cria pasta pelo modal", %{conn: conn, ava: ava} do
@@ -75,39 +76,40 @@ defmodule TainaWeb.FilesLiveTest do
   # --- zonas casa/praca (RFC_003 D1/D2) ---
 
   describe "zonas casa/praca" do
-    test "praca e a aba padrao: mostra item da praca, esconde casa", %{conn: conn, scope: scope, ava: ava} do
+    test "casa e a aba padrao: mostra item da casa, esconde praca", %{conn: conn, scope: scope, ava: ava} do
       {:ok, casa} = Ybira.upload(scope, tmp_upload_fixture("oi", "minha-casa.txt"))
       {:ok, praca} = Ybira.upload(scope, tmp_upload_fixture("oi", "na-praca.txt"))
       {:ok, _} = Ybira.publicar_file(scope, praca.public_id)
 
-      {:ok, _lv, html} = conn |> log_in(ava) |> live(~p"/arquivos")
-
-      assert html =~ praca.original_filename
-      refute html =~ casa.original_filename
-      # aba Praca ativa por padrao
-      assert html =~ ~s(aria-current="true")
-      # linha de leitura da praca + acao oposta no menu
-      assert html =~ "Todos os moradores veem."
-      assert html =~ "Tirar da praça"
-    end
-
-    test "?zona=casa mostra meus itens da casa, esconde praca", %{conn: conn, scope: scope, ava: ava} do
-      {:ok, casa} = Ybira.upload(scope, tmp_upload_fixture("oi", "minha-casa.txt"))
-      {:ok, praca} = Ybira.upload(scope, tmp_upload_fixture("oi", "na-praca.txt"))
-      {:ok, _} = Ybira.publicar_file(scope, praca.public_id)
-
-      {:ok, _lv, html} = conn |> log_in(ava) |> live(~p"/arquivos?zona=casa")
+      {:ok, lv, html} = conn |> log_in(ava) |> live(~p"/arquivos")
 
       assert html =~ casa.original_filename
       refute html =~ praca.original_filename
-      # linha de leitura da casa + acao oposta no menu
-      assert html =~ "Só você, e quem você deixar."
+      # aba Casa ativa sem ?zona= na URL; a praca pede o parametro explicito
+      assert has_element?(lv, ~s(.segmented__option[aria-current="true"]), "Casa")
+      assert has_element?(lv, ~s(.segmented__option[aria-current="false"]), "Praça")
+      # linha de leitura curta da casa + acao oposta no menu do dono
+      assert html =~ "Só você"
       assert html =~ "Publicar na praça"
+    end
+
+    test "?zona=praca mostra itens da praca, esconde os da casa", %{conn: conn, scope: scope, ava: ava} do
+      {:ok, casa} = Ybira.upload(scope, tmp_upload_fixture("oi", "minha-casa.txt"))
+      {:ok, praca} = Ybira.upload(scope, tmp_upload_fixture("oi", "na-praca.txt"))
+      {:ok, _} = Ybira.publicar_file(scope, praca.public_id)
+
+      {:ok, _lv, html} = conn |> log_in(ava) |> live(~p"/arquivos?zona=praca")
+
+      assert html =~ praca.original_filename
+      refute html =~ casa.original_filename
+      # linha de leitura curta da praca + acao oposta no menu do dono
+      assert html =~ "Todos veem"
+      assert html =~ "Tirar da praça"
     end
 
     test "publicar um arquivo da casa: ask -> confirm move para a praca", %{conn: conn, scope: scope, ava: ava} do
       {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("oi", "estatuto.txt"))
-      {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/arquivos?zona=casa")
+      {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/arquivos")
 
       lv
       |> element(~s(button[phx-click*="ask-zona"][phx-click*="#{file.public_id}"]))
@@ -120,14 +122,14 @@ defmodule TainaWeb.FilesLiveTest do
       assert updated.zona == :praca
 
       # aparece na praca depois do refresh
-      {:ok, _lv2, praca_html} = conn |> log_in(ava) |> live(~p"/arquivos")
+      {:ok, _lv2, praca_html} = conn |> log_in(ava) |> live(~p"/arquivos?zona=praca")
       assert praca_html =~ file.original_filename
     end
 
     test "tirar da praca: ask -> confirm volta para casa", %{conn: conn, scope: scope, ava: ava} do
       {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("oi", "comunicado.txt"))
       {:ok, _} = Ybira.publicar_file(scope, file.public_id)
-      {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/arquivos")
+      {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/arquivos?zona=praca")
 
       lv
       |> element(~s(button[phx-click*="ask-zona"][phx-click*="#{file.public_id}"]))
@@ -165,7 +167,7 @@ defmodule TainaWeb.FilesLiveTest do
       {:ok, file} = Ybira.upload(outro_scope, tmp_upload_fixture("oi", "da-outra.txt"))
       {:ok, _} = Ybira.publicar_file(outro_scope, file.public_id)
 
-      {:ok, lv, html} = conn |> log_in(ava) |> live(~p"/arquivos")
+      {:ok, lv, html} = conn |> log_in(ava) |> live(~p"/arquivos?zona=praca")
 
       assert html =~ file.original_filename
       refute has_element?(lv, ~s(button[phx-click*="ask-zona"][phx-click*="#{file.public_id}"]))
@@ -174,7 +176,7 @@ defmodule TainaWeb.FilesLiveTest do
     test "praca vazia mostra o estado vazio da praca", %{conn: conn, scope: scope, ava: ava} do
       {:ok, _casa} = Ybira.upload(scope, tmp_upload_fixture("oi", "so-casa.txt"))
 
-      {:ok, _lv, html} = conn |> log_in(ava) |> live(~p"/arquivos")
+      {:ok, _lv, html} = conn |> log_in(ava) |> live(~p"/arquivos?zona=praca")
 
       assert html =~ "A praça está vazia"
     end
