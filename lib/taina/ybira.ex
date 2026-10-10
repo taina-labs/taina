@@ -52,7 +52,7 @@ defmodule Taina.Ybira do
   # executáveis são detectados e ficam de fora, logo, rejeitados.
   @allowed_mime_types ~w[
     image/jpeg image/png image/gif image/webp image/heic image/heif
-    video/mp4 video/quicktime video/webm video/avi
+    video/mp4 video/quicktime video/webm video/x-matroska video/avi
     audio/mpeg audio/ogg audio/wav audio/flac
     application/pdf application/zip application/octet-stream
     text/plain

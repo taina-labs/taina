@@ -40,7 +40,7 @@ defmodule Taina.Ybira.MimeDetector do
   # --- Vídeo / Áudio em outros contêineres ---
   defp match_magic(<<"RIFF", _::32, "AVI ", _::binary>>), do: "video/avi"
   defp match_magic(<<"RIFF", _::32, "WAVE", _::binary>>), do: "audio/wav"
-  defp match_magic(<<0x1A, 0x45, 0xDF, 0xA3, _::binary>>), do: "video/webm"
+  defp match_magic(<<0x1A, 0x45, 0xDF, 0xA3, rest::binary>>), do: ebml_mime(rest)
   defp match_magic(<<"OggS", _::binary>>), do: "audio/ogg"
   defp match_magic(<<"fLaC", _::binary>>), do: "audio/flac"
   defp match_magic(<<"ID3", _::binary>>), do: "audio/mpeg"
@@ -68,6 +68,33 @@ defmodule Taina.Ybira.MimeDetector do
   defp ftyp_mime("qt  "), do: "video/quicktime"
   defp ftyp_mime(brand) when brand in ~w(heic heix hevc heim heis mif1), do: "image/heic"
   defp ftyp_mime(_brand), do: "video/mp4"
+
+  # --- EBML: WebM e Matroska dividem o magic ---
+
+  # O magic 0x1A45DFA3 é o header EBML genérico, compartilhado por WebM e
+  # Matroska (.mkv): o DocType (elemento 0x4282) dentro do header decide o
+  # container. Varrimos os filhos do header dentro da janela de 32 bytes
+  # (id de 2 bytes + tamanho de 1 byte, vint com o bit marcador setado, +
+  # payload). Sem DocType legível na janela, mantém o veredito antigo
+  # (video/webm): nenhum arquivo que funciona hoje piora.
+  defp ebml_mime(<<>>), do: "video/webm"
+
+  defp ebml_mime(<<_header_size, children::binary>>), do: ebml_doctype(children)
+
+  defp ebml_doctype(<<0x42, 0x82, size, data::binary>>) when size >= 0x80 and byte_size(data) >= size - 0x80,
+    do: data |> binary_part(0, size - 0x80) |> ebml_container()
+
+  defp ebml_doctype(<<_id::binary-size(2), size, rest::binary>>) when size >= 0x80 and byte_size(rest) >= size - 0x80 do
+    payload_len = size - 0x80
+    ebml_doctype(binary_part(rest, payload_len, byte_size(rest) - payload_len))
+  end
+
+  # Header truncado ou sem DocType na janela de 32 bytes: veredito antigo.
+  defp ebml_doctype(_truncated), do: "video/webm"
+
+  defp ebml_container("webm"), do: "video/webm"
+  defp ebml_container("matroska"), do: "video/x-matroska"
+  defp ebml_container(_unknown), do: "video/webm"
 
   # Heurística: UTF-8 válido e sem byte NUL ⇒ tratamos como texto. O trecho lido
   # pode cortar um caractere multibyte no fim; nesse caso `String.valid?` falha e

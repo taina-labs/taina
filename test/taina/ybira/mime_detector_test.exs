@@ -29,6 +29,25 @@ defmodule Taina.Ybira.MimeDetectorTest do
     assert detect(<<0, 0, 0, 0x18, "ftyp", "heic", 0, 0>>) == "image/heic"
   end
 
+  test "splits WebM and Matroska by the EBML DocType" do
+    # Header EBML mínimo: magic + tamanho do header + DocType.
+    webm = <<0x1A, 0x45, 0xDF, 0xA3, 0x87, 0x42, 0x82, 0x84, "webm">>
+    mkv = <<0x1A, 0x45, 0xDF, 0xA3, 0x8B, 0x42, 0x82, 0x88, "matroska">>
+
+    # Header real (ffmpeg/mkvtoolnix): quatro elementos EBML* antes do
+    # DocType; o "matroska" termina exatamente no byte 32, o limite da janela.
+    ebml_elements =
+      <<0x42, 0x86, 0x81, 0x01, 0x42, 0xF7, 0x81, 0x01, 0x42, 0xF2, 0x81, 0x04, 0x42, 0xF3, 0x81, 0x08>>
+
+    mkv_full = <<0x1A, 0x45, 0xDF, 0xA3, 0xA2, ebml_elements::binary, 0x42, 0x82, 0x88, "matroska">>
+
+    assert detect(webm) == "video/webm"
+    assert detect(mkv) == "video/x-matroska"
+    assert detect(mkv_full) == "video/x-matroska"
+    assert detect(binary_part(mkv_full, 0, 31)) == "video/webm"
+    assert detect(<<0x1A, 0x45, 0xDF, 0xA3, 0x99, 0xFF, 0x01, 0x02, 0x03, 0x04>>) == "video/webm"
+  end
+
   test "detects executables (which the upload allowlist rejects)" do
     assert detect(<<0x4D, 0x5A, 0x90, 0x00>>) == "application/x-msdownload"
     assert detect(<<0x7F, "ELF", 0, 0>>) == "application/x-executable"

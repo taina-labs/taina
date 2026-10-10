@@ -179,6 +179,15 @@ defmodule Taina.YbiraTest do
       tekoa = Repo.get!(Tekoa, scope.tekoa.id, skip_tekoa_id: true)
       assert tekoa.storage_used_bytes == 0
     end
+
+    test "detects Matroska by magic bytes and labels it honestly" do
+      scope = scope_fixture()
+      mkv = <<0x1A, 0x45, 0xDF, 0xA3, 0x8B, 0x42, 0x82, 0x88, "matroska">>
+      tmp = tmp_upload_fixture(mkv, "filme.bin")
+
+      assert {:ok, file} = Ybira.upload(scope, tmp)
+      assert file.mime_type == "video/x-matroska"
+    end
   end
 
   describe "folder CRUD" do
