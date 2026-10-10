@@ -52,7 +52,7 @@ defmodule Taina.Ybira do
   # executáveis são detectados e ficam de fora, logo, rejeitados.
   @allowed_mime_types ~w[
     image/jpeg image/png image/gif image/webp image/heic image/heif
-    video/mp4 video/quicktime video/webm video/avi
+    video/mp4 video/quicktime video/webm video/x-matroska video/avi
     audio/mpeg audio/ogg audio/wav audio/flac
     application/pdf application/zip application/octet-stream
     text/plain
@@ -251,6 +251,21 @@ defmodule Taina.Ybira do
 
       {items, next_cursor} = fetch_page(query, opts)
       {:ok, %{items: items, next_cursor: next_cursor}}
+    end)
+  end
+
+  @impl true
+  def trash_stats(%Scope{} = scope) do
+    Repo.with_tekoa(scope.tekoa.public_id, fn ->
+      stats =
+        Repo.one(
+          from(f in Ybira.File,
+            where: not is_nil(f.deleted_at),
+            select: %{count: count(f.id), bytes: sum(f.file_size_bytes)}
+          )
+        )
+
+      {:ok, %{count: stats.count, bytes: to_integer(stats.bytes)}}
     end)
   end
 
@@ -582,14 +597,21 @@ defmodule Taina.Ybira do
     # Job de sistema que cruza todas as Tekoas: sem a válvula, as policies
     # esconderiam as linhas do papel de aplicação (não-superuser em produção)
     # e a lixeira nunca esvaziaria -- silenciosamente, com `{:ok, 0}`. A
-    # válvula cobre SÓ o banco (leitura dos expirados e expurgo das pastas):
-    # os bytes em disco são apagados fora de qualquer transação, em
-    # `purge_file/1`.
+    # válvula cobre SÓ o banco: os bytes em disco são apagados fora de
+    # qualquer transação, em `remove_disk_copy/1`.
     {:ok, files} =
       Repo.with_system(fn ->
-        files =
-          Repo.all(
-            from(f in Ybira.File, where: not is_nil(f.deleted_at) and f.deleted_at < ^cutoff),
+        # Registros saem num só `delete_all` (com `select: f`, o Postgres
+        # devolve as linhas apagadas na mesma viagem). O caminho antigo abria
+        # uma transação por arquivo -- numa lixeira de centenas, centenas de
+        # commits sequenciais na caixa da comunidade. Arquivos saem ANTES das
+        # pastas: o FK de `files.folder_id` (nilify) não dispara em lote vazio.
+        {_count, files} =
+          Repo.delete_all(
+            from(f in Ybira.File,
+              where: not is_nil(f.deleted_at) and f.deleted_at < ^cutoff,
+              select: f
+            ),
             skip_tekoa_id: true
           )
 
@@ -601,30 +623,37 @@ defmodule Taina.Ybira do
           skip_tekoa_id: true
         )
 
+        # Cota em lote: soma por Tekoa dos bytes apagados e ajusta uma vez por
+        # comunidade, na MESMA transação dos deletes -- invariante de crash
+        # preservado: registro e cota caem juntos, ou nada cai.
+        Enum.each(bytes_per_tekoa(files), fn {tekoa_id, bytes} ->
+          adjust_storage_used(tekoa_id, -bytes, skip_tekoa_id: true)
+        end)
+
         {:ok, files}
       end)
 
-    Enum.each(files, &purge_file/1)
+    # O binário vai embora DEPOIS, fora de qualquer transação. Invariante de
+    # crash: o banco fica sempre consistente (registro e cota são da mesma
+    # transação); o pior caso é byte órfão no disco se o processo morrer
+    # entre o commit e os `File.rm` -- logamos para dar visibilidade a
+    # problemas recorrentes de disco.
+    Enum.each(files, &remove_disk_copy/1)
 
     {:ok, length(files)}
   end
 
-  # Um arquivo da lixeira: registro e cota caem numa transação própria, sob a
-  # válvula de sistema (o papel de aplicação cruza as policies de delete), e o
-  # binário vai embora DEPOIS, fora de qualquer transação. Invariante de
-  # crash: o banco fica sempre consistente (registro e cota são da mesma
-  # transação); o pior caso é byte órfão no disco se o processo morrer entre o
-  # commit e o `File.rm` -- logamos para dar visibilidade a problemas
-  # recorrentes de disco.
-  defp purge_file(file) do
-    {:ok, _} =
-      Repo.with_system(fn ->
-        Repo.transaction(fn ->
-          Repo.delete!(file)
-          adjust_storage_used(file.tekoa_id, -file.file_size_bytes, skip_tekoa_id: true)
-        end)
-      end)
+  # Soma por Tekoa dos bytes dos arquivos apagados: um ajuste de cota por
+  # comunidade, não um por arquivo.
+  defp bytes_per_tekoa(files) do
+    files
+    |> Enum.group_by(& &1.tekoa_id)
+    |> Enum.map(fn {tekoa_id, trashed} ->
+      {tekoa_id, trashed |> Enum.map(& &1.file_size_bytes) |> Enum.sum()}
+    end)
+  end
 
+  defp remove_disk_copy(file) do
     with {:error, reason} <- Elixir.File.rm(file.filepath) do
       Logger.warning("PurgeTrash: falha ao remover arquivo do disco",
         path: file.filepath,

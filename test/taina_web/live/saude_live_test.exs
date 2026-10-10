@@ -13,6 +13,8 @@ defmodule TainaWeb.SaudeLiveTest do
   alias Ecto.Changeset
   alias Taina.Nhaman.Backup
   alias Taina.Repo
+  alias Taina.Scope
+  alias Taina.Ybira
 
   setup do
     tekoa = tekoa_fixture()
@@ -39,6 +41,9 @@ defmodule TainaWeb.SaudeLiveTest do
 
     # Disco em unidades humanas, nunca bytes crus.
     assert html =~ "0 B usados de 1,0 GB. 1,0 GB livres."
+
+    # Lixeira vazia não mostra linha ("0" não é fato).
+    refute html =~ "na lixeira"
 
     # Moradores e quem cuida da máquina.
     assert html =~ "2 moradores"
@@ -102,6 +107,17 @@ defmodule TainaWeb.SaudeLiveTest do
 
     assert html =~ "1,0 GB usados de 1,0 GB. 0 B livres."
     assert html =~ "O espaço está acabando."
+  end
+
+  test "lixeira entra como fato agregado, sem nome nem dono", %{conn: conn, tekoa: tekoa, morador: morador} do
+    scope = Scope.new(morador, tekoa)
+    {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("x", "arquivo_da_casa.txt"))
+    {:ok, _} = Ybira.delete_file(scope, file.public_id)
+
+    {:ok, _lv, html} = conn |> log_in(morador) |> live(~p"/saude")
+
+    assert html =~ "na lixeira esperando a limpeza (1 arquivo)."
+    refute html =~ "arquivo_da_casa"
   end
 
   test "Saúde aparece na navegação de baixo e na lateral", %{conn: conn, morador: morador} do
