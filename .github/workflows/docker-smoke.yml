@@ -216,10 +216,14 @@ jobs:
           [ "$as_superuser" = "1" ] \
             || { echo "superusuário viu $as_superuser tekoa(s), esperado 1"; exit 1; }
 
+          # CASE com texto explícito: `rolsuper || rolbypassrls` traz o
+          # booleano como 'false' (cast para texto), não na forma t/f, então
+          # concatenar e comparar com "f|f" nunca bate. Um rótulo fixo não
+          # depende da forma textual do booleano.
           flags=$(docker exec smoke_db psql -U taina -d taina \
-            -tAc "SELECT rolsuper || '|' || rolbypassrls FROM pg_roles WHERE rolname = 'taina_app'")
-          [ "$flags" = "f|f" ] \
-            || { echo "taina_app com superpoderes (rolsuper|rolbypassrls = $flags)"; exit 1; }
+            -tAc "SELECT CASE WHEN rolsuper OR rolbypassrls THEN 'yes' ELSE 'no' END FROM pg_roles WHERE rolname = 'taina_app'")
+          [ "$flags" = "no" ] \
+            || { echo "taina_app com superpoderes (rolsuper OR rolbypassrls = $flags)"; exit 1; }
 
           echo "RLS aplicado: taina_app vê 0 sem contexto, superusuário vê 1, papel sem superpoderes"
 
