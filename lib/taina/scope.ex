@@ -19,9 +19,35 @@ defmodule Taina.Scope do
 
   @doc """
   Constrói um scope a partir de um Ava com a Tekoa pré-carregada.
+
+  A associação `tekoa` do Ava precisa estar pré-carregada (`%Tekoa{}`). O
+  caminho normal de sessão já devolve assim (`Maraca.get_session_user/1`);
+  um Ava carregado por outro caminho precisa do preload antes, no contexto
+  RLS adequado (`Taina.Repo.with_tekoa/2` aceita o preload; fora de contexto,
+  a válvula é `skip_tekoa_id: true`):
+
+      # Dentro de `Repo.with_tekoa/2`:
+      Scope.for_ava(Repo.preload(ava, :tekoa))
+
+      # Operação de sistema, fora de contexto:
+      Scope.for_ava(Repo.preload(ava, :tekoa, skip_tekoa_id: true))
+
+  Sem o preload, `ava.tekoa` é `%Ecto.Association.NotLoaded{}` e `for_ava/1`
+  levanta `ArgumentError` apontando o preload, em vez de um
+  `FunctionClauseError` sem pista.
   """
+  @spec for_ava(Ava.t()) :: t()
   def for_ava(%Ava{tekoa: %Tekoa{} = tekoa} = ava) do
     %__MODULE__{ava: ava, tekoa: tekoa}
+  end
+
+  def for_ava(%Ava{} = ava) do
+    raise ArgumentError,
+          "Scope.for_ava/1 requer a associação :tekoa do Ava pré-carregada. " <>
+            "Pré-carregue com Repo.preload(ava, :tekoa) dentro de Repo.with_tekoa/2 " <>
+            "(ou Repo.preload(ava, :tekoa, skip_tekoa_id: true) numa operação de sistema), " <>
+            "ou use Maraca.get_session_user/1, que já devolve o Ava com a Tekoa. " <>
+            "Recebido: #{inspect(ava.tekoa)}"
   end
 
   @doc """
