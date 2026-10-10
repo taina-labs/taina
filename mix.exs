@@ -46,6 +46,7 @@ defmodule Taina.MixProject do
     [
       {:phoenix, "~> 1.8.1"},
       {:phoenix_live_view, "~> 1.1"},
+      {:phoenix_live_dashboard, "~> 0.9"},
       {:gettext, "~> 0.26"},
       {:eqrcode, "~> 0.2"},
       {:phoenix_ecto, "~> 4.5"},

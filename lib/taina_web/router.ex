@@ -1,6 +1,7 @@
 defmodule TainaWeb.Router do
   use TainaWeb, :router
 
+  import Phoenix.LiveDashboard.Router
   import Phoenix.LiveView.Router
   import TainaWeb.Auth
 
@@ -20,6 +21,10 @@ defmodule TainaWeb.Router do
     plug :protect_from_forgery
     plug :put_secure_browser_headers
     plug :fetch_current_scope
+  end
+
+  pipeline :zelador do
+    plug :require_zelador
   end
 
   scope "/", TainaWeb do
@@ -78,5 +83,13 @@ defmodule TainaWeb.Router do
       live "/conta/pedidos", AccessRequestsLive
       live "/conta/meus-pedidos", MyRequestsLive
     end
+  end
+
+  # Painel da máquina (RFC_003 seção 6, camada 3): quem cuida, e só quem cuida.
+  # O portão é o papel do Ava, não o ambiente de build.
+  scope "/" do
+    pipe_through [:browser, :zelador]
+
+    live_dashboard "/painel-do-zelador", metrics: {TainaWeb.Telemetry, :metrics}
   end
 end

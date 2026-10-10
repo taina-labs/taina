@@ -22,7 +22,7 @@ defmodule TainaWeb.Auth do
   # quanto em `Phoenix.LiveView` (socket). Importamos só o lado da conn e
   # qualificamos o lado do socket para não ficar ambíguo.
   import Phoenix.Controller, only: [put_flash: 3, redirect: 2]
-  import Plug.Conn, only: [assign: 3, halt: 1]
+  import Plug.Conn, only: [assign: 3, halt: 1, send_resp: 3]
 
   alias Phoenix.Component
   alias Phoenix.LiveView
@@ -65,6 +65,23 @@ defmodule TainaWeb.Auth do
       conn
       |> put_flash(:error, "Você precisa entrar para acessar esta página.")
       |> redirect(to: @login_path)
+      |> halt()
+    end
+  end
+
+  @doc """
+  Plug: exige zelador. Morador e visitante veem 404, como se a página não
+  existisse: o painel da máquina é de quem cuida dela, e o papel, não o
+  ambiente, é o portão (RFC_003: zelador não tem autoridade sobre dados).
+  """
+  def require_zelador(conn, _opts) do
+    scope = conn.assigns[:current_scope]
+
+    if scope && Maraca.zelador?(scope.ava) do
+      conn
+    else
+      conn
+      |> send_resp(404, "")
       |> halt()
     end
   end

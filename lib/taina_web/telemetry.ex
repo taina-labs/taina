@@ -76,6 +76,10 @@ defmodule TainaWeb.Telemetry do
         description: "The time the connection spent waiting before being checked out for the query"
       ),
 
+      # Mural / transparência (RFC_003 seção 6, camada 3): atos da comunidade
+      # por tipo. Sem reporter para fora, a caixa é soberana.
+      counter("taina.maraca.event.count", tags: [:type]),
+
       # VM Metrics
       summary("vm.memory.total", unit: {:byte, :kilobyte}),
       summary("vm.total_run_queue_lengths.total"),
