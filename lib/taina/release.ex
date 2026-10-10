@@ -26,9 +26,9 @@ defmodule Taina.Release do
 
   @doc """
   Cria o papel de aplicação (`taina_app`, sem superpoderes e sem bypass de RLS) e
-  os grants que ele precisa, se ainda não existirem. É o único lugar onde o
-  bootstrap do banco vive: o compose do Oka e o módulo NixOS chamam esta mesma
-  tarefa, então o papel e os grants não saem de sincronia.
+  os grants que ele precisa. É o único lugar onde o bootstrap do banco vive: o
+  compose do Oka e o módulo NixOS chamam esta mesma tarefa, então o papel e os
+  grants não saem de sincronia.
 
   A conexão vem das variáveis PG* (PGHOST, PGUSER, PGDATABASE); no NixOS é o
   socket local com autenticação peer, rodando como o usuário `postgres`. A senha
@@ -36,7 +36,9 @@ defmodule Taina.Release do
 
       bin/taina eval "Taina.Release.bootstrap_db"
 
-  Idempotente: um papel que já existe é deixado como está.
+  Idempotente: um papel que já existe tem a senha sincronizada com
+  TAINA_APP_PASSWORD, para que a rotação da senha não deixe a aplicação sem
+  conseguir autenticar.
   """
   def bootstrap_db do
     app_role = System.get_env("TAINA_APP_ROLE") || "taina_app"
@@ -54,13 +56,31 @@ defmodule Taina.Release do
       validate_identifier!(db_name)
 
       if role_exists?(conn, app_role) do
-        IO.puts("papel #{app_role} já existe; seguindo sem alterar")
+        IO.puts("papel #{app_role} já existe; sincronizando a senha")
+
+        alter_sql =
+          fetch_scalar!(
+            conn,
+            "SELECT format('ALTER ROLE %I WITH LOGIN PASSWORD %L', $1::text, $2::text)",
+            [app_role, app_password]
+          )
+
+        run!(conn, alter_sql)
       else
-        run!(
-          conn,
-          "CREATE ROLE #{app_role} LOGIN PASSWORD $1 NOSUPERUSER NOBYPASSRLS",
-          [app_password]
-        )
+        # CREATE ROLE é um comando utilitário: o PostgreSQL não aceita senha
+        # vinculada ($1) na DDL, então montamos o comando com format() numa
+        # consulta (que aceita parâmetros) e executamos o resultado sem
+        # parâmetros. O cast ::text é obrigatório: o argumento variádico de
+        # format() é "any" e o servidor não consegue inferir o tipo do
+        # parâmetro sozinho.
+        create_sql =
+          fetch_scalar!(
+            conn,
+            "SELECT format('CREATE ROLE %I LOGIN PASSWORD %L NOSUPERUSER NOBYPASSRLS', $1::text, $2::text)",
+            [app_role, app_password]
+          )
+
+        run!(conn, create_sql)
       end
 
       run!(conn, "GRANT CONNECT, CREATE ON DATABASE #{db_name} TO #{app_role}")
