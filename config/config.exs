@@ -53,6 +53,11 @@ config :taina, TainaWeb.Gettext, default_locale: "pt_BR"
 # admin liga via runtime (`BACKUP_ENABLED=true`, `BACKUP_DIR=...`).
 config :taina, :backup, enabled: false
 
+# Verificação de atualização desligada por padrão (soberana, RFC_003 D6): a
+# caixa não conversa com a internet por conta própria. Quem opera liga via
+# runtime (`TAINA_UPDATE_CHECK=true`, ver Taina.Nhaman.Update).
+config :taina, :update_check, enabled: false
+
 config :taina,
   ecto_repos: [Taina.Repo],
   generators: [timestamp_type: :utc_datetime]

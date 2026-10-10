@@ -80,6 +80,67 @@ defmodule Taina.Nhaman.BackupTest do
     end
   end
 
+  describe "last_backup/0 e parse_archive_filename/1" do
+    setup do
+      original = Application.fetch_env!(:taina, :backup)
+      on_exit(fn -> Application.put_env(:taina, :backup, original) end)
+      :ok
+    end
+
+    test "parse decodifica o stamp que archive_filename/1 codifica" do
+      {:ok, dt, 0} = DateTime.from_iso8601("2026-06-10T13:05:09Z")
+
+      assert {:ok, ^dt} = Backup.parse_archive_filename("taina-backup-20260610T130509Z.tar.gz")
+      assert Backup.parse_archive_filename(Backup.archive_filename(dt)) == {:ok, dt}
+    end
+
+    test "parse rejeita nome que não é do backup" do
+      assert :error = Backup.parse_archive_filename("notas.txt")
+      assert :error = Backup.parse_archive_filename("taina-backup-semtstamp.tar.gz")
+      assert :error = Backup.parse_archive_filename("taina-backup-20261399T999999Z.tar.gz")
+    end
+
+    test "sem destino configurado" do
+      Application.put_env(:taina, :backup, enabled: false, dir: nil)
+
+      assert {:error, :no_dir} = Backup.last_backup()
+    end
+
+    test "destino existente e vazio: nenhum backup ainda" do
+      Application.put_env(:taina, :backup, enabled: false, dir: tmp_dir())
+
+      assert {:error, :none} = Backup.last_backup()
+    end
+
+    test "o mais recente entre os arquivos do destino, ignorando intrusos" do
+      dir = tmp_dir()
+      {:ok, recent, 0} = DateTime.from_iso8601("2026-10-04T04:00:00Z")
+      {:ok, old, 0} = DateTime.from_iso8601("2026-10-01T04:00:00Z")
+
+      File.write!(Path.join(dir, Backup.archive_filename(old)), "antigo")
+      File.write!(Path.join(dir, Backup.archive_filename(recent)), "novo recente")
+      File.write!(Path.join(dir, "notas-do-pendrive.txt"), "intruso")
+
+      Application.put_env(:taina, :backup, enabled: false, dir: dir)
+
+      assert {:ok, %{at: ^recent, bytes: bytes}} = Backup.last_backup()
+      assert bytes == byte_size("novo recente")
+    end
+
+    test "destino que nunca existiu é 'nenhum backup'; caminho torto é ilegível" do
+      Application.put_env(:taina, :backup, enabled: false, dir: tmp_dir() <> "/nunca_criado")
+
+      assert {:error, :none} = Backup.last_backup()
+
+      # Caminho que existe mas não é diretório: outra falha, não "vazio".
+      file = Path.join(tmp_dir(), "arquivo-nao-diretorio")
+      File.write!(file, "x")
+      Application.put_env(:taina, :backup, enabled: false, dir: file)
+
+      assert {:error, :unreadable} = Backup.last_backup()
+    end
+  end
+
   describe "scheduled worker" do
     test "is a no-op while backup is disabled (the default)" do
       refute Backup.enabled?()

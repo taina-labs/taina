@@ -30,6 +30,57 @@ defmodule Taina.Nhaman.Backup do
   def enabled?, do: Keyword.get(config(), :enabled, false)
 
   @doc """
+  O último backup que terminou bem: o `.tar.gz` mais recente no destino
+  (`config :taina, :backup, dir:`), lido direto do disco, sem tabela de
+  histórico. `run/1` só grava o arquivo no final, então arquivo presente é o
+  registro do backup que deu certo (tela "Saúde da comunidade").
+
+  ## Retorno
+
+    * `{:ok, %{at: DateTime, bytes: non_neg_integer}}` - quando e quanto guardou
+    * `{:error, :none}` - nenhum backup ainda
+    * `{:error, :no_dir}` - destino não configurado
+    * `{:error, :unreadable}` - destino configurado mas ilegível agora (USB
+      desconectado e afins)
+  """
+  def last_backup do
+    case Keyword.get(config(), :dir) do
+      nil ->
+        {:error, :no_dir}
+
+      dir ->
+        case File.ls(dir) do
+          {:ok, entries} ->
+            latest_archive(entries, dir)
+
+          # Destino nunca criado: instalação nova, não há backups (enoent).
+          # Outras falhas (permissão, disco) são ilegíveis agora, não "vazio".
+          {:error, :enoent} ->
+            {:error, :none}
+
+          {:error, _reason} ->
+            {:error, :unreadable}
+        end
+    end
+  end
+
+  # O mais recente entre os arquivos de backup válidos; nomes estranhos no
+  # destino (destino compartilhado) são ignorados, não derrubam a leitura.
+  defp latest_archive(entries, dir) do
+    entries
+    |> Enum.map(fn name -> {name, parse_archive_filename(name)} end)
+    |> Enum.filter(fn {_name, parsed} -> match?({:ok, _at}, parsed) end)
+    |> case do
+      [] ->
+        {:error, :none}
+
+      valid ->
+        {name, {:ok, at}} = Enum.max_by(valid, fn {_name, {:ok, at}} -> at end)
+        {:ok, %{at: at, bytes: file_size(Path.join(dir, name))}}
+    end
+  end
+
+  @doc """
   Roda um backup completo. Opções (todas com default sensato):
 
     * `:dir` — diretório destino do `.tar.gz` (default: config `:backup, :dir`)
@@ -140,6 +191,39 @@ defmodule Taina.Nhaman.Backup do
     stamp = now |> DateTime.truncate(:second) |> Calendar.strftime("%Y%m%dT%H%M%SZ")
     "taina-backup-#{stamp}.tar.gz"
   end
+
+  @doc """
+  Extrai o instante (UTC) codado no nome de arquivo gerado por `archive_filename/1`.
+
+  Lê "quando foi o último backup" direto do destino, sem banco de dados de
+  histórico: `last_backup/0` lista o diretório e decodifica os nomes.
+  """
+  def parse_archive_filename("taina-backup-" <> rest) do
+    with [stamp, "tar.gz"] <- String.split(rest, ".", parts: 2),
+         {:ok, datetime} <- stamp_to_datetime(stamp) do
+      {:ok, datetime}
+    else
+      _ -> :error
+    end
+  end
+
+  def parse_archive_filename(_other), do: :error
+
+  # O stamp é o `%Y%m%dT%H%M%SZ` de `archive_filename/1`, sempre UTC (sufixo Z).
+  defp stamp_to_datetime(stamp) do
+    case Regex.run(~r/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/, stamp) do
+      [_, y, mo, d, h, mi, s] ->
+        with {:ok, date} <- Date.new(int(y), int(mo), int(d)),
+             {:ok, time} <- Time.new(int(h), int(mi), int(s)) do
+          DateTime.new(date, time, "Etc/UTC")
+        end
+
+      nil ->
+        :error
+    end
+  end
+
+  defp int(part), do: String.to_integer(part)
 
   @doc "Argumentos do `pg_dump` (formato custom, portável)."
   def pg_dump_args(db_url, dump_path) do
