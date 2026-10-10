@@ -345,7 +345,10 @@ defmodule Taina.MaracaTest do
       assert {:ok, %AccessRequest{status: :pending} = request} =
                Maraca.request_access(zelador, owner, "ybira_file", ybira_file.public_id, "Ticket #123")
 
-      assert {:ok, %Permission{action: :read}} = Maraca.approve_access_request(owner, request.id)
+      assert {:ok, %Permission{action: :read, granted_by_id: granted_by_id}} =
+               Maraca.approve_access_request(owner, request.id)
+
+      assert granted_by_id == owner.id
       assert Maraca.authorize?(zelador, :read, "ybira_file", ybira_file.public_id)
     end
 

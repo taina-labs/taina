@@ -31,7 +31,6 @@ defmodule Taina.Maraca do
 
   import Ecto.Query
 
-  alias Ecto.Changeset
   alias Taina.Maraca.AccessRequest
   alias Taina.Maraca.Ava
   alias Taina.Maraca.Event
@@ -596,14 +595,14 @@ defmodule Taina.Maraca do
   defp insert_grant(granter, recipient, action, resource_type, resource_id) do
     if owner_of?(granter, resource_type, resource_id) do
       %Permission{}
-      |> Permission.changeset(%{
+      |> Permission.grant_changeset(%{
         ava_id: recipient.id,
         resource_type: resource_type,
         resource_id: resource_id,
-        action: action
+        action: action,
+        granted_by_id: granter.id,
+        tekoa_id: granter.tekoa_id
       })
-      |> Changeset.put_change(:granted_by_id, granter.id)
-      |> Changeset.put_change(:tekoa_id, granter.tekoa_id)
       |> Repo.insert()
     else
       {:error, :not_owner}
@@ -707,14 +706,14 @@ defmodule Taina.Maraca do
         with {:ok, request} <- fetch_pending_request(owner, access_request_id),
              {:ok, _request} <- Repo.update(AccessRequest.changeset(request, %{status: :approved})) do
           %Permission{}
-          |> Permission.changeset(%{
+          |> Permission.grant_changeset(%{
             ava_id: request.requester_id,
             resource_type: request.resource_type,
             resource_id: request.resource_id,
-            action: :read
+            action: :read,
+            granted_by_id: owner.id,
+            tekoa_id: owner.tekoa_id
           })
-          |> Changeset.put_change(:granted_by_id, owner.id)
-          |> Changeset.put_change(:tekoa_id, owner.tekoa_id)
           |> Repo.insert()
         end
       end)

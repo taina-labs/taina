@@ -31,29 +31,33 @@ defmodule Taina.Maraca.Permission do
 
   ## Uso correto (anti-spoofing)
 
-  O changeset **NÃO** aceita `granted_by_id` nem `tekoa_id` via parâmetros.
-  Esses campos devem ser definidos explicitamente pelo serviço:
+  `grant_changeset/2` é o único construtor de Permission. `granted_by_id` e
+  `tekoa_id` são aceitos no cast porque o attrs é construído pelo serviço a
+  partir de valores de confiança (o scope autenticado), nunca de parâmetros
+  externos. Ambos são obrigatórios, então a trilha de auditoria nunca nasce
+  pela metade:
 
       # Usuário A compartilha arquivo com Usuário B (leitura)
       %Permission{}
-      |> Permission.changeset(%{
+      |> Permission.grant_changeset(%{
         ava_id: user_b.id,
         resource_type: "ybira_file",
         resource_id: file.public_id,
-        action: :read
+        action: :read,
+        granted_by_id: user_a.id,
+        tekoa_id: user_a.tekoa_id
       })
-      |> Ecto.Changeset.put_change(:granted_by_id, user_a.id)
-      |> Ecto.Changeset.put_change(:tekoa_id, user_a.tekoa_id)
       |> Repo.insert()
 
-  Isso previne spoofing: um atacante não pode falsificar `granted_by_id` ou
-  `tekoa_id` via parâmetros externos. Apenas o código do serviço define esses campos.
+  O anti-spoofing está na origem do attrs, não na lista de cast: um atacante
+  não pode falsificar `granted_by_id` nem `tekoa_id` porque nenhum parâmetro
+  externo chega a este changeset.
 
   ## Segurança
 
   - **Row-Level Security (RLS)** habilitado - queries filtradas por `app.current_tekoa_id`
-  - **Anti-spoofing** - campos de contexto não aceitos via parâmetros externos
-  - **Rastreabilidade** - `granted_by_id` sempre reflete quem realmente concedeu
+  - **Anti-spoofing** - attrs construído pelo serviço com valores de confiança, nunca parâmetros externos
+  - **Rastreabilidade** - granted_by_id é obrigatório: toda concessão registra quem concedeu
   """
 
   use Ecto.Schema
@@ -94,21 +98,23 @@ defmodule Taina.Maraca.Permission do
   end
 
   @doc """
-  Valida uma Permission com as informações fornecidas.
+  Constrói o changeset de concessão de uma Permission.
 
-  ## Campos aceitos via parâmetros
+  Único construtor de Permission: recebe os seis campos da concessão, todos
+  obrigatórios, de modo que a trilha de auditoria nunca nasce pela metade.
+
+  ## Campos obrigatórios
 
     * `ava_id` - Ava que receberá a permissão
     * `resource_type` - Tipo do recurso (ex: "ybira_file", "guara_chat")
     * `resource_id` - ID público do recurso
     * `action` - Ação permitida (:read, :write, :delete)
+    * `granted_by_id` - Quem está concedendo (trilha de auditoria)
+    * `tekoa_id` - Comunidade da concessão (isolamento RLS)
 
-  ## Campos de contexto (NÃO vêm de parâmetros)
-
-  Os seguintes campos devem ser definidos explicitamente pelo serviço antes de persistir:
-
-    * `granted_by_id` - Definido pelo serviço (quem está concedendo)
-    * `tekoa_id` - Definido pelo contexto RLS atual
+  O attrs é construído pelo serviço a partir do scope autenticado, nunca de
+  parâmetros externos: é a origem dos valores, e não a lista de cast, que
+  previne spoofing de `granted_by_id` e `tekoa_id`.
 
   ## Validações
 
@@ -118,50 +124,37 @@ defmodule Taina.Maraca.Permission do
 
   ## Uso correto
 
-      # No serviço Maraca.Public:
+      # No serviço Maraca:
       %Permission{}
-      |> Permission.changeset(%{
+      |> Permission.grant_changeset(%{
         ava_id: recipient.id,
         resource_type: "ybira_file",
         resource_id: file.public_id,
-        action: :read
+        action: :read,
+        granted_by_id: granter.id,
+        tekoa_id: granter.tekoa_id
       })
-      |> Ecto.Changeset.put_change(:granted_by_id, granter.id)
-      |> Ecto.Changeset.put_change(:tekoa_id, granter.tekoa_id)
       |> Repo.insert()
-
-  ## Segurança
-
-  Este design previne spoofing de `granted_by_id` e `tekoa_id` via parâmetros externos.
-  Apenas o código do serviço pode definir esses campos, garantindo rastreabilidade.
 
   ## Exemplos
 
-      iex> changeset(%Permission{}, %{
+      iex> grant_changeset(%Permission{}, %{
       ...>   ava_id: recipient.id,
       ...>   resource_type: "ybira_file",
       ...>   resource_id: file.public_id,
-      ...>   action: :read
+      ...>   action: :read,
+      ...>   granted_by_id: granter.id,
+      ...>   tekoa_id: granter.tekoa_id
       ...> })
       %Ecto.Changeset{valid?: true}
 
-      iex> changeset(%Permission{}, %{action: :invalid})
+      iex> grant_changeset(%Permission{}, %{action: :invalid})
       %Ecto.Changeset{valid?: false}
-
-      # Tentativa de criar permissão duplicada
-      iex> changeset(%Permission{}, %{
-      ...>   ava_id: existing_permission.ava_id,
-      ...>   resource_type: existing_permission.resource_type,
-      ...>   resource_id: existing_permission.resource_id,
-      ...>   action: existing_permission.action
-      ...> })
-      # Após Repo.insert/1, retorna erro:
-      # {:error, %Ecto.Changeset{errors: [action: {"já existe permissão...", [constraint: :unique]}]}}
   """
-  def changeset(%__MODULE__{} = permission, %{} = attrs) do
+  def grant_changeset(%__MODULE__{} = permission, %{} = attrs) do
     permission
-    |> cast(attrs, [:resource_id, :resource_type, :action, :ava_id])
-    |> validate_required([:resource_id, :resource_type, :action, :ava_id])
+    |> cast(attrs, [:resource_id, :resource_type, :action, :ava_id, :granted_by_id, :tekoa_id])
+    |> validate_required([:resource_id, :resource_type, :action, :ava_id, :granted_by_id, :tekoa_id])
     |> unique_constraint(:action,
       name: "permissions_unique_grant",
       message: "já existe permissão para esta combinação de ava, recurso e ação"
