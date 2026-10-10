@@ -245,13 +245,13 @@ in
       package = lib.mkOverride 900 pkgs.postgresql_18;
       ensureDatabases = [ cfg.database.name ];
       # The app connects over TCP as taina_app with a password, so loopback
-      # needs password auth. Inserted above the NixOS defaults (pg_hba is
-      # first-match), and a host that already configures PostgreSQL keeps its
-      # own rules.
-      authentication = ''
-        local all all peer
-        host all all 127.0.0.1/32 scram-sha-256
-        host all all ::1/128 scram-sha-256
+      # needs password auth. Scoped to this database and role so a host that
+      # already runs PostgreSQL keeps the rest of its first-match pg_hba rules;
+      # the NixOS defaults (peer over the socket, md5 over TCP) still apply
+      # underneath.
+      authentication = lib.mkBefore ''
+        host ${cfg.database.name} ${appRole} 127.0.0.1/32 scram-sha-256
+        host ${cfg.database.name} ${appRole} ::1/128 scram-sha-256
       '';
     };
 
