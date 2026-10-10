@@ -1,6 +1,8 @@
 {
+  description = "taina: the community private-cloud server";
+
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05-small";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
     elixir-overlay.url = "github:zoedsoupe/elixir-overlay";
   };
 
@@ -21,6 +23,20 @@
           f pkgs
       );
   in {
+    # The release, built from source. `nix build .#taina` produces a runnable
+    # bin/taina; services.taina below uses the same derivation.
+    packages = forAllSystems (pkgs: {
+      taina = pkgs.callPackage ./nix/package.nix {};
+      default = self.packages.${pkgs.stdenv.hostPlatform.system}.taina;
+    });
+
+    # Runs it as a systemd service with a local PostgreSQL, no container
+    # runtime. See nix/module.nix.
+    nixosModules = {
+      taina = import ./nix/module.nix;
+      default = self.nixosModules.taina;
+    };
+
     devShells = forAllSystems (pkgs: {
       default = pkgs.mkShell {
         name = "taina-dev";
