@@ -53,6 +53,18 @@ defmodule TainaWeb.MembersLive do
     {:noreply, Phoenix.LiveView.put_flash(socket, :info, gettext("Link copiado!"))}
   end
 
+  # A guarda de clipboard fica no hook (JS); quando ele não consegue copiar
+  # (origem insegura, sem permissão), a saída é a mão: selecionar o link e
+  # copiar por conta própria.
+  def handle_event("copy-failed", _params, socket) do
+    {:noreply,
+     Phoenix.LiveView.put_flash(
+       socket,
+       :error,
+       gettext("Não deu para copiar agora. Selecione o link e copie com a mão.")
+     )}
+  end
+
   def handle_event("set-role", %{"id" => public_id, "role" => role}, socket) do
     role = String.to_existing_atom(role)
     member = Enum.find(socket.assigns.members, &(&1.public_id == public_id))

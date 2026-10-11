@@ -28,6 +28,18 @@ defmodule TainaWeb.InviteFlowTest do
     assert html =~ "Copiar link"
   end
 
+  test "aviso honesto quando o navegador não consegue copiar o link", %{conn: conn, zelador: zelador} do
+    {:ok, lv, _html} = conn |> log_in(zelador) |> live(~p"/membros/convidar")
+
+    lv |> element("form") |> render_submit(%{})
+
+    # O hook Clipboard cai aqui em origem insegura (http://taina.local, sem
+    # navigator.clipboard). Antes este evento derrubava a LiveView.
+    html = render_hook(lv, "copy-failed", %{})
+
+    assert html =~ "Selecione o link e copie com a mão."
+  end
+
   test "convite aceito vira conta logada", %{conn: conn, zelador: zelador, tekoa: tekoa} do
     {:ok, invited} = Maraca.invite_user(zelador, tekoa)
     token = invited.invite_token
