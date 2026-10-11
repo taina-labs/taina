@@ -143,7 +143,15 @@ defmodule TainaWeb.CoreComponents do
     |> input()
   end
 
+  # Sem `field`, os attrs `name`/`value` não têm default (o default apagaria o
+  # valor vindo de `assign_new` na cláusula de `FormField`), então entram aqui
+  # como nil: um `@value` ausente derrubaria a renderização com KeyError.
   def input(assigns) do
+    assigns =
+      assigns
+      |> assign_new(:name, fn -> nil end)
+      |> assign_new(:value, fn -> nil end)
+
     ~H"""
     <div class={["field", @errors != [] && "field--invalid"]}>
       <label :if={@label} for={@id}>{@label}</label>

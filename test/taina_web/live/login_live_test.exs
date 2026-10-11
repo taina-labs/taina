@@ -25,4 +25,19 @@ defmodule TainaWeb.LoginLiveTest do
     assert has_element?(lv, ~s(input[name="username"]))
     assert has_element?(lv, ~s(input[name="password"]))
   end
+
+  test "o convite abre pelo código, sem link completo", %{conn: conn} do
+    tekoa_fixture()
+
+    {:ok, lv, _html} = live(conn, ~p"/login")
+
+    # O campo de código não tem `field` nem `value`: é o caso que derrubava o
+    # render com KeyError.
+    assert lv |> element("button", "Tenho um convite") |> render_click() =~ "Tem só o código?"
+
+    assert {:error, {:live_redirect, %{to: "/convite/abc123"}}} =
+             lv
+             |> element("#invite-code-form")
+             |> render_submit(%{"code" => " abc123 "})
+  end
 end
