@@ -56,18 +56,29 @@ defmodule Taina.Ybira.Media do
   # --- EXIF ---
 
   defp taken_at(image) do
-    with {:ok, exif} <- Image.exif(image),
-         {_key, value} <- find_exif_datetime(exif),
-         %NaiveDateTime{} = dt <- parse_exif_datetime(value) do
+    case Image.exif(image) do
+      {:ok, exif} -> extract_taken_at(exif)
+      _ -> nil
+    end
+  end
+
+  @doc false
+  # Pura, testável sem uma imagem real com EXIF: recebe o mapa de EXIF já
+  # decodificado pela lib e devolve a data de captura (`NaiveDateTime`) ou nil.
+  def extract_taken_at(exif) when is_map(exif) do
+    with {_key, value} <- find_exif_datetime(exif),
+         %NaiveDateTime{} = dt <- to_naive(value) do
       dt
     else
       _ -> nil
     end
   end
 
+  def extract_taken_at(_other), do: nil
+
   # O `image` aninha o EXIF em sub-mapas cujas chaves variam entre versões e
   # câmeras. Em vez de acoplar a chaves específicas, varremos os valores
-  # procurando o formato de data/hora do EXIF e preferimos a chave "original"
+  # procurando a data de captura e preferimos a chave "original"
   # (DateTimeOriginal, o instante da captura, não o da última edição).
   defp find_exif_datetime(exif) do
     exif
@@ -76,10 +87,15 @@ defmodule Taina.Ybira.Media do
     |> List.first()
   end
 
-  defp collect_datetimes(map, acc) when is_map(map) do
+  # A lib já entrega as tags de data como `NaiveDateTime` (image >= 0.72). Só
+  # descemos em mapas simples: structs (`%NaiveDateTime{}`, `Image.Exif.Gps`,
+  # `Image.Exif.Thumbnail`) também são mapas, e `Enum.reduce/3` sobre eles
+  # estoura `Protocol.UndefinedError` por não implementarem `Enumerable`.
+  defp collect_datetimes(map, acc) when is_map(map) and not is_struct(map) do
     Enum.reduce(map, acc, fn {key, value}, acc ->
       cond do
-        is_map(value) -> collect_datetimes(value, acc)
+        is_struct(value, NaiveDateTime) -> [{downcase(key), value} | acc]
+        is_map(value) and not is_struct(value) -> collect_datetimes(value, acc)
         is_binary(value) and Regex.match?(@exif_datetime, value) -> [{downcase(key), value} | acc]
         true -> acc
       end
@@ -90,6 +106,12 @@ defmodule Taina.Ybira.Media do
 
   defp downcase(key) when is_atom(key), do: key |> Atom.to_string() |> String.downcase()
   defp downcase(key) when is_binary(key), do: String.downcase(key)
+
+  # A lib já decodifica a data; o parsing manual fica como rede para um EXIF cru
+  # que chegue como string ("2023:07:15 14:30:00").
+  defp to_naive(%NaiveDateTime{} = dt), do: dt
+  defp to_naive(value) when is_binary(value), do: parse_exif_datetime(value)
+  defp to_naive(_other), do: nil
 
   defp parse_exif_datetime(<<y::binary-4, ":", mo::binary-2, ":", d::binary-2, " ", time::binary>>) do
     case NaiveDateTime.from_iso8601("#{y}-#{mo}-#{d}T#{time}") do
