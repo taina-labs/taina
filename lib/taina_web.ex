@@ -23,6 +23,13 @@ defmodule TainaWeb do
   def static_paths,
     do: ~w(assets fonts icons robots.txt favicon.ico apple-touch-icon.png manifest.webmanifest offline.html)
 
+  # Raiz que o `mix phx.digest` (dentro de `assets.deploy`) fingerprinta. O `~p`
+  # do layout emite o nome com hash (`manifest-<hash>.webmanifest`), e o `only`
+  # do Plug.Static casa o nome exato: sem `only_matching` esses arquivos dariam
+  # 404 no build publicado, deixando a caixa sem manifest nem ícone (o iOS, sem
+  # manifest, abre a PWA com a moldura do Safari em vez de em tela cheia).
+  def static_path_prefixes, do: ~w(favicon apple-touch-icon manifest robots offline)
+
   def router do
     quote do
       use Phoenix.Router, helpers: false

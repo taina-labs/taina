@@ -33,7 +33,8 @@ defmodule TainaWeb.Endpoint do
     at: "/",
     from: :taina,
     gzip: not code_reloading?,
-    only: TainaWeb.static_paths()
+    only: TainaWeb.static_paths(),
+    only_matching: TainaWeb.static_path_prefixes()
 
   # Code reloading can be explicitly enabled under the
   # :code_reloader configuration of your endpoint.
