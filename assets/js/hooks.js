@@ -165,17 +165,32 @@ const DnD = {
   },
 };
 
-// Auto-fecha o flash informativo acionando o próprio phx-click do botão (que
-// limpa no servidor e esconde). Erro não fecha sozinho: espera a pessoa ler.
-// Cancela o timer se o elemento sair antes.
+// Auto-fecha o flash acionando o próprio phx-click do botão (que limpa no
+// servidor e esconde). O aviso de erro fica mais tempo: é o que a pessoa
+// precisa ler com calma. Cancela o timer se o elemento sair antes e re-arma
+// quando a mensagem muda.
 const FlashAutoDismiss = {
   mounted() {
-    if (this.el.classList.contains("flash--error")) return;
-    const timeout = Number(this.el.dataset.timeout) || 4000;
-    this.timer = setTimeout(() => this.el.click(), timeout);
+    this.arm();
+  },
+  updated() {
+    // O LiveView reusa o mesmo elemento entre avisos (o id é fixo), então o
+    // timer do aviso anterior já disparou ou foi cancelado: precisa de um novo.
+    this.arm();
   },
   destroyed() {
     clearTimeout(this.timer);
+  },
+  arm() {
+    clearTimeout(this.timer);
+    // Aviso novo no mesmo elemento: o `JS.hide()` de um clique anterior deixou
+    // `display: none` inline, que o patch do LiveView não remove.
+    this.el.style.display = "";
+    const fallback = this.el.classList.contains("flash--error") ? 8000 : 4000;
+    this.timer = setTimeout(
+      () => this.el.click(),
+      Number(this.el.dataset.timeout) || fallback,
+    );
   },
 };
 
