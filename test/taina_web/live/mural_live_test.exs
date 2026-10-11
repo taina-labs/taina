@@ -91,6 +91,18 @@ defmodule TainaWeb.MuralLiveTest do
     assert html =~ "Joana entrou na comunidade para cuidar da máquina."
   end
 
+  test "revogação de convite nomeia o cuidado da máquina", %{
+    conn: conn,
+    tekoa: tekoa,
+    zelador: zelador
+  } do
+    :ok = Maraca.record_event(tekoa.public_id, zelador.id, :invite_revoked, %{"role" => "zelador"})
+
+    {:ok, _lv, html} = conn |> log_in(zelador) |> live(~p"/mural")
+
+    assert html =~ "Ana revogou um convite para cuidar da máquina."
+  end
+
   test "aceite antigo (sem papel no registro) continua com a frase genérica", %{
     conn: conn,
     tekoa: tekoa,

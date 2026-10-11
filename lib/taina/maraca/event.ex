@@ -25,6 +25,7 @@ defmodule Taina.Maraca.Event do
   @type event_type ::
           :invite_created
           | :invite_accepted
+          | :invite_revoked
           | :member_deactivated
           | :member_role_changed
           | :member_reactivated
@@ -51,7 +52,7 @@ defmodule Taina.Maraca.Event do
   # Vocabulário de atos do mural (RFC_003 seção 6): convite, papéis (mudança de
   # papel e reativação), reset de senha mediado pelo zelador, zonas casa/praca,
   # pedidos de acesso e cota. Mesma palavra no banco, no contexto e na tela.
-  @event_types ~w(invite_created invite_accepted member_deactivated member_role_changed
+  @event_types ~w(invite_created invite_accepted invite_revoked member_deactivated member_role_changed
     member_reactivated reset_link_created published_to_praca moved_between_zones
     access_requested access_granted access_denied quota_changed)a
 

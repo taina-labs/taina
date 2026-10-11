@@ -4,6 +4,8 @@ defmodule TainaWeb.MembersLiveTest do
   import Phoenix.LiveViewTest
   import Taina.Fixtures
 
+  alias Taina.Maraca
+
   setup do
     tekoa = tekoa_fixture()
     zelador = zelador_fixture(tekoa, %{username: "ana", display_name: "Ana Oliveira"})
@@ -74,5 +76,32 @@ defmodule TainaWeb.MembersLiveTest do
     {:ok, _lv, html} = conn |> log_in(member) |> live(~p"/membros")
 
     refute html =~ "Ações da conta"
+  end
+
+  test "convite pendente aparece em seção própria, fora da contagem de pessoas", %{
+    conn: conn,
+    zelador: zelador,
+    tekoa: tekoa
+  } do
+    {:ok, _invited} = Maraca.invite_user(zelador, tekoa)
+
+    {:ok, _lv, html} = conn |> log_in(zelador) |> live(~p"/membros")
+
+    assert html =~ "Convites pendentes"
+    assert html =~ "Revogar convite"
+    assert html =~ "aguardando a pessoa aceitar"
+    # o convite não infla a contagem de moradores (Ana + João)
+    assert html =~ "2 pessoas"
+  end
+
+  test "zelador revoga um convite pendente", %{conn: conn, zelador: zelador, tekoa: tekoa} do
+    {:ok, invited} = Maraca.invite_user(zelador, tekoa)
+
+    {:ok, lv, _html} = conn |> log_in(zelador) |> live(~p"/membros")
+
+    html = render_click(lv, "revoke", %{"id" => invited.public_id})
+
+    assert html =~ "Convite revogado."
+    refute html =~ "Convites pendentes"
   end
 end

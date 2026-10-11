@@ -146,6 +146,12 @@ defmodule TainaWeb.MuralLive do
   defp sentence(%Event{type: :invite_accepted} = event),
     do: gettext("%{actor} entrou na comunidade.", actor: actor_label(event))
 
+  defp sentence(%Event{type: :invite_revoked, payload: %{"role" => "zelador"}} = event),
+    do: gettext("%{actor} revogou um convite para cuidar da máquina.", actor: actor_label(event))
+
+  defp sentence(%Event{type: :invite_revoked} = event),
+    do: gettext("%{actor} revogou um convite.", actor: actor_label(event))
+
   # O zelador não vê nem define a senha nova, só gera o link: o ato é dele,
   # o destino é o membro nomeado no payload.
   defp sentence(%Event{type: :reset_link_created, payload: %{"member" => member}} = event) when is_binary(member),

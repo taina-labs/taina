@@ -177,7 +177,11 @@ defmodule Taina.Maraca do
   @impl true
   def accept_invite(token, attrs) do
     with %Ava{} = ava <- find_by_token(:invite_token_hash, token),
-         false <- token_expired?(ava.invite_sent_at, @invitation_max_age_seconds) do
+         false <- token_expired?(ava.invite_sent_at, @invitation_max_age_seconds),
+         # Convite de conta já desativada não vale: sem isto, "desativar" um
+         # convite pendente não invalidava o link e a pessoa aceitava para cair
+         # numa conta que não consegue logar.
+         nil <- ava.deactivated_at do
       tekoa_public_id = tekoa_public_id(ava)
 
       result =
@@ -199,6 +203,13 @@ defmodule Taina.Maraca do
     else
       _ -> {:error, :invalid_token}
     end
+  end
+
+  @impl true
+  # Um convite pendente cujo token já passou da validade: a tela de moradores
+  # marca como expirado em vez de "aguardando a pessoa aceitar" para sempre.
+  def invite_expired?(%Ava{} = ava) do
+    token_expired?(ava.invite_sent_at, @invitation_max_age_seconds)
   end
 
   ## Autenticação e sessão
@@ -386,6 +397,37 @@ defmodule Taina.Maraca do
     end
   end
 
+  @impl true
+  def revoke_invite(%Scope{} = scope, member_public_id) do
+    with :ok <- ensure_zelador(scope) do
+      result = Repo.with_tekoa(scope.tekoa.public_id, fn -> do_revoke_invite(member_public_id) end)
+
+      with {:ok, member} <- result do
+        record_event(scope.tekoa.public_id, scope.ava.id, :invite_revoked, %{
+          "role" => Atom.to_string(member.role)
+        })
+      end
+
+      result
+    end
+  end
+
+  defp do_revoke_invite(public_id) do
+    with {:ok, member} <- fetch_member(public_id),
+         :ok <- ensure_pending_invite(member) do
+      # O convite pendente não tem identidade nem dados (nada aponta para ele),
+      # então revogar apaga a linha. Um soft-delete deixaria um "morador" sem
+      # nome na lista para sempre.
+      Repo.delete(member)
+    end
+  end
+
+  # Só convite ainda não aceito é revogável. Conta já ativada se remove com
+  # desativar (soft): apagar a linha levaria os eventos e as permissões junto
+  # (`on_delete: :delete_all`) e sumiria com o histórico.
+  defp ensure_pending_invite(%Ava{activated_at: nil}), do: :ok
+  defp ensure_pending_invite(%Ava{}), do: {:error, :not_pending}
+
   defp ensure_zelador(%Scope{ava: ava}) do
     if zelador?(ava), do: :ok, else: {:error, :unauthorized}
   end
@@ -440,8 +482,11 @@ defmodule Taina.Maraca do
   defp ensure_demotion_keeps_zelador(_member, _role), do: :ok
 
   # `member` é o único zelador ativo da Tekoa? Só faz sentido quando ele próprio
-  # é zelador ativo; nesse caso, contagem == 1 significa que é o último.
-  defp last_active_zelador?(%Ava{role: :zelador, deactivated_at: nil}), do: active_zelador_count() == 1
+  # é um zelador já ativado; nesse caso, contagem == 1 significa que é o último.
+  # Um convite pendente de zelador não conta: a pessoa ainda não entrou.
+  defp last_active_zelador?(%Ava{role: :zelador, activated_at: activated_at, deactivated_at: nil})
+       when not is_nil(activated_at), do: active_zelador_count() == 1
+
   defp last_active_zelador?(%Ava{}), do: false
 
   # Trava os zeladores ativos com FOR UPDATE para serializar desativações e
@@ -450,9 +495,10 @@ defmodule Taina.Maraca do
   # relê após o commit do primeiro e enxerga count == 1. Roda sempre dentro da
   # transação de `Repo.with_tekoa`. `count(*)` não aceita FOR UPDATE no Postgres,
   # então travamos as linhas e contamos no Elixir (teto de 50 membros, custo trivial).
+  # Só conta zelador já ativado: um convite pendente de zelador não é gente ainda.
   defp active_zelador_count do
     from(a in Ava,
-      where: a.role == :zelador and is_nil(a.deactivated_at),
+      where: a.role == :zelador and is_nil(a.deactivated_at) and not is_nil(a.activated_at),
       lock: "FOR UPDATE",
       select: a.id
     )

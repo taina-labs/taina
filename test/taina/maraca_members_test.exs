@@ -54,4 +54,61 @@ defmodule Taina.MaracaMembersTest do
       assert {:ok, 3} = Maraca.count_members(Scope.new(zelador, tekoa))
     end
   end
+
+  describe "revoke_invite/2" do
+    test "zelador revoga convite pendente: apaga a linha e registra no mural" do
+      tekoa = tekoa_fixture()
+      zelador = zelador_fixture(tekoa)
+      scope = Scope.new(zelador, tekoa)
+      {:ok, invited} = Maraca.invite_user(zelador, tekoa)
+
+      assert {:ok, _revoked} = Maraca.revoke_invite(scope, invited.public_id)
+
+      assert {:ok, members} = Maraca.list_members(scope)
+      refute Enum.any?(members, &(&1.public_id == invited.public_id))
+
+      assert {:ok, %{events: events}} = Maraca.list_events(scope)
+      assert Enum.any?(events, &(&1.type == :invite_revoked))
+    end
+
+    test "morador comum não revoga" do
+      tekoa = tekoa_fixture()
+      zelador = zelador_fixture(tekoa)
+      morador = active_ava_fixture(tekoa)
+      {:ok, invited} = Maraca.invite_user(zelador, tekoa)
+
+      assert {:error, :unauthorized} =
+               Maraca.revoke_invite(Scope.new(morador, tekoa), invited.public_id)
+    end
+
+    test "não revoga conta já ativada" do
+      tekoa = tekoa_fixture()
+      zelador = zelador_fixture(tekoa)
+      morador = active_ava_fixture(tekoa)
+
+      assert {:error, :not_pending} =
+               Maraca.revoke_invite(Scope.new(zelador, tekoa), morador.public_id)
+    end
+
+    test "convite pendente de zelador não conta como zelador ativo" do
+      tekoa = tekoa_fixture()
+      zelador = zelador_fixture(tekoa)
+      scope = Scope.new(zelador, tekoa)
+      # O convite pendente não é gente ainda: não pode impedir a proteção do
+      # último zelador de verdade.
+      {:ok, _invited} = Maraca.invite_user(zelador, tekoa, role: :zelador)
+
+      assert {:error, :last_zelador} = Maraca.deactivate_member(scope, zelador.public_id)
+    end
+  end
+
+  describe "invite_expired?/1" do
+    test "convite recém-criado não está expirado" do
+      tekoa = tekoa_fixture()
+      zelador = zelador_fixture(tekoa)
+      {:ok, invited} = Maraca.invite_user(zelador, tekoa)
+
+      refute Maraca.invite_expired?(invited)
+    end
+  end
 end

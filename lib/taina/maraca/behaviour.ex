@@ -324,6 +324,43 @@ defmodule Taina.Maraca.Behaviour do
   @callback reactivate_member(Scope.t(), String.t()) ::
               {:ok, Ava.t()} | {:error, :unauthorized | :not_found}
 
+  @doc """
+  Revoga um convite ainda não aceito, apagando a linha do convite.
+
+  ## Regras de Negócio
+
+  - Apenas zeladores revogam convites
+  - Só convite pendente (`activated_at` nil) é revogável; conta já ativada
+    devolve `{:error, :not_pending}` (essa se remove com `deactivate_member/2`,
+    que é soft e preserva o histórico)
+  - O convite pendente não tem identidade nem dados, então revogar apaga a
+    linha: um soft-delete deixaria um "morador" sem nome na lista para sempre
+
+  ## Retorno
+
+    * `{:ok, %Ava{}}` - Convite revogado
+    * `{:error, :unauthorized}` - Quem pediu não é zelador
+    * `{:error, :not_found}` - Convite não existe na Tekoa
+    * `{:error, :not_pending}` - O alvo já é uma conta ativa
+
+  Registra `:invite_revoked` no mural (RFC_003 seção 6), depois do ato commitado.
+  """
+  @callback revoke_invite(Scope.t(), String.t()) ::
+              {:ok, Ava.t()} | {:error, :unauthorized | :not_found | :not_pending}
+
+  @doc """
+  O convite de `ava` já passou da validade (7 dias sem aceite)?
+
+  A tela de moradores usa isto para marcar um convite pendente como expirado em
+  vez de "aguardando a pessoa aceitar" para sempre. Relevante só para convite
+  pendente; `invite_sent_at` nil conta como expirado.
+
+  ## Retorno
+
+    * `boolean()` - `true` quando o token do convite não vale mais
+  """
+  @callback invite_expired?(Ava.t()) :: boolean()
+
   # ============================================================================
   # AUTENTICAÇÃO - Reset de Senha
   # ============================================================================

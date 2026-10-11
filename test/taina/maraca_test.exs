@@ -80,6 +80,18 @@ defmodule Taina.MaracaTest do
       assert accepted.username == "maria"
     end
 
+    test "convite de conta desativada não é aceito", %{tekoa: tekoa, zelador: zelador} do
+      {:ok, invited} = Maraca.invite_user(zelador, tekoa)
+      {:ok, _} = Maraca.deactivate_member(Scope.new(zelador, tekoa), invited.public_id)
+
+      assert {:error, :invalid_token} =
+               Maraca.accept_invite(invited.invite_token, %{
+                 "username" => "maria",
+                 "password" => "senhasegura123",
+                 "password_confirmation" => "senhasegura123"
+               })
+    end
+
     test "a morador cannot invite", %{tekoa: tekoa} do
       morador = active_ava_fixture(tekoa)
 

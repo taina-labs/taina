@@ -22,6 +22,7 @@ defmodule TainaWeb.MembersLive do
      |> assign(:reset_member, nil)
      |> assign(:confirm_deactivate, nil)
      |> assign(:confirm_role, nil)
+     |> assign(:confirm_revoke, nil)
      |> assign_members()}
   end
 
@@ -92,7 +93,7 @@ defmodule TainaWeb.MembersLive do
   end
 
   def handle_event("close-confirm", _params, socket) do
-    {:noreply, assign(socket, confirm_deactivate: nil, confirm_role: nil)}
+    {:noreply, assign(socket, confirm_deactivate: nil, confirm_role: nil, confirm_revoke: nil)}
   end
 
   def handle_event("ask-deactivate", %{"id" => public_id}, socket) do
@@ -125,9 +126,31 @@ defmodule TainaWeb.MembersLive do
     end
   end
 
+  # Convite pendente se revoga apagando a linha (não tem identidade nem dados);
+  # desativar é para conta de verdade. A confirmação espelha a de desativar.
+  def handle_event("ask-revoke", %{"id" => public_id}, socket) do
+    invite = Enum.find(socket.assigns.pendings, &(&1.public_id == public_id))
+    {:noreply, assign(socket, :confirm_revoke, invite)}
+  end
+
+  def handle_event("revoke", %{"id" => public_id}, socket) do
+    socket = assign(socket, :confirm_revoke, nil)
+
+    case Maraca.revoke_invite(socket.assigns.current_scope, public_id) do
+      {:ok, _ava} ->
+        {:noreply, socket |> assign_members() |> flash_info(gettext("Convite revogado."))}
+
+      {:error, _reason} ->
+        {:noreply, flash_error(socket, gettext("Não foi possível revogar o convite. Tente de novo."))}
+    end
+  end
+
   defp assign_members(socket) do
-    {:ok, members} = Maraca.list_members(socket.assigns.current_scope)
-    assign(socket, :members, members)
+    {:ok, all} = Maraca.list_members(socket.assigns.current_scope)
+    # Convite pendente não é morador: a lista separa quem já entrou de quem
+    # só foi convidado, cada um com as ações certas.
+    {pendings, members} = Enum.split_with(all, &invite_pending?/1)
+    assign(socket, members: members, pendings: pendings)
   end
 
   defp flash_info(socket, msg), do: Phoenix.LiveView.put_flash(socket, :info, msg)
@@ -173,14 +196,19 @@ defmodule TainaWeb.MembersLive do
     cond do
       deactivated?(member) -> gettext("Conta desativada")
       member.id == scope.ava.id -> gettext("Você")
-      pending?(member) -> gettext("aguardando a pessoa aceitar")
       member.role == :zelador -> gettext("Quem cuida da máquina")
       true -> gettext("Entrou %{when}", when: relative_time(member.inserted_at))
     end
   end
 
-  # Convite ainda não aceito: a conta existe, a pessoa ainda não entrou.
-  defp pending?(member), do: is_nil(member.activated_at) and is_nil(member.deactivated_at)
+  defp pending_meta(invite) do
+    if Maraca.invite_expired?(invite),
+      do: gettext("convite expirado"),
+      else: gettext("aguardando a pessoa aceitar")
+  end
+
+  # Convite ainda não aceito: a linha existe, a pessoa ainda não entrou.
+  defp invite_pending?(member), do: is_nil(member.activated_at)
 
   defp role_label(:zelador), do: gettext("Zelador(a)")
   defp role_label(:morador), do: gettext("Morador(a)")
@@ -214,7 +242,8 @@ defmodule TainaWeb.MembersLive do
       </Layouts.app_bar>
 
       <div class="col gap-4 mx-auto w-full measure">
-        <% shown = filtered(@members, @query) %>
+        <% members = filtered(@members, @query) %>
+        <% pendings = filtered(@pendings, @query) %>
 
         <form id="member-search-form" phx-change="search" class="search">
           <.icon name="search" size={20} />
@@ -229,21 +258,50 @@ defmodule TainaWeb.MembersLive do
           />
         </form>
 
+        <%= if pendings != [] do %>
+          <div class="col gap-2">
+            <p class="type-overline text-muted">{gettext("Convites pendentes")}</p>
+            <div class="list">
+              <.list_row
+                :for={invite <- pendings}
+                title={gettext("Convite pendente")}
+                meta={pending_meta(invite)}
+              >
+                <:leading>
+                  <.avatar name={gettext("Convite pendente")} inactive />
+                </:leading>
+                <:actions>
+                  <.badge variant="soon">{role_label(invite.role)}</.badge>
+                  <.menu
+                    :if={Maraca.zelador?(@current_scope.ava)}
+                    id={"invite-menu-#{invite.public_id}"}
+                    label={gettext("Ações do convite")}
+                  >
+                    <:item
+                      icon="trash"
+                      danger
+                      click={JS.push("ask-revoke", value: %{id: invite.public_id})}
+                    >
+                      {gettext("Revogar convite")}
+                    </:item>
+                  </.menu>
+                </:actions>
+              </.list_row>
+            </div>
+          </div>
+        <% end %>
+
         <p class="type-overline text-muted">
-          {ngettext("%{count} pessoa", "%{count} pessoas", length(shown))}
+          {ngettext("%{count} pessoa", "%{count} pessoas", length(members))}
         </p>
 
         <div class="list">
-          <.list_row :for={member <- shown} title={display_name(member)} meta={member_meta(member, @current_scope)}>
+          <.list_row :for={member <- members} title={display_name(member)} meta={member_meta(member, @current_scope)}>
             <:leading>
-              <.avatar
-                name={display_name(member)}
-                inactive={is_nil(member.activated_at) or deactivated?(member)}
-              />
+              <.avatar name={display_name(member)} inactive={deactivated?(member)} />
             </:leading>
             <:actions>
-              <.badge :if={pending?(member)} variant="soon">{role_label(member.role)}</.badge>
-              <.badge :if={member.role == :zelador and not pending?(member)} variant="zelador">
+              <.badge :if={member.role == :zelador} variant="zelador">
                 {gettext("Zelador(a)")}
               </.badge>
               <.icon_button
@@ -259,14 +317,14 @@ defmodule TainaWeb.MembersLive do
                 label={gettext("Ações da conta")}
               >
                 <:item
-                  :if={member.role == :morador and not pending?(member)}
+                  :if={member.role == :morador}
                   icon="shield"
                   click={JS.push("ask-role", value: %{id: member.public_id, role: "zelador"})}
                 >
                   {gettext("Tornar zelador(a)")}
                 </:item>
                 <:item
-                  :if={member.role == :zelador and not pending?(member)}
+                  :if={member.role == :zelador}
                   icon="user"
                   click={JS.push("set-role", value: %{id: member.public_id, role: "morador"})}
                 >
@@ -293,7 +351,7 @@ defmodule TainaWeb.MembersLive do
         </div>
 
         <.empty_state
-          :if={shown == []}
+          :if={members == [] and pendings == []}
           icon="user"
           title={gettext("Ninguém por aqui")}
           hint={gettext("Nenhuma pessoa corresponde à busca.")}
@@ -352,6 +410,20 @@ defmodule TainaWeb.MembersLive do
         on_confirm={
           JS.push("set-role", value: %{id: @confirm_role && @confirm_role.member.public_id, role: "zelador"})
         }
+        on_cancel={JS.push("close-confirm")}
+      />
+
+      <.confirm_dialog
+        id="confirm-revoke"
+        show={@confirm_revoke != nil}
+        title={gettext("Revogar este convite?")}
+        message={
+          gettext(
+            "O link deixa de funcionar na hora: quem tiver o link não consegue mais entrar com ele. A pessoa ainda não entrou, então não some nenhuma conta. Você pode gerar um convite novo quando quiser."
+          )
+        }
+        confirm_label={gettext("Revogar convite")}
+        on_confirm={JS.push("revoke", value: %{id: @confirm_revoke && @confirm_revoke.public_id})}
         on_cancel={JS.push("close-confirm")}
       />
     </Layouts.app>
