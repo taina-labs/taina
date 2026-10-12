@@ -60,7 +60,7 @@ defmodule TainaWeb.FilePreviewLiveTest do
     {:ok, _lv, html} = conn |> log_in(owner) |> live(~p"/arquivos/#{file.public_id}")
 
     assert html =~ "Só você, e quem você deixar."
-    assert html =~ "Publicar na praça"
+    assert html =~ "Publicar"
   end
 
   test "owner publishes the file to the praca", %{conn: conn, tekoa: tekoa, owner: owner, target_file: file} do

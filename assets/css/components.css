@@ -515,6 +515,14 @@
   white-space: nowrap;
 }
 
+/* Meta que é conteúdo de decisão (motivo do pedido), não legenda: precisa
+   quebrar a linha em vez de cortar com reticências. */
+.list-row__meta--wrap {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+
 .list-row__actions {
   display: flex;
   align-items: center;

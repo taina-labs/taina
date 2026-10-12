@@ -20,7 +20,7 @@ defmodule TainaWeb.LoginLiveTest do
 
     {:ok, lv, html} = live(conn, ~p"/login")
 
-    assert html =~ "Bem-vindo de volta"
+    assert html =~ "Boas-vindas de volta"
     assert has_element?(lv, ~s(form[action="/login"]))
     assert has_element?(lv, ~s(input[name="username"]))
     assert has_element?(lv, ~s(input[name="password"]))
@@ -31,9 +31,10 @@ defmodule TainaWeb.LoginLiveTest do
 
     {:ok, lv, _html} = live(conn, ~p"/login")
 
-    # O campo de código não tem `field` nem `value`: é o caso que derrubava o
+    # O campo do link não tem `field` nem `value`: é o caso que derrubava o
     # render com KeyError.
-    assert lv |> element("button", "Tenho um convite") |> render_click() =~ "Tem só o código?"
+    assert lv |> element("button", "Tenho um convite") |> render_click() =~
+             "Cole aqui o link do convite"
 
     assert {:error, {:live_redirect, %{to: "/convite/abc123"}}} =
              lv

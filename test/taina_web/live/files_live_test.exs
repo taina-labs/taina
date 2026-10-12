@@ -86,8 +86,8 @@ defmodule TainaWeb.FilesLiveTest do
       assert html =~ casa.original_filename
       refute html =~ praca.original_filename
       # aba Casa ativa sem ?zona= na URL; a praca pede o parametro explicito
-      assert has_element?(lv, ~s(.segmented__option[aria-current="true"]), "Casa")
-      assert has_element?(lv, ~s(.segmented__option[aria-current="false"]), "Praça")
+      assert has_element?(lv, ~s(.segmented__option[aria-current="page"]), "Casa")
+      assert has_element?(lv, ~s|.segmented__option:not([aria-current])|, "Praça")
       # linha de leitura curta da casa + acao oposta no menu do dono
       assert html =~ "Só você"
       assert html =~ "Publicar na praça"

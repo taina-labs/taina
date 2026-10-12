@@ -56,7 +56,14 @@ const Clipboard = {
 // Navegação do visualizador de fotos: setas/Esc no teclado e swipe no touch.
 const ViewerNav = {
   mounted() {
+    // Foco entra no visualizador: sem isso o Tab caminha pela tela atrás do
+    // diálogo (role="dialog" aria-modal="true").
+    this.el.querySelector("#viewer-close")?.focus();
+
     this.onKey = (e) => {
+      // e.repeat: tecla segurada não pode spammar o servidor (cada seta é um
+      // get_file + patch).
+      if (e.repeat) return;
       if (e.key === "ArrowLeft") this.pushEvent("prev", {});
       if (e.key === "ArrowRight") this.pushEvent("next", {});
       if (e.key === "Escape") this.pushEvent("close", {});
@@ -79,8 +86,12 @@ const ViewerNav = {
         if (this.startX === null) return;
         const dx = e.changedTouches[0].clientX - this.startX;
         const dy = e.changedTouches[0].clientY - this.startY;
+        // Gesto nascido na beira da tela é do navegador (voltar), não nosso:
+        // no iOS/Android um swipe da borda dispara o histórico junto.
+        const fromEdge =
+          this.startX < 24 || this.startX > window.innerWidth - 24;
         // Só gesto horizontal troca de foto; rolagem vertical não.
-        if (Math.abs(dx) > 48 && Math.abs(dx) > Math.abs(dy)) {
+        if (!fromEdge && Math.abs(dx) > 48 && Math.abs(dx) > Math.abs(dy)) {
           if (dx > 0) this.pushEvent("prev", {});
           else this.pushEvent("next", {});
         }

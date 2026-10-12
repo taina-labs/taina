@@ -309,8 +309,8 @@ defmodule TainaWeb.SaudeLive do
   end
 
   # O endereço só entra como fato quando existe de verdade. O default
-  # "example.com" (e o "localhost" do desenvolvimento) não é fato: nesta tela,
-  # cujo trabalho é dizer a verdade, endereço ausente é dito como estado.
+  # "example.com" não é fato: nesta tela, cujo trabalho é dizer a verdade,
+  # endereço ausente é dito como estado.
   defp caixa_body(%Scope{} = scope) do
     base = [gettext("Esta é a caixa de %{tekoa}.", tekoa: scope.tekoa.name)]
 
@@ -362,11 +362,11 @@ defmodule TainaWeb.SaudeLive do
   end
 
   # O endereço pelo qual a comunidade alcança a caixa: o host configurado do
-  # endpoint (PHX_HOST), não um valor que o navegador inventa. Os defaults
-  # ("example.com" do prod, "localhost" do dev) contam como não configurado.
+  # endpoint (PHX_HOST), não um valor que o navegador inventa. O default de
+  # instalação (o "example.com" do prod) conta como não configurado.
   defp box_address do
     case TainaWeb.Endpoint.config(:url)[:host] do
-      host when host in [nil, "example.com", "localhost"] -> :unconfigured
+      host when host in [nil, "example.com"] -> :unconfigured
       host -> {:ok, host}
     end
   end
