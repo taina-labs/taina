@@ -136,6 +136,9 @@ defmodule TainaWeb.InviteLive do
           <p class="type-caption text-faint text-center">
             {gettext("Este convite expira em 7 dias.")}
           </p>
+          <p class="type-caption text-faint text-center">
+            {gettext("Convites gerados antes continuam valendo, cada um pelos seus 7 dias.")}
+          </p>
         <% else %>
           <form id="invite-form" phx-submit="generate" class="col gap-5">
             <div>
