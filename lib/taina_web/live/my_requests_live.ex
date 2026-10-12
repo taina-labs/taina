@@ -1,9 +1,14 @@
 defmodule TainaWeb.MyRequestsLive do
   @moduledoc """
   Pedidos que a pessoa fez ("Conta -> Meus pedidos", RFC_003 D4): o que ela
-  pediu para abrir, com o arquivo nomeado, e ainda aguarda decisao do dono.
-  Somente leitura, quem decide e o dono. Sem board proprio no Penpot, composto
-  com os componentes de linha do design system.
+  pediu para abrir, com o arquivo nomeado, e ainda aguarda decisão do dono.
+  Somente leitura, quem decide é o dono.
+
+  Um pedido decidido não desaparece (RFC_003: sem resultado silencioso):
+  aprovado ou recusado, ele desce para a seção "Já decididos" com a resposta
+  dita por quem pediu, e a recusa nunca é beco sem saída, pode pedir de
+  novo. Sem board próprio no Penpot, composto com os componentes de linha
+  do design system.
   """
 
   use TainaWeb, :live_view
@@ -46,11 +51,14 @@ defmodule TainaWeb.MyRequestsLive do
   defp assign_requests(socket) do
     scope = socket.assigns.current_scope
     requests = Maraca.list_my_requests(scope.ava)
+    decisions = Maraca.list_my_recent_decisions(scope.ava)
 
     socket
     |> assign(:requests, requests)
     |> assign(:file_names, file_names(scope, requests))
     |> assign(:any_requests?, requests != [])
+    |> assign(:decisions, decisions)
+    |> assign(:decision_names, decision_names(scope, decisions))
     |> assign(:account_alert, account_alert?(scope))
     |> stream(:requests, requests, reset: true)
   end
@@ -74,6 +82,23 @@ defmodule TainaWeb.MyRequestsLive do
     )
   end
 
+  # A resposta dita por quem pediu, com o arquivo na frente para a linha não
+  # ficar ambígua quando há mais de um pedido para a mesma pessoa.
+  defp decision_meta(decision, names) do
+    file = file_display_name(names, decision)
+
+    case decision.status do
+      :approved ->
+        gettext("%{file}: %{name} liberou. Você já pode abrir.", file: file, name: owner_name(decision))
+
+      :denied ->
+        gettext("%{file}: %{name} recusou este pedido. Você pode pedir de novo quando quiser.",
+          file: file,
+          name: owner_name(decision)
+        )
+    end
+  end
+
   # Quem pediu não tem leitura (o pedido é justamente para ler), então o nome
   # vem do caminho de pedido do Ybira, que devolve o nome sem liberar o
   # arquivo. Sem resposta, rótulo neutro.
@@ -88,6 +113,30 @@ defmodule TainaWeb.MyRequestsLive do
     case Ybira.fetch_access_target(scope, resource_id) do
       {:ok, %{filename: filename}} -> filename
       _error -> gettext("arquivo apagado")
+    end
+  end
+
+  # O pedido aprovado deixa a pessoa podendo ler o arquivo (o caminho de
+  # pedido responde :already_readable), então o nome sai primeiro do caminho
+  # de leitura; o recusado continua pelo caminho de pedido. Sem os dois,
+  # rótulo neutro.
+  defp decision_names(scope, decisions) do
+    decisions
+    |> Enum.filter(&(&1.resource_type == "ybira_file"))
+    |> Enum.uniq_by(& &1.resource_id)
+    |> Map.new(fn decision -> {decision.resource_id, resolve_decision_name(scope, decision.resource_id)} end)
+  end
+
+  defp resolve_decision_name(scope, resource_id) do
+    case Ybira.get_file(scope, resource_id) do
+      {:ok, file} ->
+        file.original_filename
+
+      _error ->
+        case Ybira.fetch_access_target(scope, resource_id) do
+          {:ok, %{filename: filename}} -> filename
+          _other -> gettext("arquivo apagado")
+        end
     end
   end
 
@@ -119,16 +168,41 @@ defmodule TainaWeb.MyRequestsLive do
       <div class="col gap-4 mx-auto w-full measure">
         <h1 class="desktop-only type-h1 mb-4">{gettext("Meus pedidos")}</h1>
 
-        <div class="list" id="my-requests" phx-update="stream">
-          <.list_row
-            :for={{dom_id, request} <- @streams.requests}
-            id={dom_id}
-            title={owner_name(request)}
-            meta={request_meta(request, @file_names)}
-            meta_class="list-row__meta--wrap"
-          >
-            <:leading><.avatar name={owner_name(request)} /></:leading>
-          </.list_row>
+        <div :if={@any_requests?} class="col gap-2">
+          <p class="type-overline text-muted">
+            {ngettext(
+              "%{count} pedido esperando resposta",
+              "%{count} pedidos esperando resposta",
+              length(@requests)
+            )}
+          </p>
+
+          <div class="list" id="my-requests" phx-update="stream">
+            <.list_row
+              :for={{dom_id, request} <- @streams.requests}
+              id={dom_id}
+              title={owner_name(request)}
+              meta={request_meta(request, @file_names)}
+              meta_class="list-row__meta--wrap"
+            >
+              <:leading><.avatar name={owner_name(request)} /></:leading>
+            </.list_row>
+          </div>
+        </div>
+
+        <div :if={@decisions != []} class="col gap-2">
+          <p class="type-overline text-muted">{gettext("Já decididos")}</p>
+
+          <div class="list">
+            <.list_row
+              :for={decision <- @decisions}
+              title={owner_name(decision)}
+              meta={decision_meta(decision, @decision_names)}
+              meta_class="list-row__meta--wrap"
+            >
+              <:leading><.avatar name={owner_name(decision)} /></:leading>
+            </.list_row>
+          </div>
         </div>
 
         <.empty_state
