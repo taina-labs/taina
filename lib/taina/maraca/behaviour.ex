@@ -361,6 +361,8 @@ defmodule Taina.Maraca.Behaviour do
   """
   @callback invite_expired?(Ava.t()) :: boolean()
 
+  @callback invite_status(String.t()) :: :ok | :invalid
+
   # ============================================================================
   # AUTENTICAÇÃO - Reset de Senha
   # ============================================================================
@@ -429,6 +431,8 @@ defmodule Taina.Maraca.Behaviour do
   """
   @callback reset_password(String.t(), String.t(), String.t()) ::
               {:ok, Ava.t()} | {:error, :invalid_token | Ecto.Changeset.t()}
+
+  @callback reset_status(String.t()) :: :ok | :invalid
 
   @doc """
   Verifica se Ava tem permissão para ação em recurso.
@@ -601,6 +605,8 @@ defmodule Taina.Maraca.Behaviour do
   """
   @callback list_permissions(String.t(), String.t()) :: [Permission.t()]
 
+  @callback list_my_grants(Ava.t()) :: [Permission.t()]
+
   @doc """
   Morador pede acesso ao recurso de outra pessoa (RFC_003, D4).
 
@@ -747,6 +753,8 @@ defmodule Taina.Maraca.Behaviour do
       [%AccessRequest{status: :pending, reason: "Ticket #123"}]
   """
   @callback list_my_requests(Ava.t()) :: [AccessRequest.t()]
+
+  @callback list_my_recent_decisions(Ava.t()) :: [AccessRequest.t()]
 
   @doc """
   Inscreve o processo chamador no topico PubSub de eventos do Ava (RFC_003 D4).

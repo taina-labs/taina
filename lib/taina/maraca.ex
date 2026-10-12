@@ -212,6 +212,25 @@ defmodule Taina.Maraca do
     token_expired?(ava.invite_sent_at, @invitation_max_age_seconds)
   end
 
+  @doc """
+  Status de um convite pelo token cru, sem consumir nada: `:ok` quando o link
+  ainda vale (conta pendente, não expirada, não desativada); `:invalid` caso
+  contrário. Espelha as condições de `accept_invite/2` para a tela de aceite
+  mostrar o beco sem saída antes de a pessoa preencher o formulário inteiro.
+  """
+  @impl true
+  def invite_status(token) do
+    case find_by_token(:invite_token_hash, token) do
+      %Ava{deactivated_at: nil} = ava ->
+        if token_expired?(ava.invite_sent_at, @invitation_max_age_seconds),
+          do: :invalid,
+          else: :ok
+
+      _ ->
+        :invalid
+    end
+  end
+
   ## Autenticação e sessão
 
   @impl true
@@ -548,6 +567,24 @@ defmodule Taina.Maraca do
     end
   end
 
+  @doc """
+  Status de um link de reset pelo token cru, sem consumir: `:ok` enquanto o
+  link vale, `:invalid` quando expirou ou não existe. Mesma intenção do
+  `invite_status/1` para a tela de redefinir senha.
+  """
+  @impl true
+  def reset_status(token) do
+    case find_by_token(:reset_token_hash, token) do
+      %Ava{} = ava ->
+        if token_expired?(ava.reset_token_sent_at, @reset_max_age_seconds),
+          do: :invalid,
+          else: :ok
+
+      _ ->
+        :invalid
+    end
+  end
+
   ## Autorização
 
   @impl true
@@ -705,6 +742,29 @@ defmodule Taina.Maraca do
     permissions
   end
 
+  @doc """
+  Permissões de leitura que `owner` concedeu nas próprias casa/praça, para a
+  tela de pedidos poder auditar e revogar o que já foi liberado (RFC_003 D2: o
+  poder concedido é visível e reversível). Traz a pessoa (`:ava`) preload para
+  a lista nomear quem recebeu.
+  """
+  @impl true
+  def list_my_grants(%Ava{} = owner) do
+    {:ok, grants} =
+      Repo.with_tekoa(tekoa_public_id(owner), fn ->
+        query =
+          from p in Permission,
+            where: p.granted_by_id == ^owner.id,
+            where: p.action == :read,
+            order_by: [desc: p.inserted_at],
+            preload: [:ava]
+
+        {:ok, Repo.all(query)}
+      end)
+
+    grants
+  end
+
   ## Acesso do zelador (com aprovação do dono)
 
   @impl true
@@ -832,6 +892,29 @@ defmodule Taina.Maraca do
             where: r.requester_id == ^requester.id,
             where: r.status == :pending,
             order_by: [desc: r.inserted_at],
+            preload: [:owner]
+
+        {:ok, Repo.all(query)}
+      end)
+
+    requests
+  end
+
+  @doc """
+  Pedidos feitos por `requester` já decididos (aprovados ou recusados), para
+  "Meus pedidos" não deixar o pedido sumir sem explicação (RFC_003: sem
+  resultado silencioso). Ordena pela última decisão; traz o dono (`:owner`)
+  preload para a frase nomear quem decidiu.
+  """
+  @impl true
+  def list_my_recent_decisions(%Ava{} = requester) do
+    {:ok, requests} =
+      Repo.with_tekoa(tekoa_public_id(requester), fn ->
+        query =
+          from r in AccessRequest,
+            where: r.requester_id == ^requester.id,
+            where: r.status != :pending,
+            order_by: [desc: r.updated_at],
             preload: [:owner]
 
         {:ok, Repo.all(query)}
