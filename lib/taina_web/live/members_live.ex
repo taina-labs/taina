@@ -268,7 +268,7 @@ defmodule TainaWeb.MembersLive do
         <%= if pendings != [] do %>
           <div class="col gap-2">
             <p class="type-overline text-muted">{gettext("Convites pendentes")}</p>
-            <div class="list">
+            <ul class="list">
               <.list_row
                 :for={invite <- pendings}
                 title={gettext("Convite pendente")}
@@ -294,7 +294,7 @@ defmodule TainaWeb.MembersLive do
                   </.menu>
                 </:actions>
               </.list_row>
-            </div>
+            </ul>
           </div>
         <% end %>
 
@@ -302,7 +302,7 @@ defmodule TainaWeb.MembersLive do
           {ngettext("%{count} pessoa", "%{count} pessoas", length(members))}
         </p>
 
-        <div class="list">
+        <ul class="list">
           <.list_row :for={member <- members} title={display_name(member)} meta={member_meta(member, @current_scope)}>
             <:leading>
               <.avatar name={display_name(member)} inactive={deactivated?(member)} />
@@ -355,7 +355,7 @@ defmodule TainaWeb.MembersLive do
               </.menu>
             </:actions>
           </.list_row>
-        </div>
+        </ul>
 
         <.empty_state
           :if={members == [] and pendings == []}

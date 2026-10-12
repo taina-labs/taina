@@ -696,7 +696,7 @@ defmodule TainaWeb.FilesLive do
               </div>
             </div>
           <% else %>
-            <div class="list">
+            <ul class="list">
               <.list_row
                 :for={folder <- @folders}
                 title={folder.name}
@@ -755,7 +755,7 @@ defmodule TainaWeb.FilesLive do
                   </:actions>
                 </.list_row>
               </div>
-            </div>
+            </ul>
           <% end %>
         </div>
 
@@ -886,7 +886,7 @@ defmodule TainaWeb.FilesLive do
       <.modal id="move-modal" show={@modal == "move"} on_cancel={JS.push("close-modal")}>
         <h2 class="type-h3 mb-1">{gettext("Mover para...")}</h2>
         <p :if={@move_target} class="type-body-sm text-muted mb-4">{@move_target.name}</p>
-        <div :if={@move_target} class="list">
+        <ul :if={@move_target} class="list">
           <button
             type="button"
             class="list-row"
@@ -907,7 +907,7 @@ defmodule TainaWeb.FilesLive do
             <.service_square service="ybira" icon="folder" />
             <span class="list-row__body type-label">{folder.name}</span>
           </button>
-        </div>
+        </ul>
         <.button variant="secondary" size="md" class="w-full mt-4" phx-click="close-modal">
           {gettext("Cancelar")}
         </.button>
