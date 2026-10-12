@@ -225,18 +225,18 @@ defmodule TainaWeb.UploadLive do
 
         <div :if={@failed != []}>
           <p class="type-overline text-error mb-2">{gettext("Falharam (%{count})", count: length(@failed))}</p>
-          <div class="list">
+          <ul class="list">
             <.list_row :for={{name, reason} <- @failed} title={name} meta={reason} meta_class="text-error">
               <:leading>
                 <.service_square service="neutral" icon="alert" />
               </:leading>
             </.list_row>
-          </div>
+          </ul>
         </div>
 
         <div :if={@done != []}>
           <p class="type-overline text-muted mb-2">{gettext("Concluído (%{count})", count: length(@done))}</p>
-          <div class="list">
+          <ul class="list">
             <.list_row
               :for={file <- @done}
               title={file.original_filename}
@@ -251,7 +251,7 @@ defmodule TainaWeb.UploadLive do
                 <.icon name="check" size={20} class="text-success" />
               </:actions>
             </.list_row>
-          </div>
+          </ul>
           <.progress value={100} color="success" />
         </div>
 

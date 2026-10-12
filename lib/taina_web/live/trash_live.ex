@@ -142,7 +142,7 @@ defmodule TainaWeb.TrashLive do
           <% end %>
         </p>
 
-        <div class="list">
+        <ul class="list">
           <.list_row
             :for={file <- @items}
             title={file.original_filename}
@@ -162,7 +162,7 @@ defmodule TainaWeb.TrashLive do
               />
             </:actions>
           </.list_row>
-        </div>
+        </ul>
 
         <div :if={@next_cursor} id="trash-load-more" phx-viewport-bottom="load-more" class="list-row" aria-hidden="true">
           <span class="service-square service-square--neutral skeleton"></span>
