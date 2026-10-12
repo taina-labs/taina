@@ -1,15 +1,17 @@
 defmodule Taina.Ybira.Workers.RenditionTest do
   use Taina.DataCase, async: true
 
+  import ExUnit.CaptureIO
   import Taina.Fixtures
 
   alias Taina.Ybira
-  alias Taina.Ybira.Workers.Rendition
-
-  @moduletag capture_log: true
 
   # Oban roda `:inline` em teste, então o job de rendition acontece durante o
   # `upload/3`, daí podermos reler o arquivo logo em seguida.
+
+  alias Taina.Ybira.Workers.Rendition
+
+  @moduletag capture_log: true
 
   test "image upload fills dimensions, EXIF slot and thumbnail paths" do
     scope = scope_fixture()
@@ -85,7 +87,11 @@ defmodule Taina.Ybira.Workers.RenditionTest do
       File.rm!(sm)
       File.rm!(md)
 
-      Mix.Task.run("taina.thumbnails.regenerate", ["--tekoa", scope.tekoa.public_id])
+      # A tarefa escreve o resumo no terminal (`Mix.shell().info`); capturamos
+      # para o `mix test` não virar eco da tarefa.
+      capture_io(fn ->
+        Mix.Task.run("taina.thumbnails.regenerate", ["--tekoa", scope.tekoa.public_id])
+      end)
 
       assert File.exists?(sm)
       assert File.exists?(md)

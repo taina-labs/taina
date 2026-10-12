@@ -70,7 +70,7 @@ defmodule TainaWeb.AccessRequestsLiveTest do
 
     html = render(lv)
     assert html =~ "Acesso de Maria tirado"
-    refute html =~ "Maria"
+    refute has_element?(lv, ~s(button[phx-click="ask-revoke"]))
     assert html =~ "Ninguém tem acesso liberado aos seus arquivos."
     refute Maraca.authorize?(requester, :read, "ybira_file", file.public_id)
   end
