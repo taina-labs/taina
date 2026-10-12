@@ -15,8 +15,13 @@
   flex: 1;
   width: 100%;
   padding: var(--space-4);
+  /* safe-area: notch/status bar em cima, bottom-nav + home indicator embaixo,
+     borda do aparelho nas laterais (paisagem). No desktop o shorthand de
+     padding das media queries redefine tudo, então estes longhands são mobile. */
   padding-top: calc(var(--space-4) + env(safe-area-inset-top));
-  padding-bottom: calc(var(--size-nav-mobile) + var(--space-6));
+  padding-inline: calc(var(--space-4) + env(safe-area-inset-left))
+    calc(var(--space-4) + env(safe-area-inset-right));
+  padding-bottom: calc(var(--size-nav-mobile) + var(--space-6) + env(safe-area-inset-bottom));
   /* `backwards` (não `both`): aplica o estado inicial antes de começar, mas
      NÃO persiste o `transform` ao terminar, um transform permanente criaria
      um stacking context que prenderia modais (position: fixed) atrás da
@@ -73,7 +78,7 @@
   flex-shrink: 0;
 }
 
-/* a appbar é mobile-only: no desktop a sidebar e a topbar assumem a navegação */
+/* a appbar é mobile-only: no desktop a sidebar assume a navegação */
 @media (min-width: 768px) {
   .appbar {
     display: none;
@@ -89,6 +94,8 @@
   display: flex;
   height: calc(var(--size-nav-mobile) + env(safe-area-inset-bottom));
   padding-bottom: env(safe-area-inset-bottom);
+  /* paisagem: os itens não ficam sob a borda/notch lateral do aparelho */
+  padding-inline: env(safe-area-inset-left) env(safe-area-inset-right);
   background: var(--bg-deep);
   border-top: var(--border-hairline) solid var(--border-subtle);
 }
@@ -119,13 +126,16 @@
   color: var(--brand-primary);
 }
 
-/* sidebar + topbar (desktop) */
+/* sidebar (desktop) */
 .sidebar {
   display: none;
 }
 
+/* barra de progresso das navegações (canvas do topbar.js, app.js): desce
+   abaixo do notch/status bar. O !important vence o `top: 0` inline do
+   topbar.js; posição/altura são dele. */
 .topbar {
-  display: none;
+  top: env(safe-area-inset-top) !important;
 }
 
 @media (min-width: 768px) {
@@ -204,15 +214,6 @@
     flex-direction: column;
   }
 
-  .topbar {
-    display: flex;
-    align-items: center;
-    gap: var(--space-4);
-    height: var(--size-appbar);
-    padding-inline: var(--space-6);
-    border-bottom: var(--border-hairline) solid var(--border-subtle);
-  }
-
   .shell__content {
     max-width: var(--measure-shell);
     padding: var(--space-6);
@@ -248,6 +249,12 @@
     flex-direction: column;
     flex: 1;
   }
+
+  /* teclado virtual aberto (visualViewport, app.js): a nav fixa some, senão
+     fica flutuando sobre as teclas. */
+  body.keyboard-open .bottom-nav {
+    display: none;
+  }
 }
 
 /* ---------- layout de auth (setup, login, convite) ---------- */
@@ -257,7 +264,8 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: var(--space-6) var(--space-4);
+  padding: calc(var(--space-6) + env(safe-area-inset-top)) var(--space-4)
+    calc(var(--space-6) + env(safe-area-inset-bottom));
   background:
     radial-gradient(
       120% 55% at 50% 118%,

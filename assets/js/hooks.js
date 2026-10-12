@@ -2,13 +2,42 @@
 // verifique se um binding nativo (phx-viewport-*, phx-drop-target, JS.*)
 // já resolve.
 
-// Escrita na área de transferência: navigator.clipboard não existe em origens
-// inseguras (a instalação canônica é http://taina.local), então a promessa
-// nasce rejeitada quando a API não está disponível. Nunca lança no escuro.
-const writeClipboard = (text) =>
-  navigator.clipboard?.writeText
-    ? navigator.clipboard.writeText(text)
-    : Promise.reject(new Error("clipboard unavailable"));
+// Escrita na área de transferência. navigator.clipboard só existe em origem
+// segura e a instalação canônica é http://taina.local, então o caminho
+// moderno nem sempre está lá; sem ele, cai para o execCommand (deprecado,
+// mas universal e não exige origem segura; precisa rodar no gesto do clique,
+// o que os dois hooks garantem, o handler é síncrono).
+const legacyCopy = (text) => {
+  const el = document.createElement("textarea");
+  el.value = text;
+  // display:none faz o iOS se recusar a copiar: fixo, invisível, intocável.
+  el.style.position = "fixed";
+  el.style.opacity = "0";
+  el.style.pointerEvents = "none";
+  document.body.appendChild(el);
+  el.focus();
+  el.select();
+  el.setSelectionRange(0, text.length); // iOS exige o range explícito
+  let ok = false;
+  try {
+    ok = document.execCommand("copy");
+  } catch {
+    ok = false;
+  }
+  el.remove();
+  return ok;
+};
+
+const writeClipboard = (text) => {
+  if (navigator.clipboard?.writeText) {
+    return navigator.clipboard.writeText(text).catch(() => {
+      if (!legacyCopy(text)) throw new Error("clipboard unavailable");
+    });
+  }
+  return new Promise((resolve, reject) =>
+    legacyCopy(text) ? resolve() : reject(new Error("clipboard unavailable")),
+  );
+};
 
 // Copia o atributo data-copy para a área de transferência e avisa o servidor
 // (feedback "copiado!" fica por conta do LiveView).
@@ -71,6 +100,26 @@ const ViewerNav = {
   },
   destroyed() {
     window.removeEventListener("keydown", this.onKey);
+  },
+};
+
+// Troca progressiva: o `md` entra primeiro e o original substitui quando
+// baixa. Só age quando o servidor mandou `data-full` (dentro do orçamento).
+const FullSwap = {
+  mounted() {
+    this.preload();
+  },
+  updated() {
+    this.preload();
+  },
+  preload() {
+    const full = this.el.dataset.full;
+    if (!full) return;
+    const img = new Image();
+    img.onload = () => {
+      if (this.el.isConnected && this.el.dataset.full === full) this.el.src = full;
+    };
+    img.src = full;
   },
 };
 
@@ -165,9 +214,8 @@ const DnD = {
   },
 };
 
-// Auto-fecha o flash acionando o próprio phx-click do botão (que limpa no
-// servidor e esconde). O aviso de erro fica mais tempo: é o que a pessoa
-// precisa ler com calma. Cancela o timer se o elemento sair antes e re-arma
+// Auto-fecha o flash acionando o phx-click do botão de fechar (que limpa no
+// servidor e esconde). Cancela o timer se o elemento sair antes e re-arma
 // quando a mensagem muda.
 const FlashAutoDismiss = {
   mounted() {
@@ -186,41 +234,53 @@ const FlashAutoDismiss = {
     // Aviso novo no mesmo elemento: o `JS.hide()` de um clique anterior deixou
     // `display: none` inline, que o patch do LiveView não remove.
     this.el.style.display = "";
-    const fallback = this.el.classList.contains("flash--error") ? 8000 : 4000;
     this.timer = setTimeout(
-      () => this.el.click(),
-      Number(this.el.dataset.timeout) || fallback,
+      () => this.el.querySelector("button")?.click(),
+      Number(this.el.dataset.timeout) || 4000,
     );
   },
 };
 
-// Atalhos de navegação Cmd/Ctrl+1..5 (briefing, desktop): só empurra o número
-// para o servidor, que resolve o destino. O hook não guarda estado de
-// navegação; a tela Conta documenta os pares.
-const NavShortcuts = {
+// Armadilha de foco do modal: Tab circula só entre os controles do diálogo e
+// o gatilho que abriu o modal recebe o foco de volta quando ele sai da árvore.
+const ModalTrap = {
   mounted() {
+    this.trigger = document.activeElement;
+    const modal = this.el.querySelector(".modal");
+    const focusables = modal
+      ? modal.querySelectorAll(
+          "a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])",
+        )
+      : [];
+    if (focusables.length > 0) focusables[0].focus();
+    else modal?.focus();
     this.onKey = (e) => {
-      // e.repeat: tecla segurada não pode spammar o servidor.
-      if (e.repeat || e.altKey || !(e.metaKey || e.ctrlKey)) return;
-      const index = Number(e.key);
-      if (index >= 1 && index <= 5) {
+      if (e.key !== "Tab" || focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
         e.preventDefault();
-        this.pushEvent("shortcut", { index });
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
       }
     };
-    window.addEventListener("keydown", this.onKey);
+    this.el.addEventListener("keydown", this.onKey);
   },
   destroyed() {
-    window.removeEventListener("keydown", this.onKey);
+    this.el.removeEventListener("keydown", this.onKey);
+    if (this.trigger?.isConnected) this.trigger.focus();
   },
 };
 
 export default {
   Clipboard,
   ViewerNav,
+  FullSwap,
   DragClass,
   Share,
   FlashAutoDismiss,
   DnD,
-  NavShortcuts,
+  ModalTrap,
 };

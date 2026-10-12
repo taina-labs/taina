@@ -5,13 +5,18 @@
 // fingerprint (imutáveis) ficam em cache, então uma atualização nunca serve
 // arquivo velho.
 
+// A versão do cache é a alavanca de atualização: mudou o PRECACHE (ou o
+// offline.html), suba o sufixo para o install regravar tudo e o activate
+// descartar o cache antigo. Assets com fingerprint ficam fora daqui: entram
+// pelo fetch (cache-first) e a versão nova chega com o nome novo.
 const CACHE = "taina-shell-v1";
 const OFFLINE_URL = "/offline.html";
 
-// Assets estáticos seguros para pré-cachear (a tela offline e os ícones).
+// Assets estáticos seguros para pré-cachear (a tela offline e os ícones). O
+// manifest NÃO entra: ele muda sem fingerprint, e é servido pelo
+// stale-while-revalidate do fetch (abaixo).
 const PRECACHE = [
   OFFLINE_URL,
-  "/manifest.webmanifest",
   "/icons/favicon.svg",
   "/icons/web-app-manifest-192x192.png",
   "/icons/web-app-manifest-512x512.png",
@@ -77,8 +82,8 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Ícones e manifest: stale-while-revalidate.
-  if (url.pathname.startsWith("/icons/") || url.pathname === "/manifest.webmanifest") {
+  // Ícones e manifest (qualquer arquivo sob /manifest.*): stale-while-revalidate.
+  if (url.pathname.startsWith("/icons/") || url.pathname.startsWith("/manifest")) {
     event.respondWith(
       caches.match(request).then((hit) => {
         const network = fetch(request).then((res) => {

@@ -29,12 +29,13 @@ defmodule TainaWeb.Layouts do
   def app(assigns) do
     ~H"""
     <.flash_group flash={@flash} />
-    <div id="app-shell" class="shell" phx-hook="NavShortcuts">
+    <div id="app-shell" class="shell">
+      <a class="skip-link" href="#main-content">{gettext("Pular para o conteúdo")}</a>
       <aside class="sidebar">
         <.link navigate={~p"/"} class="sidebar__logo">
           <.icon name="spark" size={22} /> Tainá
         </.link>
-        <nav class="sidebar__nav">
+        <nav class="sidebar__nav" aria-label={gettext("Navegação")}>
           <.sidebar_item navigate={~p"/"} icon="home" active={@active_tab == :home} label={gettext("Início")} />
           <.sidebar_item
             navigate={~p"/arquivos"}
@@ -82,12 +83,12 @@ defmodule TainaWeb.Layouts do
       </aside>
 
       <div class="shell__main">
-        <main class="shell__content">
+        <main class="shell__content" id="main-content">
           {render_slot(@inner_block)}
         </main>
       </div>
 
-      <nav class="bottom-nav">
+      <nav class="bottom-nav" aria-label={gettext("Navegação")}>
         <.bottom_nav_item navigate={~p"/"} icon="home" active={@active_tab == :home} label={gettext("Início")} />
         <.bottom_nav_item
           navigate={~p"/arquivos"}
@@ -174,9 +175,9 @@ defmodule TainaWeb.Layouts do
     ~H"""
     <.flash_group flash={@flash} />
     <div class="auth-layout">
-      <div class="auth-layout__card">
+      <main class="auth-layout__card">
         {render_slot(@inner_block)}
-      </div>
+      </main>
     </div>
     """
   end

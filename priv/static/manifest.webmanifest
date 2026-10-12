@@ -4,6 +4,7 @@
   "description": "A nuvem privada da sua comunidade.",
   "lang": "pt-BR",
   "start_url": "/",
+  "id": "/",
   "scope": "/",
   "display": "standalone",
   "theme_color": "#060A14",

@@ -13,6 +13,10 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="Tainá" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <%!-- iOS transforma números em links de telefone por conta própria (telefones
+    na lista de moradores virariam links acionáveis sem querer); esta meta
+    desliga a detecção automática. --%>
+    <meta name="format-detection" content="telephone=no" />
     <link rel="icon" href={~p"/favicon.ico"} sizes="48x48" />
     <link rel="icon" href={~p"/icons/favicon.svg"} type="image/svg+xml" />
     <link rel="apple-touch-icon" href={~p"/apple-touch-icon.png"} />

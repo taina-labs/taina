@@ -155,13 +155,12 @@
   align-items: center;
 }
 
-.field input[type="text"],
-.field input[type="email"],
-.field input[type="password"],
-.field input[type="number"],
-.field input[type="search"],
+/* qualquer input de linha (text, email, tel, url, date, time...) entra na
+   estilização; os exóticos (checkbox/radio/range/file) ficam de fora porque
+   têm UI própria do navegador. */
 .field select,
-.field textarea {
+.field textarea,
+.field :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"])) {
   width: 100%;
   height: var(--size-control-md);
   padding-inline: var(--space-4);
@@ -215,7 +214,7 @@
   border-color: var(--feedback-error);
 }
 
-/* busca (membros, topbar desktop) */
+/* busca (membros, filtro desktop) */
 .search {
   display: flex;
   align-items: center;
@@ -230,6 +229,7 @@
 
 .search input {
   flex: 1;
+  min-width: 0;
   background: none;
   border: none;
   color: var(--text-primary);
@@ -237,6 +237,10 @@
 
 .search:focus-within {
   border-color: var(--brand-primary);
+  /* o ring do input fica fora da tela (input escondido), então o contêiner
+     assume o destaque: mesmo tratamento do :focus-visible global. */
+  outline: var(--border-thick) solid var(--brand-primary);
+  outline-offset: 2px;
 }
 
 .search input:focus-visible {
@@ -386,7 +390,7 @@
 }
 .service-square--guara {
   background: var(--surface-raised);
-  color: var(--text-faint);
+  color: var(--service-guara);
 }
 .service-square--doc {
   background: var(--surface-raised);
@@ -735,7 +739,7 @@
   font-weight: var(--font-weight-semibold);
 }
 
-.segmented__option[aria-current="true"] {
+.segmented__option[aria-current="page"] {
   background: var(--brand-primary);
   border-color: var(--brand-primary);
   color: var(--text-on-brand);
@@ -750,7 +754,7 @@
 
 .steps__dot {
   width: var(--space-4);
-  height: 6px;
+  height: var(--size-nav-dot);
   border-radius: var(--radius-pill);
   background: var(--text-faint);
 }
@@ -831,6 +835,13 @@
 
 .dropzone .icon {
   color: var(--brand-primary);
+}
+
+/* o input de arquivo é sr-only: quando o teclado o foca, o ring dele fica
+   fora da tela, então o contêiner assume o destaque. */
+.dropzone:focus-within {
+  outline: var(--border-thick) solid var(--brand-primary);
+  outline-offset: 2px;
 }
 
 /* ---------- grade de fotos ---------- */
@@ -946,6 +957,11 @@
   overscroll-behavior: contain;
 }
 
+/* header do visualizador: desce abaixo do notch/status bar do iOS */
+.viewer > header {
+  padding-top: calc(var(--space-4) + env(safe-area-inset-top));
+}
+
 .viewer__stage {
   flex: 1;
   min-height: 0;
@@ -1024,6 +1040,14 @@
   white-space: nowrap;
 }
 
+/* link do arquivo no visualizador (a galeria renderiza com esta classe):
+   quebra em qualquer caractere (hash longo não estoura) e um clique seleciona
+   tudo, pronto para copiar. */
+.viewer__link {
+  word-break: break-all;
+  user-select: all;
+}
+
 .viewer__actions {
   display: flex;
   justify-content: space-around;
@@ -1093,7 +1117,7 @@
 
 .flash-group {
   position: fixed;
-  top: var(--space-4);
+  top: calc(var(--space-4) + env(safe-area-inset-top));
   left: 50%;
   transform: translateX(-50%);
   z-index: 60;
@@ -1134,6 +1158,25 @@
 }
 .flash--error .icon {
   color: var(--feedback-error);
+}
+
+/* botão de fechar do flash: alvo de toque cheio (44px) que o margin negativo
+   compensa, para o aviso não crescer por causa dele. */
+.flash__dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--size-touch);
+  height: var(--size-touch);
+  margin-block: calc(var(--space-3) * -1);
+  margin-right: calc(var(--space-2) * -1);
+  flex-shrink: 0;
+  color: var(--text-muted);
+  border-radius: var(--radius-md);
+}
+
+.flash__dismiss:hover {
+  color: var(--text-primary);
 }
 
 /* ---------- estado vazio ---------- */
@@ -1188,7 +1231,9 @@
   position: absolute;
   right: 0;
   top: calc(100% + var(--space-1));
-  z-index: 30;
+  /* acima da bottom-nav (30) e do skip link (40); abaixo do visualizador (50),
+     do modal (55) e do flash (60). */
+  z-index: 45;
   min-width: var(--size-menu-min);
   padding: var(--space-2);
   background: var(--surface-raised);
@@ -1217,7 +1262,12 @@
   background: var(--surface-high);
 }
 
+/* o texto fica legível (o erro é a cor do ícone, não a cor do item inteiro) */
 .menu__item--danger {
+  color: var(--text-secondary);
+}
+
+.menu__item--danger .icon {
   color: var(--feedback-error);
 }
 

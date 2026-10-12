@@ -191,6 +191,119 @@ defmodule TainaWeb.CoreComponents do
     end
   end
 
+  @doc """
+  Campo de seleção com o mesmo esquema de rótulo/ajuda/erro do `input/1`.
+
+      <.select field={@form[:plano]} label="Plano" options={[@plano, ...]} prompt="Selecione..." />
+  """
+  attr :id, :any, default: nil
+  attr :name, :any
+  attr :label, :string, default: nil
+  attr :value, :any
+  attr :help, :string, default: nil
+  attr :field, FormField, doc: "ex.: @form[:plano]"
+  attr :errors, :list, default: []
+  attr :prompt, :string, default: nil, doc: ~s{opção vazia (value=""), ex.: "Selecione..."}
+  attr :options, :list, required: true, doc: "pares {valor, rótulo}"
+  attr :rest, :global, include: ~w(required autofocus)
+
+  def select(%{field: %FormField{} = field} = assigns) do
+    errors = if Phoenix.Component.used_input?(field), do: field.errors, else: []
+
+    assigns
+    |> assign(field: nil, id: assigns.id || field.id)
+    |> assign(:errors, Enum.map(errors, &translate_error/1))
+    |> assign_new(:name, fn -> field.name end)
+    |> assign_new(:value, fn -> field.value end)
+    |> select()
+  end
+
+  def select(assigns) do
+    assigns =
+      assigns
+      |> assign_new(:name, fn -> nil end)
+      |> assign_new(:value, fn -> nil end)
+
+    ~H"""
+    <div class={["field", @errors != [] && "field--invalid"]}>
+      <label :if={@label} for={@id}>{@label}</label>
+      <div class="field__control">
+        <select
+          name={@name}
+          id={@id}
+          aria-invalid={@errors != [] && "true" || nil}
+          aria-describedby={input_describedby(@id, @help, @errors)}
+          {@rest}
+        >
+          <option :if={@prompt} value="">{@prompt}</option>
+          <option :for={{value, label} <- @options} value={value} selected={value == @value}>{label}</option>
+        </select>
+      </div>
+      <span :if={@help && @errors == []} class="field__help" id={"#{@id}-help"}>{@help}</span>
+      <span
+        :for={{error, index} <- Enum.with_index(@errors)}
+        class="field__error"
+        id={"#{@id}-error-#{index}"}
+        role="alert"
+      >{error}</span>
+    </div>
+    """
+  end
+
+  @doc """
+  Área de texto multi-linha com o mesmo esquema de rótulo/ajuda/erro do `input/1`.
+
+      <.textarea field={@form[:resumo]} label="Resumo" rows={4} />
+  """
+  attr :id, :any, default: nil
+  attr :name, :any
+  attr :label, :string, default: nil
+  attr :value, :any
+  attr :help, :string, default: nil
+  attr :field, FormField, doc: "ex.: @form[:resumo]"
+  attr :errors, :list, default: []
+  attr :rest, :global, include: ~w(placeholder required rows maxlength minlength inputmode autofocus)
+
+  def textarea(%{field: %FormField{} = field} = assigns) do
+    errors = if Phoenix.Component.used_input?(field), do: field.errors, else: []
+
+    assigns
+    |> assign(field: nil, id: assigns.id || field.id)
+    |> assign(:errors, Enum.map(errors, &translate_error/1))
+    |> assign_new(:name, fn -> field.name end)
+    |> assign_new(:value, fn -> field.value end)
+    |> textarea()
+  end
+
+  def textarea(assigns) do
+    assigns =
+      assigns
+      |> assign_new(:name, fn -> nil end)
+      |> assign_new(:value, fn -> nil end)
+
+    ~H"""
+    <div class={["field", @errors != [] && "field--invalid"]}>
+      <label :if={@label} for={@id}>{@label}</label>
+      <div class="field__control">
+        <textarea
+          name={@name}
+          id={@id}
+          aria-invalid={@errors != [] && "true" || nil}
+          aria-describedby={input_describedby(@id, @help, @errors)}
+          {@rest}
+        >{Phoenix.HTML.Form.normalize_value("textarea", @value)}</textarea>
+      </div>
+      <span :if={@help && @errors == []} class="field__help" id={"#{@id}-help"}>{@help}</span>
+      <span
+        :for={{error, index} <- Enum.with_index(@errors)}
+        class="field__error"
+        id={"#{@id}-error-#{index}"}
+        role="alert"
+      >{error}</span>
+    </div>
+    """
+  end
+
   # ---------- cartões ----------
 
   attr :raised, :boolean, default: false
@@ -374,16 +487,16 @@ defmodule TainaWeb.CoreComponents do
 
   def segmented(assigns) do
     ~H"""
-    <nav class="segmented">
+    <div class="segmented" role="group" aria-label={gettext("Ver como")}>
       <.link
         :for={option <- @option}
         patch={option.patch}
         class="segmented__option"
-        aria-current={to_string(option[:current] == true)}
+        aria-current={option[:current] && "page" || nil}
       >
         {render_slot(option)}
       </.link>
-    </nav>
+    </div>
     """
   end
 
@@ -407,9 +520,11 @@ defmodule TainaWeb.CoreComponents do
   # ---------- menu (kebab) ----------
 
   @doc """
-  Menu suspenso acionado por botão de ícone, fechado com clique fora e Esc.
-  O rótulo é opcional e cai no `aria-label` do gatilho; passe um mais específico
-  quando o contexto ajuda (ex.: `Mais opções para %{name}`).
+  Menu suspenso acionado por botão de ícone, fechado com clique fora e Esc
+  (que devolve o foco ao gatilho). O rótulo é opcional e cai no `aria-label`
+  do gatilho; passe um mais específico quando o contexto ajuda (ex.: `Mais
+  opções para %{name}`). Itens com `click` viram botões que disparam o
+  evento/JS; itens com `navigate` viram links de navegação.
 
       <.menu id={"file-menu-\#{file.public_id}"} label={gettext("Mais opções para %{name}", name: file.name)}>
         <:item icon="pencil" click={JS.push("rename", value: %{id: file.public_id})}>Renomear</:item>
@@ -422,7 +537,8 @@ defmodule TainaWeb.CoreComponents do
 
   slot :item, required: true do
     attr :icon, :string
-    attr :click, :any, required: true
+    attr :click, :any
+    attr :navigate, :string, doc: "destino interno; vira <a> em vez de <button>"
     attr :danger, :boolean
   end
 
@@ -432,14 +548,16 @@ defmodule TainaWeb.CoreComponents do
       class="menu"
       id={@id}
       phx-click-away={JS.hide(to: "##{@id}-list")}
+      phx-keydown={JS.hide(to: "##{@id}-list") |> JS.focus(to: "##{@id}-trigger")}
       phx-window-keydown={JS.hide(to: "##{@id}-list")}
       phx-key="escape"
     >
       <button
         type="button"
+        id={"#{@id}-trigger"}
         class="icon-btn"
         aria-label={@label}
-        aria-haspopup="true"
+        aria-haspopup="menu"
         aria-expanded="false"
         phx-click={
           JS.toggle(to: "##{@id}-list", display: "flex")
@@ -449,15 +567,26 @@ defmodule TainaWeb.CoreComponents do
         <.icon name={@icon} size={20} />
       </button>
       <div id={"#{@id}-list"} class="menu__list">
-        <button
-          :for={item <- @item}
-          type="button"
-          class={["menu__item", item[:danger] && "menu__item--danger"]}
-          phx-click={JS.concat(JS.hide(to: "##{@id}-list"), item.click)}
-        >
-          <.icon :if={item[:icon]} name={item.icon} size={18} />
-          {render_slot(item)}
-        </button>
+        <div :for={item <- @item}>
+          <.link
+            :if={item[:navigate]}
+            navigate={item.navigate}
+            class={["menu__item", item[:danger] && "menu__item--danger"]}
+            phx-click={JS.hide(to: "##{@id}-list")}
+          >
+            <.icon :if={item[:icon]} name={item.icon} size={18} />
+            {render_slot(item)}
+          </.link>
+          <button
+            :if={!item[:navigate]}
+            type="button"
+            class={["menu__item", item[:danger] && "menu__item--danger"]}
+            phx-click={JS.concat(JS.hide(to: "##{@id}-list"), item[:click] || %JS{})}
+          >
+            <.icon :if={item[:icon]} name={item.icon} size={18} />
+            {render_slot(item)}
+          </button>
+        </div>
       </div>
     </div>
     """
@@ -488,7 +617,7 @@ defmodule TainaWeb.CoreComponents do
       class="modal-overlay"
       phx-window-keydown={@on_cancel}
       phx-key="escape"
-      phx-mounted={JS.focus_first(to: "##{@id}")}
+      phx-hook="ModalTrap"
     >
       <div
         class="modal"
@@ -548,7 +677,7 @@ defmodule TainaWeb.CoreComponents do
 
   def flash_group(assigns) do
     ~H"""
-    <div class="flash-group" aria-live="polite">
+    <div class="flash-group">
       <.flash_message kind={:info} flash={@flash} />
       <.flash_message kind={:error} flash={@flash} />
     </div>
@@ -560,20 +689,30 @@ defmodule TainaWeb.CoreComponents do
 
   defp flash_message(assigns) do
     ~H"""
-    <button
+    <div
       :if={message = Phoenix.Flash.get(@flash, @kind)}
       id={"flash-#{@kind}"}
-      type="button"
       class={"flash flash--#{@kind}"}
-      role={if @kind == :error, do: "alert", else: "status"}
-      aria-live={if @kind == :error, do: "assertive", else: "polite"}
       phx-hook={if @kind == :info, do: "FlashAutoDismiss"}
-      phx-click={JS.push("lv:clear-flash", value: %{key: @kind}) |> JS.hide()}
-      title={gettext("Fechar aviso")}
     >
       <.icon name={if @kind == :error, do: "alert", else: "info"} size={20} />
-      <span class="flex-1">{message}</span>
-    </button>
+      <span
+        class="flex-1"
+        role={if @kind == :error, do: "alert", else: "status"}
+        aria-live={if @kind == :error, do: "assertive", else: "polite"}
+      >
+        {message}
+      </span>
+      <button
+        type="button"
+        class="flash__dismiss"
+        aria-label={gettext("Fechar aviso")}
+        title={gettext("Fechar aviso")}
+        phx-click={JS.push("lv:clear-flash", value: %{key: @kind}) |> JS.hide(to: "#flash-#{@kind}")}
+      >
+        <.icon name="close" size={18} />
+      </button>
+    </div>
     """
   end
 
