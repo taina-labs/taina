@@ -237,15 +237,21 @@ defmodule TainaWeb.MembersLive do
     >
       <Layouts.app_bar title={gettext("Moradores")} back={~p"/conta"}>
         <:action :if={Maraca.zelador?(@current_scope.ava)}>
-          <.icon_button name="plus" label={gettext("Convidar pessoas")} navigate={~p"/membros/convidar"} />
+          <.button variant="secondary" size="sm" navigate={~p"/membros/convidar"}>
+            {gettext("Convidar")}
+          </.button>
         </:action>
       </Layouts.app_bar>
 
       <div class="col gap-4 mx-auto w-full measure">
+        <h1 class="desktop-only type-h1 mb-4">{gettext("Moradores")}</h1>
+
         <% members = filtered(@members, @query) %>
         <% pendings = filtered(@pendings, @query) %>
 
-        <form id="member-search-form" phx-change="search" class="search">
+        <%!-- phx-submit cobre a tecla "ir" do teclado mobile, que submete o
+        form de verdade e recarregaria a página limpando a busca --%>
+        <form id="member-search-form" phx-change="search" phx-submit="search" class="search">
           <.icon name="search" size={20} />
           <input
             type="search"

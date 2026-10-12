@@ -138,6 +138,8 @@ defmodule TainaWeb.StorageLive do
     >
       <Layouts.app_bar title={gettext("Armazenamento")} back={~p"/conta"} />
 
+      <h1 class="desktop-only type-h1 mb-4 mx-auto w-full measure">{gettext("Armazenamento")}</h1>
+
       <.empty_state
         :if={@load_error}
         icon="alert"

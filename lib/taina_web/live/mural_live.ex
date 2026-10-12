@@ -29,6 +29,7 @@ defmodule TainaWeb.MuralLive do
      |> assign(:headed_dates, MapSet.new())
      |> assign(:event_count, 0)
      |> assign(:load_error, false)
+     |> assign(:more_error, false)
      |> assign_events()}
   end
 
@@ -44,10 +45,14 @@ defmodule TainaWeb.MuralLive do
            |> assign(:next_offset, next)
            |> assign(:headed_dates, headed)
            |> assign(:event_count, socket.assigns.event_count + length(entries))
+           |> assign(:more_error, false)
            |> stream(:events, entries)}
 
+        # Paginação que falha não fica em silêncio nem presa no "Carregando
+        # mais": o estado fica marcado e a sentinela dá lugar ao "Tentar de
+        # novo" (o mesmo falar da primeira página).
         {:error, _reason} ->
-          {:noreply, Phoenix.LiveView.put_flash(socket, :error, gettext("Não foi possível carregar mais do mural."))}
+          {:noreply, assign(socket, :more_error, true)}
       end
     else
       {:noreply, socket}
@@ -274,8 +279,14 @@ defmodule TainaWeb.MuralLive do
           </div>
         </div>
 
-        <div :if={@next_offset} id="mural-load-more" phx-viewport-bottom="load-more" class="center py-4">
-          <p class="type-caption text-muted">{gettext("Carregando mais...")}</p>
+        <div :if={@next_offset} id="mural-load-more" class="col gap-2 center py-4">
+          <p :if={!@more_error} phx-viewport-bottom="load-more" class="type-caption text-muted">
+            {gettext("Carregando mais...")}
+          </p>
+          <div :if={@more_error} class="col gap-2 center">
+            <p class="type-caption text-muted">{gettext("Não foi possível carregar mais do mural.")}</p>
+            <.button variant="secondary" size="sm" phx-click="load-more">{gettext("Tentar de novo")}</.button>
+          </div>
         </div>
 
         <.empty_state

@@ -305,10 +305,22 @@ defmodule TainaWeb.SaudeLive do
   end
 
   defp identity_row(%Scope{} = scope) do
-    row("home", gettext("A caixa"), [
-      gettext("Esta é a caixa de %{tekoa}.", tekoa: scope.tekoa.name),
-      gettext("A comunidade acessa por %{address}.", address: box_address())
-    ])
+    row("home", gettext("A caixa"), caixa_body(scope))
+  end
+
+  # O endereço só entra como fato quando existe de verdade. O default
+  # "example.com" (e o "localhost" do desenvolvimento) não é fato: nesta tela,
+  # cujo trabalho é dizer a verdade, endereço ausente é dito como estado.
+  defp caixa_body(%Scope{} = scope) do
+    base = [gettext("Esta é a caixa de %{tekoa}.", tekoa: scope.tekoa.name)]
+
+    case box_address() do
+      {:ok, address} ->
+        base ++ [gettext("A comunidade acessa por %{address}.", address: address)]
+
+      :unconfigured ->
+        base ++ [gettext("O endereço da caixa ainda não foi configurado na instalação.")]
+    end
   end
 
   defp row(icon, label, body, warning \\ nil, action \\ nil) do
@@ -349,12 +361,13 @@ defmodule TainaWeb.SaudeLive do
     end
   end
 
-  # O endereço pela qual a comunidade alcança a caixa: o host configurado do
-  # endpoint (PHX_HOST), não um valor que o navegador inventa.
+  # O endereço pelo qual a comunidade alcança a caixa: o host configurado do
+  # endpoint (PHX_HOST), não um valor que o navegador inventa. Os defaults
+  # ("example.com" do prod, "localhost" do dev) contam como não configurado.
   defp box_address do
     case TainaWeb.Endpoint.config(:url)[:host] do
-      nil -> gettext("endereço não configurado")
-      host -> host
+      host when host in [nil, "example.com", "localhost"] -> :unconfigured
+      host -> {:ok, host}
     end
   end
 
