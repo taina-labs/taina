@@ -140,7 +140,8 @@ defmodule TainaWeb.AccessRequestsLive do
   end
 
   # "Ana pediu acesso a relatorio.pdf, há 3 dias." O motivo vem na sequência e
-  # a linha quebra naturalmente: a decisão precisa do porquê à vista.
+  # a linha quebra em vez de cortar com reticências (`list-row__meta--wrap`
+  # no render): decidir sem ler o porquê é decidir às cegas.
   defp request_meta(request, file_names) do
     base =
       gettext("%{name} pediu acesso a %{file}, %{when}",
@@ -185,19 +186,22 @@ defmodule TainaWeb.AccessRequestsLive do
       <Layouts.app_bar title={gettext("Pedidos")} back={~p"/conta"} />
 
       <div class="col gap-4 mx-auto w-full measure">
+        <h1 class="desktop-only type-h1 mb-4">{gettext("Pedidos")}</h1>
+
         <div class="list" id="requests" phx-update="stream">
           <.list_row
             :for={{dom_id, request} <- @streams.requests}
             id={dom_id}
             title={requester_name(request)}
             meta={request_meta(request, @file_names)}
+            meta_class="list-row__meta--wrap"
           >
             <:leading><.avatar name={requester_name(request)} /></:leading>
             <:actions>
-              <.button variant="ghost" size="sm" phx-click="ask-deny" phx-value-id={request.id}>
+              <.button variant="ghost" size="md" phx-click="ask-deny" phx-value-id={request.id}>
                 {gettext("Negar")}
               </.button>
-              <.button variant="primary" size="sm" phx-click="approve" phx-value-id={request.id}>
+              <.button variant="primary" size="md" phx-click="approve" phx-value-id={request.id}>
                 {gettext("Aprovar")}
               </.button>
             </:actions>

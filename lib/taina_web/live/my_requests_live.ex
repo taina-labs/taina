@@ -117,12 +117,15 @@ defmodule TainaWeb.MyRequestsLive do
       <Layouts.app_bar title={gettext("Meus pedidos")} back={~p"/conta"} />
 
       <div class="col gap-4 mx-auto w-full measure">
+        <h1 class="desktop-only type-h1 mb-4">{gettext("Meus pedidos")}</h1>
+
         <div class="list" id="my-requests" phx-update="stream">
           <.list_row
             :for={{dom_id, request} <- @streams.requests}
             id={dom_id}
             title={owner_name(request)}
             meta={request_meta(request, @file_names)}
+            meta_class="list-row__meta--wrap"
           >
             <:leading><.avatar name={owner_name(request)} /></:leading>
           </.list_row>

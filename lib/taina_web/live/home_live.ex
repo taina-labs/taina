@@ -17,7 +17,9 @@ defmodule TainaWeb.HomeLive do
     # A home degrada em vez de cair: se o Ybira falhar, avisamos por flash e
     # mostramos a tela com as listas vazias em vez de derrubar a LiveView. O
     # estado vazio só aparece quando a lista de verdade está vazia (recent_ok):
-    # com erro, o flash explica e o vazio não mente.
+    # com erro, o flash explica e o vazio não mente. O card de espaço segue o
+    # mesmo caminho (storage_stats_ok): sem resposta, um aviso calmo com
+    # "Tentar de novo" ocupa o lugar dele, nunca um card que some em silêncio.
     {recent, ok?} = unwrap(Ybira.list_recent(scope, limit: 4), [])
 
     socket =
@@ -25,8 +27,22 @@ defmodule TainaWeb.HomeLive do
       |> assign(:page_title, gettext("Início"))
       |> assign(:recent, recent)
       |> assign(:recent_ok, ok?)
+      |> assign(:storage_stats_ok, socket.assigns[:storage_stats] != nil)
 
     {:ok, maybe_warn(socket, ok?)}
+  end
+
+  @impl true
+  def handle_event("retry-storage", _params, socket) do
+    # O assign de stats nasce no shell (`TainaWeb.Hooks`), só no mount: o
+    # retry refaz a consulta aqui e remarca o estado do card.
+    case Ybira.storage_stats(socket.assigns.current_scope) do
+      {:ok, stats} ->
+        {:noreply, socket |> assign(:storage_stats, stats) |> assign(:storage_stats_ok, true)}
+
+      _error ->
+        {:noreply, assign(socket, :storage_stats_ok, false)}
+    end
   end
 
   defp unwrap(result, default, ok? \\ true)
@@ -161,6 +177,15 @@ defmodule TainaWeb.HomeLive do
         <p :if={!quota?(@storage_stats)} class="type-caption text-muted mt-3">
           <span class="type-mono-sm">{format_bytes(@storage_stats.used_bytes)}</span> {gettext("em uso")}
         </p>
+      </.card>
+
+      <.card :if={!@storage_stats_ok} class="mb-6 col gap-3">
+        <p class="type-body-sm text-muted">
+          {gettext("Não foi possível consultar o espaço da comunidade agora.")}
+        </p>
+        <.button variant="secondary" size="sm" class="self-start" phx-click="retry-storage">
+          {gettext("Tentar de novo")}
+        </.button>
       </.card>
 
       <p class="type-overline text-muted mb-3">{gettext("Recentes")}</p>
