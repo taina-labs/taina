@@ -21,7 +21,7 @@ defmodule TainaWeb do
   # Endpoint with a no-cache header so service-worker updates are always picked
   # up (see TainaWeb.Endpoint).
   def static_paths,
-    do: ~w(assets fonts icons robots.txt favicon.ico apple-touch-icon.png manifest.webmanifest offline.html)
+    do: ~w(assets fonts icons splash robots.txt favicon.ico apple-touch-icon.png manifest.webmanifest offline.html)
 
   # Raiz que o `mix phx.digest` (dentro de `assets.deploy`) fingerprinta. O `~p`
   # do layout emite o nome com hash (`manifest-<hash>.webmanifest`), e o `only`

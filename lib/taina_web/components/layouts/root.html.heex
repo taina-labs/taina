@@ -20,6 +20,55 @@
     <link rel="icon" href={~p"/favicon.ico"} sizes="48x48" />
     <link rel="icon" href={~p"/icons/favicon.svg"} type="image/svg+xml" />
     <link rel="apple-touch-icon" href={~p"/apple-touch-icon.png"} />
+    <%!-- No Android o splash sai do manifest (background_color + ícone); no iOS
+    não existe esse caminho, e sem estas imagens o app instalado abre num quadro
+    branco. Uma por tamanho de tela, no fundo do tema, para a abertura casar com
+    o cofre escuro. --%>
+    <link
+      rel="apple-touch-startup-image"
+      media="screen and (device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)"
+      href={~p"/splash/spr-750x1334.png"}
+    />
+    <link
+      rel="apple-touch-startup-image"
+      media="screen and (device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)"
+      href={~p"/splash/spr-828x1792.png"}
+    />
+    <link
+      rel="apple-touch-startup-image"
+      media="screen and (device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)"
+      href={~p"/splash/spr-1125x2436.png"}
+    />
+    <link
+      rel="apple-touch-startup-image"
+      media="screen and (device-width: 360px) and (device-height: 780px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)"
+      href={~p"/splash/spr-1080x2340.png"}
+    />
+    <link
+      rel="apple-touch-startup-image"
+      media="screen and (device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)"
+      href={~p"/splash/spr-1170x2532.png"}
+    />
+    <link
+      rel="apple-touch-startup-image"
+      media="screen and (device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)"
+      href={~p"/splash/spr-1179x2556.png"}
+    />
+    <link
+      rel="apple-touch-startup-image"
+      media="screen and (device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)"
+      href={~p"/splash/spr-1242x2688.png"}
+    />
+    <link
+      rel="apple-touch-startup-image"
+      media="screen and (device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)"
+      href={~p"/splash/spr-1284x2778.png"}
+    />
+    <link
+      rel="apple-touch-startup-image"
+      media="screen and (device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)"
+      href={~p"/splash/spr-1290x2796.png"}
+    />
     <link rel="manifest" href={~p"/manifest.webmanifest"} />
     <.live_title default={gettext("Tainá")} suffix={" - " <> gettext("Tainá")}>
       {assigns[:page_title]}
