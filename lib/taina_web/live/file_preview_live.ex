@@ -68,14 +68,14 @@ defmodule TainaWeb.FilePreviewLive do
   end
 
   # A guarda de clipboard fica no hook (JS); quando ele não consegue copiar
-  # (origem insegura, sem permissão), a saída é a mão: selecionar o link e
-  # copiar por conta própria.
+  # (origem insegura, sem permissão), a saída é o campo do link no cartão:
+  # selecionar e copiar por conta própria.
   def handle_event("copy-failed", _params, socket) do
     {:noreply,
      Phoenix.LiveView.put_flash(
        socket,
        :error,
-       gettext("Não deu para copiar agora. Selecione o link e copie com a mão.")
+       gettext("Não deu para copiar agora. Toque no campo do link, selecione e copie.")
      )}
   end
 
@@ -175,7 +175,7 @@ defmodule TainaWeb.FilePreviewLive do
   defp readability_line(:praca), do: gettext("Todos os moradores veem.")
   defp readability_line(:casa), do: gettext("Só você, e quem você deixar.")
 
-  defp zona_action_label(:casa), do: gettext("Publicar na praça")
+  defp zona_action_label(:casa), do: gettext("Publicar")
   defp zona_action_label(:praca), do: gettext("Tirar da praça")
 
   defp zona_confirm_title(:casa, name), do: gettext("Publicar \"%{name}\" na praça?", name: name)
@@ -359,18 +359,21 @@ defmodule TainaWeb.FilePreviewLive do
           <h2 class="type-h3 mb-1">{@file.original_filename}</h2>
           <p class="type-body-sm text-muted">{file_meta(@file)}</p>
           <p class="type-body-sm text-muted">{readability_line(@file.zona)}</p>
+          <% file_url = url(~p"/arquivos/#{@file.public_id}") %>
+          <div class="field mt-4">
+            <label for="file-page-link">{gettext("Link do arquivo")}</label>
+            <div class="field__control">
+              <input id="file-page-link" type="text" value={file_url} readonly />
+            </div>
+          </div>
           <hr class="divider my-4" />
-          <div class="row between">
-            <a href={~p"/files/#{@file.public_id}"} download class="viewer__action">
-              <.icon name="download" size={20} />
-              <span>{gettext("Baixar")}</span>
-            </a>
+          <div class="row between wrap">
             <button
               type="button"
               class="viewer__action"
               id="copy-file-link"
               phx-hook="Clipboard"
-              data-copy={url(~p"/files/#{@file.public_id}")}
+              data-copy={file_url}
             >
               <.icon name="link" size={20} />
               <span>{gettext("Link")}</span>
@@ -418,8 +421,9 @@ defmodule TainaWeb.FilePreviewLive do
             <p class="type-body">{format_bytes(@file.file_size_bytes)}</p>
           </div>
           <div>
-            <p class="type-caption text-muted">{gettext("Impressão digital (SHA-256)")}</p>
+            <p class="type-caption text-muted">{gettext("Assinatura do arquivo")}</p>
             <p class="type-mono-sm truncate">{@file.file_hash}</p>
+            <p class="type-caption text-muted">{gettext("É como o Tainá confere que o arquivo está intacto.")}</p>
           </div>
           <div>
             <p class="type-caption text-muted">{gettext("Enviado em")}</p>

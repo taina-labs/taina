@@ -156,8 +156,9 @@ defmodule TainaWeb.FilesLive do
      |> assign(:confirm, nil)}
   end
 
-  # Soltar arquivos do sistema em qualquer canto da tela: o hook JS empurra o
-  # evento, o destino mora aqui (upload da pasta atual). O hook só sinaliza.
+  # Soltar arquivos do sistema sobre a página: o destino é o upload da pasta
+  # atual. O guard de preventDefault mora no hook DnD (JS); sem ele, o
+  # navegador navega para fora do app quando o arrasto vem do sistema.
   def handle_event("drop-files", _params, socket) do
     {:noreply, Phoenix.LiveView.push_navigate(socket, to: upload_path(socket.assigns.folder_public_id))}
   end
@@ -218,7 +219,9 @@ defmodule TainaWeb.FilesLive do
 
       {:error, _} ->
         {:noreply,
-         socket |> assign(:modal, nil) |> Phoenix.LiveView.put_flash(:error, gettext("Não foi possível mover."))}
+         socket
+         |> assign(:modal, nil)
+         |> Phoenix.LiveView.put_flash(:error, gettext("Só dá para mover para as suas pastas."))}
     end
   end
 
@@ -343,6 +346,15 @@ defmodule TainaWeb.FilesLive do
   defp sort_arrow_icon({_field, :asc}), do: "chevron-up"
   defp sort_arrow_icon({_field, :desc}), do: "chevron-down"
 
+  # No menu de ordenação o item atual ganha um check, e o Nome divide a
+  # direção em dois itens (A-Z / Z-A): clicar nunca vira surpresa, aplica
+  # exatamente o que está escrito. Data e Tamanho continuam alternando.
+  defp sort_check({:name, :asc}, :name_az), do: "check"
+  defp sort_check({:name, :desc}, :name_za), do: "check"
+  defp sort_check({:date, _}, :date), do: "check"
+  defp sort_check({:size, _}, :size), do: "check"
+  defp sort_check(_sort, _item), do: nil
+
   defp browse_path(folder_public_id, sort, view, zona, peek) do
     params = %{sort: sort_param(sort)}
     params = if view == :grid, do: Map.put(params, :view, "grid"), else: params
@@ -406,6 +418,13 @@ defmodule TainaWeb.FilesLive do
 
   defp own?(scope, item), do: scope.ava.id == item.ava_id
 
+  # Só pasta SUA é alvo de soltar: o servidor recusa mover para pasta
+  # alheia, então a UI não destaca o que não vai funcionar. nil faz o
+  # atributo nem chegar ao HTML.
+  defp drop_folder(scope, folder) do
+    if own?(scope, folder), do: folder.public_id
+  end
+
   # Criar pasta no início é sempre possível; dentro de pasta alheia, o
   # servidor recusa, então o botão nem aparece (não oferecer o que rejeita).
   defp can_create_here?(_scope, nil), do: true
@@ -413,6 +432,27 @@ defmodule TainaWeb.FilesLive do
 
   defp readability_line(:praca), do: gettext("Todos os moradores veem.")
   defp readability_line(:casa), do: gettext("Só você, e quem você deixar.")
+
+  # A pasta nova herda a zona da aba ativa; o modal diz onde ela nasce antes
+  # de nascer.
+  defp folder_zone_line(:praca), do: gettext("A pasta nasce na praça. Todos os moradores veem.")
+  defp folder_zone_line(:casa), do: gettext("A pasta nasce na sua casa. Só você vê.")
+
+  # O estado vazio diz a verdade sobre onde a pessoa está: na raiz, a aba
+  # fala por si; dentro de pasta, a pasta fala. E na casa alheia a cópia
+  # para de fingir que a pasta é sua. O segundo argumento é nil na raiz e
+  # true/false conforme a pasta é de quem vê.
+  defp empty_copy(:praca, nil),
+    do: {gettext("A praça está vazia"), gettext("Publique um arquivo ou pasta para começar a memória da comunidade.")}
+
+  defp empty_copy(:praca, _pasta),
+    do: {gettext("Nada na praça desta pasta"), gettext("O que esta pasta guardar de comum aparece aqui.")}
+
+  defp empty_copy(:casa, false),
+    do: {gettext("Nada seu nesta pasta"), gettext("O que você guardar aqui aparece nesta aba, só para você.")}
+
+  defp empty_copy(:casa, _sua_ou_raiz),
+    do: {gettext("Sua casa está vazia"), gettext("Aqui ficam seus arquivos. Só você vê, até deixar alguém entrar.")}
 
   # Versão curta para as linhas de lista: a linha de meta trunca com
   # reticências, e a zona nunca pode ser a parte que fica de fora.
@@ -482,13 +522,28 @@ defmodule TainaWeb.FilesLive do
 
       <div class="row between mb-3">
         <.menu id="sort-menu" icon="list" label={gettext("Ordenar")}>
-          <:item click={JS.patch(browse_path(@folder_public_id, toggle_sort(:name, @sort), @view, @zona, peek_id(@peek)))}>
-            {gettext("Nome")}
+          <:item
+            icon={sort_check(@sort, :name_az)}
+            click={JS.patch(browse_path(@folder_public_id, {:name, :asc}, @view, @zona, peek_id(@peek)))}
+          >
+            {gettext("Nome (A-Z)")}
           </:item>
-          <:item click={JS.patch(browse_path(@folder_public_id, toggle_sort(:date, @sort), @view, @zona, peek_id(@peek)))}>
+          <:item
+            icon={sort_check(@sort, :name_za)}
+            click={JS.patch(browse_path(@folder_public_id, {:name, :desc}, @view, @zona, peek_id(@peek)))}
+          >
+            {gettext("Nome (Z-A)")}
+          </:item>
+          <:item
+            icon={sort_check(@sort, :date)}
+            click={JS.patch(browse_path(@folder_public_id, toggle_sort(:date, @sort), @view, @zona, peek_id(@peek)))}
+          >
             {gettext("Data")}
           </:item>
-          <:item click={JS.patch(browse_path(@folder_public_id, toggle_sort(:size, @sort), @view, @zona, peek_id(@peek)))}>
+          <:item
+            icon={sort_check(@sort, :size)}
+            click={JS.patch(browse_path(@folder_public_id, toggle_sort(:size, @sort), @view, @zona, peek_id(@peek)))}
+          >
             {gettext("Tamanho")}
           </:item>
         </.menu>
@@ -542,31 +597,53 @@ defmodule TainaWeb.FilesLive do
         <div class="files-split__list">
           <%= if @view == :grid do %>
             <div class="tiles">
-              <.link
+              <div
                 :for={folder <- @folders}
-                navigate={~p"/arquivos/pasta/#{folder.public_id}"}
                 class="tile"
-                data-drop-folder={folder.public_id}
+                style="position: relative;"
+                data-drop-folder={drop_folder(@current_scope, folder)}
               >
-                <.service_square service="ybira" icon="folder" size="lg" />
-                <p class="tile__title">{folder.name}</p>
-                <p class="tile__meta">{gettext("Pasta")}</p>
-                <p class="tile__meta">{readability_line(folder.zona)}</p>
-              </.link>
+                <.link navigate={~p"/arquivos/pasta/#{folder.public_id}"} class="col gap-1">
+                  <.service_square service="ybira" icon="folder" size="lg" />
+                  <p class="tile__title">{folder.name}</p>
+                  <p class="tile__meta">{gettext("Pasta")}</p>
+                  <p class="tile__meta">{readability_line(folder.zona)}</p>
+                </.link>
+                <div style="position: absolute; top: var(--space-2); right: var(--space-2);">
+                  <.item_menu
+                    kind="folder"
+                    id={folder.public_id}
+                    name={folder.name}
+                    zona={folder.zona}
+                    own?={own?(@current_scope, folder)}
+                  />
+                </div>
+              </div>
 
               <div id="files-grid" phx-update="stream" class="contents">
-                <.link
+                <div
                   :for={{dom_id, file} <- @streams.files}
                   id={dom_id}
-                  navigate={~p"/arquivos/#{file.public_id}"}
                   class="tile"
+                  style="position: relative;"
                 >
-                  <% {service, icon} = file_visual(file.mime_type) %>
-                  <.service_square service={service} icon={icon} size="lg" />
-                  <p class="tile__title">{file.original_filename}</p>
-                  <p class="tile__meta">{file_meta(file)}</p>
-                  <p class="tile__meta">{readability_line(file.zona)}</p>
-                </.link>
+                  <.link navigate={~p"/arquivos/#{file.public_id}"} class="col gap-1">
+                    <% {service, icon} = file_visual(file.mime_type) %>
+                    <.service_square service={service} icon={icon} size="lg" />
+                    <p class="tile__title">{file.original_filename}</p>
+                    <p class="tile__meta">{file_meta(file)}</p>
+                    <p class="tile__meta">{readability_line(file.zona)}</p>
+                  </.link>
+                  <div style="position: absolute; top: var(--space-2); right: var(--space-2);">
+                    <.item_menu
+                      kind="file"
+                      id={file.public_id}
+                      name={file.original_filename}
+                      zona={file.zona}
+                      own?={own?(@current_scope, file)}
+                    />
+                  </div>
+                </div>
               </div>
             </div>
           <% else %>
@@ -579,7 +656,7 @@ defmodule TainaWeb.FilesLive do
                 draggable="true"
                 data-drag-id={folder.public_id}
                 data-drag-kind="folder"
-                data-drop-folder={folder.public_id}
+                data-drop-folder={drop_folder(@current_scope, folder)}
               >
                 <:leading>
                   <.service_square service="ybira" icon="folder" />
@@ -698,25 +775,17 @@ defmodule TainaWeb.FilesLive do
         <span class="skeleton flex-1" style="height: var(--space-4);"></span>
       </div>
 
-      <.empty_state
-        :if={@item_count == 0 and @zona == :praca}
-        icon="folder"
-        title={gettext("A praça está vazia")}
-        hint={gettext("Publique um arquivo ou pasta para começar a memória da comunidade.")}
-      />
+      <% {empty_title, empty_hint} = empty_copy(@zona, @folder && own?(@current_scope, @folder)) %>
 
-      <.empty_state
-        :if={@item_count == 0 and @zona == :casa}
-        icon="folder"
-        title={gettext("Sua casa está vazia")}
-        hint={gettext("Aqui ficam seus arquivos. Só você vê, até deixar alguém entrar.")}
-      >
-        <p class="type-body-sm text-muted">
-          {gettext("Isso é promessa de software e confiança: o Tainá ainda não criptografa.")}
-        </p>
-        <.button variant="primary" size="md" navigate={upload_path(@folder_public_id)}>
-          {gettext("Enviar arquivos")}
-        </.button>
+      <.empty_state :if={@item_count == 0} icon="folder" title={empty_title} hint={empty_hint}>
+        <div :if={@zona == :casa and (is_nil(@folder) or own?(@current_scope, @folder))} class="col gap-2">
+          <p class="type-body-sm text-muted">
+            {gettext("Isso é promessa de software e confiança: o Tainá ainda não criptografa.")}
+          </p>
+          <.button variant="primary" size="md" navigate={upload_path(@folder_public_id)}>
+            {gettext("Enviar arquivos")}
+          </.button>
+        </div>
       </.empty_state>
 
       <.button variant="fab" navigate={upload_path(@folder_public_id)} aria-label={gettext("Enviar arquivos")}>
@@ -735,6 +804,7 @@ defmodule TainaWeb.FilesLive do
             required
             autofocus
           />
+          <p class="type-body-sm text-muted">{folder_zone_line(@zona)}</p>
           <div class="row gap-3">
             <.button variant="secondary" size="md" class="flex-1" phx-click="close-modal">
               {gettext("Cancelar")}
@@ -789,6 +859,9 @@ defmodule TainaWeb.FilesLive do
             <span class="list-row__body type-label">{folder.name}</span>
           </button>
         </div>
+        <.button variant="secondary" size="md" class="w-full mt-4" phx-click="close-modal">
+          {gettext("Cancelar")}
+        </.button>
       </.modal>
 
       <.modal id="storage-info-modal" show={@modal == "storage-info"} on_cancel={JS.push("close-modal")}>
@@ -875,7 +948,7 @@ defmodule TainaWeb.FilesLive do
     assigns = assign(assigns, :zona_label, elem(zona_action(assigns.zona), 0))
 
     ~H"""
-    <.menu :if={@own?} id={"item-menu-#{@id}"} label={gettext("Mais opções")}>
+    <.menu :if={@own?} id={"item-menu-#{@id}"} label={gettext("Mais opções para %{name}", name: @name)}>
       <:item icon="share" click={JS.push("ask-zona", value: %{kind: @kind, id: @id, name: @name, zona: @zona})}>
         {@zona_label}
       </:item>

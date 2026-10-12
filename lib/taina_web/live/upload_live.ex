@@ -204,19 +204,19 @@ defmodule TainaWeb.UploadLive do
             {gettext("Enviando (%{count})", count: length(uploading_entries(@uploads)))}
           </p>
           <div class="list">
-            <.list_row :for={entry <- uploading_entries(@uploads)} title={entry.client_name}>
-              <:leading>
-                <% {service, icon} = file_visual(entry.client_type || "") %>
-                <.service_square service={service} icon={icon} />
-              </:leading>
-              <:actions>
-                <span class="type-caption text-brand">{entry.progress}%</span>
-                <.icon_button name="close" label={gettext("Cancelar envio")} phx-click="cancel" phx-value-ref={entry.ref} />
-              </:actions>
-            </.list_row>
-          </div>
-          <div :for={entry <- uploading_entries(@uploads)} class="mt-1">
-            <.progress value={entry.progress} />
+            <div :for={entry <- uploading_entries(@uploads)}>
+              <.list_row title={entry.client_name}>
+                <:leading>
+                  <% {service, icon} = file_visual(entry.client_type || "") %>
+                  <.service_square service={service} icon={icon} />
+                </:leading>
+                <:actions>
+                  <span class="type-caption text-brand">{entry.progress}%</span>
+                  <.icon_button name="close" label={gettext("Cancelar envio")} phx-click="cancel" phx-value-ref={entry.ref} />
+                </:actions>
+              </.list_row>
+              <.progress value={entry.progress} label={gettext("Enviando %{name}", name: entry.client_name)} />
+            </div>
           </div>
           <p :for={err <- config_errors(@uploads)} class="field__error mt-2">
             {upload_config_error(err)}

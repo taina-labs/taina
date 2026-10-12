@@ -5,7 +5,8 @@ defmodule TainaWeb.GalleryLive do
   scroll infinito (`phx-viewport-bottom` + cursor keyset do Jaci), linha do
   tempo agrupada por dia e visualizador fullscreen com navegação por
   teclado/swipe (hook `ViewerNav`); no desktop (1024+) o visualizador ganha
-  uma barra de fotos vizinhas no lugar de só setas.
+  uma barra de fotos vizinhas no lugar de só setas, e a foto troca do
+  thumbnail `md` para o original em segundo plano (hook `FullSwap`).
 
   Thumbnails: `/files/:id/thumbnail/sm` (grade) e `md` (visualizador), o
   worker `Rendition` gera depois do upload; enquanto não há thumbnail, o
@@ -30,6 +31,7 @@ defmodule TainaWeb.GalleryLive do
      |> assign(:current, nil)
      |> assign(:loaded, false)
      |> assign(:grid_stale, true)
+     |> assign(:timeline_stale, true)
      |> assign(:grid_error, false)
      |> assign(:timeline_error, false)
      |> assign(:timeline_empty, true)
@@ -50,16 +52,21 @@ defmodule TainaWeb.GalleryLive do
     end
   end
 
-  # A grade só recarrega quando ficou velha (`grid_stale`): fechar o
-  # visualizador volta para a grade sem refetch, então o stream segue montado
-  # e o scroll fica onde estava. Trocar para a linha do tempo desmonta o
-  # container do stream, por isso ela marca a grade como velha para a volta
-  # refazer do zero.
+  # A grade e a linha do tempo dividem a mesma tela: quando uma entra, a
+  # outra sai do DOM (o `:if` desmonta o container do stream) e o LiveView
+  # poda os itens pendentes, então a flag `*_stale` obriga o refetch na
+  # volta. O visualizador é a exceção: os dois containers seguem montados
+  # embaixo dele (`:if` inclui :viewer), então fechar e trocar de aba volta
+  # sem refetch, com o scroll onde estava.
   defp ensure_grid(%{assigns: %{grid_stale: false}} = socket) do
-    assign(socket, :current, nil)
+    socket
+    |> assign(:current, nil)
+    |> assign(:timeline_stale, true)
   end
 
   defp ensure_grid(socket) do
+    socket = assign(socket, :timeline_stale, true)
+
     case Jaci.list_photos(socket.assigns.current_scope) do
       {:ok, %{items: photos, next_cursor: cursor}} ->
         socket
@@ -79,7 +86,15 @@ defmodule TainaWeb.GalleryLive do
     end
   end
 
+  defp ensure_timeline(%{assigns: %{timeline_stale: false}} = socket) do
+    socket
+    |> assign(:current, nil)
+    |> assign(:grid_stale, true)
+  end
+
   defp ensure_timeline(socket) do
+    socket = assign(socket, :grid_stale, true)
+
     case Jaci.timeline(socket.assigns.current_scope) do
       {:ok, %{groups: groups, next_cursor: cursor}} ->
         socket
@@ -89,6 +104,7 @@ defmodule TainaWeb.GalleryLive do
         |> assign(:timeline_empty, groups == [])
         |> assign(:photo_ids, timeline_photo_ids(groups))
         |> assign(:timeline_error, false)
+        |> assign(:timeline_stale, false)
         |> stream(:timeline_groups, groups, reset: true, dom_id: &timeline_dom_id/1)
 
       {:error, _reason} ->
@@ -183,14 +199,15 @@ defmodule TainaWeb.GalleryLive do
     {:noreply, Phoenix.LiveView.put_flash(socket, :info, gettext("Link copiado!"))}
   end
 
-  # A guarda de clipboard fica no hook (JS); quando ele não consegue copiar,
-  # a saída é a mão: selecionar o link e copiar por conta própria.
+  # A guarda de clipboard fica no hook (JS); quando ele não consegue copiar
+  # (origem insegura, sem permissão), a saída é o Detalhes: o link aparece
+  # lá em texto, pronto para copiar à mão.
   def handle_event("copy-failed", _params, socket) do
     {:noreply,
      Phoenix.LiveView.put_flash(
        socket,
        :error,
-       gettext("Não deu para copiar agora. Selecione o link e copie com a mão.")
+       gettext("Não deu para copiar agora. Toque em \"Detalhes\", toque no link e copie.")
      )}
   end
 
@@ -246,6 +263,7 @@ defmodule TainaWeb.GalleryLive do
     socket
     |> assign(:loaded, false)
     |> assign(:grid_stale, true)
+    |> assign(:timeline_stale, true)
     |> assign(:photo_ids, [])
     |> assign(:last_group, nil)
     |> assign(:timeline_empty, true)
@@ -402,7 +420,7 @@ defmodule TainaWeb.GalleryLive do
         </.empty_state>
       </div>
 
-      <div :if={@live_action == :timeline} class="mt-4 col gap-5">
+      <div :if={@live_action in [:timeline, :viewer]} class="mt-4 col gap-5">
         <div id="timeline-groups" phx-update="stream" class="col gap-5">
           <section :for={{dom_id, group} <- @streams.timeline_groups} id={dom_id}>
             <h2 class="type-h3 mb-2">
@@ -434,7 +452,7 @@ defmodule TainaWeb.GalleryLive do
         </div>
 
         <.empty_state
-          :if={@timeline_empty and not @timeline_error}
+          :if={@live_action == :timeline and @timeline_empty and not @timeline_error}
           icon="image"
           title={gettext("Nenhuma foto ainda")}
           hint={gettext("As imagens que a comunidade enviar aparecem aqui.")}
@@ -445,7 +463,7 @@ defmodule TainaWeb.GalleryLive do
         </.empty_state>
 
         <.empty_state
-          :if={@timeline_error}
+          :if={@live_action == :timeline and @timeline_error}
           icon="alert"
           title={gettext("Não foi possível carregar")}
           hint={gettext("As fotos não responderam agora.")}
@@ -490,11 +508,14 @@ defmodule TainaWeb.GalleryLive do
           ></video>
           <img
             :if={!video?(@current)}
+            id="viewer-full-swap"
+            phx-hook="FullSwap"
             src={~p"/files/#{@current.public_id}/thumbnail/md"}
             data-full={full_swap?(@current) && url(~p"/files/#{@current.public_id}")}
             alt={@current.original_filename}
           />
           <button
+            :if={length(@photo_ids) > 1}
             type="button"
             class="viewer__nav viewer__nav--prev icon-btn"
             phx-click="prev"
@@ -503,6 +524,7 @@ defmodule TainaWeb.GalleryLive do
             <.icon name="chevron-left" size={28} />
           </button>
           <button
+            :if={length(@photo_ids) > 1}
             type="button"
             class="viewer__nav viewer__nav--next icon-btn"
             phx-click="next"
@@ -571,6 +593,11 @@ defmodule TainaWeb.GalleryLive do
             <p class="type-caption text-faint">{gettext("Nome original")}</p>
             <p class="type-body">{@current.original_filename}</p>
           </div>
+          <% file_url = url(~p"/files/#{@current.public_id}") %>
+          <div>
+            <p class="type-caption text-faint">{gettext("Link")}</p>
+            <p class="viewer__link type-mono-sm">{file_url}</p>
+          </div>
           <div>
             <p class="type-caption text-faint">{gettext("Tipo")}</p>
             <p class="type-mono-sm">{human_type(@current)}</p>
@@ -580,8 +607,9 @@ defmodule TainaWeb.GalleryLive do
             <p class="type-body">{format_bytes(@current.file_size_bytes)}</p>
           </div>
           <div>
-            <p class="type-caption text-faint">{gettext("Impressão digital (SHA-256)")}</p>
+            <p class="type-caption text-faint">{gettext("Assinatura do arquivo")}</p>
             <p class="type-mono-sm truncate">{@current.file_hash}</p>
+            <p class="type-caption text-faint">{gettext("É como o Tainá confere que o arquivo está intacto.")}</p>
           </div>
           <div>
             <p class="type-caption text-faint">{gettext("Enviado em")}</p>
