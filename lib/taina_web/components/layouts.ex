@@ -22,11 +22,20 @@ defmodule TainaWeb.Layouts do
   attr :flash, :map, required: true
   attr :current_scope, Taina.Scope, default: nil
   attr :active_tab, :atom, default: nil
+  # A sidebar (desktop) acende pela aba "de verdade" da tela; a bottom-nav
+  # (mobile) não tem slot para toda aba, então telas sem slot próprio (ex:
+  # Moradores) passam `mobile_active_tab` para acender a aba mais próxima.
+  attr :mobile_active_tab, :atom,
+    default: nil,
+    doc: "aba do bottom-nav mobile quando difere de active_tab; vale mobile_active_tab || active_tab"
+
   attr :storage_stats, :map, default: nil, doc: "%{used_bytes: _, quota_bytes: _}"
   attr :account_alert, :boolean, default: false, doc: "ponto na aba Conta quando há pedido esperando"
   slot :inner_block, required: true
 
   def app(assigns) do
+    assigns = assign(assigns, :mobile_tab, assigns[:mobile_active_tab] || assigns.active_tab)
+
     ~H"""
     <.flash_group flash={@flash} />
     <div id="app-shell" class="shell">
@@ -89,30 +98,30 @@ defmodule TainaWeb.Layouts do
       </div>
 
       <nav class="bottom-nav" aria-label={gettext("Navegação")}>
-        <.bottom_nav_item navigate={~p"/"} icon="home" active={@active_tab == :home} label={gettext("Início")} />
+        <.bottom_nav_item navigate={~p"/"} icon="home" active={@mobile_tab == :home} label={gettext("Início")} />
         <.bottom_nav_item
           navigate={~p"/arquivos"}
           icon="folder"
-          active={@active_tab == :files}
+          active={@mobile_tab == :files}
           label={gettext("Arquivos")}
         />
-        <.bottom_nav_item navigate={~p"/fotos"} icon="image" active={@active_tab == :photos} label={gettext("Fotos")} />
+        <.bottom_nav_item navigate={~p"/fotos"} icon="image" active={@mobile_tab == :photos} label={gettext("Fotos")} />
         <.bottom_nav_item
           navigate={~p"/mural"}
           icon="mural"
-          active={@active_tab == :mural}
+          active={@mobile_tab == :mural}
           label={gettext("Mural")}
         />
         <.bottom_nav_item
           navigate={~p"/saude"}
           icon="saude"
-          active={@active_tab == :saude}
+          active={@mobile_tab == :saude}
           label={gettext("Saúde")}
         />
         <.bottom_nav_item
           navigate={~p"/conta"}
           icon="shield"
-          active={@active_tab == :account}
+          active={@mobile_tab == :account}
           alert={@account_alert}
           label={gettext("Conta")}
         />
