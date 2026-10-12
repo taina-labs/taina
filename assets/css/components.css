@@ -476,9 +476,15 @@
 
 /* ---------- linhas de lista ---------- */
 
+/* O wrapper é um <ul> (as linhas do list_row são <li>): zera o margin, o
+   padding e o marcador que o navegador aplica a listas para o resultado
+   ficar igual ao da <div> de antes. */
 .list {
   display: flex;
   flex-direction: column;
+  list-style: none;
+  margin: 0;
+  padding: 0;
 }
 
 .list > * + * {
