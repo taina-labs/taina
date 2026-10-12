@@ -69,8 +69,8 @@ defmodule TainaWeb.FilePreviewLive do
 
   # Resultado do `Ybira.file_folder_public_id/2` vira caminho do voltar: pasta
   # visível, volta para ela; qualquer outro caso, volta para o início.
-  defp back_path({:ok, folder_public_id}), do: URI.to_string(~p"/arquivos/pasta/#{folder_public_id}")
-  defp back_path(_other), do: URI.to_string(~p"/arquivos")
+  defp back_path({:ok, folder_public_id}), do: ~p"/arquivos/pasta/#{folder_public_id}"
+  defp back_path(_other), do: ~p"/arquivos"
 
   @impl true
   def handle_event("copied", _params, socket) do

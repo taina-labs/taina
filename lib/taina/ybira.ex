@@ -215,9 +215,17 @@ defmodule Taina.Ybira do
 
       case Repo.one(query) do
         nil -> {:error, :not_found}
-        folder -> authorize_read(scope, "ybira_folder", folder)
+        folder -> folder_public_id_if_readable(scope, folder)
       end
     end)
+  end
+
+  defp folder_public_id_if_readable(scope, folder) do
+    if Maraca.can_read?(scope.ava, folder.zona, folder.ava_id, "ybira_folder", folder.public_id) do
+      {:ok, folder.public_id}
+    else
+      {:error, :forbidden}
+    end
   end
 
   @impl true
@@ -501,20 +509,24 @@ defmodule Taina.Ybira do
   def folder_path(%Scope{} = scope, folder_public_id) when is_binary(folder_public_id) do
     Repo.with_tekoa(scope.tekoa.public_id, fn ->
       with {:ok, rows} <- folder_chain(folder_public_id) do
-        # Sobe da pasta atual (primeira linha) e para no primeiro elo que não
-        # pode ler: a cadeia fica com o trecho contíguo que termina nela.
-        path =
-          Enum.reduce_while(rows, [], fn row, acc ->
-            if Maraca.can_read?(scope.ava, row.zona, row.ava_id, "ybira_folder", row.public_id) do
-              {:cont, [%{name: row.name, public_id: row.public_id} | acc]}
-            else
-              {:halt, acc}
-            end
-          end)
-
-        {:ok, Enum.reverse(path)}
+        {:ok, readable_chain(scope, rows)}
       end
     end)
+  end
+
+  # Sobe da pasta atual (primeira linha) e para no primeiro elo que não pode
+  # ler: a cadeia fica com o trecho contíguo que termina nela, da raiz para a
+  # pasta atual. O CTE devolve folha->raiz, então o `reverse` no fim entrega a
+  # ordem que o breadcrumb espera (raiz->atual).
+  defp readable_chain(scope, rows) do
+    rows
+    |> Enum.take_while(&readable_folder?(scope, &1))
+    |> Enum.map(&%{name: &1.name, public_id: &1.public_id})
+    |> Enum.reverse()
+  end
+
+  defp readable_folder?(scope, row) do
+    Maraca.can_read?(scope.ava, row.zona, row.ava_id, "ybira_folder", row.public_id)
   end
 
   # Linhas chegam da pasta atual para a raiz (depth 0 -> 32). O teto existe

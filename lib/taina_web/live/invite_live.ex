@@ -86,6 +86,7 @@ defmodule TainaWeb.InviteLive do
       flash={@flash}
       current_scope={@current_scope}
       active_tab={:members}
+      mobile_active_tab={:account}
       storage_stats={assigns[:storage_stats]}
       account_alert={assigns[:account_alert] || false}
     >

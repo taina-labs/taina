@@ -18,7 +18,7 @@ msgid_plural "%{count} fotos"
 msgstr[0] ""
 msgstr[1] ""
 
-#: lib/taina_web/live/files_live.ex:592
+#: lib/taina_web/live/files_live.ex:641
 #: lib/taina_web/live/trash_live.ex:141
 #, elixir-autogen, elixir-format
 msgid "%{count} item"
@@ -26,14 +26,14 @@ msgid_plural "%{count} itens"
 msgstr[0] ""
 msgstr[1] ""
 
-#: lib/taina_web/live/members_live.ex:301
+#: lib/taina_web/live/members_live.ex:302
 #, elixir-autogen, elixir-format
 msgid "%{count} pessoa"
 msgid_plural "%{count} pessoas"
 msgstr[0] ""
 msgstr[1] ""
 
-#: lib/taina_web/live/files_live.ex:883
+#: lib/taina_web/live/files_live.ex:932
 #: lib/taina_web/live/home_live.ex:111
 #, elixir-autogen, elixir-format
 msgid "%{free} livres"
@@ -44,7 +44,7 @@ msgstr ""
 msgid "%{index} de %{total}"
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:877
+#: lib/taina_web/live/files_live.ex:926
 #, elixir-autogen, elixir-format
 msgid "%{used} de %{total} usados"
 msgstr ""
@@ -54,12 +54,12 @@ msgstr ""
 msgid "A estrela da manhã da sua comunidade. Arquivos e fotos, na sua casa, sob seu controle."
 msgstr ""
 
-#: lib/taina_web/live/invite_accept_live.ex:18
+#: lib/taina_web/live/invite_accept_live.ex:21
 #, elixir-autogen, elixir-format
 msgid "Aceitar convite"
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:557
+#: lib/taina_web/live/files_live.ex:596
 #, elixir-autogen, elixir-format
 msgid "Alternar grade/lista"
 msgstr ""
@@ -84,7 +84,7 @@ msgstr ""
 msgid "Aponte a câmera ou compartilhe o link abaixo"
 msgstr ""
 
-#: lib/taina_web/components/layouts.ex:74
+#: lib/taina_web/components/layouts.ex:83
 #: lib/taina_web/live/account_live.ex:96
 #: lib/taina_web/live/storage_live.ex:21
 #: lib/taina_web/live/storage_live.ex:139
@@ -93,19 +93,19 @@ msgstr ""
 msgid "Armazenamento"
 msgstr ""
 
-#: lib/taina_web/components/core_components.ex:776
+#: lib/taina_web/components/core_components.ex:814
 #, elixir-autogen, elixir-format
 msgid "Arquivo"
 msgstr ""
 
-#: lib/taina_web/live/file_preview_live.ex:99
-#: lib/taina_web/live/files_live.ex:255
+#: lib/taina_web/live/file_preview_live.ex:109
+#: lib/taina_web/live/files_live.ex:294
 #, elixir-autogen, elixir-format
 msgid "Arquivo movido para a lixeira."
 msgstr ""
 
-#: lib/taina_web/live/file_preview_live.ex:33
-#: lib/taina_web/live/file_preview_live.ex:58
+#: lib/taina_web/live/file_preview_live.ex:38
+#: lib/taina_web/live/file_preview_live.ex:63
 #, elixir-autogen, elixir-format
 msgid "Arquivo não encontrado."
 msgstr ""
@@ -115,10 +115,10 @@ msgstr ""
 msgid "Arquivo restaurado."
 msgstr ""
 
-#: lib/taina_web/components/layouts.ex:44
-#: lib/taina_web/components/layouts.ex:97
-#: lib/taina_web/live/files_live.ex:40
-#: lib/taina_web/live/files_live.ex:501
+#: lib/taina_web/components/layouts.ex:53
+#: lib/taina_web/components/layouts.ex:106
+#: lib/taina_web/live/files_live.ex:42
+#: lib/taina_web/live/files_live.ex:540
 #: lib/taina_web/live/home_live.ex:79
 #, elixir-autogen, elixir-format
 msgid "Arquivos"
@@ -140,10 +140,10 @@ msgstr ""
 msgid "Até logo!"
 msgstr ""
 
-#: lib/taina_web/live/file_preview_live.ex:308
-#: lib/taina_web/live/file_preview_live.ex:342
+#: lib/taina_web/live/file_preview_live.ex:318
 #: lib/taina_web/live/file_preview_live.ex:352
-#: lib/taina_web/live/files_live.ex:756
+#: lib/taina_web/live/file_preview_live.ex:362
+#: lib/taina_web/live/files_live.ex:805
 #: lib/taina_web/live/gallery_live.ex:566
 #, elixir-autogen, elixir-format
 msgid "Baixar"
@@ -164,19 +164,19 @@ msgstr ""
 msgid "Bom dia,"
 msgstr ""
 
-#: lib/taina_web/live/members_live.ex:260
 #: lib/taina_web/live/members_live.ex:261
+#: lib/taina_web/live/members_live.ex:262
 #, elixir-autogen, elixir-format
 msgid "Buscar pessoa"
 msgstr ""
 
-#: lib/taina_web/components/core_components.ex:664
-#: lib/taina_web/live/file_preview_live.ex:286
-#: lib/taina_web/live/file_preview_live.ex:452
-#: lib/taina_web/live/files_live.ex:810
-#: lib/taina_web/live/files_live.ex:830
-#: lib/taina_web/live/files_live.ex:863
-#: lib/taina_web/live/files_live.ex:915
+#: lib/taina_web/components/core_components.ex:702
+#: lib/taina_web/live/file_preview_live.ex:296
+#: lib/taina_web/live/file_preview_live.ex:462
+#: lib/taina_web/live/files_live.ex:859
+#: lib/taina_web/live/files_live.ex:879
+#: lib/taina_web/live/files_live.ex:912
+#: lib/taina_web/live/files_live.ex:964
 #: lib/taina_web/live/storage_live.ex:217
 #, elixir-autogen, elixir-format
 msgid "Cancelar"
@@ -204,12 +204,12 @@ msgstr ""
 msgid "Começar"
 msgstr ""
 
-#: lib/taina_web/live/login_live.ex:119
+#: lib/taina_web/live/login_live.ex:120
 #, elixir-autogen, elixir-format
 msgid "Como entrar com um convite"
 msgstr ""
 
-#: lib/taina_web/live/invite_accept_live.ex:64
+#: lib/taina_web/live/invite_accept_live.ex:80
 #: lib/taina_web/live/setup_live.ex:298
 #, elixir-autogen, elixir-format
 msgid "Como seu nome aparece para a comunidade."
@@ -241,15 +241,15 @@ msgstr ""
 msgid "Concluído (%{count})"
 msgstr ""
 
-#: lib/taina_web/live/invite_accept_live.ex:80
-#: lib/taina_web/live/reset_password_live.ex:49
-#: lib/taina_web/live/setup_live.ex:313
+#: lib/taina_web/live/invite_accept_live.ex:97
+#: lib/taina_web/live/reset_password_live.ex:66
+#: lib/taina_web/live/setup_live.ex:314
 #, elixir-autogen, elixir-format
 msgid "Confirme a senha"
 msgstr ""
 
-#: lib/taina_web/components/layouts.ex:70
-#: lib/taina_web/components/layouts.ex:117
+#: lib/taina_web/components/layouts.ex:79
+#: lib/taina_web/components/layouts.ex:126
 #: lib/taina_web/live/account_live.ex:16
 #: lib/taina_web/live/account_live.ex:43
 #, elixir-autogen, elixir-format
@@ -261,7 +261,7 @@ msgstr ""
 msgid "Conta criada. Boas-vindas à comunidade!"
 msgstr ""
 
-#: lib/taina_web/live/setup_live.ex:324
+#: lib/taina_web/live/setup_live.ex:327
 #, elixir-autogen, elixir-format
 msgid "Continuar"
 msgstr ""
@@ -279,15 +279,15 @@ msgid "Convidar pessoas"
 msgstr ""
 
 #: lib/taina_web/live/members_live.ex:192
-#: lib/taina_web/live/members_live.ex:273
-#: lib/taina_web/live/members_live.ex:277
+#: lib/taina_web/live/members_live.ex:274
+#: lib/taina_web/live/members_live.ex:278
 #, elixir-autogen, elixir-format
 msgid "Convite pendente"
 msgstr ""
 
 #: lib/taina_web/live/gallery_live.ex:494
 #: lib/taina_web/live/invite_live.ex:118
-#: lib/taina_web/live/members_live.ex:384
+#: lib/taina_web/live/members_live.ex:385
 #, elixir-autogen, elixir-format
 msgid "Copiar link"
 msgstr ""
@@ -303,17 +303,17 @@ msgstr ""
 msgid "Cota da comunidade"
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:812
+#: lib/taina_web/live/files_live.ex:861
 #, elixir-autogen, elixir-format
 msgid "Criar"
 msgstr ""
 
-#: lib/taina_web/live/invite_accept_live.ex:90
+#: lib/taina_web/live/invite_accept_live.ex:109
 #, elixir-autogen, elixir-format
 msgid "Criar conta"
 msgstr ""
 
-#: lib/taina_web/live/setup_live.ex:377
+#: lib/taina_web/live/setup_live.ex:380
 #, elixir-autogen, elixir-format
 msgid "Criar minha nuvem"
 msgstr ""
@@ -323,37 +323,37 @@ msgstr ""
 msgid "Crie a conta de quem cuida"
 msgstr ""
 
-#: lib/taina_web/live/invite_accept_live.ex:38
+#: lib/taina_web/live/invite_accept_live.ex:54
 #, elixir-autogen, elixir-format
 msgid "Crie sua conta para entrar na nuvem da comunidade."
 msgstr ""
 
-#: lib/taina_web/live/reset_password_live.ex:29
+#: lib/taina_web/live/reset_password_live.ex:45
 #, elixir-autogen, elixir-format
 msgid "Crie uma senha nova para voltar a entrar."
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:343
-#: lib/taina_web/live/files_live.ex:541
+#: lib/taina_web/live/files_live.ex:382
+#: lib/taina_web/live/files_live.ex:580
 #, elixir-autogen, elixir-format
 msgid "Data"
 msgstr ""
 
-#: lib/taina_web/live/file_preview_live.ex:401
-#: lib/taina_web/live/file_preview_live.ex:408
-#: lib/taina_web/live/files_live.ex:762
+#: lib/taina_web/live/file_preview_live.ex:411
+#: lib/taina_web/live/file_preview_live.ex:418
+#: lib/taina_web/live/files_live.ex:811
 #: lib/taina_web/live/gallery_live.ex:570
 #: lib/taina_web/live/gallery_live.ex:590
 #, elixir-autogen, elixir-format
 msgid "Detalhes"
 msgstr ""
 
-#: lib/taina_web/live/setup_live.ex:355
+#: lib/taina_web/live/setup_live.ex:358
 #, elixir-autogen, elixir-format
 msgid "Disco USB externo"
 msgstr ""
 
-#: lib/taina_web/live/setup_live.ex:347
+#: lib/taina_web/live/setup_live.ex:350
 #, elixir-autogen, elixir-format
 msgid "Disco interno"
 msgstr ""
@@ -363,13 +363,13 @@ msgstr ""
 msgid "Documentos"
 msgstr ""
 
-#: lib/taina_web/live/login_live.ex:142
+#: lib/taina_web/live/login_live.ex:143
 #, elixir-autogen, elixir-format
 msgid "Entendi"
 msgstr ""
 
 #: lib/taina_web/live/login_live.ex:26
-#: lib/taina_web/live/login_live.ex:95
+#: lib/taina_web/live/login_live.ex:96
 #, elixir-autogen, elixir-format
 msgid "Entrar"
 msgstr ""
@@ -379,7 +379,7 @@ msgstr ""
 msgid "Entre com seu nome na nuvem da sua comunidade."
 msgstr ""
 
-#: lib/taina_web/live/members_live.ex:374
+#: lib/taina_web/live/members_live.ex:375
 #, elixir-autogen, elixir-format
 msgid "Entregue este link para %{name} pelo mesmo canal do convite. Com ele, a pessoa cria uma senha nova. O link expira em 1 hora."
 msgstr ""
@@ -389,7 +389,7 @@ msgstr ""
 msgid "Entrou %{when}"
 msgstr ""
 
-#: lib/taina_web/live/file_preview_live.ex:429
+#: lib/taina_web/live/file_preview_live.ex:439
 #: lib/taina_web/live/gallery_live.ex:615
 #, elixir-autogen, elixir-format
 msgid "Enviado em"
@@ -400,13 +400,13 @@ msgstr ""
 msgid "Enviando (%{count})"
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:518
+#: lib/taina_web/live/files_live.ex:557
 #, elixir-autogen, elixir-format
 msgid "Enviar"
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:786
-#: lib/taina_web/live/files_live.ex:791
+#: lib/taina_web/live/files_live.ex:835
+#: lib/taina_web/live/files_live.ex:840
 #: lib/taina_web/live/home_live.ex:216
 #: lib/taina_web/live/upload_live.ex:24
 #: lib/taina_web/live/upload_live.ex:168
@@ -425,8 +425,8 @@ msgstr ""
 msgid "Envie o primeiro arquivo da comunidade."
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:505
-#: lib/taina_web/live/files_live.ex:868
+#: lib/taina_web/live/files_live.ex:544
+#: lib/taina_web/live/files_live.ex:917
 #: lib/taina_web/live/home_live.ex:161
 #: lib/taina_web/live/storage_live.ex:154
 #, elixir-autogen, elixir-format
@@ -443,28 +443,28 @@ msgstr ""
 msgid "Este link expirou ou já foi usado. Peça um novo a quem cuida da comunidade."
 msgstr ""
 
-#: lib/taina_web/components/core_components.ex:667
-#: lib/taina_web/live/file_preview_live.ex:397
-#: lib/taina_web/live/files_live.ex:962
+#: lib/taina_web/components/core_components.ex:705
+#: lib/taina_web/live/file_preview_live.ex:407
+#: lib/taina_web/live/files_live.ex:1011
 #: lib/taina_web/live/gallery_live.ex:574
 #, elixir-autogen, elixir-format
 msgid "Excluir"
 msgstr ""
 
-#: lib/taina_web/live/file_preview_live.ex:441
-#: lib/taina_web/live/files_live.ex:969
+#: lib/taina_web/live/file_preview_live.ex:451
+#: lib/taina_web/live/files_live.ex:1018
 #: lib/taina_web/live/gallery_live.ex:583
 #, elixir-autogen, elixir-format
 msgid "Excluir \"%{name}\"?"
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:968
+#: lib/taina_web/live/files_live.ex:1017
 #, elixir-autogen, elixir-format
 msgid "Excluir a pasta \"%{name}\"?"
 msgstr ""
 
-#: lib/taina_web/components/core_components.ex:651
-#: lib/taina_web/live/files_live.ex:970
+#: lib/taina_web/components/core_components.ex:689
+#: lib/taina_web/live/files_live.ex:1019
 #, elixir-autogen, elixir-format
 msgid "Excluir?"
 msgstr ""
@@ -474,15 +474,15 @@ msgstr ""
 msgid "Falharam (%{count})"
 msgstr ""
 
-#: lib/taina_web/live/file_preview_live.ex:434
+#: lib/taina_web/live/file_preview_live.ex:444
 #: lib/taina_web/live/gallery_live.ex:485
 #: lib/taina_web/live/gallery_live.ex:620
 #, elixir-autogen, elixir-format
 msgid "Fechar"
 msgstr ""
 
-#: lib/taina_web/components/core_components.ex:709
-#: lib/taina_web/components/core_components.ex:710
+#: lib/taina_web/components/core_components.ex:747
+#: lib/taina_web/components/core_components.ex:748
 #, elixir-autogen, elixir-format
 msgid "Fechar aviso"
 msgstr ""
@@ -497,8 +497,8 @@ msgstr ""
 msgid "Foto não encontrada."
 msgstr ""
 
-#: lib/taina_web/components/layouts.ex:46
-#: lib/taina_web/components/layouts.ex:99
+#: lib/taina_web/components/layouts.ex:55
+#: lib/taina_web/components/layouts.ex:108
 #: lib/taina_web/live/gallery_live.ex:27
 #: lib/taina_web/live/gallery_live.ex:368
 #: lib/taina_web/live/home_live.ex:80
@@ -512,7 +512,7 @@ msgstr ""
 msgid "Gerar convite"
 msgstr ""
 
-#: lib/taina_web/live/members_live.ex:316
+#: lib/taina_web/live/members_live.ex:317
 #, elixir-autogen, elixir-format
 msgid "Gerar link de redefinição de senha"
 msgstr ""
@@ -528,20 +528,20 @@ msgstr ""
 msgid "Hoje"
 msgstr ""
 
-#: lib/taina_web/components/core_components.ex:770
+#: lib/taina_web/components/core_components.ex:808
 #, elixir-autogen, elixir-format
 msgid "Imagem"
 msgstr ""
 
-#: lib/taina_web/components/layouts.ex:39
-#: lib/taina_web/components/layouts.ex:92
-#: lib/taina_web/live/files_live.ex:583
+#: lib/taina_web/components/layouts.ex:48
+#: lib/taina_web/components/layouts.ex:101
+#: lib/taina_web/live/files_live.ex:622
 #: lib/taina_web/live/home_live.ex:27
 #, elixir-autogen, elixir-format
 msgid "Início"
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:847
+#: lib/taina_web/live/files_live.ex:896
 #, elixir-autogen, elixir-format
 msgid "Início (raiz)"
 msgstr ""
@@ -566,13 +566,13 @@ msgstr ""
 msgid "Linha do tempo"
 msgstr ""
 
-#: lib/taina_web/live/file_preview_live.ex:379
+#: lib/taina_web/live/file_preview_live.ex:389
 #: lib/taina_web/live/gallery_live.ex:598
 #, elixir-autogen, elixir-format
 msgid "Link"
 msgstr ""
 
-#: lib/taina_web/live/file_preview_live.ex:67
+#: lib/taina_web/live/file_preview_live.ex:77
 #: lib/taina_web/live/gallery_live.ex:199
 #: lib/taina_web/live/invite_live.ex:56
 #: lib/taina_web/live/members_live.ex:54
@@ -580,7 +580,7 @@ msgstr ""
 msgid "Link copiado!"
 msgstr ""
 
-#: lib/taina_web/live/members_live.ex:372
+#: lib/taina_web/live/members_live.ex:373
 #, elixir-autogen, elixir-format
 msgid "Link de redefinição de senha"
 msgstr ""
@@ -591,7 +591,7 @@ msgid "Link do convite"
 msgstr ""
 
 #: lib/taina_web/live/account_live.ex:104
-#: lib/taina_web/live/files_live.ex:509
+#: lib/taina_web/live/files_live.ex:548
 #: lib/taina_web/live/trash_live.ex:19
 #: lib/taina_web/live/trash_live.ex:129
 #, elixir-autogen, elixir-format
@@ -603,7 +603,7 @@ msgstr ""
 msgid "Lixeira vazia"
 msgstr ""
 
-#: lib/taina_web/components/core_components.ex:536
+#: lib/taina_web/components/core_components.ex:574
 #, elixir-autogen, elixir-format
 msgid "Mais opções"
 msgstr ""
@@ -614,28 +614,28 @@ msgstr ""
 msgid "Morador(a)"
 msgstr ""
 
-#: lib/taina_web/components/layouts.ex:51
+#: lib/taina_web/components/layouts.ex:60
 #: lib/taina_web/live/account_live.ex:80
 #: lib/taina_web/live/home_live.ex:81
 #: lib/taina_web/live/members_live.ex:19
-#: lib/taina_web/live/members_live.ex:238
-#: lib/taina_web/live/members_live.ex:247
+#: lib/taina_web/live/members_live.ex:239
+#: lib/taina_web/live/members_live.ex:248
 #: lib/taina_web/live/saude_live.ex:264
 #, elixir-autogen, elixir-format
 msgid "Moradores"
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:959
+#: lib/taina_web/live/files_live.ex:1008
 #, elixir-autogen, elixir-format
 msgid "Mover"
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:838
+#: lib/taina_web/live/files_live.ex:887
 #, elixir-autogen, elixir-format
 msgid "Mover para..."
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:212
+#: lib/taina_web/live/files_live.ex:251
 #, elixir-autogen, elixir-format
 msgid "Movido."
 msgstr ""
@@ -656,17 +656,17 @@ msgstr ""
 msgid "Nenhuma foto ainda"
 msgstr ""
 
-#: lib/taina_web/live/members_live.ex:363
+#: lib/taina_web/live/members_live.ex:364
 #, elixir-autogen, elixir-format
 msgid "Nenhuma pessoa corresponde à busca."
 msgstr ""
 
-#: lib/taina_web/live/members_live.ex:362
+#: lib/taina_web/live/members_live.ex:363
 #, elixir-autogen, elixir-format
 msgid "Ninguém por aqui"
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:342
+#: lib/taina_web/live/files_live.ex:381
 #, elixir-autogen, elixir-format
 msgid "Nome"
 msgstr ""
@@ -676,40 +676,40 @@ msgstr ""
 msgid "Nome da comunidade"
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:799
+#: lib/taina_web/live/files_live.ex:848
 #, elixir-autogen, elixir-format
 msgid "Nome da pasta"
 msgstr ""
 
-#: lib/taina_web/live/invite_accept_live.ex:59
+#: lib/taina_web/live/invite_accept_live.ex:75
 #: lib/taina_web/live/setup_live.ex:293
 #, elixir-autogen, elixir-format
 msgid "Nome de exibição (opcional)"
 msgstr ""
 
-#: lib/taina_web/live/file_preview_live.ex:411
+#: lib/taina_web/live/file_preview_live.ex:421
 #: lib/taina_web/live/gallery_live.ex:593
 #, elixir-autogen, elixir-format
 msgid "Nome original"
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:513
-#: lib/taina_web/live/files_live.ex:796
+#: lib/taina_web/live/files_live.ex:552
+#: lib/taina_web/live/files_live.ex:845
 #, elixir-autogen, elixir-format
 msgid "Nova pasta"
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:821
+#: lib/taina_web/live/files_live.ex:870
 #, elixir-autogen, elixir-format
 msgid "Novo nome"
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:218
+#: lib/taina_web/live/files_live.ex:257
 #, elixir-autogen, elixir-format
 msgid "Não dá para mover uma pasta para dentro dela mesma."
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:893
+#: lib/taina_web/live/files_live.ex:942
 #, elixir-autogen, elixir-format
 msgid "Não foi possível carregar o uso agora."
 msgstr ""
@@ -726,7 +726,7 @@ msgstr ""
 msgid "Não foi possível criar a conta. Revise os dados e tente de novo."
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:178
+#: lib/taina_web/live/files_live.ex:217
 #, elixir-autogen, elixir-format
 msgid "Não foi possível criar a pasta."
 msgstr ""
@@ -736,13 +736,13 @@ msgstr ""
 msgid "Não foi possível excluir a foto."
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:245
+#: lib/taina_web/live/files_live.ex:284
 #, elixir-autogen, elixir-format
 msgid "Não foi possível excluir a pasta."
 msgstr ""
 
-#: lib/taina_web/live/file_preview_live.ex:103
-#: lib/taina_web/live/files_live.ex:262
+#: lib/taina_web/live/file_preview_live.ex:113
+#: lib/taina_web/live/files_live.ex:301
 #, elixir-autogen, elixir-format
 msgid "Não foi possível excluir o arquivo."
 msgstr ""
@@ -763,7 +763,7 @@ msgstr ""
 msgid "Não foi possível redefinir a senha. Revise os dados e tente de novo."
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:194
+#: lib/taina_web/live/files_live.ex:233
 #, elixir-autogen, elixir-format
 msgid "Não foi possível renomear."
 msgstr ""
@@ -779,7 +779,7 @@ msgstr ""
 msgid "Ontem"
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:524
+#: lib/taina_web/live/files_live.ex:563
 #, elixir-autogen, elixir-format
 msgid "Ordenar"
 msgstr ""
@@ -805,28 +805,28 @@ msgstr ""
 msgid "Passo 2 de 3: quem cuida"
 msgstr ""
 
-#: lib/taina_web/live/setup_live.ex:339
+#: lib/taina_web/live/setup_live.ex:342
 #, elixir-autogen, elixir-format
 msgid "Passo 3 de 3: armazenamento"
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:609
-#: lib/taina_web/live/files_live.ex:654
+#: lib/taina_web/live/files_live.ex:658
+#: lib/taina_web/live/files_live.ex:703
 #, elixir-autogen, elixir-format
 msgid "Pasta"
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:175
+#: lib/taina_web/live/files_live.ex:214
 #, elixir-autogen, elixir-format
 msgid "Pasta criada."
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:238
+#: lib/taina_web/live/files_live.ex:277
 #, elixir-autogen, elixir-format
 msgid "Pasta movida para a lixeira."
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:68
+#: lib/taina_web/live/files_live.ex:71
 #, elixir-autogen, elixir-format
 msgid "Pasta não encontrada."
 msgstr ""
@@ -836,7 +836,7 @@ msgstr ""
 msgid "Primeiros passos"
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:887
+#: lib/taina_web/live/files_live.ex:936
 #, elixir-autogen, elixir-format
 msgid "Quando o espaço acabar, quem cuida da comunidade pode aumentar o limite."
 msgstr ""
@@ -851,15 +851,15 @@ msgstr ""
 msgid "Recentes"
 msgstr ""
 
-#: lib/taina_web/live/reset_password_live.ex:17
-#: lib/taina_web/live/reset_password_live.ex:27
+#: lib/taina_web/live/reset_password_live.ex:20
+#: lib/taina_web/live/reset_password_live.ex:43
 #, elixir-autogen, elixir-format
 msgid "Redefinir senha"
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:818
-#: lib/taina_web/live/files_live.ex:832
-#: lib/taina_web/live/files_live.ex:956
+#: lib/taina_web/live/files_live.ex:867
+#: lib/taina_web/live/files_live.ex:881
+#: lib/taina_web/live/files_live.ex:1005
 #, elixir-autogen, elixir-format
 msgid "Renomear"
 msgstr ""
@@ -876,7 +876,7 @@ msgstr[1] ""
 msgid "Restaurar"
 msgstr ""
 
-#: lib/taina_web/live/setup_live.ex:361
+#: lib/taina_web/live/setup_live.ex:364
 #, elixir-autogen, elixir-format
 msgid "Resumo"
 msgstr ""
@@ -891,12 +891,12 @@ msgstr ""
 msgid "Salvar"
 msgstr ""
 
-#: lib/taina_web/live/reset_password_live.ex:59
+#: lib/taina_web/live/reset_password_live.ex:78
 #, elixir-autogen, elixir-format
 msgid "Salvar nova senha"
 msgstr ""
 
-#: lib/taina_web/live/invite_accept_live.ex:50
+#: lib/taina_web/live/invite_accept_live.ex:66
 #, elixir-autogen, elixir-format
 msgid "Sem espaços. É com ele que você entra na comunidade."
 msgstr ""
@@ -906,14 +906,14 @@ msgstr ""
 msgid "Sem espaços. É com ele que você entra."
 msgstr ""
 
-#: lib/taina_web/live/invite_accept_live.ex:67
+#: lib/taina_web/live/invite_accept_live.ex:83
 #: lib/taina_web/live/login_live.ex:85
 #: lib/taina_web/live/setup_live.ex:301
 #, elixir-autogen, elixir-format
 msgid "Senha"
 msgstr ""
 
-#: lib/taina_web/live/reset_password_live.ex:36
+#: lib/taina_web/live/reset_password_live.ex:52
 #, elixir-autogen, elixir-format
 msgid "Senha nova"
 msgstr ""
@@ -923,7 +923,7 @@ msgstr ""
 msgid "Senha redefinida. Você já está dentro."
 msgstr ""
 
-#: lib/taina_web/live/invite_accept_live.ex:45
+#: lib/taina_web/live/invite_accept_live.ex:61
 #: lib/taina_web/live/setup_live.ex:280
 #, elixir-autogen, elixir-format
 msgid "Seu nome de usuário"
@@ -939,31 +939,31 @@ msgstr ""
 msgid "Só quem cuida da comunidade pode convidar pessoas."
 msgstr ""
 
-#: lib/taina_web/live/file_preview_live.ex:420
-#: lib/taina_web/live/files_live.ex:344
-#: lib/taina_web/live/files_live.ex:547
+#: lib/taina_web/live/file_preview_live.ex:430
+#: lib/taina_web/live/files_live.ex:383
+#: lib/taina_web/live/files_live.ex:586
 #: lib/taina_web/live/gallery_live.ex:606
 #, elixir-autogen, elixir-format
 msgid "Tamanho"
 msgstr ""
 
-#: lib/taina_web/live/login_live.ex:115
+#: lib/taina_web/live/login_live.ex:116
 #, elixir-autogen, elixir-format
 msgid "Tenho um convite"
 msgstr ""
 
-#: lib/taina_web/components/core_components.ex:775
+#: lib/taina_web/components/core_components.ex:813
 #, elixir-autogen, elixir-format
 msgid "Texto"
 msgstr ""
 
-#: lib/taina_web/live/file_preview_live.ex:415
+#: lib/taina_web/live/file_preview_live.ex:425
 #: lib/taina_web/live/gallery_live.ex:602
 #, elixir-autogen, elixir-format
 msgid "Tipo"
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:870
+#: lib/taina_web/live/files_live.ex:919
 #, elixir-autogen, elixir-format
 msgid "Tudo o que vocês enviam divide o mesmo espaço. É da comunidade inteira."
 msgstr ""
@@ -973,16 +973,16 @@ msgstr ""
 msgid "Uso por tipo"
 msgstr ""
 
-#: lib/taina_web/components/core_components.ex:652
-#: lib/taina_web/live/file_preview_live.ex:442
-#: lib/taina_web/live/files_live.ex:978
+#: lib/taina_web/components/core_components.ex:690
+#: lib/taina_web/live/file_preview_live.ex:452
+#: lib/taina_web/live/files_live.ex:1027
 #: lib/taina_web/live/gallery_live.ex:584
 #, elixir-autogen, elixir-format
 msgid "Vai para a lixeira. Dá para restaurar em até 30 dias."
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:694
-#: lib/taina_web/live/files_live.ex:890
+#: lib/taina_web/live/files_live.ex:743
+#: lib/taina_web/live/files_live.ex:939
 #, elixir-autogen, elixir-format
 msgid "Ver detalhes"
 msgstr ""
@@ -992,19 +992,19 @@ msgstr ""
 msgid "Você"
 msgstr ""
 
-#: lib/taina_web/live/invite_accept_live.ex:36
+#: lib/taina_web/live/invite_accept_live.ex:52
 #, elixir-autogen, elixir-format
 msgid "Você foi convidado!"
 msgstr ""
 
-#: lib/taina_web/components/layouts.ex:195
+#: lib/taina_web/components/layouts.ex:204
 #: lib/taina_web/live/setup_live.ex:266
-#: lib/taina_web/live/setup_live.ex:330
+#: lib/taina_web/live/setup_live.ex:333
 #, elixir-autogen, elixir-format
 msgid "Voltar"
 msgstr ""
 
-#: lib/taina_web/components/core_components.ex:771
+#: lib/taina_web/components/core_components.ex:809
 #, elixir-autogen, elixir-format
 msgid "Vídeo"
 msgstr ""
@@ -1017,14 +1017,14 @@ msgstr ""
 #: lib/taina_web/live/account_live.ex:52
 #: lib/taina_web/live/invite_live.ex:170
 #: lib/taina_web/live/members_live.ex:213
-#: lib/taina_web/live/members_live.ex:311
+#: lib/taina_web/live/members_live.ex:312
 #, elixir-autogen, elixir-format
 msgid "Zelador(a)"
 msgstr ""
 
-#: lib/taina_web/live/invite_accept_live.ex:85
-#: lib/taina_web/live/reset_password_live.ex:54
-#: lib/taina_web/live/setup_live.ex:318
+#: lib/taina_web/live/invite_accept_live.ex:102
+#: lib/taina_web/live/reset_password_live.ex:71
+#: lib/taina_web/live/setup_live.ex:319
 #, elixir-autogen, elixir-format
 msgid "a mesma senha"
 msgstr ""
@@ -1039,7 +1039,7 @@ msgstr ""
 msgid "de %{total} usados"
 msgstr ""
 
-#: lib/taina_web/live/setup_live.ex:363
+#: lib/taina_web/live/setup_live.ex:366
 #, elixir-autogen, elixir-format
 msgid "disco interno"
 msgstr ""
@@ -1049,7 +1049,7 @@ msgstr ""
 msgid "dê um nome à comunidade"
 msgstr ""
 
-#: lib/taina_web/live/file_preview_live.ex:246
+#: lib/taina_web/live/file_preview_live.ex:256
 #, elixir-autogen, elixir-format
 msgid "enviado %{when}"
 msgstr ""
@@ -1064,12 +1064,12 @@ msgstr ""
 msgid "ex.: Ana Oliveira"
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:803
+#: lib/taina_web/live/files_live.ex:852
 #, elixir-autogen, elixir-format
 msgid "ex.: Documentos"
 msgstr ""
 
-#: lib/taina_web/live/invite_accept_live.ex:63
+#: lib/taina_web/live/invite_accept_live.ex:79
 #, elixir-autogen, elixir-format
 msgid "ex.: João Mendes"
 msgstr ""
@@ -1084,40 +1084,40 @@ msgstr ""
 msgid "ex.: ana"
 msgstr ""
 
-#: lib/taina_web/live/invite_accept_live.ex:49
+#: lib/taina_web/live/invite_accept_live.ex:65
 #, elixir-autogen, elixir-format
 msgid "ex.: joao"
 msgstr ""
 
-#: lib/taina_web/components/core_components.ex:810
+#: lib/taina_web/components/core_components.ex:848
 #: lib/taina_web/live/saude_live.ex:357
 #, elixir-autogen, elixir-format
 msgid "hoje"
 msgstr ""
 
-#: lib/taina_web/components/core_components.ex:812
+#: lib/taina_web/components/core_components.ex:850
 #: lib/taina_web/live/saude_live.ex:359
 #, elixir-autogen, elixir-format
 msgid "há %{count} dias"
 msgstr ""
 
-#: lib/taina_web/components/core_components.ex:816
+#: lib/taina_web/components/core_components.ex:854
 #: lib/taina_web/live/saude_live.ex:360
 #, elixir-autogen, elixir-format
 msgid "há %{count} meses"
 msgstr ""
 
-#: lib/taina_web/components/core_components.ex:814
+#: lib/taina_web/components/core_components.ex:852
 #, elixir-autogen, elixir-format
 msgid "há %{count} semanas"
 msgstr ""
 
-#: lib/taina_web/components/core_components.ex:815
+#: lib/taina_web/components/core_components.ex:853
 #, elixir-autogen, elixir-format
 msgid "há 1 mês"
 msgstr ""
 
-#: lib/taina_web/components/core_components.ex:813
+#: lib/taina_web/components/core_components.ex:851
 #, elixir-autogen, elixir-format
 msgid "há 1 semana"
 msgstr ""
@@ -1132,27 +1132,27 @@ msgstr ""
 msgid "link + QR code"
 msgstr ""
 
-#: lib/taina_web/components/layouts.ex:80
-#: lib/taina_web/live/setup_live.ex:347
+#: lib/taina_web/components/layouts.ex:89
+#: lib/taina_web/live/setup_live.ex:350
 #: lib/taina_web/live/storage_live.ex:166
 #, elixir-autogen, elixir-format
 msgid "livres"
 msgstr ""
 
-#: lib/taina_web/live/invite_accept_live.ex:72
-#: lib/taina_web/live/reset_password_live.ex:41
+#: lib/taina_web/live/invite_accept_live.ex:88
+#: lib/taina_web/live/reset_password_live.ex:57
 #: lib/taina_web/live/setup_live.ex:306
 #, elixir-autogen, elixir-format
 msgid "mínimo 8 caracteres"
 msgstr ""
 
-#: lib/taina_web/components/core_components.ex:811
+#: lib/taina_web/components/core_components.ex:849
 #: lib/taina_web/live/saude_live.ex:358
 #, elixir-autogen, elixir-format
 msgid "ontem"
 msgstr ""
 
-#: lib/taina_web/live/login_live.ex:110
+#: lib/taina_web/live/login_live.ex:111
 #, elixir-autogen, elixir-format
 msgid "ou"
 msgstr ""
@@ -1189,17 +1189,17 @@ msgstr ""
 msgid "uso do disco e cota"
 msgstr ""
 
-#: lib/taina_web/live/setup_live.ex:363
+#: lib/taina_web/live/setup_live.ex:366
 #, elixir-autogen, elixir-format
 msgid "zelador(a)"
 msgstr ""
 
-#: lib/taina_web/components/core_components.ex:772
+#: lib/taina_web/components/core_components.ex:810
 #, elixir-autogen, elixir-format
 msgid "Áudio"
 msgstr ""
 
-#: lib/taina_web/live/members_live.ex:393
+#: lib/taina_web/live/members_live.ex:394
 #, elixir-autogen, elixir-format
 msgid "%{name} não vai mais conseguir entrar. Os dados ficam guardados e você pode reativar quando quiser."
 msgstr ""
@@ -1209,7 +1209,7 @@ msgstr ""
 msgid "A comunidade precisa de pelo menos um zelador ativo. Promova outra pessoa antes."
 msgstr ""
 
-#: lib/taina_web/live/members_live.ex:323
+#: lib/taina_web/live/members_live.ex:324
 #, elixir-autogen, elixir-format
 msgid "Ações da conta"
 msgstr ""
@@ -1229,17 +1229,17 @@ msgstr ""
 msgid "Conta reativada."
 msgstr ""
 
-#: lib/taina_web/live/members_live.ex:398
+#: lib/taina_web/live/members_live.ex:399
 #, elixir-autogen, elixir-format
 msgid "Desativar"
 msgstr ""
 
-#: lib/taina_web/live/members_live.ex:345
+#: lib/taina_web/live/members_live.ex:346
 #, elixir-autogen, elixir-format
 msgid "Desativar conta"
 msgstr ""
 
-#: lib/taina_web/live/members_live.ex:391
+#: lib/taina_web/live/members_live.ex:392
 #, elixir-autogen, elixir-format
 msgid "Desativar esta conta?"
 msgstr ""
@@ -1249,12 +1249,12 @@ msgstr ""
 msgid "Foto anterior"
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:146
+#: lib/taina_web/live/files_live.ex:185
 #, elixir-autogen, elixir-format
 msgid "Não foi possível abrir as pastas."
 msgstr ""
 
-#: lib/taina_web/live/file_preview_live.ex:39
+#: lib/taina_web/live/file_preview_live.ex:44
 #, elixir-autogen, elixir-format
 msgid "Não foi possível abrir o arquivo agora."
 msgstr ""
@@ -1268,12 +1268,12 @@ msgstr ""
 msgid "Não foi possível carregar"
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:61
+#: lib/taina_web/live/files_live.ex:64
 #, elixir-autogen, elixir-format
 msgid "Não foi possível carregar a pasta."
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:103
+#: lib/taina_web/live/files_live.ex:142
 #: lib/taina_web/live/trash_live.ex:67
 #, elixir-autogen, elixir-format
 msgid "Não foi possível carregar mais itens."
@@ -1309,7 +1309,7 @@ msgstr ""
 msgid "Próxima foto"
 msgstr ""
 
-#: lib/taina_web/live/members_live.ex:352
+#: lib/taina_web/live/members_live.ex:353
 #, elixir-autogen, elixir-format
 msgid "Reativar conta"
 msgstr ""
@@ -1325,151 +1325,151 @@ msgstr ""
 msgid "Tainá"
 msgstr ""
 
-#: lib/taina_web/live/members_live.ex:337
+#: lib/taina_web/live/members_live.ex:338
 #, elixir-autogen, elixir-format
 msgid "Tornar morador(a)"
 msgstr ""
 
-#: lib/taina_web/live/members_live.ex:330
-#: lib/taina_web/live/members_live.ex:415
+#: lib/taina_web/live/members_live.ex:331
+#: lib/taina_web/live/members_live.ex:416
 #, elixir-autogen, elixir-format
 msgid "Tornar zelador(a)"
 msgstr ""
 
-#: lib/taina_web/live/access_requests_live.ex:223
+#: lib/taina_web/live/access_requests_live.ex:405
 #, elixir-autogen, elixir-format
 msgid "A pessoa não vai poder abrir o arquivo. Ela pode pedir de novo depois."
 msgstr ""
 
-#: lib/taina_web/live/access_requests_live.ex:166
+#: lib/taina_web/live/access_requests_live.ex:304
 #, elixir-autogen, elixir-format
 msgid "Acesso liberado. A pessoa já pode ler."
 msgstr ""
 
-#: lib/taina_web/live/access_requests_live.ex:205
+#: lib/taina_web/live/access_requests_live.ex:352
 #, elixir-autogen, elixir-format
 msgid "Aprovar"
 msgstr ""
 
-#: lib/taina_web/live/file_preview_live.ex:264
+#: lib/taina_web/live/file_preview_live.ex:274
 #, elixir-autogen, elixir-format
 msgid "Esta casa é particular"
 msgstr ""
 
-#: lib/taina_web/live/access_requests_live.ex:92
-#: lib/taina_web/live/access_requests_live.ex:171
-#: lib/taina_web/live/access_requests_live.ex:174
+#: lib/taina_web/live/access_requests_live.ex:175
+#: lib/taina_web/live/access_requests_live.ex:309
+#: lib/taina_web/live/access_requests_live.ex:312
 #, elixir-autogen, elixir-format
 msgid "Este pedido já foi resolvido."
 msgstr ""
 
-#: lib/taina_web/live/access_requests_live.ex:170
-#: lib/taina_web/live/access_requests_live.ex:173
+#: lib/taina_web/live/access_requests_live.ex:308
+#: lib/taina_web/live/access_requests_live.ex:311
 #, elixir-autogen, elixir-format
 msgid "Este pedido não é seu para decidir."
 msgstr ""
 
 #: lib/taina_web/live/account_live.ex:69
-#: lib/taina_web/live/my_requests_live.ex:21
-#: lib/taina_web/live/my_requests_live.ex:117
-#: lib/taina_web/live/my_requests_live.ex:120
+#: lib/taina_web/live/my_requests_live.ex:26
+#: lib/taina_web/live/my_requests_live.ex:166
+#: lib/taina_web/live/my_requests_live.ex:169
 #, elixir-autogen, elixir-format
 msgid "Meus pedidos"
 msgstr ""
 
-#: lib/taina_web/live/access_requests_live.ex:202
-#: lib/taina_web/live/access_requests_live.ex:224
+#: lib/taina_web/live/access_requests_live.ex:349
+#: lib/taina_web/live/access_requests_live.ex:406
 #, elixir-autogen, elixir-format
 msgid "Negar"
 msgstr ""
 
-#: lib/taina_web/live/access_requests_live.ex:222
+#: lib/taina_web/live/access_requests_live.ex:404
 #, elixir-autogen, elixir-format
 msgid "Negar este pedido?"
 msgstr ""
 
-#: lib/taina_web/live/access_requests_live.ex:214
+#: lib/taina_web/live/access_requests_live.ex:362
 #, elixir-autogen, elixir-format
 msgid "Nenhum pedido por enquanto"
 msgstr ""
 
-#: lib/taina_web/live/access_requests_live.ex:215
+#: lib/taina_web/live/access_requests_live.ex:363
 #, elixir-autogen, elixir-format
 msgid "Ninguém acessa seus arquivos sem você deixar. Quando alguém pedir, aparece aqui."
 msgstr ""
 
-#: lib/taina_web/live/file_preview_live.ex:169
+#: lib/taina_web/live/file_preview_live.ex:179
 #, elixir-autogen, elixir-format
 msgid "Não foi possível enviar o pedido agora."
 msgstr ""
 
-#: lib/taina_web/live/file_preview_live.ex:63
+#: lib/taina_web/live/file_preview_live.ex:68
 #, elixir-autogen, elixir-format
 msgid "Pedido de acesso pela tela do arquivo"
 msgstr ""
 
-#: lib/taina_web/live/file_preview_live.ex:156
+#: lib/taina_web/live/file_preview_live.ex:166
 #, elixir-autogen, elixir-format
 msgid "Pedido enviado. Você vê o andamento em Meus pedidos."
 msgstr ""
 
-#: lib/taina_web/live/access_requests_live.ex:59
+#: lib/taina_web/live/access_requests_live.ex:69
 #, elixir-autogen, elixir-format
 msgid "Pedido negado."
 msgstr ""
 
-#: lib/taina_web/live/access_requests_live.ex:22
-#: lib/taina_web/live/access_requests_live.ex:186
-#: lib/taina_web/live/access_requests_live.ex:189
+#: lib/taina_web/live/access_requests_live.ex:26
+#: lib/taina_web/live/access_requests_live.ex:324
+#: lib/taina_web/live/access_requests_live.ex:327
 #: lib/taina_web/live/account_live.ex:57
 #, elixir-autogen, elixir-format
 msgid "Pedidos"
 msgstr ""
 
-#: lib/taina_web/live/file_preview_live.ex:49
-#: lib/taina_web/live/file_preview_live.ex:259
-#: lib/taina_web/live/file_preview_live.ex:271
-#: lib/taina_web/live/file_preview_live.ex:289
+#: lib/taina_web/live/file_preview_live.ex:54
+#: lib/taina_web/live/file_preview_live.ex:269
+#: lib/taina_web/live/file_preview_live.ex:281
+#: lib/taina_web/live/file_preview_live.ex:299
 #, elixir-autogen, elixir-format
 msgid "Pedir acesso"
 msgstr ""
 
-#: lib/taina_web/live/file_preview_live.ex:277
+#: lib/taina_web/live/file_preview_live.ex:287
 #, elixir-autogen, elixir-format
 msgid "Pedir acesso a \"%{name}\"?"
 msgstr ""
 
-#: lib/taina_web/live/my_requests_live.ex:138
+#: lib/taina_web/live/my_requests_live.ex:212
 #, elixir-autogen, elixir-format
 msgid "Quando você pedir acesso a um arquivo, ele aparece aqui até a pessoa decidir."
 msgstr ""
 
-#: lib/taina_web/live/file_preview_live.ex:280
+#: lib/taina_web/live/file_preview_live.ex:290
 #, elixir-autogen, elixir-format
 msgid "Quem guarda este arquivo vai receber seu pedido e decide se abre. Você só verá o conteúdo se a pessoa deixar."
 msgstr ""
 
-#: lib/taina_web/live/my_requests_live.ex:103
+#: lib/taina_web/live/my_requests_live.ex:152
 #, elixir-autogen, elixir-format
 msgid "Seu pedido foi aprovado. Você já pode abrir."
 msgstr ""
 
-#: lib/taina_web/live/my_requests_live.ex:39
+#: lib/taina_web/live/my_requests_live.ex:44
 #, elixir-autogen, elixir-format
 msgid "Seu pedido foi negado."
 msgstr ""
 
-#: lib/taina_web/live/file_preview_live.ex:266
+#: lib/taina_web/live/file_preview_live.ex:276
 #, elixir-autogen, elixir-format
 msgid "Só quem mora aqui vê este arquivo. Para abrir, peça acesso e a pessoa decide. O Tainá ainda não criptografa: é promessa de software, não cadeado."
 msgstr ""
 
-#: lib/taina_web/live/my_requests_live.ex:137
+#: lib/taina_web/live/my_requests_live.ex:211
 #, elixir-autogen, elixir-format
 msgid "Você não tem pedidos abertos"
 msgstr ""
 
-#: lib/taina_web/components/layouts.ex:157
+#: lib/taina_web/components/layouts.ex:166
 #, elixir-autogen, elixir-format
 msgid "há pedidos esperando"
 msgstr ""
@@ -1484,132 +1484,132 @@ msgstr ""
 msgid "quem pediu para abrir seus arquivos"
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:446
+#: lib/taina_web/live/files_live.ex:485
 #, elixir-autogen, elixir-format
 msgid "A praça está vazia"
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:455
+#: lib/taina_web/live/files_live.ex:494
 #, elixir-autogen, elixir-format
 msgid "Aqui ficam seus arquivos. Só você vê, até deixar alguém entrar."
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:578
+#: lib/taina_web/live/files_live.ex:617
 #, elixir-autogen, elixir-format
 msgid "Casa"
 msgstr ""
 
-#: lib/taina_web/live/file_preview_live.ex:194
-#: lib/taina_web/live/files_live.ex:468
+#: lib/taina_web/live/file_preview_live.ex:204
+#: lib/taina_web/live/files_live.ex:507
 #, elixir-autogen, elixir-format
 msgid "Não foi possível publicar na praça."
 msgstr ""
 
-#: lib/taina_web/live/file_preview_live.ex:195
-#: lib/taina_web/live/files_live.ex:469
+#: lib/taina_web/live/file_preview_live.ex:205
+#: lib/taina_web/live/files_live.ex:508
 #, elixir-autogen, elixir-format
 msgid "Não foi possível tirar da praça."
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:575
+#: lib/taina_web/live/files_live.ex:614
 #, elixir-autogen, elixir-format
 msgid "Praça"
 msgstr ""
 
-#: lib/taina_web/live/file_preview_live.ex:191
-#: lib/taina_web/live/files_live.ex:465
+#: lib/taina_web/live/file_preview_live.ex:201
+#: lib/taina_web/live/files_live.ex:504
 #, elixir-autogen, elixir-format
 msgid "Publicado na praça."
 msgstr ""
 
-#: lib/taina_web/live/file_preview_live.ex:178
 #: lib/taina_web/live/file_preview_live.ex:188
-#: lib/taina_web/live/files_live.ex:935
+#: lib/taina_web/live/file_preview_live.ex:198
+#: lib/taina_web/live/files_live.ex:984
 #, elixir-autogen, elixir-format
 msgid "Publicar"
 msgstr ""
 
-#: lib/taina_web/live/file_preview_live.ex:181
-#: lib/taina_web/live/files_live.ex:928
+#: lib/taina_web/live/file_preview_live.ex:191
+#: lib/taina_web/live/files_live.ex:977
 #, elixir-autogen, elixir-format
 msgid "Publicar \"%{name}\" na praça?"
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:462
+#: lib/taina_web/live/files_live.ex:501
 #, elixir-autogen, elixir-format
 msgid "Publicar na praça"
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:446
+#: lib/taina_web/live/files_live.ex:485
 #, elixir-autogen, elixir-format
 msgid "Publique um arquivo ou pasta para começar a memória da comunidade."
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:455
+#: lib/taina_web/live/files_live.ex:494
 #, elixir-autogen, elixir-format
 msgid "Sua casa está vazia"
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:911
+#: lib/taina_web/live/files_live.ex:960
 #, elixir-autogen, elixir-format
 msgid "Só a pasta entra na praça. Os arquivos dentro dela continuam como estão."
 msgstr ""
 
-#: lib/taina_web/live/file_preview_live.ex:176
-#: lib/taina_web/live/files_live.ex:434
+#: lib/taina_web/live/file_preview_live.ex:186
+#: lib/taina_web/live/files_live.ex:473
 #, elixir-autogen, elixir-format
 msgid "Só você, e quem você deixar."
 msgstr ""
 
-#: lib/taina_web/live/file_preview_live.ex:192
-#: lib/taina_web/live/files_live.ex:466
+#: lib/taina_web/live/file_preview_live.ex:202
+#: lib/taina_web/live/files_live.ex:505
 #, elixir-autogen, elixir-format
 msgid "Tirado da praça."
 msgstr ""
 
-#: lib/taina_web/live/file_preview_live.ex:182
-#: lib/taina_web/live/files_live.ex:929
+#: lib/taina_web/live/file_preview_live.ex:192
+#: lib/taina_web/live/files_live.ex:978
 #, elixir-autogen, elixir-format
 msgid "Tirar \"%{name}\" da praça?"
 msgstr ""
 
-#: lib/taina_web/live/file_preview_live.ex:179
 #: lib/taina_web/live/file_preview_live.ex:189
-#: lib/taina_web/live/files_live.ex:463
-#: lib/taina_web/live/files_live.ex:936
+#: lib/taina_web/live/file_preview_live.ex:199
+#: lib/taina_web/live/files_live.ex:502
+#: lib/taina_web/live/files_live.ex:985
 #, elixir-autogen, elixir-format
 msgid "Tirar da praça"
 msgstr ""
 
-#: lib/taina_web/live/file_preview_live.ex:175
-#: lib/taina_web/live/files_live.ex:433
+#: lib/taina_web/live/file_preview_live.ex:185
+#: lib/taina_web/live/files_live.ex:472
 #, elixir-autogen, elixir-format
 msgid "Todos os moradores veem."
 msgstr ""
 
-#: lib/taina_web/live/file_preview_live.ex:184
-#: lib/taina_web/live/files_live.ex:931
+#: lib/taina_web/live/file_preview_live.ex:194
+#: lib/taina_web/live/files_live.ex:980
 #, elixir-autogen, elixir-format
 msgid "Todos os moradores vão poder ver. Você pode tirar da praça quando quiser."
 msgstr ""
 
-#: lib/taina_web/live/file_preview_live.ex:186
-#: lib/taina_web/live/files_live.ex:933
+#: lib/taina_web/live/file_preview_live.ex:196
+#: lib/taina_web/live/files_live.ex:982
 #, elixir-autogen, elixir-format
 msgid "Volta a ser só seu. Só você, e quem você deixar, vê de novo."
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:747
+#: lib/taina_web/live/files_live.ex:796
 #, elixir-autogen, elixir-format
 msgid "Abrir"
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:713
+#: lib/taina_web/live/files_live.ex:762
 #, elixir-autogen, elixir-format
 msgid "Detalhes do arquivo"
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:720
+#: lib/taina_web/live/files_live.ex:769
 #, elixir-autogen, elixir-format
 msgid "Fechar detalhes"
 msgstr ""
@@ -1624,7 +1624,7 @@ msgstr ""
 msgid "Fotos vizinhas"
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:764
+#: lib/taina_web/live/files_live.ex:813
 #, elixir-autogen, elixir-format
 msgid "Na visão de lista, clique no olho ao lado de um arquivo. Os detalhes aparecem aqui, sem sair da pasta."
 msgstr ""
@@ -1810,8 +1810,8 @@ msgstr ""
 msgid "Há uma versão mais nova (%{latest}). A caixa está na %{version}."
 msgstr ""
 
-#: lib/taina_web/components/layouts.ex:57
-#: lib/taina_web/components/layouts.ex:104
+#: lib/taina_web/components/layouts.ex:66
+#: lib/taina_web/components/layouts.ex:113
 #: lib/taina_web/live/home_live.ex:82
 #: lib/taina_web/live/mural_live.ex:27
 #: lib/taina_web/live/mural_live.ex:268
@@ -1886,8 +1886,8 @@ msgstr ""
 msgid "Quem cuida da máquina: %{names}."
 msgstr ""
 
-#: lib/taina_web/components/layouts.ex:63
-#: lib/taina_web/components/layouts.ex:110
+#: lib/taina_web/components/layouts.ex:72
+#: lib/taina_web/components/layouts.ex:119
 #: lib/taina_web/live/home_live.ex:83
 #, elixir-autogen, elixir-format
 msgid "Saúde"
@@ -1968,7 +1968,7 @@ msgstr ""
 msgid "%{actor} tirou de %{member} o cuidado da máquina."
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:590
+#: lib/taina_web/live/files_live.ex:639
 #: lib/taina_web/live/trash_live.ex:139
 #, elixir-autogen, elixir-format
 msgid "%{count} item carregado"
@@ -1981,12 +1981,12 @@ msgstr[1] ""
 msgid "%{name} agora é zelador(a). Registrado no mural."
 msgstr ""
 
-#: lib/taina_web/live/access_requests_live.ex:147
+#: lib/taina_web/live/access_requests_live.ex:285
 #, elixir-autogen, elixir-format
 msgid "%{name} pediu acesso a %{file}, %{when}"
 msgstr ""
 
-#: lib/taina_web/live/members_live.ex:410
+#: lib/taina_web/live/members_live.ex:411
 #, elixir-autogen, elixir-format
 msgid "%{name} vai poder gerar convites e links de redefinição de senha. Não ganha acesso à casa de ninguém. A mudança fica registrada no mural."
 msgstr ""
@@ -2013,7 +2013,7 @@ msgstr ""
 msgid "A foto começa na sua casa. Publique na praça para todos verem."
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:976
+#: lib/taina_web/live/files_live.ex:1025
 #, elixir-autogen, elixir-format
 msgid "A pasta e o que tem dentro vão para a lixeira. Os arquivos voltam um a um; a pasta em si, não."
 msgstr ""
@@ -2028,17 +2028,17 @@ msgstr ""
 msgid "A saúde da caixa não respondeu agora."
 msgstr ""
 
-#: lib/taina_web/live/login_live.ex:137
+#: lib/taina_web/live/login_live.ex:138
 #, elixir-autogen, elixir-format
 msgid "Abrindo..."
 msgstr ""
 
-#: lib/taina_web/live/login_live.ex:138
+#: lib/taina_web/live/login_live.ex:139
 #, elixir-autogen, elixir-format
 msgid "Abrir convite"
 msgstr ""
 
-#: lib/taina_web/live/access_requests_live.ex:165
+#: lib/taina_web/live/access_requests_live.ex:303
 #, elixir-autogen, elixir-format
 msgid "Acesso a %{file} liberado. A pessoa já pode ler."
 msgstr ""
@@ -2065,7 +2065,7 @@ msgstr ""
 msgid "Começar..."
 msgstr ""
 
-#: lib/taina_web/live/setup_live.ex:323
+#: lib/taina_web/live/setup_live.ex:326
 #, elixir-autogen, elixir-format
 msgid "Continuar..."
 msgstr ""
@@ -2075,12 +2075,12 @@ msgstr ""
 msgid "Convite para a caixa da comunidade"
 msgstr ""
 
-#: lib/taina_web/live/setup_live.ex:376
+#: lib/taina_web/live/setup_live.ex:379
 #, elixir-autogen, elixir-format
 msgid "Criar minha nuvem..."
 msgstr ""
 
-#: lib/taina_web/live/setup_live.ex:356
+#: lib/taina_web/live/setup_live.ex:359
 #, elixir-autogen, elixir-format
 msgid "Disco externo se prepara na instalação, não por aqui."
 msgstr ""
@@ -2110,7 +2110,7 @@ msgstr ""
 msgid "Esse nome de usuário já existe. Escolha outro."
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:78
+#: lib/taina_web/live/files_live.ex:81
 #, elixir-autogen, elixir-format
 msgid "Esta pasta é particular. Só quem a guardou, e quem essa pessoa deixar, vê."
 msgstr ""
@@ -2130,7 +2130,7 @@ msgstr ""
 msgid "Este convite expirou ou já foi usado. Peça um novo link a quem te convidou."
 msgstr ""
 
-#: lib/taina_web/live/setup_live.ex:336
+#: lib/taina_web/live/setup_live.ex:339
 #, elixir-autogen, elixir-format
 msgid "Este é o disco da comunidade. Ele é escolhido na instalação da caixa e não pode ser trocado por aqui."
 msgstr ""
@@ -2160,17 +2160,17 @@ msgstr ""
 msgid "Imagens, PDFs, texto, áudio, vídeo e ZIP; até 2 GB por arquivo."
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:783
+#: lib/taina_web/live/files_live.ex:832
 #, elixir-autogen, elixir-format
 msgid "Isso é promessa de software e confiança: o Tainá ainda não criptografa."
 msgstr ""
 
-#: lib/taina_web/live/members_live.ex:366
+#: lib/taina_web/live/members_live.ex:367
 #, elixir-autogen, elixir-format
 msgid "Limpar busca"
 msgstr ""
 
-#: lib/taina_web/live/access_requests_live.ex:155
+#: lib/taina_web/live/access_requests_live.ex:293
 #, elixir-autogen, elixir-format
 msgid "Motivo: %{reason}"
 msgstr ""
@@ -2229,12 +2229,12 @@ msgstr ""
 msgid "O armazenamento não respondeu agora."
 msgstr ""
 
-#: lib/taina_web/live/file_preview_live.ex:349
+#: lib/taina_web/live/file_preview_live.ex:359
 #, elixir-autogen, elixir-format
 msgid "O arquivo está intacto; baixe para abrir no seu dispositivo."
 msgstr ""
 
-#: lib/taina_web/live/file_preview_live.ex:339
+#: lib/taina_web/live/file_preview_live.ex:349
 #, elixir-autogen, elixir-format
 msgid "O arquivo está intacto; baixe para ler por inteiro."
 msgstr ""
@@ -2244,7 +2244,7 @@ msgstr ""
 msgid "O arquivo passa de 2 GB, o limite por arquivo."
 msgstr ""
 
-#: lib/taina_web/live/setup_live.ex:333
+#: lib/taina_web/live/setup_live.ex:336
 #, elixir-autogen, elixir-format
 msgid "O disco da comunidade"
 msgstr ""
@@ -2290,28 +2290,29 @@ msgstr ""
 msgid "Painel da máquina"
 msgstr ""
 
-#: lib/taina_web/components/core_components.ex:513
+#: lib/taina_web/components/core_components.ex:551
 #, elixir-autogen, elixir-format
 msgid "Passo %{current} de %{total}"
 msgstr ""
 
-#: lib/taina_web/live/my_requests_live.ex:102
+#: lib/taina_web/live/my_requests_live.ex:151
 #, elixir-autogen, elixir-format
 msgid "Pedido aprovado: agora você pode abrir %{file}."
 msgstr ""
 
-#: lib/taina_web/live/my_requests_live.ex:70
+#: lib/taina_web/live/my_requests_live.ex:78
 #, elixir-autogen, elixir-format
 msgid "Pedido para abrir %{file}, esperando %{name} decidir, %{when}"
 msgstr ""
 
+#: lib/taina_web/live/access_requests_live.ex:393
 #: lib/taina_web/live/trash_live.ex:176
 #, elixir-autogen, elixir-format
 msgid "Pode ter sido um instante de rede ou da caixa. Tente de novo."
 msgstr ""
 
-#: lib/taina_web/live/file_preview_live.ex:338
 #: lib/taina_web/live/file_preview_live.ex:348
+#: lib/taina_web/live/file_preview_live.ex:358
 #, elixir-autogen, elixir-format
 msgid "Pré-visualização indisponível"
 msgstr ""
@@ -2326,7 +2327,7 @@ msgstr ""
 msgid "Qualquer pessoa com este link entra na comunidade. Compartilhe só com quem você quer convidar."
 msgstr ""
 
-#: lib/taina_web/live/login_live.ex:121
+#: lib/taina_web/live/login_live.ex:122
 #, elixir-autogen, elixir-format
 msgid "Quem cuida da comunidade te manda um link (ou um QR code). É só abrir o link neste aparelho. A criação da conta acontece lá."
 msgstr ""
@@ -2362,12 +2363,13 @@ msgstr ""
 msgid "Só entra o que está na praça, a sua casa e o que te deixarem ver. A casa dos outros fica de fora."
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:460
+#: lib/taina_web/live/files_live.ex:499
 #: lib/taina_web/live/trash_live.ex:117
 #, elixir-autogen, elixir-format
 msgid "Só você"
 msgstr ""
 
+#: lib/taina_web/live/access_requests_live.ex:396
 #: lib/taina_web/live/gallery_live.ex:419
 #: lib/taina_web/live/gallery_live.ex:471
 #: lib/taina_web/live/home_live.ex:187
@@ -2385,13 +2387,13 @@ msgstr ""
 msgid "Tirar foto com a câmera"
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:459
+#: lib/taina_web/live/files_live.ex:498
 #: lib/taina_web/live/trash_live.ex:116
 #, elixir-autogen, elixir-format
 msgid "Todos veem"
 msgstr ""
 
-#: lib/taina_web/live/members_live.ex:408
+#: lib/taina_web/live/members_live.ex:409
 #, elixir-autogen, elixir-format
 msgid "Tornar zelador(a)?"
 msgstr ""
@@ -2401,7 +2403,7 @@ msgstr ""
 msgid "Um número inteiro, em GB. Exemplo: 50"
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:979
+#: lib/taina_web/live/files_live.ex:1028
 #, elixir-autogen, elixir-format
 msgid "Vai para a lixeira."
 msgstr ""
@@ -2421,10 +2423,14 @@ msgstr ""
 msgid "aguardando a pessoa aceitar"
 msgstr ""
 
-#: lib/taina_web/live/access_requests_live.ex:130
-#: lib/taina_web/live/access_requests_live.ex:135
-#: lib/taina_web/live/my_requests_live.ex:90
-#: lib/taina_web/live/my_requests_live.ex:95
+#: lib/taina_web/live/access_requests_live.ex:213
+#: lib/taina_web/live/access_requests_live.ex:218
+#: lib/taina_web/live/access_requests_live.ex:241
+#: lib/taina_web/live/access_requests_live.ex:252
+#: lib/taina_web/live/access_requests_live.ex:258
+#: lib/taina_web/live/my_requests_live.ex:115
+#: lib/taina_web/live/my_requests_live.ex:138
+#: lib/taina_web/live/my_requests_live.ex:144
 #, elixir-autogen, elixir-format
 msgid "arquivo apagado"
 msgstr ""
@@ -2491,23 +2497,23 @@ msgstr ""
 msgid "%{actor} revogou um convite."
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:438
+#: lib/taina_web/live/files_live.ex:477
 #, elixir-autogen, elixir-format
 msgid "A pasta nasce na praça. Todos os moradores veem."
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:439
+#: lib/taina_web/live/files_live.ex:478
 #, elixir-autogen, elixir-format
 msgid "A pasta nasce na sua casa. Só você vê."
 msgstr ""
 
-#: lib/taina_web/live/file_preview_live.ex:424
+#: lib/taina_web/live/file_preview_live.ex:434
 #: lib/taina_web/live/gallery_live.ex:610
 #, elixir-autogen, elixir-format
 msgid "Assinatura do arquivo"
 msgstr ""
 
-#: lib/taina_web/live/members_live.ex:284
+#: lib/taina_web/live/members_live.ex:285
 #, elixir-autogen, elixir-format
 msgid "Ações do convite"
 msgstr ""
@@ -2517,12 +2523,12 @@ msgstr ""
 msgid "Boas-vindas de volta"
 msgstr ""
 
-#: lib/taina_web/live/login_live.ex:127
+#: lib/taina_web/live/login_live.ex:128
 #, elixir-autogen, elixir-format
 msgid "Cole aqui o link do convite"
 msgstr ""
 
-#: lib/taina_web/live/members_live.ex:241
+#: lib/taina_web/live/members_live.ex:242
 #, elixir-autogen, elixir-format
 msgid "Convidar"
 msgstr ""
@@ -2537,7 +2543,7 @@ msgstr ""
 msgid "Convites gerados antes continuam valendo, cada um pelos seus 7 dias."
 msgstr ""
 
-#: lib/taina_web/live/members_live.ex:269
+#: lib/taina_web/live/members_live.ex:270
 #, elixir-autogen, elixir-format
 msgid "Convites pendentes"
 msgstr ""
@@ -2547,43 +2553,43 @@ msgstr ""
 msgid "Enviando %{name}"
 msgstr ""
 
-#: lib/taina_web/live/login_live.ex:101
+#: lib/taina_web/live/login_live.ex:102
 #, elixir-autogen, elixir-format
 msgid "Esqueceu a senha?"
 msgstr ""
 
-#: lib/taina_web/live/file_preview_live.ex:364
+#: lib/taina_web/live/file_preview_live.ex:374
 #, elixir-autogen, elixir-format
 msgid "Link do arquivo"
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:951
+#: lib/taina_web/live/files_live.ex:1000
 #, elixir-autogen, elixir-format
 msgid "Mais opções para %{name}"
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:449
+#: lib/taina_web/live/files_live.ex:488
 #, elixir-autogen, elixir-format
 msgid "Nada na praça desta pasta"
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:452
+#: lib/taina_web/live/files_live.ex:491
 #, elixir-autogen, elixir-format
 msgid "Nada seu nesta pasta"
 msgstr ""
 
-#: lib/taina_web/components/layouts.ex:38
-#: lib/taina_web/components/layouts.ex:91
+#: lib/taina_web/components/layouts.ex:47
+#: lib/taina_web/components/layouts.ex:100
 #, elixir-autogen, elixir-format
 msgid "Navegação"
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:529
+#: lib/taina_web/live/files_live.ex:568
 #, elixir-autogen, elixir-format
 msgid "Nome (A-Z)"
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:535
+#: lib/taina_web/live/files_live.ex:574
 #, elixir-autogen, elixir-format
 msgid "Nome (Z-A)"
 msgstr ""
@@ -2593,7 +2599,7 @@ msgstr ""
 msgid "Não deu para copiar agora. Toque em \"Detalhes\", toque no link e copie."
 msgstr ""
 
-#: lib/taina_web/live/file_preview_live.ex:78
+#: lib/taina_web/live/file_preview_live.ex:88
 #, elixir-autogen, elixir-format
 msgid "Não deu para copiar agora. Toque no campo do link, selecione e copie."
 msgstr ""
@@ -2608,7 +2614,7 @@ msgstr ""
 msgid "Não foi possível revogar o convite. Tente de novo."
 msgstr ""
 
-#: lib/taina_web/live/login_live.ex:104
+#: lib/taina_web/live/login_live.ex:105
 #, elixir-autogen, elixir-format
 msgid "O Tainá não usa e-mail. Fale com quem cuida da sua comunidade: essa pessoa gera um link para você criar uma senha nova."
 msgstr ""
@@ -2618,45 +2624,45 @@ msgstr ""
 msgid "O endereço da caixa ainda não foi configurado na instalação."
 msgstr ""
 
-#: lib/taina_web/live/members_live.ex:427
+#: lib/taina_web/live/members_live.ex:428
 #, elixir-autogen, elixir-format
 msgid "O link deixa de funcionar na hora: quem tiver o link não consegue mais entrar com ele. A pessoa ainda não entrou, então não some nenhuma conta. Você pode gerar um convite novo quando quiser."
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:449
+#: lib/taina_web/live/files_live.ex:488
 #, elixir-autogen, elixir-format
 msgid "O que esta pasta guardar de comum aparece aqui."
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:452
+#: lib/taina_web/live/files_live.ex:491
 #, elixir-autogen, elixir-format
 msgid "O que você guardar aqui aparece nesta aba, só para você."
 msgstr ""
 
-#: lib/taina_web/live/invite_accept_live.ex:74
-#: lib/taina_web/live/reset_password_live.ex:43
-#: lib/taina_web/live/setup_live.ex:308
+#: lib/taina_web/live/invite_accept_live.ex:89
+#: lib/taina_web/live/reset_password_live.ex:58
+#: lib/taina_web/live/setup_live.ex:307
 #, elixir-autogen, elixir-format
 msgid "Pelo menos 8 caracteres. Uma frase que só você lembra é ainda melhor."
 msgstr ""
 
-#: lib/taina_web/components/layouts.ex:33
+#: lib/taina_web/components/layouts.ex:42
 #, elixir-autogen, elixir-format
 msgid "Pular para o conteúdo"
 msgstr ""
 
-#: lib/taina_web/live/members_live.ex:291
-#: lib/taina_web/live/members_live.ex:431
+#: lib/taina_web/live/members_live.ex:292
+#: lib/taina_web/live/members_live.ex:432
 #, elixir-autogen, elixir-format
 msgid "Revogar convite"
 msgstr ""
 
-#: lib/taina_web/live/members_live.ex:425
+#: lib/taina_web/live/members_live.ex:426
 #, elixir-autogen, elixir-format
 msgid "Revogar este convite?"
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:224
+#: lib/taina_web/live/files_live.ex:263
 #, elixir-autogen, elixir-format
 msgid "Só dá para mover para as suas pastas."
 msgstr ""
@@ -2666,7 +2672,7 @@ msgstr ""
 msgid "Use só letras minúsculas, números, ponto, hífen ou _, sem espaços."
 msgstr ""
 
-#: lib/taina_web/components/core_components.ex:490
+#: lib/taina_web/components/core_components.ex:528
 #, elixir-autogen, elixir-format
 msgid "Ver como"
 msgstr ""
@@ -2691,18 +2697,145 @@ msgstr ""
 msgid "de no máximo 80 caracteres"
 msgstr ""
 
-#: lib/taina_web/live/login_live.ex:130
+#: lib/taina_web/live/login_live.ex:131
 #, elixir-autogen, elixir-format
 msgid "o link que quem cuida te mandou"
 msgstr ""
 
-#: lib/taina_web/live/file_preview_live.ex:426
+#: lib/taina_web/live/file_preview_live.ex:436
 #: lib/taina_web/live/gallery_live.ex:612
 #, elixir-autogen, elixir-format
 msgid "É como o Tainá confere que o arquivo está intacto."
 msgstr ""
 
-#: lib/taina_web/live/login_live.ex:131
+#: lib/taina_web/live/login_live.ex:132
 #, elixir-autogen, elixir-format
 msgid "É o mesmo link que o QR code abre."
+msgstr ""
+
+#: lib/taina_web/live/my_requests_live.ex:173
+#, elixir-autogen, elixir-format
+msgid "%{count} pedido esperando resposta"
+msgid_plural "%{count} pedidos esperando resposta"
+msgstr[0] ""
+msgstr[1] ""
+
+#: lib/taina_web/live/access_requests_live.ex:331
+#, elixir-autogen, elixir-format
+msgid "%{count} pedido esperando sua resposta"
+msgid_plural "%{count} pedidos esperando sua resposta"
+msgstr[0] ""
+msgstr[1] ""
+
+#: lib/taina_web/live/access_requests_live.ex:257
+#, elixir-autogen, elixir-format
+msgid "%{file}, desde %{when}"
+msgstr ""
+
+#: lib/taina_web/live/my_requests_live.ex:92
+#, elixir-autogen, elixir-format
+msgid "%{file}: %{name} liberou. Você já pode abrir."
+msgstr ""
+
+#: lib/taina_web/live/my_requests_live.ex:95
+#, elixir-autogen, elixir-format
+msgid "%{file}: %{name} recusou este pedido. Você pode pedir de novo quando quiser."
+msgstr ""
+
+#: lib/taina_web/live/access_requests_live.ex:277
+#, elixir-autogen, elixir-format
+msgid "Acesso de %{name} tirado."
+msgstr ""
+
+#: lib/taina_web/live/invite_accept_live.ex:42
+#, elixir-autogen, elixir-format
+msgid "Convites valem sete dias e só podem ser usados uma vez. Peça um novo link a quem cuida da sua comunidade."
+msgstr ""
+
+#: lib/taina_web/live/access_requests_live.ex:115
+#, elixir-autogen, elixir-format
+msgid "Este acesso já foi tirado."
+msgstr ""
+
+#: lib/taina_web/live/invite_accept_live.ex:41
+#, elixir-autogen, elixir-format
+msgid "Este convite expirou ou já foi usado"
+msgstr ""
+
+#: lib/taina_web/live/reset_password_live.ex:32
+#, elixir-autogen, elixir-format
+msgid "Este link expirou ou já foi usado"
+msgstr ""
+
+#: lib/taina_web/live/invite_accept_live.ex:46
+#: lib/taina_web/live/reset_password_live.ex:37
+#, elixir-autogen, elixir-format
+msgid "Ir para o login"
+msgstr ""
+
+#: lib/taina_web/live/my_requests_live.ex:194
+#, elixir-autogen, elixir-format
+msgid "Já decididos"
+msgstr ""
+
+#: lib/taina_web/live/access_requests_live.ex:367
+#, elixir-autogen, elixir-format
+msgid "Já liberados"
+msgstr ""
+
+#: lib/taina_web/components/core_components.ex:222
+#: lib/taina_web/components/core_components.ex:225
+#, elixir-autogen, elixir-format
+msgid "Mostrar senha"
+msgstr ""
+
+#: lib/taina_web/live/access_requests_live.ex:386
+#, elixir-autogen, elixir-format
+msgid "Ninguém tem acesso liberado aos seus arquivos."
+msgstr ""
+
+#: lib/taina_web/live/access_requests_live.ex:392
+#, elixir-autogen, elixir-format
+msgid "Não deu para abrir os acessos liberados"
+msgstr ""
+
+#: lib/taina_web/live/access_requests_live.ex:99
+#, elixir-autogen, elixir-format
+msgid "Não foi possível tirar o acesso agora. Tente de novo."
+msgstr ""
+
+#: lib/taina_web/live/reset_password_live.ex:33
+#, elixir-autogen, elixir-format
+msgid "O link de redefinição vale uma hora e só pode ser usado uma vez. Peça um novo a quem cuida da sua comunidade."
+msgstr ""
+
+#: lib/taina_web/components/core_components.ex:223
+#, elixir-autogen, elixir-format
+msgid "Ocultar senha"
+msgstr ""
+
+#: lib/taina_web/live/access_requests_live.ex:415
+#, elixir-autogen, elixir-format
+msgid "Para abrir de novo, ela precisa pedir."
+msgstr ""
+
+#: lib/taina_web/live/access_requests_live.ex:378
+#: lib/taina_web/live/access_requests_live.ex:416
+#, elixir-autogen, elixir-format
+msgid "Tirar acesso"
+msgstr ""
+
+#: lib/taina_web/live/access_requests_live.ex:271
+#, elixir-autogen, elixir-format
+msgid "Tirar este acesso?"
+msgstr ""
+
+#: lib/taina_web/live/access_requests_live.ex:272
+#, elixir-autogen, elixir-format
+msgid "Tirar o acesso de %{name}?"
+msgstr ""
+
+#: lib/taina_web/live/access_requests_live.ex:248
+#, elixir-autogen, elixir-format
+msgid "pasta apagada"
 msgstr ""
