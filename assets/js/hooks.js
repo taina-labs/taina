@@ -198,8 +198,11 @@ const DnD = {
     });
 
     this.el.addEventListener("dragover", (e) => {
+      // Arquivo vindo do sistema operacional (não é um item nosso): só evita
+      // que o navegador navegue para o arquivo e derrube o LiveView.
+      if (!dragged) return e.preventDefault();
       const drop = e.target.closest("[data-drop-folder]");
-      if (!drop || !dragged || drop.dataset.dropFolder === dragged.id) return;
+      if (!drop || drop.dataset.dropFolder === dragged.id) return;
       e.preventDefault();
       drop.classList.add("is-drop");
     });
@@ -210,8 +213,13 @@ const DnD = {
     });
 
     this.el.addEventListener("drop", (e) => {
+      // Mesmo caso do dragover: arquivo do SO não vira navegação.
+      if (!dragged) {
+        e.preventDefault();
+        return;
+      }
       const drop = e.target.closest("[data-drop-folder]");
-      if (!drop || !dragged) return clearDragState();
+      if (!drop) return clearDragState();
       e.preventDefault();
       drop.classList.remove("is-drop");
       const target = drop.dataset.dropFolder;
