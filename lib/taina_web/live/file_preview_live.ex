@@ -15,10 +15,15 @@ defmodule TainaWeb.FilePreviewLive do
   def mount(%{"id" => public_id}, _session, socket) do
     case Ybira.get_file(socket.assigns.current_scope, public_id) do
       {:ok, file} ->
+        # O voltar devolve para a pasta onde o arquivo mora, não para o início;
+        # arquivo da raiz (ou pasta que não se pode ver) volta para o início.
+        back = back_path(Ybira.file_folder_public_id(socket.assigns.current_scope, file))
+
         {:ok,
          socket
          |> assign(:page_title, file.original_filename)
          |> assign(:file, file)
+         |> assign(:back, back)
          |> assign(:text_preview, load_text_preview(file))
          |> assign(:show_details, false)
          |> assign(:show_confirm, false)
@@ -61,6 +66,11 @@ defmodule TainaWeb.FilePreviewLive do
   end
 
   defp default_reason, do: gettext("Pedido de acesso pela tela do arquivo")
+
+  # Resultado do `Ybira.file_folder_public_id/2` vira caminho do voltar: pasta
+  # visível, volta para ela; qualquer outro caso, volta para o início.
+  defp back_path({:ok, folder_public_id}), do: URI.to_string(~p"/arquivos/pasta/#{folder_public_id}")
+  defp back_path(_other), do: URI.to_string(~p"/arquivos")
 
   @impl true
   def handle_event("copied", _params, socket) do
@@ -303,7 +313,7 @@ defmodule TainaWeb.FilePreviewLive do
       storage_stats={assigns[:storage_stats]}
       account_alert={assigns[:account_alert] || false}
     >
-      <Layouts.app_bar title={@file.original_filename} back={~p"/arquivos"}>
+      <Layouts.app_bar title={@file.original_filename} back={@back}>
         <:action>
           <.icon_button name="download" label={gettext("Baixar")} href={~p"/files/#{@file.public_id}"} download />
         </:action>

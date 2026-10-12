@@ -87,4 +87,27 @@ defmodule TainaWeb.FilePreviewLiveTest do
 
     refute has_element?(lv, ~s(button[phx-click="ask-zona"]))
   end
+
+  describe "voltar para a pasta do arquivo" do
+    test "arquivo dentro de pasta volta para a pasta, não para o início", %{
+      conn: conn,
+      tekoa: tekoa,
+      owner: owner
+    } do
+      scope = Scope.new(owner, tekoa)
+      {:ok, folder} = Ybira.create_folder(scope, %{name: "Documentos"})
+      {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("oi", "dentro.txt"), folder_id: folder.id)
+
+      {:ok, _lv, html} = conn |> log_in(owner) |> live(~p"/arquivos/#{file.public_id}")
+
+      assert html =~ ~s(href="/arquivos/pasta/#{folder.public_id}")
+    end
+
+    test "arquivo solto na raiz volta para o início", %{conn: conn, owner: owner, target_file: file} do
+      {:ok, _lv, html} = conn |> log_in(owner) |> live(~p"/arquivos/#{file.public_id}")
+
+      assert html =~ ~s(href="/arquivos")
+      refute html =~ "/arquivos/pasta/"
+    end
+  end
 end

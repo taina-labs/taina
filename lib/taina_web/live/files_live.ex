@@ -1,9 +1,11 @@
 defmodule TainaWeb.FilesLive do
   @moduledoc """
   Navegador de arquivos do Ybira: pastas + arquivos da pasta atual, breadcrumb
-  raso (Início / pasta), ordenação (nome/data/tamanho), alternância
-  lista/grade, e ações por item: renomear, mover (seletor ou arrastar-e-soltar)
-  e excluir (com confirmação). Telas "Ybira - Arquivos" e "Desktop - Arquivos".
+  com a cadeia completa de pastas (Início / ... / pasta atual; em telas
+  pequenas o meio encolhe em "..."), ordenação (nome/data/tamanho),
+  alternância lista/grade, e ações por item: renomear, mover (seletor ou
+  arrastar-e-soltar) e excluir (com confirmação). Telas "Ybira - Arquivos" e
+  "Desktop - Arquivos".
 
   No desktop (1024+) a lista ganha um painel de detalhes ao lado: o olho da
   linha carrega o arquivo ali (`?arquivo=` na URL) sem sair da pasta. Abaixo de
@@ -39,6 +41,7 @@ defmodule TainaWeb.FilesLive do
              socket
              |> assign(:page_title, (folder && folder.name) || gettext("Arquivos"))
              |> assign(:folder, folder)
+             |> assign(:breadcrumb, breadcrumb(scope, folder))
              |> assign(:folder_public_id, folder_public_id)
              |> assign(:folders, zona_folders)
              |> assign(:next_cursor, next_cursor)
@@ -83,6 +86,42 @@ defmodule TainaWeb.FilesLive do
 
   defp load_folder(_scope, nil), do: {:ok, nil}
   defp load_folder(scope, public_id), do: Ybira.get_folder(scope, public_id)
+
+  # --- breadcrumb (cadeia raiz -> pasta atual) ---
+
+  # A cadeia vem de `Ybira.folder_path/2` (raiz -> atual, inclusive). Se ela
+  # falhou por baixo (pasta apagada no meio da requisição, por exemplo), o
+  # breadcrumb cai para o elo único de hoje em vez de quebrar a tela.
+  defp breadcrumb(_scope, nil), do: []
+
+  defp breadcrumb(scope, folder) do
+    case Ybira.folder_path(scope, folder.public_id) do
+      {:ok, path} -> path
+      {:error, _reason} -> [%{name: folder.name, public_id: folder.public_id}]
+    end
+  end
+
+  # A cadeia inteira vira três papéis: ancestrais como links de patch, a pasta
+  # atual sem link e, quando existe meio (ancestrais além do primeiro), um
+  # "..." que só aparece em telas pequenas (375px): lá o meio some e ficam
+  # sempre o primeiro e o último elo. No desktop a cadeia inteira aparece.
+  defp breadcrumb_items([]), do: []
+
+  defp breadcrumb_items([current]), do: [%{kind: :current, name: current.name, public_id: current.public_id}]
+
+  defp breadcrumb_items([first | rest]) do
+    current = List.last(rest)
+    ancestors = [first | Enum.drop(rest, -1)]
+
+    links =
+      for {segment, index} <- Enum.with_index(ancestors) do
+        %{kind: :link, name: segment.name, public_id: segment.public_id, middle?: index > 0}
+      end
+
+    ellipsis = if length(ancestors) > 1, do: [%{kind: :ellipsis}], else: []
+
+    links ++ ellipsis ++ [%{kind: :current, name: current.name, public_id: current.public_id}]
+  end
 
   @impl true
   def handle_event("load-more", _params, socket) do
@@ -581,8 +620,18 @@ defmodule TainaWeb.FilesLive do
 
       <nav class="breadcrumb mb-4" id="ybira-breadcrumb">
         <.link navigate={~p"/arquivos"} class="breadcrumb__link" data-drop-folder="">{gettext("Início")}</.link>
-        <span :if={@folder} class="breadcrumb__sep"><.icon name="chevron-right" size={14} /></span>
-        <span :if={@folder} class="breadcrumb__current text-primary">{@folder.name}</span>
+        <%= for item <- breadcrumb_items(@breadcrumb) do %>
+          <span class="breadcrumb__sep"><.icon name="chevron-right" size={14} /></span>
+          <.link
+            :if={item.kind == :link}
+            patch={~p"/arquivos/pasta/#{item.public_id}"}
+            class={["breadcrumb__link", item.middle? && "hide-mobile"]}
+          >
+            {item.name}
+          </.link>
+          <span :if={item.kind == :ellipsis} class="hide-desktop" aria-hidden="true">...</span>
+          <span :if={item.kind == :current} class="breadcrumb__current text-primary">{item.name}</span>
+        <% end %>
       </nav>
 
       <p class="type-body-sm text-muted mb-3">

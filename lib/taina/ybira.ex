@@ -191,6 +191,35 @@ defmodule Taina.Ybira do
     end)
   end
 
+  @doc """
+  Pasta que contém um arquivo, pelo `public_id` dela, quando visível para quem
+  pergunta.
+
+  Serve para o botão de voltar da tela do arquivo: ele devolve para a pasta onde
+  o arquivo mora, não para o início. `{:error, :no_folder}` para arquivo solto
+  na raiz; `{:error, :not_found}` quando a pasta já está na lixeira;
+  `{:error, :forbidden}` para a casa de outra pessoa.
+
+  Recebe o arquivo já carregado (`get_file/2`): o `folder_id` vem de graça e a
+  busca é de uma linha só.
+  """
+  @spec file_folder_public_id(Scope.t(), Ybira.File.t()) ::
+          {:ok, String.t()} | {:error, :no_folder | :not_found | :forbidden}
+  def file_folder_public_id(_scope, %Ybira.File{folder_id: nil}), do: {:error, :no_folder}
+
+  def file_folder_public_id(%Scope{} = scope, %Ybira.File{folder_id: folder_id}) when is_integer(folder_id) do
+    Repo.with_tekoa(scope.tekoa.public_id, fn ->
+      query =
+        from d in Ybira.Folder,
+          where: d.id == ^folder_id and is_nil(d.deleted_at)
+
+      case Repo.one(query) do
+        nil -> {:error, :not_found}
+        folder -> authorize_read(scope, "ybira_folder", folder)
+      end
+    end)
+  end
+
   @impl true
   def delete_file(%Scope{} = scope, file_public_id) when is_binary(file_public_id) do
     Repo.with_tekoa(scope.tekoa.public_id, fn ->
@@ -456,6 +485,73 @@ defmodule Taina.Ybira do
       {:ok, Repo.all(query)}
     end)
   end
+
+  @doc """
+  Cadeia de pastas de uma pasta até a raiz (raiz -> atual, inclusive), na ordem
+  do breadcrumb.
+
+  Cada elo é `%{name: nome, public_id: public_id}`. A subida é uma CTE
+  recursiva com teto de profundidade (o `move_folder/3` garante o grafo sem
+  ciclos, mas a caixa não pode travar se algo escapar) e cada elo só entra se
+  quem pergunta pode ler a pasta: na casa de outra pessoa a cadeia para no
+  último elo legível.
+  """
+  @spec folder_path(Scope.t(), String.t()) ::
+          {:ok, [%{name: String.t(), public_id: String.t()}]} | {:error, :not_found}
+  def folder_path(%Scope{} = scope, folder_public_id) when is_binary(folder_public_id) do
+    Repo.with_tekoa(scope.tekoa.public_id, fn ->
+      with {:ok, rows} <- folder_chain(folder_public_id) do
+        # Sobe da pasta atual (primeira linha) e para no primeiro elo que não
+        # pode ler: a cadeia fica com o trecho contíguo que termina nela.
+        path =
+          Enum.reduce_while(rows, [], fn row, acc ->
+            if Maraca.can_read?(scope.ava, row.zona, row.ava_id, "ybira_folder", row.public_id) do
+              {:cont, [%{name: row.name, public_id: row.public_id} | acc]}
+            else
+              {:halt, acc}
+            end
+          end)
+
+        {:ok, Enum.reverse(path)}
+      end
+    end)
+  end
+
+  # Linhas chegam da pasta atual para a raiz (depth 0 -> 32). O teto existe
+  # para um grafo corrompido: sem ele, um ciclo no parent_id faria o Postgres
+  # crescer o resultado até estourar.
+  @folder_path_max_depth 32
+
+  defp folder_chain(folder_public_id) do
+    statement = """
+    WITH RECURSIVE chain AS (
+      SELECT f.id, f.parent_id, f.public_id, f.name, f.ava_id, f.zona, 0 AS depth
+      FROM ybira.folders f
+      WHERE f.public_id = $1 AND f.deleted_at IS NULL
+      UNION ALL
+      SELECT p.id, p.parent_id, p.public_id, p.name, p.ava_id, p.zona, c.depth + 1
+      FROM ybira.folders p
+      JOIN chain c ON p.id = c.parent_id AND c.depth < $2
+      WHERE p.deleted_at IS NULL
+    )
+    SELECT public_id, name, ava_id, zona FROM chain ORDER BY depth ASC
+    """
+
+    {:ok, %{rows: rows}} = Repo.query(statement, [folder_public_id, @folder_path_max_depth])
+
+    rows
+    |> Enum.map(fn [public_id, name, ava_id, zona] ->
+      %{public_id: public_id, name: name, ava_id: ava_id, zona: zona_atom(zona)}
+    end)
+    |> case do
+      [] -> {:error, :not_found}
+      rows -> {:ok, rows}
+    end
+  end
+
+  # `zona` chega do SQL como texto; os átomos existem (Ecto.Enum do schema).
+  defp zona_atom("casa"), do: :casa
+  defp zona_atom("praca"), do: :praca
 
   ## Cota / armazenamento
 
