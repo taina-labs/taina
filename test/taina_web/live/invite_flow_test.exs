@@ -5,6 +5,7 @@ defmodule TainaWeb.InviteFlowTest do
   import Taina.Fixtures
 
   alias Taina.Maraca
+  alias Taina.Repo
 
   setup do
     tekoa = tekoa_fixture()
@@ -75,5 +76,35 @@ defmodule TainaWeb.InviteFlowTest do
 
     assert redirected_to(conn) == ~p"/login"
     assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "expirou"
+  end
+
+  test "token desconhecido mostra o estado de convite expirado em vez do formulário", %{conn: conn} do
+    {:ok, _lv, html} = live(conn, ~p"/convite/nao-existe")
+
+    assert html =~ "Este convite expirou ou já foi usado"
+    assert html =~ "Ir para o login"
+    refute html =~ "Criar conta"
+  end
+
+  test "convite expirado mostra o estado de beco sem saída antes de preencher o formulário", %{
+    conn: conn,
+    zelador: zelador,
+    tekoa: tekoa
+  } do
+    {:ok, invited} = Maraca.invite_user(zelador, tekoa)
+
+    eight_days_ago = DateTime.shift(DateTime.utc_now(), day: -8)
+
+    Repo.with_tekoa(tekoa.public_id, fn ->
+      {:ok,
+       invited
+       |> Ecto.Changeset.change(invite_sent_at: eight_days_ago)
+       |> Repo.update!()}
+    end)
+
+    {:ok, _lv, html} = live(conn, ~p"/convite/#{invited.invite_token}")
+
+    assert html =~ "Este convite expirou ou já foi usado"
+    refute html =~ "account[password]"
   end
 end

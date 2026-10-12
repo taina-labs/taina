@@ -304,11 +304,12 @@ defmodule TainaWeb.SetupLive do
             id="setup_password"
             value={@data["password"]}
             placeholder={gettext("mínimo 8 caracteres")}
-            icon="shield"
             help={gettext("Pelo menos 8 caracteres. Uma frase que só você lembra é ainda melhor.")}
             autocomplete="new-password"
             errors={List.wrap(@errors["password"])}
-          />
+          >
+            <:trailing><.password_toggle target="setup_password" /></:trailing>
+          </.input>
           <.input
             label={gettext("Confirme a senha")}
             type="password"
@@ -318,7 +319,9 @@ defmodule TainaWeb.SetupLive do
             placeholder={gettext("a mesma senha")}
             autocomplete="new-password"
             errors={List.wrap(@errors["password_confirmation"])}
-          />
+          >
+            <:trailing><.password_toggle target="setup_password_confirmation" /></:trailing>
+          </.input>
           <div class="flex-1"></div>
           <.button type="submit" variant="primary" class="w-full" phx-disable-with={gettext("Continuar...")}>
             {gettext("Continuar")}

@@ -130,6 +130,10 @@ defmodule TainaWeb.CoreComponents do
   attr :icon, :string, default: nil
   attr :field, FormField, doc: "ex.: @form[:username]"
   attr :errors, :list, default: []
+
+  slot :trailing,
+    doc: "controle anexo à direita do campo (ex.: <.password_toggle>); quando presente, substitui o ícone decorativo"
+
   attr :rest, :global, include: ~w(autocomplete placeholder required minlength maxlength inputmode autofocus)
 
   def input(%{field: %FormField{} = field} = assigns) do
@@ -165,7 +169,8 @@ defmodule TainaWeb.CoreComponents do
           aria-describedby={input_describedby(@id, @help, @errors)}
           {@rest}
         />
-        <.icon :if={@icon} name={@icon} size={20} />
+        {render_slot(@trailing)}
+        <.icon :if={@icon && @trailing == []} name={@icon} size={20} />
       </div>
       <span :if={@help && @errors == []} class="field__help" id={"#{@id}-help"}>{@help}</span>
       <span
@@ -189,6 +194,39 @@ defmodule TainaWeb.CoreComponents do
       [] -> nil
       ids -> Enum.join(ids, " ")
     end
+  end
+
+  @doc """
+  Alternância mostrar/ocultar senha para o campo de senha de id `target`
+  (dentro do slot `:trailing` do `input/1`). O estado fica no botão
+  (`aria-pressed`) e o hook `PasswordToggle` troca o `type` do input; os
+  rótulos viajam nos data-attrs, então o gettext continua no servidor.
+
+      <.input type="password" id="login_password" ...>
+        <:trailing><.password_toggle target="login_password" /></:trailing>
+      </.input>
+  """
+  attr :target, :string, required: true, doc: "id do input de senha alvo"
+
+  def password_toggle(assigns) do
+    # O `phx-hook` exige `id`: deriva do alvo, único por campo.
+    assigns = assign(assigns, :id, "#{assigns.target}-toggle")
+
+    ~H"""
+    <button
+      type="button"
+      id={@id}
+      class="icon-btn"
+      phx-hook="PasswordToggle"
+      data-target={@target}
+      data-label-show={gettext("Mostrar senha")}
+      data-label-hide={gettext("Ocultar senha")}
+      aria-pressed="false"
+      aria-label={gettext("Mostrar senha")}
+    >
+      <.icon name="eye" size={20} />
+    </button>
+    """
   end
 
   @doc """

@@ -2,13 +2,16 @@ defmodule TainaWeb.InviteAcceptLive do
   @moduledoc """
   Aceite de convite: a pessoa convidada escolhe nome e senha. O submit é um
   POST tradicional para `InviteController.accept` (`accept_invite/2` + sessão
-  na mesma requisição). O token só é validado de verdade no submit, aqui ele
-  apenas viaja na URL. Campos não secretos voltam preenchidos pela query
-  quando o POST falha (senha nunca viaja na URL).
+  na mesma requisição). No mount o token é conferido de leve (só leitura, via
+  `Maraca.invite_status/1`): convite vencido ou já usado mostra o beco sem
+  saída em vez do formulário, e a validação de verdade continua no POST.
+  Campos não secretos voltam preenchidos pela query quando o POST falha
+  (senha nunca viaja na URL).
   """
 
   use TainaWeb, :live_view
 
+  alias Taina.Maraca
   alias TainaWeb.Layouts
 
   @impl true
@@ -16,7 +19,8 @@ defmodule TainaWeb.InviteAcceptLive do
     {:ok,
      socket
      |> assign(:page_title, gettext("Aceitar convite"))
-     |> assign(:token, token)}
+     |> assign(:token, token)
+     |> assign(:token_status, Maraca.invite_status(token))}
   end
 
   # Campos não secretos voltam pela URL quando o POST falha (o
@@ -31,64 +35,80 @@ defmodule TainaWeb.InviteAcceptLive do
   def render(assigns) do
     ~H"""
     <Layouts.auth flash={@flash}>
-      <div class="col gap-3 text-center mt-10 mb-8 items-center">
-        <.icon name="spark" size={40} class="spark" />
-        <h1 class="type-h1">{gettext("Você foi convidado!")}</h1>
-        <p class="type-body text-secondary">
-          {gettext("Crie sua conta para entrar na nuvem da comunidade.")}
-        </p>
-      </div>
+      <.empty_state
+        :if={@token_status == :invalid}
+        icon="clock"
+        title={gettext("Este convite expirou ou já foi usado")}
+        hint={gettext(
+          "Convites valem sete dias e só podem ser usados uma vez. Peça um novo link a quem cuida da sua comunidade."
+        )}
+      >
+        <.button variant="primary" navigate={~p"/login"}>{gettext("Ir para o login")}</.button>
+      </.empty_state>
 
-      <form id="invite-accept-form" action={~p"/convite/#{@token}"} method="post" class="col gap-5">
-        <input type="hidden" name="_csrf_token" value={get_csrf_token()} />
-        <.input
-          label={gettext("Seu nome de usuário")}
-          name="account[username]"
-          id="account_username"
-          value={@prefill["username"]}
-          placeholder={gettext("ex.: joao")}
-          help={gettext("Sem espaços. É com ele que você entra na comunidade.")}
-          autocomplete="username"
-          autocapitalize="none"
-          spellcheck="false"
-          autocorrect="off"
-          required
-          minlength="3"
-        />
-        <.input
-          label={gettext("Nome de exibição (opcional)")}
-          name="account[display_name]"
-          id="account_display_name"
-          value={@prefill["display_name"]}
-          placeholder={gettext("ex.: João Mendes")}
-          help={gettext("Como seu nome aparece para a comunidade.")}
-        />
-        <.input
-          label={gettext("Senha")}
-          type="password"
-          name="account[password]"
-          id="account_password"
-          value=""
-          placeholder={gettext("mínimo 8 caracteres")}
-          icon="shield"
-          help={gettext("Pelo menos 8 caracteres. Uma frase que só você lembra é ainda melhor.")}
-          autocomplete="new-password"
-          required
-          minlength="8"
-        />
-        <.input
-          label={gettext("Confirme a senha")}
-          type="password"
-          name="account[password_confirmation]"
-          id="account_password_confirmation"
-          value=""
-          placeholder={gettext("a mesma senha")}
-          autocomplete="new-password"
-          required
-          minlength="8"
-        />
-        <.button type="submit" variant="primary" class="w-full mt-2">{gettext("Criar conta")}</.button>
-      </form>
+      <div :if={@token_status == :ok}>
+        <div class="col gap-3 text-center mt-10 mb-8 items-center">
+          <.icon name="spark" size={40} class="spark" />
+          <h1 class="type-h1">{gettext("Você foi convidado!")}</h1>
+          <p class="type-body text-secondary">
+            {gettext("Crie sua conta para entrar na nuvem da comunidade.")}
+          </p>
+        </div>
+
+        <form id="invite-accept-form" action={~p"/convite/#{@token}"} method="post" class="col gap-5">
+          <input type="hidden" name="_csrf_token" value={get_csrf_token()} />
+          <.input
+            label={gettext("Seu nome de usuário")}
+            name="account[username]"
+            id="account_username"
+            value={@prefill["username"]}
+            placeholder={gettext("ex.: joao")}
+            help={gettext("Sem espaços. É com ele que você entra na comunidade.")}
+            autocomplete="username"
+            autocapitalize="none"
+            spellcheck="false"
+            autocorrect="off"
+            required
+            minlength="3"
+          />
+          <.input
+            label={gettext("Nome de exibição (opcional)")}
+            name="account[display_name]"
+            id="account_display_name"
+            value={@prefill["display_name"]}
+            placeholder={gettext("ex.: João Mendes")}
+            help={gettext("Como seu nome aparece para a comunidade.")}
+          />
+          <.input
+            label={gettext("Senha")}
+            type="password"
+            name="account[password]"
+            id="account_password"
+            value=""
+            placeholder={gettext("mínimo 8 caracteres")}
+            help={gettext("Pelo menos 8 caracteres. Uma frase que só você lembra é ainda melhor.")}
+            autocomplete="new-password"
+            required
+            minlength="8"
+          >
+            <:trailing><.password_toggle target="account_password" /></:trailing>
+          </.input>
+          <.input
+            label={gettext("Confirme a senha")}
+            type="password"
+            name="account[password_confirmation]"
+            id="account_password_confirmation"
+            value=""
+            placeholder={gettext("a mesma senha")}
+            autocomplete="new-password"
+            required
+            minlength="8"
+          >
+            <:trailing><.password_toggle target="account_password_confirmation" /></:trailing>
+          </.input>
+          <.button type="submit" variant="primary" class="w-full mt-2">{gettext("Criar conta")}</.button>
+        </form>
+      </div>
     </Layouts.auth>
     """
   end

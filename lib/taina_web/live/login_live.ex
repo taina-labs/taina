@@ -88,10 +88,11 @@ defmodule TainaWeb.LoginLive do
           id="login_password"
           value=""
           placeholder={gettext("sua senha")}
-          icon="shield"
           autocomplete="current-password"
           required
-        />
+        >
+          <:trailing><.password_toggle target="login_password" /></:trailing>
+        </.input>
         <.button type="submit" variant="primary" class="w-full mt-2">{gettext("Entrar")}</.button>
       </form>
 

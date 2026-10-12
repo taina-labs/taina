@@ -293,6 +293,39 @@ const ModalTrap = {
   },
 };
 
+// Mostrar/ocultar senha: alterna o type do input alvo entre "password" e
+// "text". Estado no próprio botão (aria-pressed + rótulo vindo dos
+// data-attrs, que chegam traduzidos do servidor). Puro cliente: a senha não
+// sai da tela e não há nada a decidir no servidor.
+const PasswordToggle = {
+  mounted() {
+    this.input = document.getElementById(this.el.dataset.target);
+    this.sync = () => {
+      if (!this.input) return;
+      const shown = this.input.type === "text";
+      this.el.setAttribute("aria-pressed", String(shown));
+      this.el.setAttribute(
+        "aria-label",
+        shown ? this.el.dataset.labelHide : this.el.dataset.labelShow,
+      );
+    };
+    this.el.addEventListener("click", () => {
+      if (!this.input) return;
+      this.input.type = this.input.type === "password" ? "text" : "password";
+      this.sync();
+    });
+    this.sync();
+  },
+  updated() {
+    // O patch do LiveView pode restaurar type="password" (o atributo vem do
+    // servidor, no validate do wizard): re-sincroniza o botão com o estado
+    // real do input. O input volta a existir junto, mas re-resolve o alvo
+    // caso o patch o tenha trocado.
+    this.input = document.getElementById(this.el.dataset.target) || this.input;
+    this.sync();
+  },
+};
+
 export default {
   Clipboard,
   ViewerNav,
@@ -302,4 +335,5 @@ export default {
   FlashAutoDismiss,
   DnD,
   ModalTrap,
+  PasswordToggle,
 };
