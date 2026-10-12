@@ -175,15 +175,15 @@ defmodule TainaWeb.StorageLive do
           {gettext("Só entra o que está na praça, a sua casa e o que te deixarem ver. A casa dos outros fica de fora.")}
         </p>
 
-        <div class="list">
-          <div :for={{kind, bytes} <- Enum.sort_by(@by_kind, fn {_k, b} -> -b end)} class="list-row">
+        <ul class="list">
+          <li :for={{kind, bytes} <- Enum.sort_by(@by_kind, fn {_k, b} -> -b end)} class="list-row">
             <span class={"legend-dot legend-dot--#{kind}"}></span>
             <div class="list-row__body">
               <p class="type-body">{kind_label(kind)}</p>
             </div>
             <p class="type-mono-sm">{format_bytes(bytes)}</p>
-          </div>
-        </div>
+          </li>
+        </ul>
         <p class="type-caption text-muted">
           {gettext("Soma do que você vê: %{total}", total: format_bytes(by_kind_total(@by_kind)))}
         </p>
