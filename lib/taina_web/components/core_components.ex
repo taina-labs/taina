@@ -402,11 +402,14 @@ defmodule TainaWeb.CoreComponents do
 
   @doc """
   Linha de lista: ícone/avatar à esquerda, título + meta, ações à direita.
+  Cada linha é um `<li>`: as telas agrupam as linhas em `<ul class="list">`.
 
-      <.list_row title="Estatuto.pdf" meta="PDF, 1,1 MB">
-        <:leading><.service_square service="doc" icon="file" /></:leading>
-        <:actions><.icon_button name="kebab" label="Mais opções" /></:actions>
-      </.list_row>
+      <ul class="list">
+        <.list_row title="Estatuto.pdf" meta="PDF, 1,1 MB">
+          <:leading><.service_square service="doc" icon="file" /></:leading>
+          <:actions><.icon_button name="kebab" label="Mais opções" /></:actions>
+        </.list_row>
+      </ul>
   """
   attr :title, :string, required: true
   attr :meta, :string, default: nil
@@ -418,7 +421,7 @@ defmodule TainaWeb.CoreComponents do
 
   def list_row(assigns) do
     ~H"""
-    <div class="list-row" {@rest}>
+    <li class="list-row" {@rest}>
       {render_slot(@leading)}
       <.link :if={@navigate} navigate={@navigate} class="list-row__body">
         <p class="list-row__title">{@title}</p>
@@ -431,7 +434,7 @@ defmodule TainaWeb.CoreComponents do
       <div :if={@actions != []} class="list-row__actions">
         {render_slot(@actions)}
       </div>
-    </div>
+    </li>
     """
   end
 
@@ -759,13 +762,18 @@ defmodule TainaWeb.CoreComponents do
   attr :icon, :string, default: "folder"
   attr :title, :string, required: true
   attr :hint, :string, default: nil
+
+  attr :tag, :string,
+    default: "p",
+    doc: ~s{tag do título (padrão "p"; use "h2" etc. quando a tela tem hierarquia de cabeçalho própria)}
+
   slot :inner_block
 
   def empty_state(assigns) do
     ~H"""
     <div class="empty-state">
       <.icon name={@icon} size={40} />
-      <p class="type-h3">{@title}</p>
+      <.dynamic_tag tag_name={@tag} class="type-h3">{@title}</.dynamic_tag>
       <p :if={@hint} class="type-body-sm">{@hint}</p>
       {render_slot(@inner_block)}
     </div>
