@@ -40,6 +40,35 @@ defmodule TainaWeb.MyRequestsLiveTest do
     assert html =~ "esperando"
   end
 
+  test "an approved request shows the liberation line instead of vanishing", %{
+    conn: conn,
+    owner: owner,
+    requester: requester,
+    target_file: file
+  } do
+    req = request(requester, owner, file)
+    {:ok, _} = Maraca.approve_access_request(owner, req.id)
+    {:ok, _lv, html} = conn |> log_in(requester) |> live(~p"/conta/meus-pedidos")
+
+    assert html =~ "Já decididos"
+    assert html =~ "doc.txt: Joana liberou. Você já pode abrir."
+    refute html =~ "esperando"
+  end
+
+  test "a denied request shows the refusal line and invites trying again", %{
+    conn: conn,
+    owner: owner,
+    requester: requester,
+    target_file: file
+  } do
+    req = request(requester, owner, file)
+    {:ok, _} = Maraca.deny_access_request(owner, req.id)
+    {:ok, _lv, html} = conn |> log_in(requester) |> live(~p"/conta/meus-pedidos")
+
+    assert html =~ "Já decididos"
+    assert html =~ "doc.txt: Joana recusou este pedido. Você pode pedir de novo quando quiser."
+  end
+
   test "approval refreshes the list and flashes", %{conn: conn, owner: owner, requester: requester, target_file: file} do
     req = request(requester, owner, file)
     {:ok, lv, _html} = conn |> log_in(requester) |> live(~p"/conta/meus-pedidos")
@@ -48,7 +77,9 @@ defmodule TainaWeb.MyRequestsLiveTest do
 
     html = render(lv)
     assert html =~ "Pedido aprovado"
-    refute html =~ "Joana"
+    refute html =~ "esperando"
+    assert html =~ "Já decididos"
+    assert html =~ "Joana liberou"
   end
 
   test "denial refreshes the list and flashes", %{conn: conn, owner: owner, requester: requester, target_file: file} do
@@ -59,6 +90,7 @@ defmodule TainaWeb.MyRequestsLiveTest do
 
     html = render(lv)
     assert html =~ "Seu pedido foi negado"
-    refute html =~ "Joana"
+    refute html =~ "esperando"
+    assert html =~ "Joana recusou este pedido"
   end
 end
