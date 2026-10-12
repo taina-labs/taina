@@ -189,7 +189,7 @@ defmodule TainaWeb.HomeLive do
       </.card>
 
       <p class="type-overline text-muted mb-3">{gettext("Recentes")}</p>
-      <div class="list">
+      <ul class="list">
         <.list_row
           :for={file <- @recent}
           title={file.original_filename}
@@ -204,7 +204,7 @@ defmodule TainaWeb.HomeLive do
             <.icon name="chevron-right" size={18} class="text-faint" />
           </:actions>
         </.list_row>
-      </div>
+      </ul>
 
       <.empty_state
         :if={@recent == [] and @recent_ok}

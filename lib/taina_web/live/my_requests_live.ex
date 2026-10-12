@@ -177,7 +177,7 @@ defmodule TainaWeb.MyRequestsLive do
             )}
           </p>
 
-          <div class="list" id="my-requests" phx-update="stream">
+          <ul class="list" id="my-requests" phx-update="stream">
             <.list_row
               :for={{dom_id, request} <- @streams.requests}
               id={dom_id}
@@ -187,13 +187,13 @@ defmodule TainaWeb.MyRequestsLive do
             >
               <:leading><.avatar name={owner_name(request)} /></:leading>
             </.list_row>
-          </div>
+          </ul>
         </div>
 
         <div :if={@decisions != []} class="col gap-2">
           <p class="type-overline text-muted">{gettext("Já decididos")}</p>
 
-          <div class="list">
+          <ul class="list">
             <.list_row
               :for={decision <- @decisions}
               title={owner_name(decision)}
@@ -202,7 +202,7 @@ defmodule TainaWeb.MyRequestsLive do
             >
               <:leading><.avatar name={owner_name(decision)} /></:leading>
             </.list_row>
-          </div>
+          </ul>
         </div>
 
         <.empty_state

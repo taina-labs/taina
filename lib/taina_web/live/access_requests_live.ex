@@ -335,7 +335,7 @@ defmodule TainaWeb.AccessRequestsLive do
             )}
           </p>
 
-          <div class="list" id="requests" phx-update="stream">
+          <ul class="list" id="requests" phx-update="stream">
             <.list_row
               :for={{dom_id, request} <- @streams.requests}
               id={dom_id}
@@ -353,7 +353,7 @@ defmodule TainaWeb.AccessRequestsLive do
                 </.button>
               </:actions>
             </.list_row>
-          </div>
+          </ul>
         </div>
 
         <.empty_state
@@ -366,7 +366,7 @@ defmodule TainaWeb.AccessRequestsLive do
         <div :if={@any_grants?} class="col gap-2">
           <p class="type-overline text-muted">{gettext("Já liberados")}</p>
 
-          <div class="list">
+          <ul class="list">
             <.list_row
               :for={grant <- @grants}
               title={recipient_name(grant)}
@@ -379,7 +379,7 @@ defmodule TainaWeb.AccessRequestsLive do
                 </.button>
               </:actions>
             </.list_row>
-          </div>
+          </ul>
         </div>
 
         <p :if={!@any_grants? and !@grants_error} class="type-body-sm text-secondary">

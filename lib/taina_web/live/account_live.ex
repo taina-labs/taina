@@ -52,7 +52,7 @@ defmodule TainaWeb.AccountLive do
           <.badge :if={Maraca.zelador?(@current_scope.ava)} variant="zelador">{gettext("Zelador(a)")}</.badge>
         </.card>
 
-        <div class="list">
+        <ul class="list">
           <.list_row
             title={gettext("Pedidos")}
             meta={gettext("quem pediu para abrir seus arquivos")}
@@ -105,7 +105,7 @@ defmodule TainaWeb.AccountLive do
             <:leading><.service_square service="neutral" icon="trash" /></:leading>
             <:actions><.icon name="chevron-right" size={18} class="text-faint" /></:actions>
           </.list_row>
-        </div>
+        </ul>
 
         <.link href={~p"/logout"} method="delete" class="btn btn--danger btn--md w-full">
           <.icon name="logout" size={18} /> {gettext("Sair")}
