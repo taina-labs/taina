@@ -48,7 +48,10 @@ defmodule TainaWeb.InviteAcceptLive do
           value={@prefill["username"]}
           placeholder={gettext("ex.: joao")}
           help={gettext("Sem espaços. É com ele que você entra na comunidade.")}
+          autocomplete="username"
           autocapitalize="none"
+          spellcheck="false"
+          autocorrect="off"
           required
           minlength="3"
         />
@@ -68,7 +71,7 @@ defmodule TainaWeb.InviteAcceptLive do
           value=""
           placeholder={gettext("mínimo 8 caracteres")}
           icon="shield"
-          help={gettext("Use uma frase longa que só você lembra.")}
+          help={gettext("Pelo menos 8 caracteres. Uma frase que só você lembra é ainda melhor.")}
           autocomplete="new-password"
           required
           minlength="8"

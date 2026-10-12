@@ -1,8 +1,9 @@
 defmodule TainaWeb.LoginLive do
   @moduledoc """
   Tela de login. O form é um POST tradicional para `SessionController.create`
-  (cookie nasce lá); o LiveView cuida só da apresentação e dos atalhos
-  ("esqueci minha senha", "tenho um convite").
+  (cookie nasce lá); o LiveView cuida só da apresentação. Sem e-mail (RFC_003,
+  seção 4), a recuperação de senha é mediada pelo zelador: a explicação vive
+  num cartão fixo embaixo do form, não num flash que some em 4 segundos.
   """
 
   use TainaWeb, :live_view
@@ -28,30 +29,31 @@ defmodule TainaWeb.LoginLive do
   end
 
   @impl true
-  def handle_event("forgot-password", _params, socket) do
-    # Sem e-mail (RFC_003, seção 4): a recuperação é mediada pelo zelador, que
-    # gera um link de redefinição e entrega pelo mesmo canal dos convites.
-    {:noreply,
-     Phoenix.LiveView.put_flash(
-       socket,
-       :info,
-       gettext("Fale com quem cuida da sua comunidade. Essa pessoa gera um link para você criar uma senha nova.")
-     )}
-  end
-
   def handle_event("toggle-invite-help", _params, socket) do
     {:noreply, assign(socket, :show_invite_help, !socket.assigns.show_invite_help)}
   end
 
-  # Quem tem só o código do convite (sem o link completo) entra direto na tela
-  # de aceite: o código é o que vem depois de /convite/ no link do QR code.
-  def handle_event("open-invite", %{"code" => code}, socket) do
-    code = String.trim(code || "")
+  # O campo aceita o link completo colado (ou só o código): o token é o que vem
+  # depois de /convite/ no link que o QR code abre.
+  def handle_event("open-invite", %{"code" => input}, socket) do
+    case invite_token(input) do
+      nil -> {:noreply, socket}
+      code -> {:noreply, Phoenix.LiveView.push_navigate(socket, to: ~p"/convite/#{code}")}
+    end
+  end
 
-    if code == "" do
-      {:noreply, socket}
-    else
-      {:noreply, Phoenix.LiveView.push_navigate(socket, to: ~p"/convite/#{code}")}
+  # Extrai o token do link (`.../convite/<token>`); sem link na colagem, o
+  # texto segue cru (pode já ser só o código).
+  defp invite_token(input) do
+    case String.trim(input || "") do
+      "" ->
+        nil
+
+      text ->
+        case Regex.run(~r{/convite/([A-Za-z0-9_-]+)}, text) do
+          [_link, token] -> token
+          nil -> text
+        end
     end
   end
 
@@ -62,7 +64,7 @@ defmodule TainaWeb.LoginLive do
       <div class="col gap-3 text-center mt-10 mb-8 items-center">
         <.icon name="spark" size={40} class="spark" />
         <h1 class="type-h1">Tainá</h1>
-        <h2 class="type-h2">{gettext("Bem-vindo de volta")}</h2>
+        <h2 class="type-h2">{gettext("Boas-vindas de volta")}</h2>
         <p class="type-body-sm text-secondary">{gettext("Entre com seu nome na nuvem da sua comunidade.")}</p>
       </div>
 
@@ -90,11 +92,18 @@ defmodule TainaWeb.LoginLive do
           autocomplete="current-password"
           required
         />
-        <button type="button" class="type-label text-brand text-right py-3" phx-click="forgot-password">
-          {gettext("Esqueci minha senha")}
-        </button>
         <.button type="submit" variant="primary" class="w-full mt-2">{gettext("Entrar")}</.button>
       </form>
+
+      <.card class="col gap-2 mt-2">
+        <div class="row gap-2 items-center">
+          <.icon name="info" size={18} class="text-muted" />
+          <p class="type-label">{gettext("Esqueceu a senha?")}</p>
+        </div>
+        <p class="type-body-sm text-secondary">
+          {gettext("O Tainá não usa e-mail. Fale com quem cuida da sua comunidade: essa pessoa gera um link para você criar uma senha nova.")}
+        </p>
+      </.card>
 
       <div class="row gap-4 my-6">
         <hr class="divider flex-1" />
@@ -115,12 +124,14 @@ defmodule TainaWeb.LoginLive do
         </p>
         <form id="invite-code-form" phx-submit="open-invite" class="col gap-3 mb-4">
           <.input
-            label={gettext("Tem só o código?")}
+            label={gettext("Cole aqui o link do convite")}
             name="code"
             id="invite_code"
-            placeholder={gettext("digite o código do convite")}
-            help={gettext("É o que aparece no link ou no QR code.")}
+            placeholder={gettext("o link que quem cuida te mandou")}
+            help={gettext("É o mesmo link que o QR code abre.")}
             autocapitalize="none"
+            spellcheck="false"
+            inputmode="url"
             required
           />
           <.button type="submit" variant="primary" class="w-full" phx-disable-with={gettext("Abrindo...")}>

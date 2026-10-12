@@ -1,10 +1,13 @@
 defmodule TainaWeb.SetupLive do
   @moduledoc """
   Wizard de primeiro boot (3 passos): nome da comunidade, conta de quem cuida
-  (zelador) e armazenamento. Os passos vivem aqui (validação ao vivo);
-  o submit final valida todos os passos (somente leitura) e só então solta o
-  POST tradicional para `SetupController` (`phx-trigger-action`), que faz
-  `Maraca.bootstrap/2` e abre a sessão na mesma requisição.
+  (zelador) e armazenamento. Cada passo vive na própria URL (`?passo=`): o
+  gesto de voltar do Android desce um passo em vez de sair do wizard. A
+  validação roda ao vivo e espelha as regras do servidor (`Tekoa`/`Ava`) para
+  o erro ficar no campo, não virar falha de changeset no POST que derruba o
+  wizard inteiro; o submit final valida todos os passos (somente leitura) e só
+  então solta o POST tradicional para `SetupController` (`phx-trigger-action`),
+  que faz `Maraca.bootstrap/2` e abre a sessão na mesma requisição.
 
   Deriva da RFC 002 (D2): só roda em instância virgem, se já existe Tekoa,
   redireciona para o login. A conta criada é a do zelador (quem cuida da
@@ -37,33 +40,39 @@ defmodule TainaWeb.SetupLive do
        )
        |> assign(:errors, %{})
        |> assign(:trigger_submit, false)
-       |> assign(:storage_root, Application.fetch_env!(:taina, :storage_root))
        |> assign(:free_space, free_space())}
     end
   end
 
-  # ?passo= na URL (refresh, retorno ao wizard): só aceita 1..3; fora disso
-  # mantém o passo atual.
+  # ?passo= na URL: cada passo empurra a própria URL, então o gesto de voltar
+  # do Android desce um passo em vez de sair do wizard (e um refresh ou retorno
+  # ao wizard cai no passo certo). Só aceita 1..3; sem ?passo= (voltou do passo
+  # 2), cai no passo 1.
   @impl true
   def handle_params(%{"passo" => passo}, _uri, %{assigns: %{step: current}} = socket) do
     {:noreply, assign(socket, :step, step_from_passo(passo, current))}
   end
 
-  def handle_params(_params, _uri, socket), do: {:noreply, socket}
+  def handle_params(_params, _uri, socket), do: {:noreply, assign(socket, :step, 1)}
 
   @impl true
   def handle_event("validate", %{"setup" => params}, socket) do
-    data = Map.merge(socket.assigns.data, params)
+    data = normalize_data(Map.merge(socket.assigns.data, params))
     {:noreply, socket |> assign(:data, data) |> assign(:errors, Map.drop(socket.assigns.errors, Map.keys(params)))}
   end
 
   def handle_event("next", %{"setup" => params}, socket) do
-    data = Map.merge(socket.assigns.data, params)
+    data = normalize_data(Map.merge(socket.assigns.data, params))
 
     case validate_step(socket.assigns.step, data) do
       %{} = errors when map_size(errors) == 0 ->
         next_step = min(socket.assigns.step + 1, 3)
-        {:noreply, socket |> assign(:data, data) |> assign(:errors, %{}) |> assign(:step, next_step)}
+
+        {:noreply,
+         socket
+         |> assign(:data, data)
+         |> assign(:errors, %{})
+         |> push_patch(to: ~p"/setup?passo=#{next_step}")}
 
       errors ->
         {:noreply, socket |> assign(:data, data) |> assign(:errors, errors)}
@@ -74,21 +83,27 @@ defmodule TainaWeb.SetupLive do
   # SetupController: erro de formulário volta para o passo do problema em vez
   # de virar falha de changeset no servidor.
   def handle_event("final", %{"setup" => params}, socket) do
-    data = Map.merge(socket.assigns.data, params)
+    data = normalize_data(Map.merge(socket.assigns.data, params))
 
     case validate_all_steps(data) do
       %{} = errors when map_size(errors) == 0 ->
         {:noreply, assign(socket, :trigger_submit, true)}
 
       errors ->
-        {:noreply, socket |> assign(:data, data) |> assign(:errors, errors) |> assign(:step, error_step(errors))}
+        {:noreply,
+         socket
+         |> assign(:data, data)
+         |> assign(:errors, errors)
+         |> push_patch(to: ~p"/setup?passo=#{error_step(errors)}")}
     end
   end
 
   def handle_event("final", _params, socket), do: {:noreply, socket}
 
+  # O passo vive na URL: o patch coloca o passo anterior no histórico e o
+  # `handle_params` aplica.
   def handle_event("back", _params, socket) do
-    {:noreply, assign(socket, :step, max(socket.assigns.step - 1, 1))}
+    {:noreply, push_patch(socket, to: ~p"/setup?passo=#{max(socket.assigns.step - 1, 1)}")}
   end
 
   defp step_from_passo(passo, current) when is_binary(passo) do
@@ -100,20 +115,64 @@ defmodule TainaWeb.SetupLive do
 
   defp step_from_passo(_passo, current), do: current
 
+  # O username é chave de acesso (e semente do handle federado): normaliza no
+  # cliente como o servidor normaliza (`Ava.normalize_username/1`), antes de
+  # validar. "João" ou "ana clara" falham no campo, não no POST.
+  @username_format ~r/^[a-z0-9._-]+$/
+
+  defp normalize_data(data) do
+    case data["username"] do
+      nil -> data
+      username -> Map.put(data, "username", username |> String.trim() |> String.downcase())
+    end
+  end
+
   defp validate_step(1, data) do
-    if String.trim(data["community_name"]) == "",
-      do: %{"community_name" => gettext("dê um nome à comunidade")},
-      else: %{}
+    %{}
+    |> validate_presence(data, "community_name", gettext("dê um nome à comunidade"))
+    |> validate_length_in(data, "community_name", 3..100, gettext("de 3 a 100 caracteres"))
   end
 
   defp validate_step(2, data) do
     %{}
-    |> validate_presence(data, "username", gettext("escolha um nome de usuário"))
+    |> validate_username(data)
+    |> validate_length_in(data, "display_name", 0..80, gettext("de no máximo 80 caracteres"))
     |> validate_password(data)
     |> validate_confirmation(data)
   end
 
   defp validate_step(_step, _data), do: %{}
+
+  # Espelha `Ava.validate_username/1` (3 a 50 caracteres, só minúsculas,
+  # números, ponto, hífen e _): o erro de formato aparece no campo aqui.
+  defp validate_username(errors, data) do
+    username = data["username"] || ""
+
+    cond do
+      username == "" ->
+        Map.put(errors, "username", gettext("escolha um nome de usuário"))
+
+      String.length(username) not in 3..50 ->
+        Map.put(errors, "username", gettext("de 3 a 50 caracteres"))
+
+      not Regex.match?(@username_format, username) ->
+        Map.put(errors, "username", gettext("Use só letras minúsculas, números, ponto, hífen ou _, sem espaços."))
+
+      true ->
+        errors
+    end
+  end
+
+  # Espelha os `validate_length` do servidor (`Tekoa`: nome 3 a 100; `Ava`:
+  # display_name até 80). Vazio não acusa aqui: presença (ou opcionalidade)
+  # cuida disso.
+  defp validate_length_in(errors, data, key, range, message) do
+    value = data[key] || ""
+
+    if String.trim(value) != "" and String.length(value) not in range,
+      do: Map.put(errors, key, message),
+      else: errors
+  end
 
   defp validate_all_steps(data) do
     1
@@ -128,8 +187,8 @@ defmodule TainaWeb.SetupLive do
       Map.has_key?(errors, "community_name") ->
         1
 
-      Map.has_key?(errors, "username") or Map.has_key?(errors, "password") or
-          Map.has_key?(errors, "password_confirmation") ->
+      Map.has_key?(errors, "username") or Map.has_key?(errors, "display_name") or
+        Map.has_key?(errors, "password") or Map.has_key?(errors, "password_confirmation") ->
         2
 
       true ->
@@ -154,7 +213,7 @@ defmodule TainaWeb.SetupLive do
   end
 
   # Espaço livre no volume do storage, melhor esforço (`df` POSIX). Falhou?
-  # Mostramos só o caminho: o número é conforto, não requisito.
+  # O número simplesmente não aparece: é conforto, não requisito.
   defp free_space do
     storage_root = Application.fetch_env!(:taina, :storage_root)
 
@@ -224,7 +283,10 @@ defmodule TainaWeb.SetupLive do
             value={@data["username"]}
             placeholder={gettext("ex.: ana")}
             help={gettext("Sem espaços. É com ele que você entra.")}
+            autocomplete="username"
             autocapitalize="none"
+            spellcheck="false"
+            autocorrect="off"
             errors={List.wrap(@errors["username"])}
           />
           <.input
@@ -243,7 +305,7 @@ defmodule TainaWeb.SetupLive do
             value={@data["password"]}
             placeholder={gettext("mínimo 8 caracteres")}
             icon="shield"
-            help={gettext("Use uma frase longa que só você lembra.")}
+            help={gettext("Pelo menos 8 caracteres. Uma frase que só você lembra é ainda melhor.")}
             autocomplete="new-password"
             errors={List.wrap(@errors["password"])}
           />
@@ -284,7 +346,6 @@ defmodule TainaWeb.SetupLive do
               <p class="type-label">
                 {gettext("Disco interno")}{if @free_space, do: ", #{format_bytes(@free_space)} #{gettext("livres")}"}
               </p>
-              <p class="type-mono-sm text-muted">{@storage_root} ({gettext("recomendado")})</p>
             </div>
           </.card>
 
