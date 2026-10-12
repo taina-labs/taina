@@ -34,6 +34,42 @@ defmodule TainaWeb.FilesLiveTest do
     assert html =~ "Sua casa está vazia"
   end
 
+  describe "breadcrumb" do
+    test "pasta aninhada mostra a cadeia de ancestrais completa", %{conn: conn, scope: scope, ava: ava} do
+      {:ok, raiz} = Ybira.create_folder(scope, %{name: "Raiz"})
+      {:ok, meio} = Ybira.create_folder(scope, %{name: "Meio", parent_public_id: raiz.public_id})
+      {:ok, folha} = Ybira.create_folder(scope, %{name: "Folha", parent_public_id: meio.public_id})
+
+      {:ok, lv, html} = conn |> log_in(ava) |> live(~p"/arquivos/pasta/#{folha.public_id}")
+
+      assert html =~ "Início"
+      assert html =~ "Raiz"
+      assert html =~ "Meio"
+      assert html =~ "Folha"
+
+      # cada ancestral é um link para a pasta dele
+      assert has_element?(lv, ~s(a[href="/arquivos/pasta/#{raiz.public_id}"]), "Raiz")
+      assert has_element?(lv, ~s(a[href="/arquivos/pasta/#{meio.public_id}"]), "Meio")
+      # com meio na cadeia, o marcador de truncamento entra (visível no mobile)
+      assert has_element?(lv, ~s(.breadcrumb .hide-desktop), "...")
+      # a pasta atual fica sem link
+      refute has_element?(lv, ~s(a[href="/arquivos/pasta/#{folha.public_id}"]))
+    end
+
+    test "pasta de primeiro nível não tem meio a truncar", %{conn: conn, scope: scope, ava: ava} do
+      {:ok, raiz} = Ybira.create_folder(scope, %{name: "Raiz"})
+      {:ok, folha} = Ybira.create_folder(scope, %{name: "Folha", parent_public_id: raiz.public_id})
+
+      {:ok, lv, html} = conn |> log_in(ava) |> live(~p"/arquivos/pasta/#{folha.public_id}")
+
+      assert html =~ "Raiz"
+      assert html =~ "Folha"
+      assert has_element?(lv, ~s(a[href="/arquivos/pasta/#{raiz.public_id}"]), "Raiz")
+      # sem meio, o marcador de truncamento não entra
+      refute has_element?(lv, ~s(.breadcrumb .hide-desktop), "...")
+    end
+  end
+
   test "cria pasta pelo modal", %{conn: conn, ava: ava} do
     {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/arquivos?zona=casa")
 
