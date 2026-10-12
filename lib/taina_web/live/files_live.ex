@@ -696,32 +696,34 @@ defmodule TainaWeb.FilesLive do
               </div>
             </div>
           <% else %>
-            <ul class="list">
-              <.list_row
-                :for={folder <- @folders}
-                title={folder.name}
-                meta={"#{gettext("Pasta")} / #{readability_short(folder.zona)}"}
-                navigate={~p"/arquivos/pasta/#{folder.public_id}"}
-                draggable="true"
-                data-drag-id={folder.public_id}
-                data-drag-kind="folder"
-                data-drop-folder={drop_folder(@current_scope, folder)}
-              >
-                <:leading>
-                  <.service_square service="ybira" icon="folder" />
-                </:leading>
-                <:actions>
-                  <.item_menu
-                    kind="folder"
-                    id={folder.public_id}
-                    name={folder.name}
-                    zona={folder.zona}
-                    own?={own?(@current_scope, folder)}
-                  />
-                </:actions>
-              </.list_row>
+            <div class="list">
+              <ul :if={@folders != []} class="list">
+                <.list_row
+                  :for={folder <- @folders}
+                  title={folder.name}
+                  meta={"#{gettext("Pasta")} / #{readability_short(folder.zona)}"}
+                  navigate={~p"/arquivos/pasta/#{folder.public_id}"}
+                  draggable="true"
+                  data-drag-id={folder.public_id}
+                  data-drag-kind="folder"
+                  data-drop-folder={drop_folder(@current_scope, folder)}
+                >
+                  <:leading>
+                    <.service_square service="ybira" icon="folder" />
+                  </:leading>
+                  <:actions>
+                    <.item_menu
+                      kind="folder"
+                      id={folder.public_id}
+                      name={folder.name}
+                      zona={folder.zona}
+                      own?={own?(@current_scope, folder)}
+                    />
+                  </:actions>
+                </.list_row>
+              </ul>
 
-              <div id="files" phx-update="stream">
+              <ul id="files" phx-update="stream" class="list">
                 <.list_row
                   :for={{dom_id, file} <- @streams.files}
                   id={dom_id}
@@ -754,8 +756,8 @@ defmodule TainaWeb.FilesLive do
                     />
                   </:actions>
                 </.list_row>
-              </div>
-            </ul>
+              </ul>
+            </div>
           <% end %>
         </div>
 
@@ -887,26 +889,28 @@ defmodule TainaWeb.FilesLive do
         <h2 class="type-h3 mb-1">{gettext("Mover para...")}</h2>
         <p :if={@move_target} class="type-body-sm text-muted mb-4">{@move_target.name}</p>
         <ul :if={@move_target} class="list">
-          <button
-            type="button"
-            class="list-row"
-            phx-click={JS.push("move-item", value: %{kind: @move_target.kind, id: @move_target.id, target: ""})}
-          >
-            <.service_square service="ybira" icon="home" />
-            <span class="list-row__body type-label">{gettext("Início (raiz)")}</span>
-          </button>
-          <button
-            :for={folder <- @all_folders}
-            :if={folder.public_id != @move_target.id}
-            type="button"
-            class="list-row"
-            phx-click={
-              JS.push("move-item", value: %{kind: @move_target.kind, id: @move_target.id, target: folder.public_id})
-            }
-          >
-            <.service_square service="ybira" icon="folder" />
-            <span class="list-row__body type-label">{folder.name}</span>
-          </button>
+          <li>
+            <button
+              type="button"
+              class="list-row"
+              phx-click={JS.push("move-item", value: %{kind: @move_target.kind, id: @move_target.id, target: ""})}
+            >
+              <.service_square service="ybira" icon="home" />
+              <span class="list-row__body type-label">{gettext("Início (raiz)")}</span>
+            </button>
+          </li>
+          <li :for={folder <- @all_folders} :if={folder.public_id != @move_target.id}>
+            <button
+              type="button"
+              class="list-row"
+              phx-click={
+                JS.push("move-item", value: %{kind: @move_target.kind, id: @move_target.id, target: folder.public_id})
+              }
+            >
+              <.service_square service="ybira" icon="folder" />
+              <span class="list-row__body type-label">{folder.name}</span>
+            </button>
+          </li>
         </ul>
         <.button variant="secondary" size="md" class="w-full mt-4" phx-click="close-modal">
           {gettext("Cancelar")}

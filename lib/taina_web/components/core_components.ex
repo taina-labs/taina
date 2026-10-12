@@ -403,6 +403,9 @@ defmodule TainaWeb.CoreComponents do
   @doc """
   Linha de lista: ícone/avatar à esquerda, título + meta, ações à direita.
   Cada linha é um `<li>`: as telas agrupam as linhas em `<ul class="list">`.
+  Quando a linha convive com outro conteúdo no mesmo item (uma barra de
+  progresso, por exemplo), passe `tag="div"` e mantenha o grupo como
+  `<div class="list">`.
 
       <ul class="list">
         <.list_row title="Estatuto.pdf" meta="PDF, 1,1 MB">
@@ -415,13 +418,14 @@ defmodule TainaWeb.CoreComponents do
   attr :meta, :string, default: nil
   attr :meta_class, :string, default: nil
   attr :navigate, :string, default: nil
+  attr :tag, :string, default: "li"
   attr :rest, :global
   slot :leading
   slot :actions
 
   def list_row(assigns) do
     ~H"""
-    <li class="list-row" {@rest}>
+    <.dynamic_tag tag_name={@tag} class="list-row" {@rest}>
       {render_slot(@leading)}
       <.link :if={@navigate} navigate={@navigate} class="list-row__body">
         <p class="list-row__title">{@title}</p>
@@ -434,7 +438,7 @@ defmodule TainaWeb.CoreComponents do
       <div :if={@actions != []} class="list-row__actions">
         {render_slot(@actions)}
       </div>
-    </li>
+    </.dynamic_tag>
     """
   end
 

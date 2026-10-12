@@ -205,7 +205,7 @@ defmodule TainaWeb.UploadLive do
           </p>
           <div class="list">
             <div :for={entry <- uploading_entries(@uploads)}>
-              <.list_row title={entry.client_name}>
+              <.list_row title={entry.client_name} tag="div">
                 <:leading>
                   <% {service, icon} = file_visual(entry.client_type || "") %>
                   <.service_square service={service} icon={icon} />
