@@ -74,7 +74,7 @@ packages.mixRelease {
   mixFodDeps = packages.fetchMixDeps {
     pname = "taina-deps";
     inherit version src;
-    hash = "sha256-0dX2atg1Hf41OdQJQT/sJ3oH4sBb4cusGdX8KDu0+j8=";
+    hash = "sha256-/dyxM6kC4GUmHCyCB7rOaYALRfTzLde6RJQu43kdJoM=";
   };
 
   nativeBuildInputs = [ pkg-config ];
@@ -100,11 +100,9 @@ config :elixir_make, :force_build, exqlite: true
 EOF
   '';
 
-  # fetchMixDeps strips each git dep's .git down to HEAD, which breaks Mix's git
-  # dep check for ypy (it reads as a lock mismatch), so the check is skipped
-  # here as the builder's own compile already does. Mirrors the assets.deploy
-  # alias in mix.exs.
-  postBuild = "mix do compile --no-deps-check, esbuild taina --minify, phx.digest";
+  # Build and digest the assets before installPhase's `mix release` copies
+  # priv/ into the release. postBuild runs after `mix compile`.
+  postBuild = "mix assets.deploy";
 
   # nixpkgs strips releases/COOKIE from the store, which the release script
   # reads unconditionally. taina is a single node and never joins a cluster, so
