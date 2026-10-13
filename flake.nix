@@ -24,18 +24,12 @@
       );
   in {
     # The release, built from source. `nix build .#taina` produces a runnable
-    # bin/taina; services.taina below uses the same derivation.
+    # bin/taina. The NixOS module lives in the oka repo, which takes this flake
+    # as an input.
     packages = forAllSystems (pkgs: {
       taina = pkgs.callPackage ./nix/package.nix {};
       default = self.packages.${pkgs.stdenv.hostPlatform.system}.taina;
     });
-
-    # Runs it as a systemd service with a SQLite database file, no container
-    # runtime. See nix/module.nix.
-    nixosModules = {
-      taina = import ./nix/module.nix;
-      default = self.nixosModules.taina;
-    };
 
     devShells = forAllSystems (pkgs: {
       default = pkgs.mkShell {
