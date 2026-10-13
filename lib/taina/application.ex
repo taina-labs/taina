@@ -5,8 +5,12 @@ defmodule Taina.Application do
 
   use Application
 
+  require Logger
+
   @impl true
   def start(_type, _args) do
+    load_lexicons()
+
     children = [
       TainaWeb.Telemetry,
       Taina.Repo,
@@ -27,5 +31,21 @@ defmodule Taina.Application do
   def config_change(changed, _new, removed) do
     TainaWeb.Endpoint.config_change(changed, removed)
     :ok
+  end
+
+  # O registro de lexicons (RFC_006, secao 6): kernel primeiro, produto depois
+  # (um `id` repetido no produto sobrescreve o do kernel). Le uma vez no boot e
+  # fica em `:persistent_term`, so leitura depois. Um lexicon quebrado vira
+  # aviso no log, nunca um boot caido.
+  defp load_lexicons do
+    {_entries, problems} =
+      Ypy.Lexicon.Registry.load([
+        Application.app_dir(:ypy, "priv/lexicons"),
+        Path.expand("../priv/lexicons", __DIR__)
+      ])
+
+    Enum.each(problems, fn {path, reason} ->
+      Logger.warning("Lexicon invalido ignorado: #{path} (#{inspect(reason)})")
+    end)
   end
 end

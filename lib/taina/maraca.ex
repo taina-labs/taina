@@ -21,7 +21,7 @@ defmodule Taina.Maraca do
 
   ## Ordem de Resolução de Permissões
 
-  1. **Isolamento de comunidade** (RLS garante tekoa_id)
+  1. **Isolamento de comunidade** (guard do `Repo` garante o `tekoa_id`)
   2. **Propriedade do recurso** (ava_id == resource.ava_id)
   3. **Permissões explícitas** (tabela maraca.permissions)
   4. **Negação padrão** (se nada acima, acesso negado)
@@ -40,6 +40,7 @@ defmodule Taina.Maraca do
   alias Taina.RateLimit
   alias Taina.Repo
   alias Taina.Scope
+  alias Ypy.Maraca.Policy
 
   require Logger
 
@@ -297,9 +298,9 @@ defmodule Taina.Maraca do
     end
   end
 
-  defp normalize_username(username) do
-    username |> to_string() |> String.trim() |> String.downcase()
-  end
+  # A normalizacao de handle e do kernel (`Ypy.Handle.normalize/1`): trim e
+  # minusculas, nada alem disso.
+  defp normalize_username(username), do: username |> to_string() |> Ypy.Handle.normalize()
 
   @impl true
   def create_session(%Ava{} = ava) do
@@ -616,21 +617,37 @@ defmodule Taina.Maraca do
   Pode `ava` ler este recurso ja carregado? Regra de leitura das duas zonas
   (RFC_003 D2): `praca OU dono OU permissao explicita`. O zelador nao tem atalho.
 
-  Recebe a `zona` e o `owner_id` que o chamador (Ybira/Jaci) ja tem em maos no
-  struct, entao nao re-consulta o dono e so toca a tabela de permissoes como
-  ultimo recurso. Difere de `authorize?/4`, que resolve o dono por `public_id` e
-  desconhece zona; aqui a zona e a parte nova e o motor (dono OU permissao)
+  A regra pura mora no kernel (`Ypy.Maraca.Policy.can_read?/5`); aqui fica o
+  efeito: buscar as concessoes de leitura de `ava` sobre o recurso (tabela
+  `maraca.permissions`) e entrega-las como fatos. Recebe a `zona` e o `owner_id`
+  que o chamador (Ybira/Jaci) ja tem em maos no struct, entao nao re-consulta o
+  dono. Difere de `authorize?/4`, que resolve o dono por `public_id` e
+  desconhece zona; aqui a zona e a parte nova e o motor (dono OU concessao)
   continua o mesmo.
 
-  Roda dentro do `with_tekoa` do chamador (a consulta de permissao precisa do
-  contexto RLS); chame-a so de dentro de um `Repo.with_tekoa/2` ja aberto.
+  Roda dentro do `with_tekoa` do chamador (a consulta de concessoes precisa do
+  contexto de Tekoa); chame-a so de dentro de um `Repo.with_tekoa/2` ja aberto.
   """
   @impl true
   @spec can_read?(Ava.t(), :casa | :praca, integer(), String.t(), String.t()) :: boolean()
   def can_read?(%Ava{} = ava, zona, owner_id, resource_type, public_id)
       when zona in ~w(casa praca)a and is_integer(owner_id) and is_binary(resource_type) and is_binary(public_id) do
-    zona == :praca or ava.id == owner_id or
-      has_permission?(ava, :read, resource_type, public_id)
+    concessoes = read_concessoes(ava, resource_type, public_id)
+    Policy.can_read?(zona, ava.id, owner_id, public_id, concessoes)
+  end
+
+  # As concessoes de leitura que `ava` tem sobre o recurso, no shape que a
+  # politica pura do kernel consulta: `%{leitor_id:, recurso:}`.
+  defp read_concessoes(%Ava{} = ava, resource_type, public_id) do
+    Repo.all(
+      from(p in Permission,
+        where: p.ava_id == ^ava.id,
+        where: p.action == :read,
+        where: p.resource_type == ^resource_type,
+        where: p.resource_id == ^public_id,
+        select: %{leitor_id: p.ava_id, recurso: p.resource_id}
+      )
+    )
   end
 
   @doc """
@@ -996,13 +1013,12 @@ defmodule Taina.Maraca do
 
   ## Predicados
 
+  # O predicado puro e do kernel (`Ypy.Maraca.Policy`); aqui so extrai o papel.
   @impl true
-  def zelador?(%Ava{role: :zelador}), do: true
-  def zelador?(%Ava{}), do: false
+  def zelador?(%Ava{role: role}), do: Policy.zelador?(role)
 
   @impl true
-  def morador?(%Ava{role: :morador}), do: true
-  def morador?(%Ava{}), do: false
+  def morador?(%Ava{role: role}), do: Policy.morador?(role)
 
   @impl true
   def activated?(%Ava{activated_at: nil}), do: false

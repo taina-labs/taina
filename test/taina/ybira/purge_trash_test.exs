@@ -66,6 +66,23 @@ defmodule Taina.Ybira.Workers.PurgeTrashTest do
     assert tekoa.storage_used_bytes == keep.file_size_bytes
   end
 
+  test "same bytes uploaded twice share the blob; purging one keeps the other's bytes" do
+    scope = scope_fixture()
+    {:ok, a} = Ybira.upload(scope, tmp_upload_fixture("iguais", "a.txt"))
+    {:ok, b} = Ybira.upload(scope, tmp_upload_fixture("iguais", "b.txt"))
+
+    assert a.filepath == b.filepath
+
+    {:ok, _} = Ybira.delete_file(scope, a.public_id)
+    backdate(YbiraFile, a.id, days_ago(31))
+
+    assert :ok = PurgeTrash.perform(%Oban.Job{args: %{}})
+
+    refute Repo.get(YbiraFile, a.id, skip_tekoa_id: true)
+    assert Repo.get(YbiraFile, b.id, skip_tekoa_id: true)
+    assert File.exists?(b.filepath)
+  end
+
   test "purges folders trashed before the cutoff, keeps the recent ones" do
     scope = scope_fixture()
     {:ok, old} = Ybira.create_folder(scope, %{name: "antiga"})

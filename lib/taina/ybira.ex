@@ -9,10 +9,10 @@ defmodule Taina.Ybira do
   executam dentro de `Repo.with_tekoa/2`, ativando o isolamento RLS. A exceção é
   `purge_deleted_files/1`, operação de sistema que atravessa todas as Tekoas.
 
-  Os bytes ficam no disco em
-  `{storage_root}/{tekoa_public_id}/files/{ano}/{mes}/{nome}.{ext}`;
-  o banco guarda apenas metadados. `storage_root` vem de
-  `config :taina, :storage_root`.
+  Os bytes ficam no disco enderecados por conteudo, no galho do CID que o
+  `Ypy.BlobStore.Disk` deriva (`{storage_root}/{tekoa_public_id}/files/ab/cd/b<cid>`);
+  o mesmo conteudo cai sempre no mesmo caminho e o banco guarda apenas
+  metadados. `storage_root` vem de `config :taina, :storage_root`.
 
   ## Lixeira (soft delete)
 
@@ -41,10 +41,10 @@ defmodule Taina.Ybira do
   alias Taina.Ybira
   alias Taina.Ybira.MimeDetector
   alias Taina.Ybira.Workers.Rendition
+  alias Ypy.BlobStore.Disk
 
   require Logger
 
-  @hash_chunk_bytes 1024 * 1024
   @default_limit 50
 
   # Tipos MIME aceitos no upload. Detectados pelos magic bytes (não pela
@@ -68,15 +68,14 @@ defmodule Taina.Ybira do
 
     with {:ok, %{size: size}} <- Elixir.File.stat(tmp_path),
          :ok <- validate_mime(mime_type),
-         {:ok, hash} <- hash_file(tmp_path),
-         {:ok, dest} <- copy_to_storage(scope, tmp_path, original_filename) do
+         {:ok, dest, file_hash} <- copy_to_storage(scope, tmp_path) do
       attrs = %{
         filename: Path.basename(dest),
         original_filename: original_filename,
         filepath: dest,
         mime_type: mime_type,
         file_size_bytes: size,
-        file_hash: hash,
+        file_hash: file_hash,
         ava_id: scope.ava.id,
         tekoa_id: scope.tekoa.id,
         folder_id: folder_id
@@ -87,7 +86,7 @@ defmodule Taina.Ybira do
           {:ok, file}
 
         {:error, reason} ->
-          Elixir.File.rm(dest)
+          remove_orphan_blob(dest)
           {:error, reason}
       end
     end
@@ -778,13 +777,20 @@ defmodule Taina.Ybira do
     end)
   end
 
+  # Conteudo enderecado por CID (`Ypy.BlobStore.Disk`): duas linhas com os
+  # mesmos bytes apontam para o mesmo caminho. So apaga quando a linha
+  # expurgada e a ultima que apontava para ele.
   defp remove_disk_copy(file) do
-    with {:error, reason} <- Elixir.File.rm(file.filepath) do
-      Logger.warning("PurgeTrash: falha ao remover arquivo do disco",
-        path: file.filepath,
-        file_id: file.id,
-        reason: reason
-      )
+    if blob_referenced?(file.filepath, file.id) do
+      :ok
+    else
+      with {:error, reason} <- Elixir.File.rm(file.filepath) do
+        Logger.warning("PurgeTrash: falha ao remover arquivo do disco",
+          path: file.filepath,
+          file_id: file.id,
+          reason: reason
+        )
+      end
     end
   end
 
@@ -835,37 +841,42 @@ defmodule Taina.Ybira do
     )
   end
 
-  defp copy_to_storage(%Scope{} = scope, tmp_path, original_filename) do
-    today = Date.utc_today()
+  # Os bytes sao enderecados por conteudo (`Ypy.BlobStore.Disk`): o caminho
+  # sai do proprio CID e o mesmo conteudo cai sempre no mesmo lugar. O hash
+  # do arquivo e o digest do CID, calculado pelo Disk (um so passou de olho
+  # nos bytes).
+  defp copy_to_storage(%Scope{} = scope, tmp_path) do
+    store = blob_store(scope.tekoa.public_id)
 
-    dir =
-      Path.join([
-        storage_root(),
-        scope.tekoa.public_id,
-        "files",
-        Integer.to_string(today.year),
-        String.pad_leading(Integer.to_string(today.month), 2, "0")
-      ])
-
-    dest = Path.join(dir, Nanoid.generate(12) <> Path.extname(original_filename))
-
-    with :ok <- Elixir.File.mkdir_p(dir),
-         :ok <- Elixir.File.cp(tmp_path, dest) do
-      {:ok, dest}
+    with {:ok, data} <- Elixir.File.read(tmp_path),
+         {:ok, cid} <- Disk.put(store, data),
+         {:ok, dest} <- Disk.open(store, cid) do
+      {:ok, dest, Base.encode16(cid.digest, case: :lower)}
     end
   end
 
-  defp hash_file(path) do
-    hash =
-      path
-      |> Elixir.File.stream!(@hash_chunk_bytes)
-      |> Enum.reduce(:crypto.hash_init(:sha256), &:crypto.hash_update(&2, &1))
-      |> :crypto.hash_final()
-      |> Base.encode16(case: :lower)
+  defp blob_store(tekoa_public_id) do
+    Disk.new(Path.join([storage_root(), tekoa_public_id, "files"]))
+  end
 
-    {:ok, hash}
-  rescue
-    e in Elixir.File.Error -> {:error, e.reason}
+  # Blob enderecado por conteudo: mais de uma linha pode apontar para o mesmo
+  # caminho (os mesmos bytes enviados duas vezes). O disco so limpa o caminho
+  # quando a linha que sai e a ultima que apontava para ele.
+  defp remove_orphan_blob(filepath) do
+    if blob_referenced?(filepath), do: :ok, else: Elixir.File.rm(filepath)
+  end
+
+  defp blob_referenced?(filepath, except_id \\ nil)
+
+  defp blob_referenced?(filepath, nil) do
+    Repo.exists?(from(f in Ybira.File, where: f.filepath == ^filepath), skip_tekoa_id: true)
+  end
+
+  defp blob_referenced?(filepath, except_id) do
+    Repo.exists?(
+      from(f in Ybira.File, where: f.filepath == ^filepath and f.id != ^except_id),
+      skip_tekoa_id: true
+    )
   end
 
   defp storage_root, do: Application.fetch_env!(:taina, :storage_root)

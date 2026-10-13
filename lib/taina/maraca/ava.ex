@@ -321,7 +321,8 @@ defmodule Taina.Maraca.Ava do
   def verify_token(_stored_hash, nil), do: false
 
   # O username é a chave de acesso e a semente do handle federado: normalizamos
-  # para minúsculas e restringimos o conjunto de caracteres (sem espaços).
+  # para minúsculas (a regra é a do kernel, `Ypy.Handle.normalize/1`) e
+  # restringimos o conjunto de caracteres (sem espaços).
   defp validate_username(changeset) do
     changeset
     |> update_change(:username, &normalize_username/1)
@@ -332,7 +333,7 @@ defmodule Taina.Maraca.Ava do
   end
 
   defp normalize_username(nil), do: nil
-  defp normalize_username(username), do: username |> String.trim() |> String.downcase()
+  defp normalize_username(username), do: Ypy.Handle.normalize(username)
 
   defp validate_display_name(changeset) do
     validate_length(changeset, :display_name, max: 80)
