@@ -117,17 +117,17 @@ defmodule TainaWeb.GalleryLive do
     for group <- groups, photo <- group.photos, do: photo.rkey
   end
 
-  defp open_viewer(socket, public_id) do
-    case Ybira.get_file(socket.assigns.current_scope, public_id) do
+  defp open_viewer(socket, rkey) do
+    case Ybira.get_file(socket.assigns.current_scope, rkey) do
       {:ok, file} ->
         socket
         |> assign(:current, file)
-        |> assign_new_ids(public_id)
+        |> assign_new_ids(rkey)
 
       # Casa de outra pessoa: a tela de preview é quem explica o "Pedir
       # acesso"; aqui só levamos a pessoa até lá.
       {:error, :forbidden} ->
-        Phoenix.LiveView.push_navigate(socket, to: ~p"/arquivos/#{public_id}")
+        Phoenix.LiveView.push_navigate(socket, to: ~p"/arquivos/#{rkey}")
 
       {:error, :not_found} ->
         socket
@@ -137,11 +137,11 @@ defmodule TainaWeb.GalleryLive do
   end
 
   # Link direto para /fotos/:id (sem grade carregada): navega só esta foto.
-  defp assign_new_ids(%{assigns: %{photo_ids: []}} = socket, public_id) do
-    assign(socket, :photo_ids, [public_id])
+  defp assign_new_ids(%{assigns: %{photo_ids: []}} = socket, rkey) do
+    assign(socket, :photo_ids, [rkey])
   end
 
-  defp assign_new_ids(socket, _public_id), do: socket
+  defp assign_new_ids(socket, _rkey), do: socket
 
   @impl true
   def handle_event("load-more", _params, socket) do
@@ -230,8 +230,8 @@ defmodule TainaWeb.GalleryLive do
     {:noreply, assign(socket, :show_details, !socket.assigns.show_details)}
   end
 
-  def handle_event("confirm-delete", _params, %{assigns: %{current: %{rkey: public_id}}} = socket) do
-    case Ybira.delete_file(socket.assigns.current_scope, public_id) do
+  def handle_event("confirm-delete", _params, %{assigns: %{current: %{rkey: rkey}}} = socket) do
+    case Ybira.delete_file(socket.assigns.current_scope, rkey) do
       {:ok, _file} ->
         {:noreply,
          socket
@@ -335,7 +335,7 @@ defmodule TainaWeb.GalleryLive do
   # de um preview. O JS lê o `data-full` do `img`: sem atributo, sem troca.
   @full_swap_cap_bytes 20 * 1024 * 1024
 
-  defp full_swap?(%{file_size_bytes: bytes}), do: bytes <= @full_swap_cap_bytes
+  defp full_swap?(%{tamanho: bytes}), do: bytes <= @full_swap_cap_bytes
 
   # Tipo legível: "image/jpeg" vira "Imagem JPEG" (o kind do design system
   # traduzido, o subtipo em maiúsculas). "application/pdf" vira só "PDF",
@@ -609,7 +609,7 @@ defmodule TainaWeb.GalleryLive do
           </div>
           <div>
             <p class="type-caption text-faint">{gettext("Assinatura do arquivo")}</p>
-            <p class="type-mono-sm truncate">{@current.file_hash}</p>
+            <p class="type-mono-sm truncate">{@current.hash}</p>
             <p class="type-caption text-faint">{gettext("É como o Tainá confere que o arquivo está intacto.")}</p>
           </div>
           <div>

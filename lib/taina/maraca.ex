@@ -676,17 +676,38 @@ defmodule Taina.Maraca do
     end)
   end
 
-  @doc "Os pedidos que o morador fez (com o dono de quem espera)."
+  @doc """
+  Os pedidos ainda sem decisao que o morador fez (com o dono de quem espera).
+  Os ja decididos saem daqui para "Meus pedidos" (`list_my_recent_decisions/1`)
+  e nao voltam como pendentes: o kernel lista de todos os status, o produto
+  separa as secoes da tela.
+  """
   def pedidos_enviados(%Ypy.Scope{} = scope) do
     within_tekoa(scope, fn ->
-      {:ok, Repo |> Ypy.Maraca.pedidos_enviados(scope) |> Repo.preload(:dono)}
+      pedidos =
+        Repo
+        |> Ypy.Maraca.pedidos_enviados(scope)
+        |> Repo.preload(:dono)
+        |> Enum.filter(&(&1.status == :pendente))
+
+      {:ok, pedidos}
     end)
   end
 
-  @doc "As concessoes que o morador concedeu, ativas e aposentadas (com o leitor)."
+  @doc """
+  As concessoes ainda em pe que o morador concedeu (com o leitor): as da
+  secao "Ja liberados". Revogadas saem da tela (o rito delas fica registrado
+  na cadeia; o kernel lista de todos os status).
+  """
   def concessoes_concedidas(%Ypy.Scope{} = scope) do
     within_tekoa(scope, fn ->
-      {:ok, Repo |> Ypy.Maraca.concessoes_concedidas(scope) |> Repo.preload(:leitor)}
+      concessoes =
+        Repo
+        |> Ypy.Maraca.concessoes_concedidas(scope)
+        |> Enum.reject(& &1.revogada_em)
+        |> Repo.preload(:leitor)
+
+      {:ok, concessoes}
     end)
   end
 

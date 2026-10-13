@@ -12,8 +12,8 @@ defmodule TainaWeb.FilePreviewLive do
   alias TainaWeb.Layouts
 
   @impl true
-  def mount(%{"id" => public_id}, _session, socket) do
-    case Ybira.get_file(socket.assigns.current_scope, public_id) do
+  def mount(%{"id" => rkey}, _session, socket) do
+    case Ybira.get_file(socket.assigns.current_scope, rkey) do
       {:ok, file} ->
         # O voltar devolve para a pasta onde o arquivo mora, não para o início;
         # arquivo da raiz (ou pasta que não se pode ver) volta para o início.
@@ -31,7 +31,7 @@ defmodule TainaWeb.FilePreviewLive do
          |> assign(:show_zona, false)}
 
       {:error, :forbidden} ->
-        {:ok, mount_forbidden(socket, public_id)}
+        {:ok, mount_forbidden(socket, rkey)}
 
       {:error, :not_found} ->
         {:ok,
@@ -48,8 +48,8 @@ defmodule TainaWeb.FilePreviewLive do
   end
 
   # Casa de outra pessoa: a pessoa nao le o conteudo, mas vemos a quem pedir.
-  defp mount_forbidden(socket, public_id) do
-    case Ybira.fetch_access_target(socket.assigns.current_scope, public_id) do
+  defp mount_forbidden(socket, rkey) do
+    case Ybira.fetch_access_target(socket.assigns.current_scope, rkey) do
       {:ok, target} ->
         socket
         |> assign(:page_title, gettext("Pedir acesso"))
@@ -57,7 +57,7 @@ defmodule TainaWeb.FilePreviewLive do
         |> assign(:show_request_modal, false)
 
       {:error, :already_readable} ->
-        Phoenix.LiveView.push_navigate(socket, to: ~p"/arquivos/#{public_id}")
+        Phoenix.LiveView.push_navigate(socket, to: ~p"/arquivos/#{rkey}")
 
       {:error, :not_found} ->
         socket
@@ -77,7 +77,7 @@ defmodule TainaWeb.FilePreviewLive do
 
   # Resultado do `Ybira.file_folder_rkey/2` vira caminho do voltar: pasta
   # visível, volta para ela; qualquer outro caso, volta para o início.
-  defp back_path({:ok, folder_public_id}), do: ~p"/arquivos/pasta/#{folder_public_id}"
+  defp back_path({:ok, folder_rkey}), do: ~p"/arquivos/pasta/#{folder_rkey}"
   defp back_path(_other), do: ~p"/arquivos"
 
   @impl true
@@ -449,7 +449,7 @@ defmodule TainaWeb.FilePreviewLive do
           </div>
           <div>
             <p class="type-caption text-muted">{gettext("Assinatura do arquivo")}</p>
-            <p class="type-mono-sm truncate">{@file.file_hash}</p>
+            <p class="type-mono-sm truncate">{@file.hash}</p>
             <p class="type-caption text-muted">{gettext("É como o Tainá confere que o arquivo está intacto.")}</p>
           </div>
           <div>

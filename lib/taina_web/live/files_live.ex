@@ -23,16 +23,16 @@ defmodule TainaWeb.FilesLive do
 
   @impl true
   def handle_params(params, _uri, socket) do
-    folder_public_id = params["folder_id"]
+    folder_rkey = params["folder_id"]
     sort = parse_sort(params["sort"])
     view = if params["view"] == "grid", do: :grid, else: :list
     zona = parse_zona(params["zona"])
     peek = params["arquivo"]
     scope = socket.assigns.current_scope
 
-    case load_folder(scope, folder_public_id) do
+    case load_folder(scope, folder_rkey) do
       {:ok, folder} ->
-        case Ybira.list_folder_contents(scope, folder_public_id, sort: sort) do
+        case Ybira.list_folder_contents(scope, folder_rkey, sort: sort) do
           {:ok, %{folders: folders, files: files, next_cursor: next_cursor}} ->
             zona_folders = for_zona(folders, zona)
             zona_files = for_zona(files, zona)
@@ -42,7 +42,7 @@ defmodule TainaWeb.FilesLive do
              |> assign(:page_title, (folder && folder.nome) || gettext("Arquivos"))
              |> assign(:folder, folder)
              |> assign(:breadcrumb, breadcrumb(scope, folder))
-             |> assign(:folder_public_id, folder_public_id)
+             |> assign(:folder_rkey, folder_rkey)
              |> assign(:folders, zona_folders)
              |> assign(:next_cursor, next_cursor)
              |> assign(:item_count, length(zona_folders) + length(zona_files))
@@ -86,7 +86,7 @@ defmodule TainaWeb.FilesLive do
   end
 
   defp load_folder(_scope, nil), do: {:ok, nil}
-  defp load_folder(scope, public_id), do: Ybira.get_folder(scope, public_id)
+  defp load_folder(scope, rkey), do: Ybira.get_folder(scope, rkey)
 
   # --- breadcrumb (cadeia raiz -> pasta atual) ---
 
@@ -98,7 +98,7 @@ defmodule TainaWeb.FilesLive do
   defp breadcrumb(scope, folder) do
     case Ybira.folder_path(scope, folder.rkey) do
       {:ok, path} -> path
-      {:error, _reason} -> [%{name: folder.nome, public_id: folder.rkey}]
+      {:error, _reason} -> [%{rkey: folder.rkey, nome: folder.nome}]
     end
   end
 
@@ -108,7 +108,7 @@ defmodule TainaWeb.FilesLive do
   # sempre o primeiro e o último elo. No desktop a cadeia inteira aparece.
   defp breadcrumb_items([]), do: []
 
-  defp breadcrumb_items([current]), do: [%{kind: :current, name: current.nome, public_id: current.rkey}]
+  defp breadcrumb_items([current]), do: [%{kind: :current, nome: current.nome, rkey: current.rkey}]
 
   defp breadcrumb_items([first | rest]) do
     current = List.last(rest)
@@ -116,20 +116,20 @@ defmodule TainaWeb.FilesLive do
 
     links =
       for {segment, index} <- Enum.with_index(ancestors) do
-        %{kind: :link, name: segment.nome, public_id: segment.rkey, middle?: index > 0}
+        %{kind: :link, nome: segment.nome, rkey: segment.rkey, middle?: index > 0}
       end
 
     ellipsis = if length(ancestors) > 1, do: [%{kind: :ellipsis}], else: []
 
-    links ++ ellipsis ++ [%{kind: :current, name: current.nome, public_id: current.rkey}]
+    links ++ ellipsis ++ [%{kind: :current, nome: current.nome, rkey: current.rkey}]
   end
 
   @impl true
   def handle_event("load-more", _params, socket) do
-    %{next_cursor: offset, folder_public_id: folder_public_id, sort: sort, zona: zona} = socket.assigns
+    %{next_cursor: offset, folder_rkey: folder_rkey, sort: sort, zona: zona} = socket.assigns
 
     if offset do
-      case Ybira.list_folder_contents(socket.assigns.current_scope, folder_public_id, sort: sort, offset: offset) do
+      case Ybira.list_folder_contents(socket.assigns.current_scope, folder_rkey, sort: sort, offset: offset) do
         {:ok, %{files: files, next_cursor: next_cursor}} ->
           zona_files = for_zona(files, zona)
 
@@ -153,16 +153,16 @@ defmodule TainaWeb.FilesLive do
 
   # Olho da linha (desktop 1024+): carrega o arquivo no painel de detalhes sem
   # sair da pasta. O estado mora na URL (?arquivo=), como ordenação e visão.
-  def handle_event("peek", %{"id" => public_id}, socket) do
+  def handle_event("peek", %{"id" => rkey}, socket) do
     {:noreply,
      Phoenix.LiveView.push_patch(socket,
        to:
          browse_path(
-           socket.assigns.folder_public_id,
+           socket.assigns.folder_rkey,
            socket.assigns.sort,
            socket.assigns.view,
            socket.assigns.zona,
-           public_id
+           rkey
          )
      )}
   end
@@ -200,7 +200,7 @@ defmodule TainaWeb.FilesLive do
   # atual. O guard de preventDefault mora no hook DnD (JS); sem ele, o
   # navegador navega para fora do app quando o arrasto vem do sistema.
   def handle_event("drop-files", _params, socket) do
-    {:noreply, Phoenix.LiveView.push_navigate(socket, to: upload_path(socket.assigns.folder_public_id))}
+    {:noreply, Phoenix.LiveView.push_navigate(socket, to: upload_path(socket.assigns.folder_rkey))}
   end
 
   def handle_event("create-folder", %{"folder" => %{"name" => name}}, socket) do
@@ -208,7 +208,7 @@ defmodule TainaWeb.FilesLive do
     # na praca; no default (casa), na casa.
     case Ybira.create_folder(socket.assigns.current_scope, %{
            name: name,
-           parent_rkey: socket.assigns.folder_public_id,
+           parent_rkey: socket.assigns.folder_rkey,
            zona: socket.assigns.zona
          }) do
       {:ok, _folder} ->
@@ -354,7 +354,7 @@ defmodule TainaWeb.FilesLive do
     Phoenix.LiveView.push_patch(socket,
       to:
         browse_path(
-          socket.assigns.folder_public_id,
+          socket.assigns.folder_rkey,
           socket.assigns.sort,
           socket.assigns.view,
           socket.assigns.zona,
@@ -395,14 +395,14 @@ defmodule TainaWeb.FilesLive do
   defp sort_check({:size, _}, :size), do: "check"
   defp sort_check(_sort, _item), do: nil
 
-  defp browse_path(folder_public_id, sort, view, zona, peek) do
+  defp browse_path(folder_rkey, sort, view, zona, peek) do
     params = %{sort: sort_param(sort)}
     params = if view == :grid, do: Map.put(params, :view, "grid"), else: params
     # Com o default na casa, quem precisa de marca na URL e a praca.
     params = if zona == :praca, do: Map.put(params, :zona, "praca"), else: params
     params = if peek, do: Map.put(params, :arquivo, peek), else: params
 
-    case folder_public_id do
+    case folder_rkey do
       nil -> ~p"/arquivos?#{params}"
       id -> ~p"/arquivos/pasta/#{id}?#{params}"
     end
@@ -412,8 +412,8 @@ defmodule TainaWeb.FilesLive do
   # saiu da pasta, perdeu acesso), o painel volta a convidar.
   defp load_peek(_scope, nil), do: nil
 
-  defp load_peek(scope, public_id) when is_binary(public_id) do
-    case Ybira.get_file(scope, public_id) do
+  defp load_peek(scope, rkey) when is_binary(rkey) do
+    case Ybira.get_file(scope, rkey) do
       {:ok, file} -> file
       _error -> nil
     end
@@ -425,8 +425,8 @@ defmodule TainaWeb.FilesLive do
   # Os metadados de rendicao do arquivo em destaque (dimensoes, thumbnail).
   defp peek_metadata(_scope, nil), do: %{}
 
-  defp peek_metadata(scope, public_id) when is_binary(public_id) do
-    case Ybira.get_file(scope, public_id) do
+  defp peek_metadata(scope, rkey) when is_binary(rkey) do
+    case Ybira.get_file(scope, rkey) do
       {:ok, file} ->
         {:ok, metadata} = Ybira.photo_metadata(scope, file)
         metadata
@@ -569,7 +569,7 @@ defmodule TainaWeb.FilesLive do
             phx-click="open-modal"
             phx-value-modal="new-folder"
           />
-          <.button variant="primary" size="md" navigate={upload_path(@folder_public_id)} class="hide-mobile">
+          <.button variant="primary" size="md" navigate={upload_path(@folder_rkey)} class="hide-mobile">
             <.icon name="upload" size={18} /> {gettext("Enviar")}
           </.button>
         </div>
@@ -579,25 +579,25 @@ defmodule TainaWeb.FilesLive do
         <.menu id="sort-menu" icon="list" label={gettext("Ordenar")}>
           <:item
             icon={sort_check(@sort, :name_az)}
-            click={JS.patch(browse_path(@folder_public_id, {:name, :asc}, @view, @zona, peek_id(@peek)))}
+            click={JS.patch(browse_path(@folder_rkey, {:name, :asc}, @view, @zona, peek_id(@peek)))}
           >
             {gettext("Nome (A-Z)")}
           </:item>
           <:item
             icon={sort_check(@sort, :name_za)}
-            click={JS.patch(browse_path(@folder_public_id, {:name, :desc}, @view, @zona, peek_id(@peek)))}
+            click={JS.patch(browse_path(@folder_rkey, {:name, :desc}, @view, @zona, peek_id(@peek)))}
           >
             {gettext("Nome (Z-A)")}
           </:item>
           <:item
             icon={sort_check(@sort, :date)}
-            click={JS.patch(browse_path(@folder_public_id, toggle_sort(:date, @sort), @view, @zona, peek_id(@peek)))}
+            click={JS.patch(browse_path(@folder_rkey, toggle_sort(:date, @sort), @view, @zona, peek_id(@peek)))}
           >
             {gettext("Data")}
           </:item>
           <:item
             icon={sort_check(@sort, :size)}
-            click={JS.patch(browse_path(@folder_public_id, toggle_sort(:size, @sort), @view, @zona, peek_id(@peek)))}
+            click={JS.patch(browse_path(@folder_rkey, toggle_sort(:size, @sort), @view, @zona, peek_id(@peek)))}
           >
             {gettext("Tamanho")}
           </:item>
@@ -613,7 +613,7 @@ defmodule TainaWeb.FilesLive do
             phx-click={
               JS.patch(
                 browse_path(
-                  @folder_public_id,
+                  @folder_rkey,
                   @sort,
                   if(@view == :grid, do: :list, else: :grid),
                   @zona,
@@ -626,10 +626,10 @@ defmodule TainaWeb.FilesLive do
       </div>
 
       <.segmented>
-        <:option patch={browse_path(@folder_public_id, @sort, @view, :praca, peek_id(@peek))} current={@zona == :praca}>
+        <:option patch={browse_path(@folder_rkey, @sort, @view, :praca, peek_id(@peek))} current={@zona == :praca}>
           {gettext("Praça")}
         </:option>
-        <:option patch={browse_path(@folder_public_id, @sort, @view, :casa, peek_id(@peek))} current={@zona == :casa}>
+        <:option patch={browse_path(@folder_rkey, @sort, @view, :casa, peek_id(@peek))} current={@zona == :casa}>
           {gettext("Casa")}
         </:option>
       </.segmented>
@@ -785,7 +785,7 @@ defmodule TainaWeb.FilesLive do
                 <.icon_button
                   name="close"
                   label={gettext("Fechar detalhes")}
-                  phx-click={JS.patch(browse_path(@folder_public_id, @sort, @view, @zona, nil))}
+                  phx-click={JS.patch(browse_path(@folder_rkey, @sort, @view, @zona, nil))}
                 />
               </div>
               <% has_thumb = image?(@peek.mime) and thumbnail?(@peek) %>
@@ -849,13 +849,13 @@ defmodule TainaWeb.FilesLive do
           <p class="type-body-sm text-muted">
             {gettext("Isso é promessa de software e confiança: o Tainá ainda não criptografa.")}
           </p>
-          <.button variant="primary" size="md" navigate={upload_path(@folder_public_id)}>
+          <.button variant="primary" size="md" navigate={upload_path(@folder_rkey)}>
             {gettext("Enviar arquivos")}
           </.button>
         </div>
       </.empty_state>
 
-      <.button variant="fab" navigate={upload_path(@folder_public_id)} aria-label={gettext("Enviar arquivos")}>
+      <.button variant="fab" navigate={upload_path(@folder_rkey)} aria-label={gettext("Enviar arquivos")}>
         <.icon name="plus" />
       </.button>
 

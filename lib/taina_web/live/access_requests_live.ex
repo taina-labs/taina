@@ -95,14 +95,14 @@ defmodule TainaWeb.AccessRequestsLive do
     concessao = find_grant(socket.assigns.grants, socket.assigns.confirm_revoke)
 
     case concessao && Maraca.revogar(socket.assigns.current_scope, concessao) do
-      :ok ->
+      {:ok, _concessao} ->
         {:noreply,
          socket
          |> assign(:confirm_revoke, nil)
          |> assign_grants()
          |> Phoenix.LiveView.put_flash(:info, revoked_message(concessao))}
 
-      {:error, reason} when reason in [:not_authorized, :invalid_status, :not_found] ->
+      result when result in [nil, {:error, :not_authorized}, {:error, :invalid_status}, {:error, :not_found}] ->
         {:noreply, access_gone(socket)}
 
       _error ->
@@ -137,7 +137,7 @@ defmodule TainaWeb.AccessRequestsLive do
 
   defp assign_requests(socket) do
     scope = socket.assigns.current_scope
-    requests = Maraca.pedidos_recebidos(scope)
+    {:ok, requests} = Maraca.pedidos_recebidos(scope)
 
     socket
     |> assign(:requests, requests)
@@ -170,13 +170,9 @@ defmodule TainaWeb.AccessRequestsLive do
     end
   end
 
-  # O Maraca devolve a lista crua e levanta em falha de banco; na borda da
-  # tela resolvemos para o tuple de resultado, sem exceção como controle.
-  defp load_grants(scope) do
-    {:ok, Maraca.concessoes_concedidas(scope)}
-  rescue
-    _error -> {:error, :load_failed}
-  end
+  # O Maraca devolve `{:ok, lista}` (e `{:error, motivo}` em falha de banco);
+  # a borda da tela degrada para o estado de erro da seção, sem exceção.
+  defp load_grants(scope), do: Maraca.concessoes_concedidas(scope)
 
   # Pedido resolvido entre o render e o clique (decidido em outra aba): some a
   # linha sem mensagem de erro tecnica.
@@ -199,7 +195,9 @@ defmodule TainaWeb.AccessRequestsLive do
   # --- core puro: dados -> dados ---
 
   defp account_alert?(scope) do
-    Maraca.pedidos_recebidos(scope) != [] or Maraca.pedidos_enviados(scope) != []
+    {:ok, recebidos} = Maraca.pedidos_recebidos(scope)
+    {:ok, enviados} = Maraca.pedidos_enviados(scope)
+    recebidos != [] or enviados != []
   end
 
   # Nome do arquivo de cada pedido, resolvido no escopo do dono (o pedido traz

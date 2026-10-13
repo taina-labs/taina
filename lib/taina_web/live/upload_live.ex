@@ -5,7 +5,7 @@ defmodule TainaWeb.UploadLive do
   uploads com `auto_upload`; cada arquivo concluído vai direto para
   `Ybira.upload/3` (validação por magic bytes e cota acontecem lá).
 
-  `?pasta=<public_id>` define a pasta de destino.
+  `?pasta=<rkey>` define a pasta de destino.
   """
 
   use TainaWeb, :live_view
@@ -54,8 +54,8 @@ defmodule TainaWeb.UploadLive do
 
   # Pasta inexistente ou casa de outra pessoa: sobe para a raiz sem travar o
   # envio; o flash explica por que a pasta sumiu do cabeçalho.
-  defp resolve_folder(scope, public_id) do
-    case Ybira.get_folder(scope, public_id) do
+  defp resolve_folder(scope, rkey) do
+    case Ybira.get_folder(scope, rkey) do
       {:ok, folder} ->
         {folder, nil}
 

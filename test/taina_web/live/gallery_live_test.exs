@@ -21,8 +21,8 @@ defmodule TainaWeb.GalleryLiveTest do
   test "grade lista thumbnails das fotos", %{conn: conn, ava: ava, first: first, second: second} do
     {:ok, _lv, html} = conn |> log_in(ava) |> live(~p"/fotos")
 
-    assert html =~ "/files/#{first.public_id}/thumbnail/sm"
-    assert html =~ "/files/#{second.public_id}/thumbnail/sm"
+    assert html =~ "/files/#{first.rkey}/thumbnail/sm"
+    assert html =~ "/files/#{second.rkey}/thumbnail/sm"
   end
 
   test "linha do tempo agrupa por dia", %{conn: conn, ava: ava} do
@@ -36,13 +36,13 @@ defmodule TainaWeb.GalleryLiveTest do
     {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/fotos")
 
     # abre a mais recente (segunda) a partir da grade
-    html = lv |> element(~s(a[href="/fotos/#{second.public_id}"])) |> render_click()
+    html = lv |> element(~s(a[href="/fotos/#{second.rkey}"])) |> render_click()
     assert html =~ "1 de 2"
     assert html =~ "segunda.jpg"
 
     # próxima = mais antiga
     lv |> element("button.viewer__nav--next") |> render_click()
-    assert_patch(lv, ~p"/fotos/#{first.public_id}")
+    assert_patch(lv, ~p"/fotos/#{first.rkey}")
     assert render(lv) =~ "primeira.jpg"
 
     # fechar volta para a grade
@@ -51,20 +51,20 @@ defmodule TainaWeb.GalleryLiveTest do
   end
 
   test "excluir manda a foto para a lixeira e volta para a grade", %{conn: conn, ava: ava, scope: scope, second: second} do
-    {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/fotos/#{second.public_id}")
+    {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/fotos/#{second.rkey}")
 
     lv |> element("button[phx-click=ask-delete]") |> render_click()
     lv |> element("button[phx-click=confirm-delete]") |> render_click()
     assert_patch(lv, ~p"/fotos")
 
-    assert {:error, :not_found} = Ybira.get_file(scope, second.public_id)
+    assert {:error, :not_found} = Ybira.get_file(scope, second.rkey)
   end
 
   test "foto na casa de outro morador leva para a tela de pedir acesso", %{conn: conn, ava: ava, scope: scope} do
     outra = active_ava_fixture(scope.tekoa, %{username: "outra"})
     {:ok, file} = Ybira.upload(Scope.new(outra, scope.tekoa), tmp_image_fixture(filename: "particular.jpg"))
 
-    assert {:error, {_kind, %{to: to}}} = conn |> log_in(ava) |> live(~p"/fotos/#{file.public_id}")
-    assert to == "/arquivos/#{file.public_id}"
+    assert {:error, {_kind, %{to: to}}} = conn |> log_in(ava) |> live(~p"/fotos/#{file.rkey}")
+    assert to == "/arquivos/#{file.rkey}"
   end
 end

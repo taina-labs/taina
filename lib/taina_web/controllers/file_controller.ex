@@ -17,7 +17,7 @@ defmodule TainaWeb.FileController do
   alias Taina.Scope
   alias Taina.Ybira
 
-  def download(conn, %{"public_id" => rkey}) do
+  def download(conn, %{"rkey" => rkey}) do
     with {:ok, ava} <- Maraca.get_session_user(conn),
          scope = Scope.for_ava(ava),
          {:ok, file} <- Ybira.get_file(scope, rkey),
@@ -38,7 +38,7 @@ defmodule TainaWeb.FileController do
   # respondemos 404 e a UI mostra um placeholder.
   @thumbnail_sizes ~w(sm md)
 
-  def thumbnail(conn, %{"public_id" => rkey, "size" => size}) when size in @thumbnail_sizes do
+  def thumbnail(conn, %{"rkey" => rkey, "size" => size}) when size in @thumbnail_sizes do
     with {:ok, ava} <- Maraca.get_session_user(conn),
          scope = Scope.for_ava(ava),
          {:ok, file} <- Ybira.get_file(scope, rkey),

@@ -45,6 +45,8 @@ defmodule TainaWeb.Hooks do
   defp account_alert?(nil), do: false
 
   defp account_alert?(scope) do
-    Maraca.pedidos_recebidos(scope) != [] or Maraca.pedidos_enviados(scope) != []
+    {:ok, recebidos} = Maraca.pedidos_recebidos(scope)
+    {:ok, enviados} = Maraca.pedidos_enviados(scope)
+    recebidos != [] or enviados != []
   end
 end

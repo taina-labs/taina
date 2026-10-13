@@ -41,8 +41,8 @@ defmodule TainaWeb.TrashLive do
   @impl true
   def handle_event("retry-load", _params, socket), do: {:noreply, load_trash(socket)}
 
-  def handle_event("restore", %{"id" => public_id}, socket) do
-    case Ybira.restore_file(socket.assigns.current_scope, public_id) do
+  def handle_event("restore", %{"id" => rkey}, socket) do
+    case Ybira.restore_file(socket.assigns.current_scope, rkey) do
       {:ok, _file} ->
         {:noreply,
          socket

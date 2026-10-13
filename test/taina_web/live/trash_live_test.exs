@@ -12,7 +12,7 @@ defmodule TainaWeb.TrashLiveTest do
     ava = active_ava_fixture(tekoa)
     scope = Scope.new(ava, tekoa)
     {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("oi", "antiga.txt"))
-    {:ok, _} = Ybira.delete_file(scope, file.public_id)
+    {:ok, _} = Ybira.delete_file(scope, file.rkey)
     # `:file` é chave reservada do contexto ExUnit (caminho do arquivo de teste).
     %{scope: scope, ava: ava, trashed_file: file}
   end
@@ -20,7 +20,7 @@ defmodule TainaWeb.TrashLiveTest do
   test "lista itens com prazo de purga", %{conn: conn, ava: ava, trashed_file: file} do
     {:ok, _lv, html} = conn |> log_in(ava) |> live(~p"/arquivos/lixeira")
 
-    assert html =~ file.original_filename
+    assert html =~ file.nome
     assert html =~ "Apagado hoje"
     assert html =~ "30 dias"
   end
@@ -28,10 +28,10 @@ defmodule TainaWeb.TrashLiveTest do
   test "restaura um arquivo", %{conn: conn, scope: scope, ava: ava, trashed_file: file} do
     {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/arquivos/lixeira")
 
-    lv |> element(~s(button[phx-value-id="#{file.public_id}"])) |> render_click()
+    lv |> element(~s(button[phx-value-id="#{file.rkey}"])) |> render_click()
 
     assert render(lv) =~ "Lixeira vazia"
-    assert {:ok, restored} = Ybira.get_file(scope, file.public_id)
-    assert is_nil(restored.deleted_at)
+    assert {:ok, restored} = Ybira.get_file(scope, file.rkey)
+    assert is_nil(restored.apagado_em)
   end
 end

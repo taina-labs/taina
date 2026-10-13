@@ -50,8 +50,8 @@ defmodule TainaWeb.MyRequestsLive do
 
   defp assign_requests(socket) do
     scope = socket.assigns.current_scope
-    requests = Maraca.pedidos_enviados(scope)
-    decisions = Maraca.list_my_recent_decisions(scope)
+    {:ok, requests} = Maraca.pedidos_enviados(scope)
+    {:ok, decisions} = Maraca.list_my_recent_decisions(scope)
 
     socket
     |> assign(:requests, requests)
@@ -66,7 +66,9 @@ defmodule TainaWeb.MyRequestsLive do
   # --- core puro: dados -> dados ---
 
   defp account_alert?(scope) do
-    Maraca.pedidos_recebidos(scope) != [] or Maraca.pedidos_enviados(scope) != []
+    {:ok, recebidos} = Maraca.pedidos_recebidos(scope)
+    {:ok, enviados} = Maraca.pedidos_enviados(scope)
+    recebidos != [] or enviados != []
   end
 
   defp owner_name(request) do
@@ -105,12 +107,12 @@ defmodule TainaWeb.MyRequestsLive do
   defp file_names(scope, requests) do
     requests
     |> Enum.filter(&(&1.tipo == "ypy.file.v0"))
-    |> Enum.uniq_by(& &1.resource_id)
+    |> Enum.uniq_by(& &1.recurso)
     |> Map.new(fn request -> {request.recurso, resolve_file_name(scope, request.recurso)} end)
   end
 
-  defp resolve_file_name(scope, resource_id) do
-    case Ybira.fetch_access_target(scope, resource_id) do
+  defp resolve_file_name(scope, rkey) do
+    case Ybira.fetch_access_target(scope, rkey) do
       {:ok, %{nome: nome}} -> nome
       _error -> gettext("arquivo apagado")
     end
@@ -123,17 +125,17 @@ defmodule TainaWeb.MyRequestsLive do
   defp decision_names(scope, decisions) do
     decisions
     |> Enum.filter(&(&1.tipo == "ypy.file.v0"))
-    |> Enum.uniq_by(& &1.resource_id)
+    |> Enum.uniq_by(& &1.recurso)
     |> Map.new(fn decision -> {decision.recurso, resolve_decision_name(scope, decision.recurso)} end)
   end
 
-  defp resolve_decision_name(scope, resource_id) do
-    case Ybira.get_file(scope, resource_id) do
+  defp resolve_decision_name(scope, rkey) do
+    case Ybira.get_file(scope, rkey) do
       {:ok, file} ->
         file.nome
 
       _error ->
-        case Ybira.fetch_access_target(scope, resource_id) do
+        case Ybira.fetch_access_target(scope, rkey) do
           {:ok, %{nome: nome}} -> nome
           _other -> gettext("arquivo apagado")
         end
@@ -146,8 +148,8 @@ defmodule TainaWeb.MyRequestsLive do
 
   # Aprovação chegando pelo PubSub nomeia o arquivo quando o nome já está na
   # tela (pedido que veio depois do mount deixa o flash genérico).
-  defp approved_message(file_names, resource_id) do
-    case file_names && Map.fetch(file_names, resource_id) do
+  defp approved_message(file_names, rkey) do
+    case file_names && Map.fetch(file_names, rkey) do
       {:ok, file} -> gettext("Pedido aprovado: agora você pode abrir %{file}.", file: file)
       _other -> gettext("Seu pedido foi aprovado. Você já pode abrir.")
     end

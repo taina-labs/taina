@@ -119,8 +119,8 @@ defmodule TainaWeb.FilesLiveTest do
 
       {:ok, lv, html} = conn |> log_in(ava) |> live(~p"/arquivos")
 
-      assert html =~ casa.original_filename
-      refute html =~ praca.original_filename
+      assert html =~ casa.nome
+      refute html =~ praca.nome
       # aba Casa ativa sem ?zona= na URL; a praca pede o parametro explicito
       assert has_element?(lv, ~s(.segmented__option[aria-current="page"]), "Casa")
       assert has_element?(lv, ~s|.segmented__option:not([aria-current])|, "Praça")
@@ -136,8 +136,8 @@ defmodule TainaWeb.FilesLiveTest do
 
       {:ok, _lv, html} = conn |> log_in(ava) |> live(~p"/arquivos?zona=praca")
 
-      assert html =~ praca.original_filename
-      refute html =~ casa.original_filename
+      assert html =~ praca.nome
+      refute html =~ casa.nome
       # linha de leitura curta da praca + acao oposta no menu do dono
       assert html =~ "Todos veem"
       assert html =~ "Tirar da praça"
