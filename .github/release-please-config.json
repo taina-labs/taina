@@ -1,5 +1,7 @@
 {
   "bootstrap-sha": "fa1453f",
+  "initial-version": "0.1.0",
+  "bump-minor-pre-major": true,
   "pull-request-header": "Vamo mandar pra prod?",
   "pull-request-title-pattern": "chore: release ${version}",
   "changelog-sections": [
