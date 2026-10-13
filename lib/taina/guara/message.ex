@@ -28,7 +28,6 @@ defmodule Taina.Guara.Message do
   alias Taina.Repo.PublicId
   alias Taina.Ybira.File
 
-  @schema_prefix "guara"
   schema "messages" do
     field :content, :string
     field :public_id, PublicId, autogenerate: true

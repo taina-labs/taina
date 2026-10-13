@@ -39,7 +39,6 @@ defmodule Taina.Ybira.Folder do
           updated_at: NaiveDateTime.t() | nil
         }
 
-  @schema_prefix "ybira"
   schema "folders" do
     field :name, :string
     field :public_id, PublicId, autogenerate: true

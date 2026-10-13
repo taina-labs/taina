@@ -33,7 +33,6 @@ defmodule Taina.Maraca.Tekoa do
           updated_at: NaiveDateTime.t() | nil
         }
 
-  @schema_prefix "maraca"
   schema "tekoas" do
     field :name, :string
     field :public_id, PublicId, autogenerate: true

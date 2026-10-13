@@ -38,7 +38,6 @@ defmodule Taina.Guara.Chat do
   alias Taina.Maraca.Tekoa
   alias Taina.Repo.PublicId
 
-  @schema_prefix "guara"
   schema "chats" do
     field :public_id, PublicId, autogenerate: true
     field :name, :string

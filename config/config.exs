@@ -31,8 +31,10 @@ config :phoenix, :json_library, JSON
 #   - PurgeTrash apaga de vez os arquivos na lixeira há mais de 30 dias (03:00).
 #   - Backup faz pg_dump + arquivo do storage (04:00). É no-op até habilitar
 #     `config :taina, :backup, enabled: true` (ver Taina.Nhaman.Backup).
+# O engine `Lite` e o do SQLite (fila e eleicao de lider nao dependem de
+# recursos do Postgres como advisory lock e LISTEN/NOTIFY).
 config :taina, Oban,
-  engine: Oban.Engines.Basic,
+  engine: Oban.Engines.Lite,
   repo: Taina.Repo,
   queues: [default: 10],
   plugins: [

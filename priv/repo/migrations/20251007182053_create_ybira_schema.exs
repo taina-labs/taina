@@ -1,28 +1,27 @@
 defmodule Taina.Repo.Migrations.CreateYbiraSchema do
   use Ecto.Migration
 
+  # Porta para SQLite: tabelas planas (sem schema `ybira`), sem RLS DDL.
   def change do
-    execute "CREATE SCHEMA IF NOT EXISTS ybira", "DROP SCHEMA IF EXISTS ybira CASCADE"
-
-    create table(:folders, prefix: "ybira") do
-      add :ava_id, references(:avas, on_delete: :delete_all, prefix: "maraca"), null: false
-      add :tekoa_id, references(:tekoas, on_delete: :delete_all, prefix: "maraca"), null: false
-      add :parent_id, references(:folders, on_delete: :delete_all, prefix: "ybira")
+    create table(:folders) do
+      add :ava_id, references(:avas, on_delete: :delete_all), null: false
+      add :tekoa_id, references(:tekoas, on_delete: :delete_all), null: false
+      add :parent_id, references(:folders, on_delete: :delete_all)
       add :name, :string, null: false
       add :public_id, :string
 
       timestamps()
     end
 
-    create index(:folders, [:ava_id], prefix: "ybira")
-    create index(:folders, [:tekoa_id], prefix: "ybira")
-    create index(:folders, [:parent_id], prefix: "ybira", name: :folders_parent_id_index)
-    create unique_index(:folders, [:public_id], prefix: "ybira")
+    create index(:folders, [:ava_id])
+    create index(:folders, [:tekoa_id])
+    create index(:folders, [:parent_id], name: :folders_parent_id_index)
+    create unique_index(:folders, [:public_id])
 
-    create table(:files, prefix: "ybira") do
-      add :ava_id, references(:avas, on_delete: :delete_all, prefix: "maraca"), null: false
-      add :tekoa_id, references(:tekoas, on_delete: :delete_all, prefix: "maraca"), null: false
-      add :folder_id, references(:folders, on_delete: :nilify_all, prefix: "ybira")
+    create table(:files) do
+      add :ava_id, references(:avas, on_delete: :delete_all), null: false
+      add :tekoa_id, references(:tekoas, on_delete: :delete_all), null: false
+      add :folder_id, references(:folders, on_delete: :nilify_all)
       add :filename, :string, null: false
       add :original_filename, :string, null: false
       add :filepath, :string, null: false
@@ -36,14 +35,14 @@ defmodule Taina.Repo.Migrations.CreateYbiraSchema do
       timestamps()
     end
 
-    create index(:files, [:ava_id, {:desc, "inserted_at"}], prefix: "ybira")
-    create index(:files, [:tekoa_id], prefix: "ybira")
-    create index(:files, [:folder_id], prefix: "ybira")
-    create index(:files, [:file_hash], prefix: "ybira")
-    create index(:files, [:deleted_at], prefix: "ybira", where: "deleted_at IS NOT NULL")
-    create unique_index(:files, [:public_id], prefix: "ybira")
+    # SQLite nao aceita a tupla {:desc, coluna} no helper `create index`;
+    # os indices com ordenacao descem como SQL cru.
+    execute "CREATE INDEX files_ava_id_inserted_at_index ON files (ava_id, inserted_at DESC, id DESC)"
 
-    execute "ALTER TABLE ybira.folders ENABLE ROW LEVEL SECURITY"
-    execute "ALTER TABLE ybira.files ENABLE ROW LEVEL SECURITY"
+    create index(:files, [:tekoa_id])
+    create index(:files, [:folder_id])
+    create index(:files, [:file_hash])
+    create index(:files, [:deleted_at], where: "deleted_at IS NOT NULL")
+    create unique_index(:files, [:public_id])
   end
 end

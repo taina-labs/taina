@@ -5,47 +5,44 @@ defmodule Taina.Repo.Migrations.CreateMaracaEvents do
   # na comunidade, "quem fez o quê". Só `inserted_at`: registro é consequência
   # do ato, nunca é editado nem apagado, `updated_at` seria o sinal errado
   # (mesma leitura do zona: o CHECK casa o enum da aplicação no nível do banco).
+  #
+  # Porta SQLite: sem RLS DDL, e o CHECK do vocabulário já nasce com a lista
+  # final de tipos. O SQLite nao tem ALTER TABLE ADD/DROP CONSTRAINT, entao as
+  # tres migrações seguintes que ampliavam o CHECK (20261010120000,
+  # 20261010130000, 20261011150000) viram no-op; em cadeia nova o estado
+  # intermediario nao e observavel.
+  @event_types ~w(invite_created invite_accepted invite_revoked member_deactivated member_role_changed member_reactivated reset_link_created published_to_praca moved_between_zones access_requested access_granted access_denied quota_changed)
+
   def up do
-    create table(:events, prefix: "maraca") do
-      add :tekoa_id, references(:tekoas, on_delete: :delete_all, prefix: "maraca"), null: false
+    create table(:events) do
+      add :tekoa_id, references(:tekoas, on_delete: :delete_all), null: false
 
       # Nullable: atos do sistema (futuro) não têm autor morador.
-      add :ava_id, references(:avas, on_delete: :nilify_all, prefix: "maraca")
+      add :ava_id, references(:avas, on_delete: :nilify_all)
 
-      add :type, :string, null: false
+      add :type, :string,
+        null: false,
+        check: %{
+          name: "events_type_check",
+          expr: "type IN (#{Enum.map_join(@event_types, ",", &"'#{&1}'")})"
+        }
+
       add :payload, :map, null: false, default: %{}
       add :public_id, :string
 
       timestamps(updated_at: false)
     end
 
-    create unique_index(:events, [:public_id], prefix: "maraca")
-    create index(:events, [:tekoa_id, {:desc, :inserted_at}], prefix: "maraca")
+    create unique_index(:events, [:public_id])
 
-    execute """
-    ALTER TABLE maraca.events ADD CONSTRAINT events_type_check CHECK (type IN ('invite_created','invite_accepted','member_deactivated','published_to_praca','moved_between_zones','access_requested','access_granted','access_denied','quota_changed'))
-    """
+    execute "CREATE INDEX events_tekoa_id_inserted_at_index ON events (tekoa_id, inserted_at DESC)"
 
-    execute "ALTER TABLE maraca.events ENABLE ROW LEVEL SECURITY"
-    execute "ALTER TABLE maraca.events FORCE ROW LEVEL SECURITY"
-
-    execute """
-    CREATE POLICY event_isolation ON maraca.events
-      FOR ALL
-      USING (
-        tekoa_id IN (
-          SELECT id FROM maraca.tekoas
-          WHERE public_id = current_setting('app.current_tekoa_id', true)
-        )
-      )
-    """
+    # O ledger e dado de Tekoa como qualquer outro: no Postgres ele tinha
+    # policy RLS propria; no SQLite o isolamento e aplicado pela camada de
+    # aplicacao (Taina.Repo.with_tekoa/2).
   end
 
   def down do
-    execute "DROP POLICY IF EXISTS event_isolation ON maraca.events"
-    execute "ALTER TABLE maraca.events NO FORCE ROW LEVEL SECURITY"
-    execute "ALTER TABLE maraca.events DISABLE ROW LEVEL SECURITY"
-
-    drop table(:events, prefix: "maraca")
+    drop table(:events)
   end
 end

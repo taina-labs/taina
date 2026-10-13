@@ -84,7 +84,6 @@ defmodule Taina.Maraca.Ava do
           updated_at: NaiveDateTime.t() | nil
         }
 
-  @schema_prefix "maraca"
   schema "avas" do
     field :username, :string
     field :display_name, :string

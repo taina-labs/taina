@@ -56,7 +56,6 @@ defmodule Taina.Maraca.Event do
     member_reactivated reset_link_created published_to_praca moved_between_zones
     access_requested access_granted access_denied quota_changed)a
 
-  @schema_prefix "maraca"
   schema "events" do
     field :public_id, PublicId, autogenerate: true
     field :type, Ecto.Enum, values: @event_types

@@ -97,7 +97,6 @@ defmodule Taina.Maraca.AccessRequest do
           updated_at: NaiveDateTime.t() | nil
         }
 
-  @schema_prefix "maraca"
   schema "access_requests" do
     field :reason, :string
     field :resource_id, :string

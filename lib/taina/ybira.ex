@@ -538,11 +538,11 @@ defmodule Taina.Ybira do
     statement = """
     WITH RECURSIVE chain AS (
       SELECT f.id, f.parent_id, f.public_id, f.name, f.ava_id, f.zona, 0 AS depth
-      FROM ybira.folders f
+      FROM folders f
       WHERE f.public_id = $1 AND f.deleted_at IS NULL
       UNION ALL
       SELECT p.id, p.parent_id, p.public_id, p.name, p.ava_id, p.zona, c.depth + 1
-      FROM ybira.folders p
+      FROM folders p
       JOIN chain c ON p.id = c.parent_id AND c.depth < $2
       WHERE p.deleted_at IS NULL
     )
@@ -636,17 +636,34 @@ defmodule Taina.Ybira do
     end)
   end
 
+  # O SQLite não tem `split_part`; `substr/instr` corta o MIME antes da
+  # primeira barra (mime_type sempre tem `/`). Macro porque a mesma expressão
+  # precisa bater no `group_by` e no `select`.
+  defmacrop mime_prefix_expr(mime_type_field) do
+    quote do
+      fragment(
+        "CASE WHEN instr(?, '/') = 0 THEN ? ELSE substr(?, 1, instr(?, '/') - 1) END",
+        unquote(mime_type_field),
+        unquote(mime_type_field),
+        unquote(mime_type_field),
+        unquote(mime_type_field)
+      )
+    end
+  end
+
   @impl true
   def storage_stats_by_kind(%Scope{} = scope) do
     Repo.with_tekoa(scope.tekoa.public_id, fn ->
+      # O SQLite não tem `split_part`; `substr/instr` corta o MIME antes da
+      # primeira barra (mime_type sempre tem `/`).
       rows =
         Repo.all(
           from(f in Ybira.File,
             as: :readable,
             where: is_nil(f.deleted_at),
             where: ^Maraca.readable_dynamic(scope.ava, "ybira_file"),
-            group_by: fragment("split_part(?, '/', 1)", f.mime_type),
-            select: {fragment("split_part(?, '/', 1)", f.mime_type), sum(f.file_size_bytes)}
+            group_by: mime_prefix_expr(f.mime_type),
+            select: {mime_prefix_expr(f.mime_type), sum(f.file_size_bytes)}
           )
         )
 
@@ -928,15 +945,16 @@ defmodule Taina.Ybira do
 
   # Uma única CTE recursiva sobe a cadeia de ancestrais de `start_id` (incluindo
   # ele) e responde se `folder_id` aparece lá, sem N+1 nem recursão Elixir
-  # ilimitada. Roda sob `with_tekoa`, então o RLS filtra por Tekoa.
+  # ilimitada. Roda sob `with_tekoa`: o filtro por Tekoa é da camada de
+  # aplicação.
   defp ancestor_or_self?(start_id, folder_id) do
     {:ok, %{rows: [[count]]}} =
       Repo.query(
         """
         WITH RECURSIVE ancestors AS (
-          SELECT id, parent_id FROM ybira.folders WHERE id = $1
+          SELECT id, parent_id FROM folders WHERE id = $1
           UNION ALL
-          SELECT f.id, f.parent_id FROM ybira.folders f
+          SELECT f.id, f.parent_id FROM folders f
           JOIN ancestors a ON f.id = a.parent_id
         )
         SELECT count(*) FROM ancestors WHERE id = $2
@@ -971,9 +989,9 @@ defmodule Taina.Ybira do
       Repo.query(
         """
         WITH RECURSIVE subtree AS (
-          SELECT id FROM ybira.folders WHERE id = $1
+          SELECT id FROM folders WHERE id = $1
           UNION ALL
-          SELECT f.id FROM ybira.folders f
+          SELECT f.id FROM folders f
           JOIN subtree s ON f.parent_id = s.id
           WHERE f.deleted_at IS NULL
         )

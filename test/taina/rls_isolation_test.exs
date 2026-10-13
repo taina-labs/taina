@@ -15,6 +15,13 @@ defmodule Taina.RlsIsolationTest do
 
   use ExUnit.Case, async: false
 
+  # Spike SQLite (RFC_006 passo 12): o mecanismo testado aqui (policies RLS,
+  # role restrita, `app.bypass_rls`) só existe no Postgres; o SQLite não tem
+  # RLS e o isolamento passa a ser promessa da camada de aplicação. As provas
+  # equivalentes de aplicação são os testes de contexto (`prepare_query guard`)
+  # e os testes de zona/escopo nos contexts.
+  @moduletag skip: "mecanismo RLS e exclusivo do Postgres (spike SQLite)"
+
   @probe_role "taina_rls_probe"
 
   setup_all do

@@ -84,7 +84,6 @@ defmodule Taina.Maraca.Permission do
           updated_at: NaiveDateTime.t() | nil
         }
 
-  @schema_prefix "maraca"
   schema "permissions" do
     field :resource_id, :string
     field :resource_type, :string

@@ -14,14 +14,9 @@ if System.get_env("PHX_SERVER") do
 end
 
 if config_env() == :prod do
-  database_url =
-    System.get_env("DATABASE_URL") ||
-      raise """
-      environment variable DATABASE_URL is missing.
-      For example: ecto://USER:PASS@HOST/DATABASE
-      """
-
-  maybe_ipv6 = if System.get_env("ECTO_IPV6") in ~w(true 1), do: [:inet6], else: []
+  # SQLite: o banco e um arquivo na caixa, nao um servico remoto. DATABASE_URL
+  # (`sqlite:///caminho`) e opcional; sem ele, cai no caminho padrao do
+  # container (ver o bloco do Repo abaixo).
 
   secret_key_base =
     System.get_env("SECRET_KEY_BASE") ||
@@ -48,17 +43,25 @@ if config_env() == :prod do
   url_scheme = System.get_env("PHX_URL_SCHEME") || "https"
   url_port = String.to_integer(System.get_env("PHX_URL_PORT") || "443")
 
-  # Ajuste de fila do pool (RFC_ARQUITETURA): uma query espera no máximo 50ms
-  # na fila, checando a cada 1s se a fila encheu. No teto de 20 conexões do
-  # Postgres da caixa, é o que evita request acumulando sem ninguém notar.
+  # SQLite: o "database" e um caminho de arquivo na caixa. Aceita o padrao do
+  # container (DATABASE_PATH) e um `sqlite:///abs/path` no DATABASE_URL; uma
+  # URL de Postgres em DATABASE_URL e recusada em vez de quebrar no boot.
+  database_path =
+    case System.get_env("DATABASE_URL") do
+      nil -> System.get_env("DATABASE_PATH") || "/app/data/taina.db"
+      "sqlite://" <> rest -> String.trim_leading(rest, "/")
+      other -> raise "DATABASE_URL incompativel com SQLite (esperado sqlite://): #{other}"
+    end
+
+  config :taina, Taina.Repo,
+    database: database_path,
+    pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10")
+
+  # Ajuste de fila do pool (RFC_ARQUITETURA): uma query espera no maximo 50ms
+  # na fila, checando a cada 1s se a fila encheu.
   config :taina, Taina.Repo,
     queue_target: 50,
     queue_interval: 1000
-
-  config :taina, Taina.Repo,
-    url: database_url,
-    pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10"),
-    socket_options: maybe_ipv6
 
   # A caixa é alcançada por nomes arbitrários (endereço de LAN, MagicDNS do
   # Tailscale, domínio próprio): qualquer allowlist de origin quebra um desses

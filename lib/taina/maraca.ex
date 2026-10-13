@@ -508,17 +508,16 @@ defmodule Taina.Maraca do
 
   defp last_active_zelador?(%Ava{}), do: false
 
-  # Trava os zeladores ativos com FOR UPDATE para serializar desativações e
-  # rebaixamentos concorrentes: dois zeladores se removendo ao mesmo tempo não
-  # podem ambos ler count == 2 e zerar a administração -- o segundo bloqueia,
-  # relê após o commit do primeiro e enxerga count == 1. Roda sempre dentro da
-  # transação de `Repo.with_tekoa`. `count(*)` não aceita FOR UPDATE no Postgres,
-  # então travamos as linhas e contamos no Elixir (teto de 50 membros, custo trivial).
-  # Só conta zelador já ativado: um convite pendente de zelador não é gente ainda.
+  # Serialização de desativações e rebaixamentos concorrentes: no Postgres o
+  # `FOR UPDATE` travava as linhas dos zeladores ativos. O SQLite não tem row
+  # lock; a escrita inteira da caixa é serializada pelo lock do arquivo (com
+  # `busy_timeout`, o segundo bloqueia, relê após o commit do primeiro e
+  # enxerga o count atualizado). Roda sempre dentro da transação de
+  # `Repo.with_tekoa`. Só conta zelador já ativado: um convite pendente de
+  # zelador não é gente ainda.
   defp active_zelador_count do
     from(a in Ava,
       where: a.role == :zelador and is_nil(a.deactivated_at) and not is_nil(a.activated_at),
-      lock: "FOR UPDATE",
       select: a.id
     )
     |> Repo.all()

@@ -10,15 +10,14 @@ defmodule Taina.Repo.Migrations.JaciPhotoIndexes do
 
   ## Por que não há índice para a ordenação da linha do tempo
 
-  A linha do tempo ordena pela data efetiva — `COALESCE((metadata->>'taken_at')
-  ::timestamp, inserted_at)`. Esse `::timestamp` depende de `DateStyle`, então é
-  *stable*, não *immutable*, e o Postgres recusa indexá-lo. Em vez de mentir
-  para o planner (função `IMMUTABLE` falsa) ou trocar o formato do EXIF por
-  epoch, deixamos a ordenação como um sort em memória: com o teto de 5k imagens
-  por Tekoa do MVP, é sub-milissegundo sobre o conjunto já filtrado por este
-  índice. Se o benchmark do Pi (gate da Fase 3) mostrar que importa, a saída é
-  uma coluna `photo_taken_at` populada pelo worker de rendition — indexável e
-  keyset-perfeita — sem mexer no formato do `metadata`.
+  A linha do tempo ordena pela data efetiva: `taken_at` do EXIF quando existe,
+  senao `inserted_at`. No Postgres o `::timestamp` dependia de `DateStyle`, e
+  no SQLite o valor vem de `json_extract` (nao indexavel como ordenacao
+  estavel de keyset). Em ambos, a ordenacao fica como sort em memoria: com o
+  teto de 5k imagens por Tekoa do MVP, e sub-milissegundo sobre o conjunto ja
+  filtrado por este indice. Se o benchmark do Pi (gate da Fase 3) mostrar que
+  importa, a saida e uma coluna `photo_taken_at` populada pelo worker de
+  rendition, indexavel e keyset-perfeita.
   """
 
   use Ecto.Migration
@@ -26,12 +25,12 @@ defmodule Taina.Repo.Migrations.JaciPhotoIndexes do
   def up do
     execute """
     CREATE INDEX ybira_files_images_index
-    ON ybira.files (inserted_at DESC, id DESC)
-    WHERE deleted_at IS NULL AND mime_type LIKE 'image/%'
+    ON files (inserted_at DESC, id DESC)
+    WHERE deleted_at IS NULL AND substr(mime_type, 1, 6) = 'image/'
     """
   end
 
   def down do
-    execute "DROP INDEX IF EXISTS ybira.ybira_files_images_index"
+    execute "DROP INDEX IF EXISTS ybira_files_images_index"
   end
 end

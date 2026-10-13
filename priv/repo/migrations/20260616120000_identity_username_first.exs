@@ -20,63 +20,54 @@ defmodule Taina.Repo.Migrations.IdentityUsernameFirst do
 
   def up do
     # Papéis: admin -> zelador, member -> morador.
-    execute "UPDATE maraca.avas SET role = 'zelador' WHERE role = 'admin'"
-    execute "UPDATE maraca.avas SET role = 'morador' WHERE role = 'member'"
+    execute "UPDATE avas SET role = 'zelador' WHERE role = 'admin'"
+    execute "UPDATE avas SET role = 'morador' WHERE role = 'member'"
 
     # E-mail descartado.
-    drop unique_index(:avas, [:tekoa_id, :email],
-           prefix: "maraca",
-           name: :avas_tekoa_id_email_index
-         )
+    drop unique_index(:avas, [:tekoa_id, :email], name: :avas_tekoa_id_email_index)
 
-    alter table(:avas, prefix: "maraca") do
+    alter table(:avas) do
       remove :email
     end
 
     # Confirmação de e-mail -> token de convite (reaproveita a infra).
-    drop unique_index(:avas, [:email_confirmation_token_hash], prefix: "maraca")
+    drop unique_index(:avas, [:email_confirmation_token_hash])
 
-    rename table(:avas, prefix: "maraca"), :email_confirmation_token_hash, to: :invite_token_hash
-    rename table(:avas, prefix: "maraca"), :email_confirmation_sent_at, to: :invite_sent_at
+    rename table(:avas), :email_confirmation_token_hash, to: :invite_token_hash
+    rename table(:avas), :email_confirmation_sent_at, to: :invite_sent_at
 
-    create unique_index(:avas, [:invite_token_hash],
-             prefix: "maraca",
-             where: "invite_token_hash IS NOT NULL"
-           )
+    create unique_index(:avas, [:invite_token_hash], where: "invite_token_hash IS NOT NULL")
 
     # Aceite do convite, não confirmação de e-mail.
-    rename table(:avas, prefix: "maraca"), :confirmed_at, to: :activated_at
+    rename table(:avas), :confirmed_at, to: :activated_at
 
     # Nome de exibição (opcional): o rosto social, separado da chave de acesso.
-    alter table(:avas, prefix: "maraca") do
+    alter table(:avas) do
       add :display_name, :string
     end
   end
 
   def down do
-    alter table(:avas, prefix: "maraca") do
+    alter table(:avas) do
       remove :display_name
     end
 
-    rename table(:avas, prefix: "maraca"), :activated_at, to: :confirmed_at
+    rename table(:avas), :activated_at, to: :confirmed_at
 
-    drop unique_index(:avas, [:invite_token_hash], prefix: "maraca")
+    drop unique_index(:avas, [:invite_token_hash])
 
-    rename table(:avas, prefix: "maraca"), :invite_token_hash, to: :email_confirmation_token_hash
-    rename table(:avas, prefix: "maraca"), :invite_sent_at, to: :email_confirmation_sent_at
+    rename table(:avas), :invite_token_hash, to: :email_confirmation_token_hash
+    rename table(:avas), :invite_sent_at, to: :email_confirmation_sent_at
 
-    create unique_index(:avas, [:email_confirmation_token_hash], prefix: "maraca")
+    create unique_index(:avas, [:email_confirmation_token_hash])
 
-    alter table(:avas, prefix: "maraca") do
+    alter table(:avas) do
       add :email, :string
     end
 
-    create unique_index(:avas, [:tekoa_id, :email],
-             prefix: "maraca",
-             name: :avas_tekoa_id_email_index
-           )
+    create unique_index(:avas, [:tekoa_id, :email], name: :avas_tekoa_id_email_index)
 
-    execute "UPDATE maraca.avas SET role = 'admin' WHERE role = 'zelador'"
-    execute "UPDATE maraca.avas SET role = 'member' WHERE role = 'morador'"
+    execute "UPDATE avas SET role = 'admin' WHERE role = 'zelador'"
+    execute "UPDATE avas SET role = 'member' WHERE role = 'morador'"
   end
 end

@@ -51,7 +51,6 @@ defmodule Taina.Ybira.File do
           updated_at: NaiveDateTime.t() | nil
         }
 
-  @schema_prefix "ybira"
   schema "files" do
     field :filename, :string
     field :original_filename, :string

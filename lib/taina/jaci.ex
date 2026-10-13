@@ -29,10 +29,12 @@ defmodule Taina.Jaci do
 
   # Expressão SQL da data efetiva: captura do EXIF quando houver, senão upload.
   # Espelha `Timeline.effective_datetime/1` e o índice de
-  # `*_jaci_photo_indexes`, os três precisam concordar.
+  # `*_jaci_photo_indexes`, os três precisam concordar. No SQLite o `taken_at`
+  # sai de `json_extract` como texto ISO8601, que ordena como o `inserted_at`
+  # (também texto ISO8601) do Ecto.
   defmacrop effective_ts(file) do
     quote do
-      fragment("COALESCE((? ->> 'taken_at')::timestamp, ?)", unquote(file).metadata, unquote(file).inserted_at)
+      fragment("COALESCE(json_extract(?, '$.taken_at'), ?)", unquote(file).metadata, unquote(file).inserted_at)
     end
   end
 

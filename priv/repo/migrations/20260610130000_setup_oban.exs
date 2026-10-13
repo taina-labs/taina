@@ -2,9 +2,9 @@ defmodule Taina.Repo.Migrations.SetupOban do
   @moduledoc """
   Cria as tabelas do Oban (fila de jobs em background).
 
-  As tabelas vivem no schema `public` (sem RLS) — jobs são infraestrutura, não
-  dados de Tekoa. O worker `Taina.Ybira.Workers.PurgeTrash` roda em nível de
-  sistema e atravessa todas as Tekoas com `skip_tekoa_id: true`.
+  Jobs sao infraestrutura, nao dado de Tekoa. O `Oban.Migrations` despacha
+  para `Oban.Migrations.SQLite` quando o adaptador do Repo e o SQLite, e a
+  cadeia SQLite tem versao unica (tabela criada de uma vez).
   """
 
   use Ecto.Migration
