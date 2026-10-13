@@ -58,7 +58,7 @@ defmodule Taina.MixProject do
       {:bandit, "~> 1.5"},
       {:nanoid, "~> 2.1"},
       {:mime, "~> 2.0"},
-      {:ypy, github: "taina-labs/ypy"},
+      {:ypy, "~> 0.1"},
       {:image, "~> 0.68"},
       {:bcrypt_elixir, "~> 3.3"},
       {:oban, "~> 2.23"},
