@@ -74,20 +74,11 @@ RUN mix release
 FROM ${RUNNER_IMAGE}
 
 # Runtime libs (bookworm package names: libncurses6, not the bullseye
-# libncurses5) plus the PostgreSQL 18 client. Scheduled backups
-# (Taina.Nhaman.Backup) shell out to pg_dump / pg_restore via System.cmd, so
-# without the client they fail with :command_unavailable. The pgdg apt repo is
-# the same one CI uses for its backup-restore job.
+# libncurses5). The backup (Taina.Nhaman.Backup) is a plain SQLite snapshot
+# with Exqlite, so no database client is needed here.
 RUN apt-get update -y && \
   apt-get install -y --no-install-recommends \
-    libstdc++6 openssl libncurses6 locales ca-certificates curl gnupg \
-  && install -d /usr/share/postgresql-common/pgdg \
-  && curl -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc --fail \
-    https://www.postgresql.org/media/keys/ACCC4CF8.asc \
-  && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] http://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" \
-    > /etc/apt/sources.list.d/pgdg.list \
-  && apt-get update -y \
-  && apt-get install -y --no-install-recommends postgresql-client-18 \
+    libstdc++6 openssl libncurses6 locales ca-certificates curl \
   && apt-get clean && rm -f /var/lib/apt/lists/*_*
 
 # Set the locale
@@ -100,14 +91,15 @@ ENV LC_ALL en_US.UTF-8
 WORKDIR "/app"
 RUN chown nobody /app
 
-# Create the writable data directories (Ybira file storage, Nhaman backups).
-# Both are mounted over by named volumes in docker-compose. Docker seeds an
-# empty named volume with the image's contents and ownership, so creating them
-# here with the runtime user's ownership is what makes them writable once
-# mounted. Missing /app/backups means the volume mounts root-owned and the
-# nobody user cannot write a backup (Nhaman logs "Backup falhou" and moves on).
-RUN mkdir -p /app/storage /app/backups \
-    && chown nobody:nogroup /app/storage /app/backups
+# Create the writable data directories (the SQLite database, Ybira file
+# storage, Nhaman backups). All are mounted over by named volumes in
+# docker-compose. Docker seeds an empty named volume with the image's contents
+# and ownership, so creating them here with the runtime user's ownership is
+# what makes them writable once mounted. Missing /app/backups means the volume
+# mounts root-owned and the nobody user cannot write a backup (Nhaman logs
+# "Backup falhou" and moves on).
+RUN mkdir -p /app/data /app/storage /app/backups \
+    && chown nobody:nogroup /app/data /app/storage /app/backups
 
 # Set runner ENV
 ENV MIX_ENV="prod"

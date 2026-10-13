@@ -1,27 +1,25 @@
 name: docker smoke
 
-# Verifica que a imagem de produção sobe de verdade, já no regime de RLS.
+# Verifica que a imagem de produção sobe de verdade, já no regime do SQLite.
 #
-# O CI (ci.yml) roda os testes contra o código compilado no runner, como
-# superusuário do Postgres (que ignora RLS por definição). Isso não pega o que
-# quebra na hora de instalar numa caixa: diretório que o release cria sem dono,
-# variável de ambiente faltando no runtime, migração que não roda como papel
-# sem superpoderes. Esses problemas só aparecem quando o container sobe.
+# O CI (ci.yml) roda os testes contra o código compilado no runner, num SQLite
+# de teste efêmero. Isso não pega o que quebra na hora de instalar numa caixa:
+# diretório que o release cria sem dono, variável de ambiente faltando no
+# runtime, migração que não roda no boot. Esses problemas só aparecem quando o
+# container sobe.
 #
 # Um caso concreto: o Dockerfile criava /app/storage com o dono correto mas não
 # /app/backups. O volume de backup nascia root-owned, o processo rodava como
 # nobody, e o backup agendado falhava com :eacces registrando só "Backup
 # falhou". Nenhum teste pegou isso, porque nenhum teste subia o container.
 #
-# Um segundo caso: o app em produção conecta como o papel taina_app
-# (NOSUPERUSER NOBYPASSRLS), então toda query cruza as políticas RLS. Um site
-# de consulta de sistema sem a válvula `Repo.with_system/1` devolve zero
-# linhas em produção e nada nos testes de unidade — aqui isso vira vermelho.
-#
 # O que este job faz, espelhando o que o oka/install.sh faz na máquina do
-# operador: sobe o banco, cria o papel de aplicação, sobe o release conectado
-# por ele, deixa as migrações rodarem no boot, bootstrapa a comunidade sem
-# interface (headless) e confere no banco que o RLS aplica de verdade.
+# operador: sobe o release conectado a um arquivo SQLite num volume montado,
+# deixa as migrações rodarem no boot, bootstrapa a comunidade sem interface
+# (headless), loga pela interface e confere que os volumes são graváveis. O
+# isolamento entre comunidades é coberto pela tripwire de aplicação
+# (test/taina/isolation_sweep_test.exs), não aqui: não existe mais banco de
+# dados externo com papel e RLS para provar.
 
 on:
   workflow_dispatch:
@@ -60,71 +58,16 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Start a Postgres for the app
-        run: |
-          docker network create taina_smoke
-          docker run -d --name smoke_db --network taina_smoke \
-            -e POSTGRES_USER=taina \
-            -e POSTGRES_PASSWORD=taina \
-            -e POSTGRES_DB=taina \
-            postgres:18-alpine
-          # Espera o banco aceitar conexão, que é o que o compose faz pelo
-          # healthcheck antes de subir o app.
-          for i in $(seq 1 30); do
-            if docker exec smoke_db pg_isready -U taina >/dev/null 2>&1; then
-              echo "banco pronto"
-              exit 0
-            fi
-            sleep 2
-          done
-          echo "o banco não subiu a tempo"
-          docker logs smoke_db
-          exit 1
-
-      # Espelho de oka/deploy/initdb/01-taina-app-role.sh: crie o papel de
-      # aplicação igualzinho lá. MANTENHA EM SINCRONIA — se um lado mudar
-      # (senha via variável, flags do papel, grants), mude os dois.
-      - name: Create the non-superuser app role (mirror of oka initdb)
-        run: |
-          APP_ROLE=taina_app
-          psql_cmd() {
-            docker exec smoke_db psql -v ON_ERROR_STOP=1 \
-              --username taina --dbname taina "$@"
-          }
-
-          # O guard de existência fica no shell de propósito: o psql não
-          # substitui :'var' dentro de blocos DO $$, então o guard do oka
-          # também fica no shell. A senha vai literal porque -c entrega a
-          # string crua ao servidor: interpolação de :'var' só acontece na
-          # entrada lida por stdin/-f, nunca em -c. Aqui a senha é fixa.
-          if [ "$(psql_cmd -tAc "SELECT 1 FROM pg_roles WHERE rolname = '$APP_ROLE'")" = "1" ]; then
-            echo "papel $APP_ROLE já existe; seguindo sem alterar"
-          else
-            psql_cmd -c "CREATE ROLE $APP_ROLE LOGIN PASSWORD 'taina' NOSUPERUSER NOBYPASSRLS;"
-          fi
-
-          # CONNECT: abrir conexão no banco. CREATE (no database): criar os
-          # schemas das aplicações (maraca, ybira, guara) nas migrations.
-          psql_cmd -c "GRANT CONNECT, CREATE ON DATABASE taina TO $APP_ROLE;"
-
-          # USAGE: enxergar o schema public (no PostgreSQL 15+ ele não dá mais
-          # CREATE para o público). CREATE: criar as tabelas das migrations nele.
-          psql_cmd -c "GRANT USAGE, CREATE ON SCHEMA public TO $APP_ROLE;"
-
       - name: Run the release's own start command
         run: |
           # Mesmo comando do CMD do Dockerfile: migrações no boot e depois o
-          # servidor. Conectado como taina_app (não-superuser), exatamente
-          # como em produção — se alguma migração exigir superpoderes ou se
-          # o RLS barrar o boot, falha aqui.
-          #
-          # BACKUP_DATABASE_URL fica de fora de propósito: sem ele, o backup
-          # usa a própria DATABASE_URL (papel único), que é o caso de dev/CI.
+          # servidor. Banco num volume montado, exatamente como em produção —
+          # se alguma migração falhar num diretório sem dono, falha aqui.
           #
           # SECRET_KEY_BASE com >= 64 bytes: Plug.Session.COOKIE recusa menos
           # que isso e a primeira rota que grava sessão (/login) devolve 500.
-          docker run -d --name smoke_app --network taina_smoke \
-            -e DATABASE_URL=ecto://taina_app:taina@smoke_db/taina \
+          docker run -d --name smoke_app \
+            -e DATABASE_PATH=/app/data/taina.db \
             -e SECRET_KEY_BASE=smoke-test-secret-key-base-0123456789abcdef0123456789abcdef0123456789 \
             -e PHX_HOST=localhost \
             -e PHX_SERVER=true \
@@ -132,6 +75,7 @@ jobs:
             -e STORAGE_ROOT=/app/storage \
             -e BACKUP_ENABLED=false \
             -e BACKUP_DIR=/app/backups \
+            -v taina_smoke_data:/app/data \
             -v taina_smoke_storage:/app/storage \
             -v taina_smoke_backups:/app/backups \
             taina:smoke
@@ -140,7 +84,7 @@ jobs:
         run: |
           # Mesmo caminho do install.sh: de dentro do container, porque a porta
           # 4000 não é publicada e o /health só responde 200 quando o banco
-          # também respondeu.
+          # (o arquivo SQLite) também respondeu.
           for i in $(seq 1 60); do
             if docker exec smoke_app curl -fsS http://localhost:4000/health; then
               echo ""
@@ -150,18 +94,14 @@ jobs:
             sleep 5
           done
           echo "o app não ficou saudável a tempo"
-          echo "=== logs do app"
           docker logs smoke_app
-          echo "=== logs do banco"
-          docker logs smoke_db
           exit 1
 
       - name: Bootstrap the community headlessly
         run: |
           # Mesma chamada que a tela de primeiro acesso faz, mas sem
-          # interface: prova que o caminho de bootstrap funciona com o papel
-          # de aplicação sob RLS (as policies precisam da válvula de sistema
-          # para a consulta de existência e para os inserts sem contexto).
+          # interface: prova que o caminho de bootstrap funciona no container,
+          # contra o arquivo SQLite do volume.
           #
           # eval não sobe a aplicação, então o Repo não estaria de pé e
           # bootstrap explodiria com "could not lookup Ecto repo". Subimos só
@@ -169,22 +109,19 @@ jobs:
           # do boot funciona pelo mesmo motivo: Ecto.Migrator.with_repo sobe o
           # Repo antes de migrar.
           docker exec smoke_app /app/bin/taina eval '
-            {:ok, _} = Application.ensure_all_started(:ecto)
-            {:ok, _} = Application.ensure_all_started(:postgrex)
+            {:ok, _} = Application.ensure_all_started(:ecto_sqlite3)
             {:ok, _} = Taina.Repo.start_link()
             {:ok, %{tekoa: _}} = Taina.Maraca.bootstrap(%{name: "Smoke Tekoa", storage_quota_bytes: 1073741824}, %{username: "smoke", display_name: "Smoke", password: "smoke-pass-123", password_confirmation: "smoke-pass-123"})
           '
           echo "bootstrap headless OK"
 
-      - name: Login as the app role and load an authenticated page
+      - name: Login and load an authenticated page
         run: |
-          # Prova o regime de `with_system` ponta a ponta, via HTTP: get_tekoa
-          # e resolução de sessão do login rodam como taina_app (RLS ativo) e
-          # só enxergam linhas dentro da válvula de sistema; a home autenticada
-          # consulta o banco sob contexto de Tekoa. O form de login é um POST
-          # tradicional com o token CSRF da própria página (o Plug guarda o
-          # estado na sessão, que vai no cookie), então o fluxo inteiro
-          # funciona com curl.
+          # Prova o fluxo de sessão ponta a ponta, via HTTP: resolução de
+          # sessão do login e a home autenticada consultam o banco com o
+          # contexto de Tekoa. O form de login é um POST tradicional com o
+          # token CSRF da própria página (o Plug guarda o estado na sessão,
+          # que vai no cookie), então o fluxo inteiro funciona com curl.
           docker exec smoke_app curl -fsS -c /tmp/smoke-jar http://localhost:4000/login > login.html
           csrf=$(sed -n 's/.*name="_csrf_token" value="\([^"]*\)".*/\1/p' login.html)
           [ -n "$csrf" ] || { echo "token CSRF não apareceu na página de login"; exit 1; }
@@ -198,59 +135,30 @@ jobs:
           home=$(docker exec smoke_app curl -fsS -b /tmp/smoke-jar http://localhost:4000/)
           printf '%s' "$home" | grep -q "Smoke Tekoa" \
             || { echo "home autenticada não renderizou a comunidade (login falhou?)"; exit 1; }
-          echo "login como taina_app OK, home autenticada respondeu"
-
-      - name: RLS must actually apply to the app role
-        run: |
-          # A realidade do RLS no papel de aplicação: sem contexto de Tekoa,
-          # taina_app não vê NENHUMA linha (a válvula só vale dentro da
-          # transação do app); o superusuário vê a 1 tekoa do bootstrap. E o
-          # papel não pode ter superpoderes, senão nada disso é prova.
-          as_app=$(docker exec smoke_db psql "postgresql://taina_app:taina@localhost/taina" \
-            -tAc "SELECT count(*) FROM maraca.tekoas")
-          as_superuser=$(docker exec smoke_db psql -U taina -d taina \
-            -tAc "SELECT count(*) FROM maraca.tekoas")
-
-          [ "$as_app" = "0" ] \
-            || { echo "taina_app viu $as_app tekoa(s) sem contexto: RLS não aplicou"; exit 1; }
-          [ "$as_superuser" = "1" ] \
-            || { echo "superusuário viu $as_superuser tekoa(s), esperado 1"; exit 1; }
-
-          # CASE com texto explícito: `rolsuper || rolbypassrls` traz o
-          # booleano como 'false' (cast para texto), não na forma t/f, então
-          # concatenar e comparar com "f|f" nunca bate. Um rótulo fixo não
-          # depende da forma textual do booleano.
-          flags=$(docker exec smoke_db psql -U taina -d taina \
-            -tAc "SELECT CASE WHEN rolsuper OR rolbypassrls THEN 'yes' ELSE 'no' END FROM pg_roles WHERE rolname = 'taina_app'")
-          [ "$flags" = "no" ] \
-            || { echo "taina_app com superpoderes (rolsuper OR rolbypassrls = $flags)"; exit 1; }
-
-          echo "RLS aplicado: taina_app vê 0 sem contexto, superusuário vê 1, papel sem superpoderes"
+          echo "login OK, home autenticada respondeu"
 
       - name: The volumes must be writable by the runtime user
         run: |
           # O container roda como nobody. Se um diretório de dados nascer
           # root-owned no volume, o app sobe e só falha na hora de escrever, que
           # é o pior jeito de falhar: saúde no healthcheck, erro no backup das
-          # quatro da manhã. Checamos os dois caminhos de escrita antes de
-          # declarar o job verde.
+          # quatro da manhã. Checamos os três caminhos de escrita antes de
+          # declarar o job verde: o banco (SQLite), o storage e os backups.
+          docker exec smoke_app sh -c 'touch /app/data/.probe && rm /app/data/.probe' \
+            || { echo "app/data não é gravável pelo nobody"; exit 1; }
           docker exec smoke_app sh -c 'touch /app/storage/.probe && rm /app/storage/.probe' \
             || { echo "app/storage não é gravável pelo nobody"; exit 1; }
           docker exec smoke_app sh -c 'touch /app/backups/.probe && rm /app/backups/.probe' \
             || { echo "app/backups não é gravável pelo nobody"; exit 1; }
-          echo "storage e backups graváveis"
+          echo "data, storage e backups graváveis"
 
       - name: Logs when it fails
         if: failure()
         run: |
-          echo "=== app"
           docker logs smoke_app 2>&1 || true
-          echo "=== banco"
-          docker logs smoke_db 2>&1 || true
 
       - name: Clean up
         if: always()
         run: |
-          docker rm -f smoke_app smoke_db 2>/dev/null || true
-          docker network rm taina_smoke 2>/dev/null || true
-          docker volume rm -f taina_smoke_storage taina_smoke_backups 2>/dev/null || true
+          docker rm -f smoke_app 2>/dev/null || true
+          docker volume rm -f taina_smoke_data taina_smoke_storage taina_smoke_backups 2>/dev/null || true

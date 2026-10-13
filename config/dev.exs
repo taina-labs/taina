@@ -10,9 +10,7 @@ config :phoenix, :plug_init_mode, :runtime
 # in production as building large stacktraces may be expensive.
 config :phoenix, :stacktrace_depth, 20
 
-# SQLite local: um arquivo por caixa de dev. O taina.backup.verify e um fluxo
-# de Postgres (pg_dump); no branch do spike o swap de persistencia ainda o
-# restringe ao Postgres.
+# SQLite local: um arquivo por caixa de dev.
 config :taina, Taina.Repo,
   database: Path.expand("../taina_dev.db", __DIR__),
   stacktrace: true,

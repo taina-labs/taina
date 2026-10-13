@@ -51,7 +51,6 @@ defmodule Taina.MixProject do
       {:eqrcode, "~> 0.2"},
       {:phoenix_ecto, "~> 4.5"},
       {:ecto_sql, "~> 3.13"},
-      {:postgrex, ">= 0.0.0"},
       {:ecto_sqlite3, "~> 0.25"},
       {:telemetry_metrics, "~> 1.0"},
       {:telemetry_poller, "~> 1.0"},

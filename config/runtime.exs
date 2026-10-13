@@ -82,20 +82,18 @@ if config_env() == :prod do
     secret_key_base: secret_key_base
 
   # Scheduled backups (Nhaman). Off unless BACKUP_ENABLED is truthy; BACKUP_DIR
-  # should point at a mounted USB disk or an rclone-synced path. BACKUP_DATABASE_URL
-  # is the superuser connection (postgresql:// scheme) pg_dump/pg_restore use:
-  # in production the app's own DATABASE_URL is the restricted taina_app role,
-  # which cannot read other roles' objects during a restore. Unset (dev/CI,
-  # single postgres role), the backup falls back to the Repo URL.
+  # should point at a mounted USB disk or an rclone-synced path. The backup is a
+  # SQLite snapshot (VACUUM INTO) of the same file the app uses, so there is no
+  # second connection to configure.
   config :taina, :backup,
     enabled: System.get_env("BACKUP_ENABLED") in ~w(true 1),
-    dir: System.get_env("BACKUP_DIR") || "/app/backups",
-    database_url: System.get_env("BACKUP_DATABASE_URL")
+    dir: System.get_env("BACKUP_DIR") || "/app/backups"
 
   config :taina, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 
-  # File storage root for Ybira. The Dockerfile creates /app/storage owned
-  # by the runtime user; docker-compose mounts the storage_data volume there.
+  # File storage root for Ybira. The Dockerfile creates /app/storage (and the
+  # /app/data holding the SQLite file) owned by the runtime user; docker-compose
+  # mounts the storage_data and data_data volumes there.
   config :taina, :storage_root, System.get_env("STORAGE_ROOT") || "/app/storage"
 
   # Opt-in update check (Nhaman): off unless the operator asks for it. When on,

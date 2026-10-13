@@ -30,7 +30,7 @@
       default = self.packages.${pkgs.stdenv.hostPlatform.system}.taina;
     });
 
-    # Runs it as a systemd service with a local PostgreSQL, no container
+    # Runs it as a systemd service with a SQLite database file, no container
     # runtime. See nix/module.nix.
     nixosModules = {
       taina = import ./nix/module.nix;
@@ -44,7 +44,6 @@
           (elixir-with-otp erlang_28)."1.20.0"
           erlang_28
           just
-          postgresql
           # Ybira renditions (thumbnails/EXIF) via image/vix → libvips.
           # On darwin vix uses its precompiled NIF; on NixOS/Pi point vix at
           # this system libvips (VIX_COMPILATION_MODE=PLATFORM_PROVIDED_LIBVIPS).
