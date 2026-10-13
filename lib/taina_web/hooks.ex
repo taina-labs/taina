@@ -45,6 +45,6 @@ defmodule TainaWeb.Hooks do
   defp account_alert?(nil), do: false
 
   defp account_alert?(scope) do
-    Maraca.list_access_requests(scope.ava) != [] or Maraca.list_my_requests(scope.ava) != []
+    Maraca.pedidos_recebidos(scope) != [] or Maraca.pedidos_enviados(scope) != []
   end
 end

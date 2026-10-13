@@ -20,7 +20,7 @@ defmodule TainaWeb.Layouts do
   `account_alert` acende um ponto na aba Conta quando há pedido esperando.
   """
   attr :flash, :map, required: true
-  attr :current_scope, Taina.Scope, default: nil
+  attr :current_scope, Ypy.Scope, default: nil
   attr :active_tab, :atom, default: nil
   # A sidebar (desktop) acende pela aba "de verdade" da tela; a bottom-nav
   # (mobile) não tem slot para toda aba, então telas sem slot próprio (ex:

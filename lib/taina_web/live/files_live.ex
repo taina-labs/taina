@@ -39,7 +39,7 @@ defmodule TainaWeb.FilesLive do
 
             {:noreply,
              socket
-             |> assign(:page_title, (folder && folder.name) || gettext("Arquivos"))
+             |> assign(:page_title, (folder && folder.nome) || gettext("Arquivos"))
              |> assign(:folder, folder)
              |> assign(:breadcrumb, breadcrumb(scope, folder))
              |> assign(:folder_public_id, folder_public_id)
@@ -50,6 +50,7 @@ defmodule TainaWeb.FilesLive do
              |> assign(:view, view)
              |> assign(:zona, zona)
              |> assign(:peek, load_peek(scope, peek))
+             |> assign(:peek_metadata, peek_metadata(scope, peek))
              |> assign(:modal, nil)
              |> assign(:rename_target, nil)
              |> assign(:move_target, nil)
@@ -95,9 +96,9 @@ defmodule TainaWeb.FilesLive do
   defp breadcrumb(_scope, nil), do: []
 
   defp breadcrumb(scope, folder) do
-    case Ybira.folder_path(scope, folder.public_id) do
+    case Ybira.folder_path(scope, folder.rkey) do
       {:ok, path} -> path
-      {:error, _reason} -> [%{name: folder.name, public_id: folder.public_id}]
+      {:error, _reason} -> [%{name: folder.nome, public_id: folder.rkey}]
     end
   end
 
@@ -107,7 +108,7 @@ defmodule TainaWeb.FilesLive do
   # sempre o primeiro e o último elo. No desktop a cadeia inteira aparece.
   defp breadcrumb_items([]), do: []
 
-  defp breadcrumb_items([current]), do: [%{kind: :current, name: current.name, public_id: current.public_id}]
+  defp breadcrumb_items([current]), do: [%{kind: :current, name: current.nome, public_id: current.rkey}]
 
   defp breadcrumb_items([first | rest]) do
     current = List.last(rest)
@@ -115,12 +116,12 @@ defmodule TainaWeb.FilesLive do
 
     links =
       for {segment, index} <- Enum.with_index(ancestors) do
-        %{kind: :link, name: segment.name, public_id: segment.public_id, middle?: index > 0}
+        %{kind: :link, name: segment.nome, public_id: segment.rkey, middle?: index > 0}
       end
 
     ellipsis = if length(ancestors) > 1, do: [%{kind: :ellipsis}], else: []
 
-    links ++ ellipsis ++ [%{kind: :current, name: current.name, public_id: current.public_id}]
+    links ++ ellipsis ++ [%{kind: :current, name: current.nome, public_id: current.rkey}]
   end
 
   @impl true
@@ -207,7 +208,7 @@ defmodule TainaWeb.FilesLive do
     # na praca; no default (casa), na casa.
     case Ybira.create_folder(socket.assigns.current_scope, %{
            name: name,
-           parent_public_id: socket.assigns.folder_public_id,
+           parent_rkey: socket.assigns.folder_public_id,
            zona: socket.assigns.zona
          }) do
       {:ok, _folder} ->
@@ -418,27 +419,42 @@ defmodule TainaWeb.FilesLive do
     end
   end
 
-  defp peek_id(%{public_id: public_id}), do: public_id
+  defp peek_id(%{rkey: rkey}), do: rkey
   defp peek_id(nil), do: nil
+
+  # Os metadados de rendicao do arquivo em destaque (dimensoes, thumbnail).
+  defp peek_metadata(_scope, nil), do: %{}
+
+  defp peek_metadata(scope, public_id) when is_binary(public_id) do
+    case Ybira.get_file(scope, public_id) do
+      {:ok, file} ->
+        {:ok, metadata} = Ybira.photo_metadata(scope, file)
+        metadata
+
+      _error ->
+        %{}
+    end
+  end
 
   defp image?("image/" <> _rest), do: true
   defp image?(_mime), do: false
 
-  # Miniatura pronta: o caminho mora no `metadata` quando a Rendition rodou
-  # (mesma fonte do FileController); sem ela, a caixa do serviço entra no lugar.
-  defp thumbnail?(file), do: get_in(file.metadata, ["thumbnails", "md"]) != nil
+  # Miniatura pronta: o caminho mora nos metadados de rendicao quando o
+  # Rendition rodou (mesma fonte do FileController); sem ela, a caixa do
+  # serviço entra no lugar.
+  defp thumbnail?(metadata), do: get_in(metadata, ["thumbnails", "md"]) != nil
 
   # Dimensões intrínsecas para o <img>: as do original valem para o thumbnail
   # (mesma proporção), e o layout não pula enquanto a imagem carrega.
-  defp peek_dimension(file, "width") do
-    case file.metadata do
+  defp peek_dimension(metadata, "width") do
+    case metadata do
       %{"width" => w, "height" => _h} -> w
       _ -> nil
     end
   end
 
-  defp peek_dimension(file, "height") do
-    case file.metadata do
+  defp peek_dimension(metadata, "height") do
+    case metadata do
       %{"width" => _w, "height" => h} -> h
       _ -> nil
     end
@@ -455,13 +471,13 @@ defmodule TainaWeb.FilesLive do
 
   defp for_zona(items, zona), do: Enum.filter(items, &(&1.zona == zona))
 
-  defp own?(scope, item), do: scope.ava.id == item.ava_id
+  defp own?(scope, item), do: scope.ava.id == item.dono_id
 
   # Só pasta SUA é alvo de soltar: o servidor recusa mover para pasta
   # alheia, então a UI não destaca o que não vai funcionar. nil faz o
   # atributo nem chegar ao HTML.
   defp drop_folder(scope, folder) do
-    if own?(scope, folder), do: folder.public_id
+    if own?(scope, folder), do: folder.rkey
   end
 
   # Criar pasta no início é sempre possível; dentro de pasta alheia, o
@@ -514,7 +530,7 @@ defmodule TainaWeb.FilesLive do
   defp upload_path(folder_id), do: ~p"/arquivos/enviar?#{[pasta: folder_id]}"
 
   defp file_meta(file) do
-    "#{file_kind(file.mime_type)}, #{format_bytes(file.file_size_bytes)}"
+    "#{file_kind(file.mime)}, #{format_bytes(file.tamanho)}"
   end
 
   defp storage_percent(%{used_bytes: used, quota_bytes: quota}) when is_integer(quota) and quota > 0 do
@@ -624,13 +640,13 @@ defmodule TainaWeb.FilesLive do
           <span class="breadcrumb__sep"><.icon name="chevron-right" size={14} /></span>
           <.link
             :if={item.kind == :link}
-            patch={~p"/arquivos/pasta/#{item.public_id}"}
+            patch={~p"/arquivos/pasta/#{item.rkey}"}
             class={["breadcrumb__link", item.middle? && "hide-mobile"]}
           >
-            {item.name}
+            {item.nome}
           </.link>
           <span :if={item.kind == :ellipsis} class="hide-desktop" aria-hidden="true">...</span>
-          <span :if={item.kind == :current} class="breadcrumb__current text-primary">{item.name}</span>
+          <span :if={item.kind == :current} class="breadcrumb__current text-primary">{item.nome}</span>
         <% end %>
       </nav>
 
@@ -652,17 +668,17 @@ defmodule TainaWeb.FilesLive do
                 style="position: relative;"
                 data-drop-folder={drop_folder(@current_scope, folder)}
               >
-                <.link navigate={~p"/arquivos/pasta/#{folder.public_id}"} class="col gap-1">
+                <.link navigate={~p"/arquivos/pasta/#{folder.rkey}"} class="col gap-1">
                   <.service_square service="ybira" icon="folder" size="lg" />
-                  <p class="tile__title">{folder.name}</p>
+                  <p class="tile__title">{folder.nome}</p>
                   <p class="tile__meta">{gettext("Pasta")}</p>
                   <p class="tile__meta">{readability_line(folder.zona)}</p>
                 </.link>
                 <div style="position: absolute; top: var(--space-2); right: var(--space-2);">
                   <.item_menu
                     kind="folder"
-                    id={folder.public_id}
-                    name={folder.name}
+                    id={folder.rkey}
+                    name={folder.nome}
                     zona={folder.zona}
                     own?={own?(@current_scope, folder)}
                   />
@@ -676,18 +692,18 @@ defmodule TainaWeb.FilesLive do
                   class="tile"
                   style="position: relative;"
                 >
-                  <.link navigate={~p"/arquivos/#{file.public_id}"} class="col gap-1">
-                    <% {service, icon} = file_visual(file.mime_type) %>
+                  <.link navigate={~p"/arquivos/#{file.rkey}"} class="col gap-1">
+                    <% {service, icon} = file_visual(file.mime) %>
                     <.service_square service={service} icon={icon} size="lg" />
-                    <p class="tile__title">{file.original_filename}</p>
+                    <p class="tile__title">{file.nome}</p>
                     <p class="tile__meta">{file_meta(file)}</p>
                     <p class="tile__meta">{readability_line(file.zona)}</p>
                   </.link>
                   <div style="position: absolute; top: var(--space-2); right: var(--space-2);">
                     <.item_menu
                       kind="file"
-                      id={file.public_id}
-                      name={file.original_filename}
+                      id={file.rkey}
+                      name={file.nome}
                       zona={file.zona}
                       own?={own?(@current_scope, file)}
                     />
@@ -700,11 +716,11 @@ defmodule TainaWeb.FilesLive do
               <ul :if={@folders != []} class="list">
                 <.list_row
                   :for={folder <- @folders}
-                  title={folder.name}
+                  title={folder.nome}
                   meta={"#{gettext("Pasta")} / #{readability_short(folder.zona)}"}
-                  navigate={~p"/arquivos/pasta/#{folder.public_id}"}
+                  navigate={~p"/arquivos/pasta/#{folder.rkey}"}
                   draggable="true"
-                  data-drag-id={folder.public_id}
+                  data-drag-id={folder.rkey}
                   data-drag-kind="folder"
                   data-drop-folder={drop_folder(@current_scope, folder)}
                 >
@@ -714,8 +730,8 @@ defmodule TainaWeb.FilesLive do
                   <:actions>
                     <.item_menu
                       kind="folder"
-                      id={folder.public_id}
-                      name={folder.name}
+                      id={folder.rkey}
+                      name={folder.nome}
                       zona={folder.zona}
                       own?={own?(@current_scope, folder)}
                     />
@@ -727,15 +743,15 @@ defmodule TainaWeb.FilesLive do
                 <.list_row
                   :for={{dom_id, file} <- @streams.files}
                   id={dom_id}
-                  title={file.original_filename}
+                  title={file.nome}
                   meta={"#{file_meta(file)} / #{readability_short(file.zona)}"}
-                  navigate={~p"/arquivos/#{file.public_id}"}
+                  navigate={~p"/arquivos/#{file.rkey}"}
                   draggable="true"
-                  data-drag-id={file.public_id}
+                  data-drag-id={file.rkey}
                   data-drag-kind="file"
                 >
                   <:leading>
-                    <% {service, icon} = file_visual(file.mime_type) %>
+                    <% {service, icon} = file_visual(file.mime) %>
                     <.service_square service={service} icon={icon} />
                   </:leading>
                   <:actions>
@@ -744,13 +760,13 @@ defmodule TainaWeb.FilesLive do
                         name="eye"
                         label={gettext("Ver detalhes")}
                         phx-click="peek"
-                        phx-value-id={file.public_id}
+                        phx-value-id={file.rkey}
                       />
                     </span>
                     <.item_menu
                       kind="file"
-                      id={file.public_id}
-                      name={file.original_filename}
+                      id={file.rkey}
+                      name={file.nome}
                       zona={file.zona}
                       own?={own?(@current_scope, file)}
                     />
@@ -765,19 +781,19 @@ defmodule TainaWeb.FilesLive do
           <%= if @peek do %>
             <div class="card col gap-4">
               <div class="row gap-2">
-                <p class="type-h3 flex-1 truncate">{@peek.original_filename}</p>
+                <p class="type-h3 flex-1 truncate">{@peek.nome}</p>
                 <.icon_button
                   name="close"
                   label={gettext("Fechar detalhes")}
                   phx-click={JS.patch(browse_path(@folder_public_id, @sort, @view, @zona, nil))}
                 />
               </div>
-              <% has_thumb = image?(@peek.mime_type) and thumbnail?(@peek) %>
-              <% {service, icon} = file_visual(@peek.mime_type) %>
+              <% has_thumb = image?(@peek.mime) and thumbnail?(@peek) %>
+              <% {service, icon} = file_visual(@peek.mime) %>
               <img
                 :if={has_thumb}
-                src={~p"/files/#{@peek.public_id}/thumbnail/md"}
-                alt={@peek.original_filename}
+                src={~p"/files/#{@peek.rkey}/thumbnail/md"}
+                alt={@peek.nome}
                 class="files-split__thumb"
                 loading="lazy"
                 width={peek_dimension(@peek, "width")}
@@ -793,7 +809,7 @@ defmodule TainaWeb.FilesLive do
                   variant="secondary"
                   size="md"
                   class="w-full"
-                  navigate={~p"/arquivos/#{@peek.public_id}"}
+                  navigate={~p"/arquivos/#{@peek.rkey}"}
                 >
                   {gettext("Abrir")}
                 </.button>
@@ -801,7 +817,7 @@ defmodule TainaWeb.FilesLive do
                   variant="secondary"
                   size="md"
                   class="w-full"
-                  href={~p"/files/#{@peek.public_id}"}
+                  href={~p"/files/#{@peek.rkey}"}
                   download
                 >
                   {gettext("Baixar")}
@@ -899,16 +915,16 @@ defmodule TainaWeb.FilesLive do
               <span class="list-row__body type-label">{gettext("Início (raiz)")}</span>
             </button>
           </li>
-          <li :for={folder <- @all_folders} :if={folder.public_id != @move_target.id}>
+          <li :for={folder <- @all_folders} :if={folder.rkey != @move_target.id}>
             <button
               type="button"
               class="list-row"
               phx-click={
-                JS.push("move-item", value: %{kind: @move_target.kind, id: @move_target.id, target: folder.public_id})
+                JS.push("move-item", value: %{kind: @move_target.kind, id: @move_target.id, target: folder.rkey})
               }
             >
               <.service_square service="ybira" icon="folder" />
-              <span class="list-row__body type-label">{folder.name}</span>
+              <span class="list-row__body type-label">{folder.nome}</span>
             </button>
           </li>
         </ul>

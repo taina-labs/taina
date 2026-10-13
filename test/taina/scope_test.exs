@@ -8,14 +8,14 @@ defmodule Taina.ScopeTest do
   use ExUnit.Case, async: true
 
   alias Ecto.Association.NotLoaded
-  alias Taina.Maraca.Ava
-  alias Taina.Maraca.Tekoa
   alias Taina.Scope
+  alias Ypy.Maraca.Ava
+  alias Ypy.Maraca.Tekoa
 
   test "for_ava/1 builds a scope when the Tekoa is preloaded" do
     ava = %Ava{tekoa: %Tekoa{}}
 
-    assert %Scope{ava: ^ava, tekoa: %Tekoa{}} = Scope.for_ava(ava)
+    assert %Ypy.Scope{ava: ^ava, tekoa: %Tekoa{}} = Scope.for_ava(ava)
   end
 
   test "for_ava/1 raises a clear error when the Tekoa is not preloaded" do

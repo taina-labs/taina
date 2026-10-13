@@ -21,8 +21,8 @@ defmodule TainaWeb.AccountLive do
   # certa. Eventos do Ava (PubSub, já inscritos no shell) recomputam na hora.
   defp assign_alerts(socket, scope) do
     socket
-    |> assign(:incoming_alert, Maraca.list_access_requests(scope.ava) != [])
-    |> assign(:outgoing_alert, Maraca.list_my_requests(scope.ava) != [])
+    |> assign(:incoming_alert, Maraca.pedidos_recebidos(scope) != [])
+    |> assign(:outgoing_alert, Maraca.pedidos_enviados(scope) != [])
   end
 
   @impl true

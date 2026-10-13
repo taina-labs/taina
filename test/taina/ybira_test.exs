@@ -4,9 +4,9 @@ defmodule Taina.YbiraTest do
   import Taina.Fixtures
 
   alias Taina.Maraca
-  alias Taina.Maraca.Tekoa
   alias Taina.Scope
   alias Taina.Ybira
+  alias Ypy.Maraca.Tekoa
 
   describe "upload/3" do
     test "stores the file on disk, inserts the record and updates usage" do
@@ -15,16 +15,18 @@ defmodule Taina.YbiraTest do
 
       assert {:ok, file} = Ybira.upload(scope, tmp, filename: "minhas_ferias.txt")
 
-      assert file.original_filename == "minhas_ferias.txt"
-      assert file.mime_type == "text/plain"
-      assert file.file_size_bytes == byte_size("olá ybira")
-      assert String.length(file.public_id) == 12
-      assert file.file_hash == :sha256 |> :crypto.hash("olá ybira") |> Base.encode16(case: :lower)
-      assert File.exists?(file.filepath)
-      assert file.filepath =~ scope.tekoa.public_id
+      assert file.nome == "minhas_ferias.txt"
+      assert file.mime == "text/plain"
+      assert file.tamanho == byte_size("olá ybira")
+      assert String.length(file.rkey) == 13
+      assert file.hash == :sha256 |> :crypto.hash("olá ybira") |> Base.encode16(case: :lower)
+
+      # Os bytes ficam no BlobStore, endereçados pelo CID (layout blobs/).
+      assert {:ok, path} = Ybira.blob_path(file)
+      assert File.exists?(path)
 
       tekoa = Repo.get!(Tekoa, scope.tekoa.id, skip_tekoa_id: true)
-      assert tekoa.storage_used_bytes == file.file_size_bytes
+      assert tekoa.storage_used_bytes == file.tamanho
     end
 
     test "rejects upload beyond the tekoa quota" do
@@ -51,7 +53,7 @@ defmodule Taina.YbiraTest do
       scope = scope_fixture()
       {:ok, file} = Ybira.upload(scope, tmp_upload_fixture())
 
-      assert {:ok, found} = Ybira.get_file(scope, file.public_id)
+      assert {:ok, found} = Ybira.get_file(scope, file.rkey)
       assert found.id == file.id
     end
 
@@ -103,15 +105,16 @@ defmodule Taina.YbiraTest do
       scope = scope_fixture()
       {:ok, file} = Ybira.upload(scope, tmp_upload_fixture())
 
-      assert {:ok, deleted} = Ybira.delete_file(scope, file.public_id)
+      assert {:ok, deleted} = Ybira.delete_file(scope, file.rkey)
       assert deleted.id == file.id
-      assert deleted.deleted_at
-      assert File.exists?(file.filepath)
-      assert {:error, :not_found} = Ybira.get_file(scope, file.public_id)
+      assert deleted.apagado_em
+      assert {:ok, path} = Ybira.blob_path(file)
+      assert File.exists?(path)
+      assert {:error, :not_found} = Ybira.get_file(scope, file.rkey)
       assert {:ok, %{items: []}} = Ybira.list_files(scope)
 
       tekoa = Repo.get!(Tekoa, scope.tekoa.id, skip_tekoa_id: true)
-      assert tekoa.storage_used_bytes == file.file_size_bytes
+      assert tekoa.storage_used_bytes == file.tamanho
     end
 
     test "only the owner can delete" do
@@ -120,8 +123,8 @@ defmodule Taina.YbiraTest do
       other_scope = Scope.new(other, scope.tekoa)
       {:ok, file} = Ybira.upload(scope, tmp_upload_fixture())
 
-      assert {:error, :not_found} = Ybira.delete_file(other_scope, file.public_id)
-      assert {:ok, _} = Ybira.get_file(scope, file.public_id)
+      assert {:error, :not_owner} = Ybira.delete_file(other_scope, file.rkey)
+      assert {:ok, _} = Ybira.get_file(scope, file.rkey)
     end
   end
 
@@ -129,14 +132,14 @@ defmodule Taina.YbiraTest do
     test "trashed file shows in trash, not in listing, and can be restored" do
       scope = scope_fixture()
       {:ok, file} = Ybira.upload(scope, tmp_upload_fixture())
-      {:ok, _} = Ybira.delete_file(scope, file.public_id)
+      {:ok, _} = Ybira.delete_file(scope, file.rkey)
 
       assert {:ok, %{items: [trashed]}} = Ybira.list_trash(scope)
       assert trashed.id == file.id
       assert {:ok, %{items: []}} = Ybira.list_files(scope)
 
-      assert {:ok, restored} = Ybira.restore_file(scope, file.public_id)
-      refute restored.deleted_at
+      assert {:ok, restored} = Ybira.restore_file(scope, file.rkey)
+      refute restored.apagado_em
       assert {:ok, %{items: [back]}} = Ybira.list_files(scope)
       assert back.id == file.id
       assert {:ok, %{items: []}} = Ybira.list_trash(scope)
@@ -146,7 +149,7 @@ defmodule Taina.YbiraTest do
       scope = scope_fixture()
       {:ok, file} = Ybira.upload(scope, tmp_upload_fixture())
 
-      assert {:error, :not_found} = Ybira.restore_file(scope, file.public_id)
+      assert {:error, :invalid_status} = Ybira.restore_file(scope, file.rkey)
     end
 
     test "trash stays owner-only: the zelador does not see a morador's trash" do
@@ -157,7 +160,7 @@ defmodule Taina.YbiraTest do
       zelador_scope = Scope.new(zelador, tekoa)
 
       {:ok, file} = Ybira.upload(morador_scope, tmp_upload_fixture("x", "arquivo_da_casa.txt"))
-      {:ok, _} = Ybira.delete_file(morador_scope, file.public_id)
+      {:ok, _} = Ybira.delete_file(morador_scope, file.rkey)
 
       assert {:ok, %{items: []}} = Ybira.list_trash(zelador_scope)
       assert {:ok, %{items: [trashed]}} = Ybira.list_trash(morador_scope)
@@ -173,12 +176,12 @@ defmodule Taina.YbiraTest do
 
       {:ok, f1} = Ybira.upload(Scope.new(a, tekoa), tmp_upload_fixture("aaa", "a.txt"))
       {:ok, f2} = Ybira.upload(Scope.new(b, tekoa), tmp_upload_fixture("bbbbb", "b.txt"))
-      {:ok, _} = Ybira.delete_file(Scope.new(a, tekoa), f1.public_id)
-      {:ok, _} = Ybira.delete_file(Scope.new(b, tekoa), f2.public_id)
+      {:ok, _} = Ybira.delete_file(Scope.new(a, tekoa), f1.rkey)
+      {:ok, _} = Ybira.delete_file(Scope.new(b, tekoa), f2.rkey)
 
       assert {:ok, stats} = Ybira.trash_stats(Scope.new(a, tekoa))
       assert stats.count == 2
-      assert stats.bytes == f1.file_size_bytes + f2.file_size_bytes
+      assert stats.bytes == f1.tamanho + f2.tamanho
     end
 
     test "empty trash aggregates to zero" do
@@ -197,7 +200,7 @@ defmodule Taina.YbiraTest do
       tmp = tmp_upload_fixture(png, "nao_eh_texto.txt")
 
       assert {:ok, file} = Ybira.upload(scope, tmp)
-      assert file.mime_type == "image/png"
+      assert file.mime == "image/png"
     end
 
     test "detects PDF by magic bytes" do
@@ -205,7 +208,7 @@ defmodule Taina.YbiraTest do
       tmp = tmp_upload_fixture("%PDF-1.7\n...", "doc.bin")
 
       assert {:ok, file} = Ybira.upload(scope, tmp)
-      assert file.mime_type == "application/pdf"
+      assert file.mime == "application/pdf"
     end
 
     test "rejects executables disguised with an allowed extension" do
@@ -224,7 +227,7 @@ defmodule Taina.YbiraTest do
       tmp = tmp_upload_fixture(mkv, "filme.bin")
 
       assert {:ok, file} = Ybira.upload(scope, tmp)
-      assert file.mime_type == "video/x-matroska"
+      assert file.mime == "video/x-matroska"
     end
   end
 
@@ -233,53 +236,54 @@ defmodule Taina.YbiraTest do
       scope = scope_fixture()
 
       assert {:ok, parent} = Ybira.create_folder(scope, %{name: "Documentos"})
-      assert parent.name == "Documentos"
+      assert parent.nome == "Documentos"
       assert is_nil(parent.parent_id)
 
       assert {:ok, child} =
-               Ybira.create_folder(scope, %{name: "Fotos", parent_public_id: parent.public_id})
+               Ybira.create_folder(scope, %{name: "Fotos", parent_rkey: parent.rkey})
 
       assert child.parent_id == parent.id
 
-      assert {:ok, renamed} = Ybira.rename_folder(scope, parent.public_id, "Arquivo")
-      assert renamed.name == "Arquivo"
+      assert {:ok, renamed} = Ybira.rename_folder(scope, parent.rkey, "Arquivo")
+      assert renamed.nome == "Arquivo"
 
-      assert {:ok, found} = Ybira.get_folder(scope, parent.public_id)
-      assert found.name == "Arquivo"
+      assert {:ok, found} = Ybira.get_folder(scope, parent.rkey)
+      assert found.nome == "Arquivo"
     end
 
     test "create_folder with an unknown parent returns not_found" do
       scope = scope_fixture()
 
       assert {:error, :not_found} =
-               Ybira.create_folder(scope, %{name: "x", parent_public_id: "naoexiste12"})
+               Ybira.create_folder(scope, %{name: "x", parent_rkey: "naoexiste12"})
     end
 
     test "move_folder rejects circular references" do
       scope = scope_fixture()
       {:ok, parent} = Ybira.create_folder(scope, %{name: "pai"})
-      {:ok, child} = Ybira.create_folder(scope, %{name: "filho", parent_public_id: parent.public_id})
+      {:ok, child} = Ybira.create_folder(scope, %{name: "filho", parent_rkey: parent.rkey})
 
       assert {:error, :circular_reference} =
-               Ybira.move_folder(scope, parent.public_id, child.public_id)
+               Ybira.move_folder(scope, parent.rkey, child.rkey)
 
       assert {:error, :circular_reference} =
-               Ybira.move_folder(scope, parent.public_id, parent.public_id)
+               Ybira.move_folder(scope, parent.rkey, parent.rkey)
     end
 
     test "delete_folder soft-deletes the folder, its files and subfolders" do
       scope = scope_fixture()
       {:ok, parent} = Ybira.create_folder(scope, %{name: "pai"})
-      {:ok, child} = Ybira.create_folder(scope, %{name: "filho", parent_public_id: parent.public_id})
-      {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("x", "x.txt"), folder_id: child.id)
+      {:ok, child} = Ybira.create_folder(scope, %{name: "filho", parent_rkey: parent.rkey})
+      {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("x", "x.txt"), folder_rkey: child.rkey)
 
-      assert {:ok, :deleted} = Ybira.delete_folder(scope, parent.public_id)
+      assert {:ok, :deleted} = Ybira.delete_folder(scope, parent.rkey)
 
-      assert {:error, :not_found} = Ybira.get_folder(scope, parent.public_id)
-      assert {:error, :not_found} = Ybira.get_folder(scope, child.public_id)
-      assert {:error, :not_found} = Ybira.get_file(scope, file.public_id)
+      assert {:error, :not_found} = Ybira.get_folder(scope, parent.rkey)
+      assert {:error, :not_found} = Ybira.get_folder(scope, child.rkey)
+      assert {:error, :not_found} = Ybira.get_file(scope, file.rkey)
       # Bytes ficam no disco até o PurgeTrash (não recupera cota agora).
-      assert File.exists?(file.filepath)
+      assert {:ok, path} = Ybira.blob_path(file)
+      assert File.exists?(path)
     end
   end
 
@@ -289,11 +293,11 @@ defmodule Taina.YbiraTest do
       {:ok, folder} = Ybira.create_folder(scope, %{name: "destino"})
       {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("x", "x.txt"))
 
-      assert {:ok, moved} = Ybira.move_file(scope, file.public_id, folder.public_id)
+      assert {:ok, moved} = Ybira.move_file(scope, file.rkey, folder.rkey)
       assert moved.folder_id == folder.id
 
       assert {:ok, %{folders: [], files: [listed], next_cursor: nil}} =
-               Ybira.list_folder_contents(scope, folder.public_id)
+               Ybira.list_folder_contents(scope, folder.rkey)
 
       assert listed.id == file.id
 
@@ -311,7 +315,7 @@ defmodule Taina.YbiraTest do
       assert {:ok, %{folders: [folder], files: files, next_cursor: cursor}} =
                Ybira.list_folder_contents(scope, nil, limit: 2)
 
-      assert folder.name == "uma pasta"
+      assert folder.nome == "uma pasta"
       assert length(files) == 2
       # Paginação por offset: next_cursor é o próximo deslocamento (inteiro).
       assert cursor == 2
@@ -329,19 +333,19 @@ defmodule Taina.YbiraTest do
       {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("12345", "n.txt"))
 
       assert {:ok, %{used_bytes: used, quota_bytes: 1000}} = Ybira.storage_stats(scope)
-      assert used == file.file_size_bytes
+      assert used == file.tamanho
     end
   end
 
   describe "prepare_query guard" do
     test "raises when querying tenant tables outside with_tekoa" do
       assert_raise RuntimeError, ~r/fora do contexto de Tekoa/, fn ->
-        Repo.all(Ybira.File)
+        Repo.all(Ypy.Ybira.File)
       end
     end
 
     test "allows system queries with skip_tekoa_id" do
-      assert Repo.all(Ybira.File, skip_tekoa_id: true) == []
+      assert Repo.all(Ypy.Ybira.File, skip_tekoa_id: true) == []
     end
   end
 
@@ -349,10 +353,19 @@ defmodule Taina.YbiraTest do
     test "refuses a second tekoa at the database level" do
       tekoa_fixture()
 
-      changeset = Tekoa.changeset(%Tekoa{}, %{name: "Segunda Tekoa", storage_quota_bytes: 1024})
+      # A trava e politica do box (RFC_006 D11): indice unico no banco, nao
+      # invariante do kernel. O changeset do kernel nao conhece o indice do
+      # box, entao a violacao vem crua como ConstraintError.
+      changeset =
+        Tekoa.changeset(%Tekoa{}, %{
+          name: "Segunda Tekoa",
+          domain: "outra.test",
+          storage_quota_bytes: 1024
+        })
 
-      assert {:error, changeset} = Repo.insert(changeset)
-      assert "apenas uma Tekoa por instância (ver RFC 002, D2)" in errors_on(changeset).name
+      assert_raise Ecto.ConstraintError, ~r/single_tekoa_enforcement/, fn ->
+        Repo.insert(changeset)
+      end
     end
   end
 
@@ -381,24 +394,26 @@ defmodule Taina.YbiraTest do
       {_tekoa, a, _b, _z} = three_avas()
       {:ok, file} = Ybira.upload(a, tmp_upload_fixture())
 
-      assert {:ok, %{zona: :praca}} = Ybira.publicar_file(a, file.public_id)
-      assert {:ok, %{zona: :casa}} = Ybira.tirar_file_da_praca(a, file.public_id)
+      assert {:ok, %{zona: :praca}} = Ybira.publicar_file(a, file.rkey)
+      assert {:ok, %{zona: :casa}} = Ybira.tirar_file_da_praca(a, file.rkey)
     end
 
-    test "only the owner can publish; another morador and the zelador get not_found" do
+    test "only the owner can publish; another morador and the zelador get not_owner" do
       {_tekoa, a, b, z} = three_avas()
       {:ok, file} = Ybira.upload(a, tmp_upload_fixture())
 
-      assert {:error, :not_found} = Ybira.publicar_file(b, file.public_id)
-      assert {:error, :not_found} = Ybira.publicar_file(z, file.public_id)
+      # O guard do kernel distingue dono de nao-dono (:not_owner), o mesmo
+      # resultado de :not_found para quem olha.
+      assert {:error, :not_owner} = Ybira.publicar_file(b, file.rkey)
+      assert {:error, :not_owner} = Ybira.publicar_file(z, file.rkey)
     end
 
     test "publishing is idempotent" do
       {_tekoa, a, _b, _z} = three_avas()
       {:ok, file} = Ybira.upload(a, tmp_upload_fixture())
 
-      assert {:ok, %{zona: :praca}} = Ybira.publicar_file(a, file.public_id)
-      assert {:ok, %{zona: :praca}} = Ybira.publicar_file(a, file.public_id)
+      assert {:ok, %{zona: :praca}} = Ybira.publicar_file(a, file.rkey)
+      assert {:ok, %{zona: :praca}} = Ybira.publicar_file(a, file.rkey)
     end
   end
 
@@ -407,21 +422,21 @@ defmodule Taina.YbiraTest do
       {_tekoa, a, b, z} = three_avas()
       {:ok, folder} = Ybira.create_folder(a, %{name: "publica"})
 
-      assert {:ok, %{zona: :praca}} = Ybira.publicar_folder(a, folder.public_id)
-      assert {:ok, %{zona: :casa}} = Ybira.tirar_folder_da_praca(a, folder.public_id)
+      assert {:ok, %{zona: :praca}} = Ybira.publicar_folder(a, folder.rkey)
+      assert {:ok, %{zona: :casa}} = Ybira.tirar_folder_da_praca(a, folder.rkey)
 
-      assert {:error, :not_found} = Ybira.publicar_folder(b, folder.public_id)
-      assert {:error, :not_found} = Ybira.publicar_folder(z, folder.public_id)
+      assert {:error, :not_owner} = Ybira.publicar_folder(b, folder.rkey)
+      assert {:error, :not_owner} = Ybira.publicar_folder(z, folder.rkey)
     end
 
     test "publishing a folder does not cascade to its children" do
       {_tekoa, a, _b, _z} = three_avas()
       {:ok, folder} = Ybira.create_folder(a, %{name: "album"})
-      {:ok, child} = Ybira.upload(a, tmp_upload_fixture(), folder_id: folder.id)
+      {:ok, child} = Ybira.upload(a, tmp_upload_fixture(), folder_rkey: folder.rkey)
 
-      assert {:ok, %{zona: :praca}} = Ybira.publicar_folder(a, folder.public_id)
+      assert {:ok, %{zona: :praca}} = Ybira.publicar_folder(a, folder.rkey)
 
-      assert {:ok, refetched} = Ybira.get_file(a, child.public_id)
+      assert {:ok, refetched} = Ybira.get_file(a, child.rkey)
       assert refetched.zona == :casa
     end
   end
@@ -430,42 +445,40 @@ defmodule Taina.YbiraTest do
     test "moving a casa file into a praca folder leaves the file in :casa" do
       {_tekoa, a, _b, _z} = three_avas()
       {:ok, folder} = Ybira.create_folder(a, %{name: "destino"})
-      {:ok, _} = Ybira.publicar_folder(a, folder.public_id)
+      {:ok, _} = Ybira.publicar_folder(a, folder.rkey)
       {:ok, file} = Ybira.upload(a, tmp_upload_fixture())
 
-      assert {:ok, moved} = Ybira.move_file(a, file.public_id, folder.public_id)
+      assert {:ok, moved} = Ybira.move_file(a, file.rkey, folder.rkey)
       assert moved.zona == :casa
     end
   end
-
-  # --- ZEETECH-70: regra de leitura das duas zonas ---
 
   describe "read rule across zones" do
     test "praca item is readable by any morador and the zelador" do
       {_tekoa, a, b, z} = three_avas()
       {:ok, file} = Ybira.upload(a, tmp_upload_fixture())
-      {:ok, _} = Ybira.publicar_file(a, file.public_id)
+      {:ok, _} = Ybira.publicar_file(a, file.rkey)
 
-      assert {:ok, _} = Ybira.get_file(b, file.public_id)
-      assert {:ok, _} = Ybira.get_file(z, file.public_id)
+      assert {:ok, _} = Ybira.get_file(b, file.rkey)
+      assert {:ok, _} = Ybira.get_file(z, file.rkey)
 
-      assert file.public_id in listed_file_ids(Ybira.list_files(b))
-      assert file.public_id in listed_file_ids(Ybira.list_files(z))
-      assert file.public_id in recent_ids(Ybira.list_recent(b))
+      assert file.rkey in listed_file_ids(Ybira.list_files(b))
+      assert file.rkey in listed_file_ids(Ybira.list_files(z))
+      assert file.rkey in recent_ids(Ybira.list_recent(b))
     end
 
     test "casa item is readable only by the owner" do
       {_tekoa, a, b, z} = three_avas()
       {:ok, file} = Ybira.upload(a, tmp_upload_fixture())
 
-      assert {:ok, _} = Ybira.get_file(a, file.public_id)
-      assert file.public_id in listed_file_ids(Ybira.list_files(a))
+      assert {:ok, _} = Ybira.get_file(a, file.rkey)
+      assert file.rkey in listed_file_ids(Ybira.list_files(a))
 
-      assert {:error, :forbidden} = Ybira.get_file(b, file.public_id)
-      assert {:error, :forbidden} = Ybira.get_file(z, file.public_id)
+      assert {:error, :forbidden} = Ybira.get_file(b, file.rkey)
+      assert {:error, :forbidden} = Ybira.get_file(z, file.rkey)
 
-      refute file.public_id in listed_file_ids(Ybira.list_files(b))
-      refute file.public_id in listed_file_ids(Ybira.list_files(z))
+      refute file.rkey in listed_file_ids(Ybira.list_files(b))
+      refute file.rkey in listed_file_ids(Ybira.list_files(z))
     end
 
     test "casa item is readable by an Ava with an explicit :read grant" do
@@ -473,33 +486,33 @@ defmodule Taina.YbiraTest do
       c = Scope.new(active_ava_fixture(tekoa), tekoa)
       {:ok, file} = Ybira.upload(a, tmp_upload_fixture())
 
-      {:ok, _} = Maraca.grant_permission(a.ava, b.ava, :read, "ybira_file", file.public_id)
+      {:ok, _} = Maraca.conceder(a, "ypy.file.v0", file.rkey, b.ava)
 
-      assert {:ok, _} = Ybira.get_file(b, file.public_id)
-      assert file.public_id in listed_file_ids(Ybira.list_files(b))
+      assert {:ok, _} = Ybira.get_file(b, file.rkey)
+      assert file.rkey in listed_file_ids(Ybira.list_files(b))
 
-      assert {:error, :forbidden} = Ybira.get_file(c, file.public_id)
-      refute file.public_id in listed_file_ids(Ybira.list_files(c))
+      assert {:error, :forbidden} = Ybira.get_file(c, file.rkey)
+      refute file.rkey in listed_file_ids(Ybira.list_files(c))
     end
 
     test "the zelador has no shortcut into another resident's casa" do
       {_tekoa, a, _b, z} = three_avas()
       {:ok, file} = Ybira.upload(a, tmp_upload_fixture())
 
-      assert {:error, :forbidden} = Ybira.get_file(z, file.public_id)
+      assert {:error, :forbidden} = Ybira.get_file(z, file.rkey)
 
-      refute file.public_id in listed_file_ids(Ybira.list_files(z))
-      refute file.public_id in recent_ids(Ybira.list_recent(z))
+      refute file.rkey in listed_file_ids(Ybira.list_files(z))
+      refute file.rkey in recent_ids(Ybira.list_recent(z))
 
       {:ok, %{files: files}} = Ybira.list_folder_contents(z)
-      refute file.public_id in Enum.map(files, & &1.public_id)
+      refute file.rkey in Enum.map(files, & &1.rkey)
     end
 
     test ":forbidden is distinct from :not_found" do
       {_tekoa, a, b, _z} = three_avas()
       {:ok, file} = Ybira.upload(a, tmp_upload_fixture())
 
-      assert {:error, :forbidden} = Ybira.get_file(b, file.public_id)
+      assert {:error, :forbidden} = Ybira.get_file(b, file.rkey)
       assert {:error, :not_found} = Ybira.get_file(b, "inexistente12")
     end
 
@@ -507,39 +520,38 @@ defmodule Taina.YbiraTest do
       {_tekoa, a, b, _z} = three_avas()
       {:ok, casa} = Ybira.create_folder(a, %{name: "privada"})
       {:ok, praca} = Ybira.create_folder(a, %{name: "publica"})
-      {:ok, _} = Ybira.publicar_folder(a, praca.public_id)
+      {:ok, _} = Ybira.publicar_folder(a, praca.rkey)
 
       {:ok, folders} = Ybira.list_folders(b)
-      ids = Enum.map(folders, & &1.public_id)
-      assert praca.public_id in ids
-      refute casa.public_id in ids
+      ids = Enum.map(folders, & &1.rkey)
+      assert praca.rkey in ids
+      # --- ZEETECH-70: regra de leitura das duas zonas ---
+      refute casa.rkey in ids
     end
 
     test "a praca folder does not leak its casa children when another morador lists it" do
       {_tekoa, a, b, _z} = three_avas()
       {:ok, folder} = Ybira.create_folder(a, %{name: "album"})
-      {:ok, _} = Ybira.publicar_folder(a, folder.public_id)
-      {:ok, child} = Ybira.upload(a, tmp_upload_fixture(), folder_id: folder.id)
+      {:ok, _} = Ybira.publicar_folder(a, folder.rkey)
+      {:ok, child} = Ybira.upload(a, tmp_upload_fixture(), folder_rkey: folder.rkey)
 
-      {:ok, %{files: files}} = Ybira.list_folder_contents(b, folder.public_id)
-      refute child.public_id in Enum.map(files, & &1.public_id)
+      {:ok, %{files: files}} = Ybira.list_folder_contents(b, folder.rkey)
+      refute child.rkey in Enum.map(files, & &1.rkey)
     end
   end
 
-  defp listed_file_ids({:ok, %{items: items}}), do: Enum.map(items, & &1.public_id)
-  defp recent_ids({:ok, files}), do: Enum.map(files, & &1.public_id)
-
-  # --- ZEETECH-71: alvo do pedido de acesso (RFC_003 D4) ---
+  defp listed_file_ids({:ok, %{items: items}}), do: Enum.map(items, & &1.rkey)
+  defp recent_ids({:ok, files}), do: Enum.map(files, & &1.rkey)
 
   describe "fetch_access_target/2" do
     test "forbidden casa returns the owner, file id and filename" do
       {tekoa, a, b, _z} = three_avas()
       {:ok, file} = Ybira.upload(a, tmp_upload_fixture("oi", "particular.txt"))
 
-      assert {:ok, target} = Ybira.fetch_access_target(b, file.public_id)
+      assert {:ok, target} = Ybira.fetch_access_target(b, file.rkey)
       assert target.owner.id == a.ava.id
-      assert target.file_public_id == file.public_id
-      assert target.filename == "particular.txt"
+      assert target.rkey == file.rkey
+      assert target.nome == "particular.txt"
       # `request_access/5` precisa do dono com a Tekoa carregada.
       assert %Tekoa{id: tekoa_id} = target.owner.tekoa
       assert tekoa_id == tekoa.id
@@ -550,15 +562,15 @@ defmodule Taina.YbiraTest do
       c = Scope.new(active_ava_fixture(tekoa), tekoa)
 
       {:ok, praca} = Ybira.upload(a, tmp_upload_fixture())
-      {:ok, _} = Ybira.publicar_file(a, praca.public_id)
-      assert {:error, :already_readable} = Ybira.fetch_access_target(b, praca.public_id)
+      {:ok, _} = Ybira.publicar_file(a, praca.rkey)
+      assert {:error, :already_readable} = Ybira.fetch_access_target(b, praca.rkey)
 
       {:ok, own} = Ybira.upload(a, tmp_upload_fixture())
-      assert {:error, :already_readable} = Ybira.fetch_access_target(a, own.public_id)
+      assert {:error, :already_readable} = Ybira.fetch_access_target(a, own.rkey)
 
       {:ok, granted} = Ybira.upload(a, tmp_upload_fixture())
-      {:ok, _} = Maraca.grant_permission(a.ava, c.ava, :read, "ybira_file", granted.public_id)
-      assert {:error, :already_readable} = Ybira.fetch_access_target(c, granted.public_id)
+      {:ok, _} = Maraca.conceder(a, "ypy.file.v0", granted.rkey, c.ava)
+      assert {:error, :already_readable} = Ybira.fetch_access_target(c, granted.rkey)
     end
 
     test "missing and deleted files are not found" do
@@ -567,8 +579,10 @@ defmodule Taina.YbiraTest do
       assert {:error, :not_found} = Ybira.fetch_access_target(b, "inexistente12")
 
       {:ok, file} = Ybira.upload(a, tmp_upload_fixture())
-      {:ok, _} = Ybira.delete_file(a, file.public_id)
-      assert {:error, :not_found} = Ybira.fetch_access_target(b, file.public_id)
+      {:ok, _} = Ybira.delete_file(a, file.rkey)
+      assert {:error, :not_found} = Ybira.fetch_access_target(b, file.rkey)
     end
   end
+
+  # --- ZEETECH-71: alvo do pedido de acesso (RFC_003 D4) ---
 end

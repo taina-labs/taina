@@ -100,7 +100,7 @@ defmodule TainaWeb.UploadLive do
   end
 
   defp upload_opts(entry, nil), do: [filename: entry.client_name]
-  defp upload_opts(entry, folder), do: [filename: entry.client_name, folder_id: folder.id]
+  defp upload_opts(entry, folder), do: [filename: entry.client_name, folder_rkey: folder.rkey]
 
   # Cada erro explica o que houve e dá a saída (tom-de-voz: erros com saída,
   # sem culpa). A saída comum é a caixa de envio, no topo da tela.
@@ -131,7 +131,7 @@ defmodule TainaWeb.UploadLive do
   # Onde os arquivos caíram: na pasta alvo, ou no início já na aba casa (o
   # default da listagem). Cair na praça faria o recém-chegado "sumir" da tela.
   defp back_path(nil), do: ~p"/arquivos?#{[zona: "casa"]}"
-  defp back_path(folder), do: ~p"/arquivos/pasta/#{folder.public_id}"
+  defp back_path(folder), do: ~p"/arquivos/pasta/#{folder.rkey}"
 
   # --- core puro: dados -> dados ---
 
@@ -239,12 +239,12 @@ defmodule TainaWeb.UploadLive do
           <ul class="list">
             <.list_row
               :for={file <- @done}
-              title={file.original_filename}
+              title={file.nome}
               meta={gettext("Concluído")}
               meta_class="text-success"
             >
               <:leading>
-                <% {service, icon} = file_visual(file.mime_type) %>
+                <% {service, icon} = file_visual(file.mime) %>
                 <.service_square service={service} icon={icon} />
               </:leading>
               <:actions>

@@ -55,7 +55,11 @@ if config_env() == :prod do
 
   config :taina, Taina.Repo,
     database: database_path,
-    pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10")
+    pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10"),
+    # Escritor pega o lock no BEGIN: o busy_timeout nao cobre a leitura que
+    # vira escrita depois de outro escritor commitou (SQLITE_BUSY_SNAPSHOT) --
+    # o caso upload (box) x rendition (Oban).
+    default_transaction_mode: :immediate
 
   # Ajuste de fila do pool (RFC_ARQUITETURA): uma query espera no maximo 50ms
   # na fila, checando a cada 1s se a fila encheu.

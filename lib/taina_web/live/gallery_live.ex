@@ -16,7 +16,6 @@ defmodule TainaWeb.GalleryLive do
   use TainaWeb, :live_view
 
   alias Taina.Jaci
-  alias Taina.Jaci.Timeline
   alias Taina.Ybira
   alias TainaWeb.Layouts
 
@@ -73,7 +72,7 @@ defmodule TainaWeb.GalleryLive do
         |> assign(:loaded, true)
         |> assign(:current, nil)
         |> assign(:next_cursor, cursor)
-        |> assign(:photo_ids, Enum.map(photos, & &1.public_id))
+        |> assign(:photo_ids, Enum.map(photos, & &1.rkey))
         |> assign(:grid_error, false)
         |> assign(:grid_stale, false)
         |> stream(:photos, photos, reset: true)
@@ -115,7 +114,7 @@ defmodule TainaWeb.GalleryLive do
   end
 
   defp timeline_photo_ids(groups) do
-    for group <- groups, photo <- group.photos, do: photo.public_id
+    for group <- groups, photo <- group.photos, do: photo.rkey
   end
 
   defp open_viewer(socket, public_id) do
@@ -153,7 +152,7 @@ defmodule TainaWeb.GalleryLive do
             {:noreply,
              socket
              |> assign(:next_cursor, next_cursor)
-             |> assign(:photo_ids, socket.assigns.photo_ids ++ Enum.map(photos, & &1.public_id))
+             |> assign(:photo_ids, socket.assigns.photo_ids ++ Enum.map(photos, & &1.rkey))
              |> stream(:photos, photos)}
 
           {:error, _reason} ->
@@ -231,7 +230,7 @@ defmodule TainaWeb.GalleryLive do
     {:noreply, assign(socket, :show_details, !socket.assigns.show_details)}
   end
 
-  def handle_event("confirm-delete", _params, %{assigns: %{current: %{public_id: public_id}}} = socket) do
+  def handle_event("confirm-delete", _params, %{assigns: %{current: %{rkey: public_id}}} = socket) do
     case Ybira.delete_file(socket.assigns.current_scope, public_id) do
       {:ok, _file} ->
         {:noreply,
@@ -271,7 +270,7 @@ defmodule TainaWeb.GalleryLive do
 
   defp step(socket, delta) do
     ids = socket.assigns.photo_ids
-    current_id = socket.assigns.current && socket.assigns.current.public_id
+    current_id = socket.assigns.current && socket.assigns.current.rkey
 
     with index when is_integer(index) <- current_id && Enum.find_index(ids, &(&1 == current_id)),
          next_index = index + delta,
@@ -308,7 +307,7 @@ defmodule TainaWeb.GalleryLive do
     end
   end
 
-  defp viewer_index(ids, %{public_id: id}), do: (Enum.find_index(ids, &(&1 == id)) || 0) + 1
+  defp viewer_index(ids, %{rkey: id}), do: (Enum.find_index(ids, &(&1 == id)) || 0) + 1
 
   # Janela de fotos vizinhas para a barra do visualizador (desktop): um trecho
   # curto em volta da atual, não a lista inteira. `{id, posição}` para o rótulo
@@ -328,7 +327,7 @@ defmodule TainaWeb.GalleryLive do
     end
   end
 
-  defp video?(%{mime_type: mime}), do: String.starts_with?(mime, "video/")
+  defp video?(%{mime: mime}), do: String.starts_with?(mime, "video/")
 
   # Troca progressiva do visualizador: o `md` carrega primeiro e o JS troca
   # para o original depois. O original só entra no plano quando o tamanho
@@ -341,16 +340,18 @@ defmodule TainaWeb.GalleryLive do
   # Tipo legível: "image/jpeg" vira "Imagem JPEG" (o kind do design system
   # traduzido, o subtipo em maiúsculas). "application/pdf" vira só "PDF",
   # sem repetir o subtipo quando ele já é o nome curto.
-  defp human_type(%{mime_type: mime_type}) do
-    kind = file_kind(mime_type)
-    subtype = mime_type |> String.split("/") |> List.last() |> String.upcase()
+  defp human_type(%{mime: mime}) do
+    kind = file_kind(mime)
+    subtype = mime |> String.split("/") |> List.last() |> String.upcase()
 
     if kind == subtype, do: kind, else: "#{kind} #{subtype}"
   end
 
+  # A data do visualizador vem do upload (o kernel nao carrega os metadados
+  # de rendicao); a linha do tempo agrupa pela data efetiva, resolvida na
+  # consulta do Jaci.
   defp photo_date(file) do
-    file
-    |> Timeline.effective_datetime()
+    file.inserted_at
     |> NaiveDateTime.to_date()
     |> Calendar.strftime("%d/%m/%Y")
   end
@@ -379,17 +380,17 @@ defmodule TainaWeb.GalleryLive do
           <.link
             :for={{dom_id, photo} <- @streams.photos}
             id={dom_id}
-            patch={~p"/fotos/#{photo.public_id}"}
+            patch={~p"/fotos/#{photo.rkey}"}
             class="photo-grid__item"
-            aria-label={photo.original_filename}
+            aria-label={photo.nome}
           >
             <div :if={video?(photo)} class="photo-grid__video">
               <.icon name="play" size={28} />
             </div>
             <img
               :if={!video?(photo)}
-              src={~p"/files/#{photo.public_id}/thumbnail/sm"}
-              alt={photo.original_filename}
+              src={~p"/files/#{photo.rkey}/thumbnail/sm"}
+              alt={photo.nome}
               loading="lazy"
             />
           </.link>
@@ -429,17 +430,17 @@ defmodule TainaWeb.GalleryLive do
             <div class="photo-grid">
               <.link
                 :for={photo <- group.photos}
-                patch={~p"/fotos/#{photo.public_id}"}
+                patch={~p"/fotos/#{photo.rkey}"}
                 class="photo-grid__item"
-                aria-label={photo.original_filename}
+                aria-label={photo.nome}
               >
                 <div :if={video?(photo)} class="photo-grid__video">
                   <.icon name="play" size={28} />
                 </div>
                 <img
                   :if={!video?(photo)}
-                  src={~p"/files/#{photo.public_id}/thumbnail/sm"}
-                  alt={photo.original_filename}
+                  src={~p"/files/#{photo.rkey}/thumbnail/sm"}
+                  alt={photo.nome}
                   loading="lazy"
                 />
               </.link>
@@ -494,7 +495,7 @@ defmodule TainaWeb.GalleryLive do
             label={gettext("Copiar link")}
             id="viewer-copy-link"
             phx-hook="Clipboard"
-            data-copy={url(~p"/files/#{@current.public_id}")}
+            data-copy={url(~p"/files/#{@current.rkey}")}
           />
         </header>
 
@@ -504,15 +505,15 @@ defmodule TainaWeb.GalleryLive do
             controls
             preload="metadata"
             playsinline
-            src={~p"/files/#{@current.public_id}"}
+            src={~p"/files/#{@current.rkey}"}
           ></video>
           <img
             :if={!video?(@current)}
             id="viewer-full-swap"
             phx-hook="FullSwap"
-            src={~p"/files/#{@current.public_id}/thumbnail/md"}
-            data-full={full_swap?(@current) && url(~p"/files/#{@current.public_id}")}
-            alt={@current.original_filename}
+            src={~p"/files/#{@current.rkey}/thumbnail/md"}
+            data-full={full_swap?(@current) && url(~p"/files/#{@current.rkey}")}
+            alt={@current.nome}
           />
           <button
             :if={length(@photo_ids) > 1}
@@ -536,18 +537,18 @@ defmodule TainaWeb.GalleryLive do
 
         <nav :if={length(@photo_ids) > 1} class="viewer__rail" aria-label={gettext("Fotos vizinhas")}>
           <.link
-            :for={{id, position} <- rail_window(@photo_ids, @current.public_id)}
+            :for={{id, position} <- rail_window(@photo_ids, @current.rkey)}
             id={"rail-#{id}"}
             patch={~p"/fotos/#{id}"}
             class="viewer__rail-item"
-            aria-current={id == @current.public_id}
+            aria-current={id == @current.rkey}
             aria-label={gettext("Foto %{index} de %{total}", index: position, total: length(@photo_ids))}
           >
             <span class="viewer__rail-thumb" style={"background-image: url('#{~p"/files/#{id}/thumbnail/sm"}')"}></span>
           </.link>
         </nav>
 
-        <p class="viewer__caption">{@current.original_filename}</p>
+        <p class="viewer__caption">{@current.nome}</p>
 
         <div class="viewer__actions">
           <button
@@ -555,13 +556,13 @@ defmodule TainaWeb.GalleryLive do
             class="viewer__action"
             id="viewer-share"
             phx-hook="Share"
-            data-url={url(~p"/files/#{@current.public_id}")}
-            data-title={@current.original_filename}
+            data-url={url(~p"/files/#{@current.rkey}")}
+            data-title={@current.nome}
           >
             <.icon name="share" size={20} />
             <span>{gettext("Compartilhar")}</span>
           </button>
-          <a href={~p"/files/#{@current.public_id}"} download class="viewer__action">
+          <a href={~p"/files/#{@current.rkey}"} download class="viewer__action">
             <.icon name="download" size={20} />
             <span>{gettext("Baixar")}</span>
           </a>
@@ -580,7 +581,7 @@ defmodule TainaWeb.GalleryLive do
         :if={@current}
         id="confirm-delete-photo"
         show={@show_confirm}
-        title={gettext("Excluir \"%{name}\"?", name: @current.original_filename)}
+        title={gettext("Excluir \"%{name}\"?", name: @current.nome)}
         message={gettext("Vai para a lixeira. Dá para restaurar em até 30 dias.")}
         on_confirm="confirm-delete"
         on_cancel={JS.push("close-confirm")}
@@ -591,9 +592,9 @@ defmodule TainaWeb.GalleryLive do
         <div class="col gap-3">
           <div>
             <p class="type-caption text-faint">{gettext("Nome original")}</p>
-            <p class="type-body">{@current.original_filename}</p>
+            <p class="type-body">{@current.nome}</p>
           </div>
-          <% file_url = url(~p"/files/#{@current.public_id}") %>
+          <% file_url = url(~p"/files/#{@current.rkey}") %>
           <div>
             <p class="type-caption text-faint">{gettext("Link")}</p>
             <p class="viewer__link type-mono-sm">{file_url}</p>

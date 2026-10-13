@@ -19,15 +19,15 @@ defmodule TainaWeb.FilesLiveTest do
 
     {:ok, _lv, html} = conn |> log_in(ava) |> live(~p"/arquivos?zona=casa")
 
-    assert html =~ folder.name
-    assert html =~ file.original_filename
+    assert html =~ folder.nome
+    assert html =~ file.nome
     assert html =~ "2 itens"
   end
 
   test "navega para dentro de uma pasta", %{conn: conn, scope: scope, ava: ava} do
     {:ok, folder} = Ybira.create_folder(scope, %{name: "Fotos da comunidade"})
 
-    {:ok, _lv, html} = conn |> log_in(ava) |> live(~p"/arquivos/pasta/#{folder.public_id}")
+    {:ok, _lv, html} = conn |> log_in(ava) |> live(~p"/arquivos/pasta/#{folder.rkey}")
 
     assert html =~ "Fotos da comunidade"
     # a pasta nova nasce na casa, e a listagem abre na casa por padrao
@@ -37,10 +37,10 @@ defmodule TainaWeb.FilesLiveTest do
   describe "breadcrumb" do
     test "pasta aninhada mostra a cadeia de ancestrais completa", %{conn: conn, scope: scope, ava: ava} do
       {:ok, raiz} = Ybira.create_folder(scope, %{name: "Raiz"})
-      {:ok, meio} = Ybira.create_folder(scope, %{name: "Meio", parent_public_id: raiz.public_id})
-      {:ok, folha} = Ybira.create_folder(scope, %{name: "Folha", parent_public_id: meio.public_id})
+      {:ok, meio} = Ybira.create_folder(scope, %{name: "Meio", parent_rkey: raiz.rkey})
+      {:ok, folha} = Ybira.create_folder(scope, %{name: "Folha", parent_rkey: meio.rkey})
 
-      {:ok, lv, html} = conn |> log_in(ava) |> live(~p"/arquivos/pasta/#{folha.public_id}")
+      {:ok, lv, html} = conn |> log_in(ava) |> live(~p"/arquivos/pasta/#{folha.rkey}")
 
       assert html =~ "Início"
       assert html =~ "Raiz"
@@ -48,23 +48,23 @@ defmodule TainaWeb.FilesLiveTest do
       assert html =~ "Folha"
 
       # cada ancestral é um link para a pasta dele
-      assert has_element?(lv, ~s(a[href="/arquivos/pasta/#{raiz.public_id}"]), "Raiz")
-      assert has_element?(lv, ~s(a[href="/arquivos/pasta/#{meio.public_id}"]), "Meio")
+      assert has_element?(lv, ~s(a[href="/arquivos/pasta/#{raiz.rkey}"]), "Raiz")
+      assert has_element?(lv, ~s(a[href="/arquivos/pasta/#{meio.rkey}"]), "Meio")
       # com meio na cadeia, o marcador de truncamento entra (visível no mobile)
       assert has_element?(lv, ~s(.breadcrumb .hide-desktop), "...")
       # a pasta atual fica sem link
-      refute has_element?(lv, ~s(a[href="/arquivos/pasta/#{folha.public_id}"]))
+      refute has_element?(lv, ~s(a[href="/arquivos/pasta/#{folha.rkey}"]))
     end
 
     test "pasta de primeiro nível não tem meio a truncar", %{conn: conn, scope: scope, ava: ava} do
       {:ok, raiz} = Ybira.create_folder(scope, %{name: "Raiz"})
-      {:ok, folha} = Ybira.create_folder(scope, %{name: "Folha", parent_public_id: raiz.public_id})
+      {:ok, folha} = Ybira.create_folder(scope, %{name: "Folha", parent_rkey: raiz.rkey})
 
-      {:ok, lv, html} = conn |> log_in(ava) |> live(~p"/arquivos/pasta/#{folha.public_id}")
+      {:ok, lv, html} = conn |> log_in(ava) |> live(~p"/arquivos/pasta/#{folha.rkey}")
 
       assert html =~ "Raiz"
       assert html =~ "Folha"
-      assert has_element?(lv, ~s(a[href="/arquivos/pasta/#{raiz.public_id}"]), "Raiz")
+      assert has_element?(lv, ~s(a[href="/arquivos/pasta/#{raiz.rkey}"]), "Raiz")
       # sem meio, o marcador de truncamento não entra
       refute has_element?(lv, ~s(.breadcrumb .hide-desktop), "...")
     end
@@ -84,7 +84,7 @@ defmodule TainaWeb.FilesLiveTest do
     {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/arquivos?zona=casa")
 
     lv
-    |> element(~s(button[phx-click*="open-rename"][phx-click*="#{folder.public_id}"]))
+    |> element(~s(button[phx-click*="open-rename"][phx-click*="#{folder.rkey}"]))
     |> render_click()
 
     lv |> form("#rename-modal form") |> render_submit(%{"folder" => %{"name" => "Definitivo"}})
@@ -99,7 +99,7 @@ defmodule TainaWeb.FilesLiveTest do
     {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/arquivos?zona=casa")
 
     lv
-    |> element(~s(button[phx-click*="ask-delete"][phx-click*="#{file.public_id}"]))
+    |> element(~s(button[phx-click*="ask-delete"][phx-click*="#{file.rkey}"]))
     |> render_click()
 
     lv |> element(~s(button[phx-click="confirm-delete"])) |> render_click()
@@ -115,7 +115,7 @@ defmodule TainaWeb.FilesLiveTest do
     test "casa e a aba padrao: mostra item da casa, esconde praca", %{conn: conn, scope: scope, ava: ava} do
       {:ok, casa} = Ybira.upload(scope, tmp_upload_fixture("oi", "minha-casa.txt"))
       {:ok, praca} = Ybira.upload(scope, tmp_upload_fixture("oi", "na-praca.txt"))
-      {:ok, _} = Ybira.publicar_file(scope, praca.public_id)
+      {:ok, _} = Ybira.publicar_file(scope, praca.rkey)
 
       {:ok, lv, html} = conn |> log_in(ava) |> live(~p"/arquivos")
 
@@ -132,7 +132,7 @@ defmodule TainaWeb.FilesLiveTest do
     test "?zona=praca mostra itens da praca, esconde os da casa", %{conn: conn, scope: scope, ava: ava} do
       {:ok, casa} = Ybira.upload(scope, tmp_upload_fixture("oi", "minha-casa.txt"))
       {:ok, praca} = Ybira.upload(scope, tmp_upload_fixture("oi", "na-praca.txt"))
-      {:ok, _} = Ybira.publicar_file(scope, praca.public_id)
+      {:ok, _} = Ybira.publicar_file(scope, praca.rkey)
 
       {:ok, _lv, html} = conn |> log_in(ava) |> live(~p"/arquivos?zona=praca")
 
@@ -148,36 +148,36 @@ defmodule TainaWeb.FilesLiveTest do
       {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/arquivos")
 
       lv
-      |> element(~s(button[phx-click*="ask-zona"][phx-click*="#{file.public_id}"]))
+      |> element(~s(button[phx-click*="ask-zona"][phx-click*="#{file.rkey}"]))
       |> render_click()
 
       lv |> element(~s(button[phx-click="confirm-zona"])) |> render_click()
 
       assert render(lv) =~ "Publicado na praça."
-      assert {:ok, updated} = Ybira.get_file(scope, file.public_id)
+      assert {:ok, updated} = Ybira.get_file(scope, file.rkey)
       assert updated.zona == :praca
 
       # aparece na praca depois do refresh
       {:ok, _lv2, praca_html} = conn |> log_in(ava) |> live(~p"/arquivos?zona=praca")
-      assert praca_html =~ file.original_filename
+      assert praca_html =~ file.nome
     end
 
     test "tirar da praca: ask -> confirm volta para casa", %{conn: conn, scope: scope, ava: ava} do
       {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("oi", "comunicado.txt"))
-      {:ok, _} = Ybira.publicar_file(scope, file.public_id)
+      {:ok, _} = Ybira.publicar_file(scope, file.rkey)
       {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/arquivos?zona=praca")
 
       lv
-      |> element(~s(button[phx-click*="ask-zona"][phx-click*="#{file.public_id}"]))
+      |> element(~s(button[phx-click*="ask-zona"][phx-click*="#{file.rkey}"]))
       |> render_click()
 
       lv |> element(~s(button[phx-click="confirm-zona"])) |> render_click()
 
       assert render(lv) =~ "Tirado da praça."
-      assert {:ok, updated} = Ybira.get_file(scope, file.public_id)
+      assert {:ok, updated} = Ybira.get_file(scope, file.rkey)
       assert updated.zona == :casa
 
-      refute render(lv) =~ file.original_filename
+      refute render(lv) =~ file.nome
     end
 
     test "publicar uma pasta: confirm com aviso de nao-cascata", %{conn: conn, scope: scope, ava: ava} do
@@ -185,7 +185,7 @@ defmodule TainaWeb.FilesLiveTest do
       {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/arquivos?zona=casa")
 
       lv
-      |> element(~s(button[phx-click*="ask-zona"][phx-click*="#{folder.public_id}"]))
+      |> element(~s(button[phx-click*="ask-zona"][phx-click*="#{folder.rkey}"]))
       |> render_click()
 
       html = render(lv)
@@ -193,7 +193,7 @@ defmodule TainaWeb.FilesLiveTest do
 
       lv |> element(~s(button[phx-click="confirm-zona"])) |> render_click()
 
-      assert {:ok, moved} = Ybira.get_folder(scope, folder.public_id)
+      assert {:ok, moved} = Ybira.get_folder(scope, folder.rkey)
       assert moved.zona == :praca
     end
 
@@ -201,12 +201,12 @@ defmodule TainaWeb.FilesLiveTest do
       outra = active_ava_fixture(scope.tekoa, %{username: "outra"})
       outro_scope = Scope.new(outra, scope.tekoa)
       {:ok, file} = Ybira.upload(outro_scope, tmp_upload_fixture("oi", "da-outra.txt"))
-      {:ok, _} = Ybira.publicar_file(outro_scope, file.public_id)
+      {:ok, _} = Ybira.publicar_file(outro_scope, file.rkey)
 
       {:ok, lv, html} = conn |> log_in(ava) |> live(~p"/arquivos?zona=praca")
 
-      assert html =~ file.original_filename
-      refute has_element?(lv, ~s(button[phx-click*="ask-zona"][phx-click*="#{file.public_id}"]))
+      assert html =~ file.nome
+      refute has_element?(lv, ~s(button[phx-click*="ask-zona"][phx-click*="#{file.rkey}"]))
     end
 
     test "praca vazia mostra o estado vazio da praca", %{conn: conn, scope: scope, ava: ava} do
@@ -222,7 +222,7 @@ defmodule TainaWeb.FilesLiveTest do
       {:ok, folder} = Ybira.create_folder(Scope.new(outra, scope.tekoa), %{name: "Rascunhos"})
 
       assert {:error, {_kind, %{to: to}}} =
-               conn |> log_in(ava) |> live(~p"/arquivos/pasta/#{folder.public_id}")
+               conn |> log_in(ava) |> live(~p"/arquivos/pasta/#{folder.rkey}")
 
       assert to == "/arquivos"
     end
@@ -232,11 +232,11 @@ defmodule TainaWeb.FilesLiveTest do
       {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/arquivos?zona=casa")
 
       lv
-      |> element(~s(button[phx-click*="ask-zona"][phx-click*="#{file.public_id}"]))
+      |> element(~s(button[phx-click*="ask-zona"][phx-click*="#{file.rkey}"]))
       |> render_click()
 
       # remove o arquivo por baixo dos panos: publicar_file devolve {:error, :not_found}
-      {:ok, _} = Ybira.delete_file(scope, file.public_id)
+      {:ok, _} = Ybira.delete_file(scope, file.rkey)
 
       assert render_click(element(lv, ~s(button[phx-click="confirm-zona"]))) =~ "Não foi possível publicar na praça."
     end

@@ -22,10 +22,10 @@ defmodule Mix.Tasks.Taina.Thumbnails.Regenerate do
 
   import Ecto.Query
 
-  alias Taina.Maraca.Tekoa
   alias Taina.Repo
-  alias Taina.Ybira.File
   alias Taina.Ybira.Workers.Rendition
+  alias Ypy.Maraca.Tekoa
+  alias Ypy.Ybira.File
 
   @requirements ["app.config"]
 
@@ -67,14 +67,14 @@ defmodule Mix.Tasks.Taina.Thumbnails.Regenerate do
   end
 
   # Imagens ativas da Tekoa (fora da lixeira), renditions geradas em linha,
-  # uma a uma, dentro do contexto RLS de cada comunidade.
+  # uma a uma, dentro do contexto de cada comunidade.
   defp regenerate_tekoa(tekoa) do
     {:ok, files} =
       Repo.with_tekoa(tekoa.public_id, fn ->
         {:ok,
          Repo.all(
            from(f in File,
-             where: is_nil(f.deleted_at) and like(f.mime_type, "image/%"),
+             where: f.tekoa_id == ^tekoa.id and is_nil(f.apagado_em) and like(f.mime, "image/%"),
              order_by: [asc: f.id]
            )
          )}

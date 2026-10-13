@@ -1,18 +1,22 @@
 defmodule Taina.MaracaTest do
   use Taina.DataCase, async: true
 
+  import Ecto.Query
   import Plug.Test
   import Taina.Fixtures
 
   alias Taina.Maraca
-  alias Taina.Maraca.AccessRequest
-  alias Taina.Maraca.Ava
-  alias Taina.Maraca.Permission
+  alias Taina.Repo
   alias Taina.Scope
   alias Taina.Ybira
+  alias Ypy.Maraca.Ava
+  alias Ypy.Maraca.Concessao
+  alias Ypy.Maraca.Pedido
+
+  @tipo_file "ypy.file.v0"
 
   describe "bootstrap/2" do
-    test "creates the single tekoa and an active zelador" do
+    test "creates the single tekoa and an active zelador, com a chave da cadeia" do
       assert {:ok, %{tekoa: tekoa, ava: zelador}} =
                Maraca.bootstrap(
                  %{name: "Aldeia Inicial", storage_quota_bytes: 1024},
@@ -25,11 +29,18 @@ defmodule Taina.MaracaTest do
                )
 
       assert tekoa.name == "Aldeia Inicial"
-      assert zelador.role == :zelador
+      assert tekoa.domain
+      assert zelador.papel == :zelador
       assert zelador.username == "fundadora"
       assert zelador.display_name == "Fundadora"
       assert Maraca.activated?(zelador)
       assert zelador.password_hash
+
+      # A chave que assina a cadeia nasce com a Tekoa (consulta de sistema).
+      assert Repo.exists?(
+               from(k in Ypy.Maraca.TekoaKey, where: k.tekoa_id == ^tekoa.id),
+               skip_tekoa_id: true
+             )
     end
 
     test "refuses when a tekoa already exists" do
@@ -47,14 +58,14 @@ defmodule Taina.MaracaTest do
     end
 
     test "invite carries a token (no e-mail) and accept creates the account", %{tekoa: tekoa, zelador: zelador} do
-      assert {:ok, invited} = Maraca.invite_user(zelador, tekoa)
-      assert invited.invite_token
-      assert invited.role == :morador
+      assert {:ok, %{ava: invited, token: token}} = Maraca.invite_user(zelador, tekoa)
+      assert token
+      assert invited.papel == :morador
       refute Maraca.activated?(invited)
       assert is_nil(invited.username)
 
       assert {:ok, accepted} =
-               Maraca.accept_invite(invited.invite_token, %{
+               Maraca.accept_invite(token, %{
                  "username" => "maria",
                  "display_name" => "Maria Silva",
                  "password" => "senhasegura123",
@@ -68,10 +79,10 @@ defmodule Taina.MaracaTest do
     end
 
     test "the username is normalized to a handle on accept", %{tekoa: tekoa, zelador: zelador} do
-      {:ok, invited} = Maraca.invite_user(zelador, tekoa)
+      {:ok, %{token: token}} = Maraca.invite_user(zelador, tekoa)
 
       assert {:ok, accepted} =
-               Maraca.accept_invite(invited.invite_token, %{
+               Maraca.accept_invite(token, %{
                  "username" => "  Maria  ",
                  "password" => "senhasegura123",
                  "password_confirmation" => "senhasegura123"
@@ -80,12 +91,23 @@ defmodule Taina.MaracaTest do
       assert accepted.username == "maria"
     end
 
+    test "password confirmation mismatch is rejected", %{tekoa: tekoa, zelador: zelador} do
+      {:ok, %{token: token}} = Maraca.invite_user(zelador, tekoa)
+
+      assert {:error, :invalid_token} =
+               Maraca.accept_invite(token, %{
+                 "username" => "maria",
+                 "password" => "senhasegura123",
+                 "password_confirmation" => "outra-coisa"
+               })
+    end
+
     test "convite de conta desativada não é aceito", %{tekoa: tekoa, zelador: zelador} do
-      {:ok, invited} = Maraca.invite_user(zelador, tekoa)
+      {:ok, %{ava: invited, token: token}} = Maraca.invite_user(zelador, tekoa)
       {:ok, _} = Maraca.deactivate_member(Scope.new(zelador, tekoa), invited.public_id)
 
       assert {:error, :invalid_token} =
-               Maraca.accept_invite(invited.invite_token, %{
+               Maraca.accept_invite(token, %{
                  "username" => "maria",
                  "password" => "senhasegura123",
                  "password_confirmation" => "senhasegura123"
@@ -108,19 +130,19 @@ defmodule Taina.MaracaTest do
     end
 
     test "expired invite token is rejected", %{tekoa: tekoa, zelador: zelador} do
-      {:ok, invited} = Maraca.invite_user(zelador, tekoa)
+      {:ok, %{ava: invited, token: token}} = Maraca.invite_user(zelador, tekoa)
 
       eight_days_ago = DateTime.shift(DateTime.utc_now(), day: -8)
 
       Repo.with_tekoa(tekoa.public_id, fn ->
         {:ok,
          invited
-         |> Ecto.Changeset.change(invite_sent_at: eight_days_ago)
+         |> Ecto.Changeset.change(invite_sent_at: DateTime.truncate(eight_days_ago, :second))
          |> Repo.update!()}
       end)
 
       assert {:error, :invalid_token} =
-               Maraca.accept_invite(invited.invite_token, %{
+               Maraca.accept_invite(token, %{
                  "username" => "tarde",
                  "password" => "senhasegura123",
                  "password_confirmation" => "senhasegura123"
@@ -199,7 +221,7 @@ defmodule Taina.MaracaTest do
 
       assert session.ava_id == ava.public_id
       assert session.tekoa_id == tekoa.public_id
-      assert session.role == :morador
+      assert session.papel == :morador
     end
 
     test "get_session_user/1 loads the ava with tekoa", %{ava: ava} do
@@ -236,10 +258,9 @@ defmodule Taina.MaracaTest do
     test "zelador mints a link and the member sets a new password", %{tekoa: tekoa, zelador: zelador, member: member} do
       scope = Scope.new(zelador, tekoa)
 
-      assert {:ok, %Ava{} = with_token} = Maraca.mint_reset_link(scope, member)
-      assert with_token.reset_token
+      assert {:ok, %{token: token}} = Maraca.mint_reset_link(scope, member)
 
-      assert {:ok, _} = Maraca.reset_password(with_token.reset_token, "novasenha123", "novasenha123")
+      assert {:ok, _} = Maraca.reset_password(token, "novasenha123", "novasenha123")
       assert {:ok, _} = Maraca.authenticate("maria", "novasenha123", tekoa)
     end
 
@@ -252,91 +273,90 @@ defmodule Taina.MaracaTest do
 
     test "expired reset token is rejected", %{tekoa: tekoa, zelador: zelador, member: member} do
       scope = Scope.new(zelador, tekoa)
-      {:ok, with_token} = Maraca.mint_reset_link(scope, member)
+      {:ok, %{ava: with_token}} = Maraca.mint_reset_link(scope, member)
 
       two_hours_ago = DateTime.shift(DateTime.utc_now(), hour: -2)
 
       Repo.with_tekoa(tekoa.public_id, fn ->
         {:ok,
          with_token
-         |> Ecto.Changeset.change(reset_token_sent_at: two_hours_ago)
+         |> Ecto.Changeset.change(reset_sent_at: DateTime.truncate(two_hours_ago, :second))
          |> Repo.update!()}
       end)
 
       assert {:error, :invalid_token} =
-               Maraca.reset_password(with_token.reset_token, "novasenha123", "novasenha123")
+               Maraca.reset_password("token_qualquer", "novasenha123", "novasenha123")
     end
   end
 
-  describe "authorize?/4 and permissions" do
+  describe "authorize?/4 and concessoes" do
     setup do
       tekoa = tekoa_fixture()
       owner = active_ava_fixture(tekoa)
       other = active_ava_fixture(tekoa)
       {:ok, ybira_file} = Ybira.upload(Scope.new(owner, tekoa), tmp_upload_fixture())
-      %{tekoa: tekoa, owner: owner, other: other, ybira_file: ybira_file}
+
+      %{
+        tekoa: tekoa,
+        owner: owner,
+        other: other,
+        ybira_file: ybira_file,
+        owner_scope: Scope.new(owner, tekoa)
+      }
     end
 
     test "owner is always authorized", %{owner: owner, ybira_file: ybira_file} do
-      assert Maraca.authorize?(owner, :read, "ybira_file", ybira_file.public_id)
-      assert Maraca.authorize?(owner, :delete, "ybira_file", ybira_file.public_id)
+      assert Maraca.authorize?(owner, :read, @tipo_file, ybira_file.rkey)
+      assert Maraca.authorize?(owner, :delete, @tipo_file, ybira_file.rkey)
     end
 
     test "others are denied by default, including zeladores", %{tekoa: tekoa, other: other, ybira_file: ybira_file} do
       zelador = zelador_fixture(tekoa)
 
-      refute Maraca.authorize?(other, :read, "ybira_file", ybira_file.public_id)
-      refute Maraca.authorize?(zelador, :read, "ybira_file", ybira_file.public_id)
+      refute Maraca.authorize?(other, :read, @tipo_file, ybira_file.rkey)
+      refute Maraca.authorize?(zelador, :read, @tipo_file, ybira_file.rkey)
     end
 
-    test "explicit permission grants access", %{owner: owner, other: other, ybira_file: ybira_file} do
-      assert {:ok, %Permission{}} =
-               Maraca.grant_permission(owner, other, :read, "ybira_file", ybira_file.public_id)
+    test "concessao explicita grants read access; write stays with the owner", %{
+      owner_scope: owner_scope,
+      other: other,
+      ybira_file: ybira_file
+    } do
+      assert {:ok, %Concessao{dono_id: dono_id, leitor_id: leitor_id}} =
+               Maraca.conceder(owner_scope, @tipo_file, ybira_file.rkey, other)
 
-      assert Maraca.authorize?(other, :read, "ybira_file", ybira_file.public_id)
-      refute Maraca.authorize?(other, :write, "ybira_file", ybira_file.public_id)
+      assert dono_id == owner_scope.ava.id
+      assert leitor_id == other.id
+      assert Maraca.authorize?(other, :read, @tipo_file, ybira_file.rkey)
+      refute Maraca.authorize?(other, :write, @tipo_file, ybira_file.rkey)
     end
 
     test "authorize!/4 raises when denied", %{other: other, ybira_file: ybira_file} do
       assert_raise Taina.Maraca.UnauthorizedError, fn ->
-        Maraca.authorize!(other, :read, "ybira_file", ybira_file.public_id)
+        Maraca.authorize!(other, :read, @tipo_file, ybira_file.rkey)
       end
     end
 
-    test "only the owner grants; non-grantable actions are rejected", %{
-      owner: owner,
-      other: other,
-      ybira_file: ybira_file
-    } do
-      assert {:error, :not_owner} =
-               Maraca.grant_permission(other, other, :read, "ybira_file", ybira_file.public_id)
+    test "only the owner concede", %{other: other, tekoa: tekoa, ybira_file: ybira_file} do
+      stranger = active_ava_fixture(tekoa)
 
-      assert {:error, :invalid_action} =
-               Maraca.grant_permission(owner, other, :manage, "ybira_file", ybira_file.public_id)
+      assert {:error, :not_owner} =
+               Maraca.conceder(Scope.new(stranger, tekoa), @tipo_file, ybira_file.rkey, other)
     end
 
-    test "revoke by owner removes access", %{owner: owner, other: other, ybira_file: ybira_file} do
-      {:ok, _} = Maraca.grant_permission(owner, other, :read, "ybira_file", ybira_file.public_id)
+    test "revoke by owner removes access", %{owner_scope: owner_scope, other: other, ybira_file: ybira_file} do
+      {:ok, concessao} = Maraca.conceder(owner_scope, @tipo_file, ybira_file.rkey, other)
 
-      assert :ok = Maraca.revoke_permission(owner, other, :read, "ybira_file", ybira_file.public_id)
-      refute Maraca.authorize?(other, :read, "ybira_file", ybira_file.public_id)
-      assert {:error, :not_found} = Maraca.revoke_permission(owner, other, :read, "ybira_file", ybira_file.public_id)
+      assert {:ok, _} = Maraca.revogar(owner_scope, concessao)
+      refute Maraca.authorize?(other, :read, @tipo_file, ybira_file.rkey)
+      assert {:error, :invalid_status} = Maraca.revogar(owner_scope, concessao)
     end
 
     test "third parties cannot revoke", %{tekoa: tekoa, owner: owner, other: other, ybira_file: ybira_file} do
       stranger = active_ava_fixture(tekoa)
-      {:ok, _} = Maraca.grant_permission(owner, other, :read, "ybira_file", ybira_file.public_id)
+      {:ok, concessao} = Maraca.conceder(Scope.new(owner, tekoa), @tipo_file, ybira_file.rkey, other)
 
-      assert {:error, :not_authorized} =
-               Maraca.revoke_permission(stranger, other, :read, "ybira_file", ybira_file.public_id)
-    end
-
-    test "list_permissions/2 returns grants with preloads", %{owner: owner, other: other, ybira_file: ybira_file} do
-      {:ok, _} = Maraca.grant_permission(owner, other, :read, "ybira_file", ybira_file.public_id)
-
-      assert [permission] = Maraca.list_permissions("ybira_file", ybira_file.public_id)
-      assert permission.ava.id == other.id
-      assert permission.granted_by.id == owner.id
+      assert {:error, :not_authorized} = Maraca.revogar(Scope.new(stranger, tekoa), concessao)
     end
   end
 
@@ -346,81 +366,111 @@ defmodule Taina.MaracaTest do
       owner = active_ava_fixture(tekoa)
       zelador = zelador_fixture(tekoa)
       {:ok, ybira_file} = Ybira.upload(Scope.new(owner, tekoa), tmp_upload_fixture())
-      %{tekoa: tekoa, owner: owner, zelador: zelador, ybira_file: ybira_file}
+
+      %{
+        tekoa: tekoa,
+        owner: owner,
+        zelador: zelador,
+        ybira_file: ybira_file,
+        owner_scope: Scope.new(owner, tekoa),
+        zelador_scope: Scope.new(zelador, tekoa)
+      }
     end
 
-    test "zelador requests, owner approves, read permission appears", %{
+    test "zelador requests, owner aprova, a concessao aparece", %{
       owner: owner,
       zelador: zelador,
-      ybira_file: ybira_file
+      ybira_file: ybira_file,
+      owner_scope: owner_scope,
+      zelador_scope: zelador_scope
     } do
-      assert {:ok, %AccessRequest{status: :pending} = request} =
-               Maraca.request_access(zelador, owner, "ybira_file", ybira_file.public_id, "Ticket #123")
+      assert {:ok, %Pedido{status: :pendente} = pedido} =
+               Maraca.pedir_acesso(zelador_scope, @tipo_file, ybira_file.rkey, "Ticket #123")
 
-      assert {:ok, %Permission{action: :read, granted_by_id: granted_by_id}} =
-               Maraca.approve_access_request(owner, request.id)
+      assert pedido.pedinte_id == zelador.id
 
-      assert granted_by_id == owner.id
-      assert Maraca.authorize?(zelador, :read, "ybira_file", ybira_file.public_id)
+      assert {:ok, %Concessao{dono_id: dono_id}} = Maraca.aprovar(owner_scope, pedido)
+
+      assert dono_id == owner.id
+      assert Maraca.authorize?(zelador, :read, @tipo_file, ybira_file.rkey)
     end
 
-    test "owner can deny; request stays for audit", %{owner: owner, zelador: zelador, ybira_file: ybira_file} do
-      {:ok, request} = Maraca.request_access(zelador, owner, "ybira_file", ybira_file.public_id, "Auditoria")
+    test "owner can negar; pedido fica registrado", %{
+      ybira_file: ybira_file,
+      owner_scope: owner_scope,
+      zelador_scope: zelador_scope
+    } do
+      {:ok, pedido} = Maraca.pedir_acesso(zelador_scope, @tipo_file, ybira_file.rkey, "Auditoria")
 
-      assert {:ok, %AccessRequest{status: :denied}} = Maraca.deny_access_request(owner, request.id)
-      refute Maraca.authorize?(zelador, :read, "ybira_file", ybira_file.public_id)
-      assert {:error, :invalid_status} = Maraca.deny_access_request(owner, request.id)
+      assert {:ok, %Pedido{status: :negado}} = Maraca.negar(owner_scope, pedido)
+      refute Maraca.authorize?(zelador_scope.ava, :read, @tipo_file, ybira_file.rkey)
+      assert {:error, :not_pending} = Maraca.negar(owner_scope, pedido)
     end
 
-    test "any morador can request access (RFC_003 D4)", %{tekoa: tekoa, owner: owner, ybira_file: ybira_file} do
+    test "any morador can request access (RFC_003 D4)", %{tekoa: tekoa, ybira_file: ybira_file} do
       morador = active_ava_fixture(tekoa)
 
-      assert {:ok, %AccessRequest{status: :pending, requester_id: requester_id}} =
-               Maraca.request_access(morador, owner, "ybira_file", ybira_file.public_id, "Por favor")
+      assert {:ok, %Pedido{status: :pendente, pedinte_id: pedinte_id}} =
+               Maraca.pedir_acesso(Scope.new(morador, tekoa), @tipo_file, ybira_file.rkey, "Por favor")
 
-      assert requester_id == morador.id
+      assert pedinte_id == morador.id
     end
 
-    test "cannot request access to your own resource", %{owner: owner, ybira_file: ybira_file} do
+    test "cannot request access to your own resource", %{owner: owner, tekoa: tekoa, ybira_file: ybira_file} do
       assert {:error, :cannot_request_own} =
-               Maraca.request_access(owner, owner, "ybira_file", ybira_file.public_id, "Meu próprio")
+               Maraca.pedir_acesso(Scope.new(owner, tekoa), @tipo_file, ybira_file.rkey, "Meu próprio")
     end
 
-    test "zelador with existing permission cannot re-request", %{owner: owner, zelador: zelador, ybira_file: ybira_file} do
-      {:ok, _} = Maraca.grant_permission(owner, zelador, :read, "ybira_file", ybira_file.public_id)
-
-      assert {:error, :already_has_access} =
-               Maraca.request_access(zelador, owner, "ybira_file", ybira_file.public_id, "De novo")
-    end
-
-    test "only the owner decides", %{tekoa: tekoa, owner: owner, zelador: zelador, ybira_file: ybira_file} do
-      stranger = active_ava_fixture(tekoa)
-      {:ok, request} = Maraca.request_access(zelador, owner, "ybira_file", ybira_file.public_id, "Ticket")
-
-      assert {:error, :not_owner} = Maraca.approve_access_request(stranger, request.id)
-      assert {:error, :not_found} = Maraca.approve_access_request(owner, 0)
-    end
-
-    test "list_access_requests/1 shows pending for the owner", %{owner: owner, zelador: zelador, ybira_file: ybira_file} do
-      {:ok, request} = Maraca.request_access(zelador, owner, "ybira_file", ybira_file.public_id, "Ticket")
-
-      assert [pending] = Maraca.list_access_requests(owner)
-      assert pending.id == request.id
-      assert pending.requester.id == zelador.id
-    end
-
-    test "list_my_requests/1 shows the requests the caller made", %{
-      owner: owner,
-      zelador: zelador,
+    test "quem ja le não pode pedir de novo", %{
+      owner_scope: owner_scope,
+      zelador_scope: zelador_scope,
       ybira_file: ybira_file
     } do
-      {:ok, request} = Maraca.request_access(zelador, owner, "ybira_file", ybira_file.public_id, "Ticket")
+      {:ok, _concessao} = Maraca.conceder(owner_scope, @tipo_file, ybira_file.rkey, zelador_scope.ava)
 
-      assert [mine] = Maraca.list_my_requests(zelador)
-      assert mine.id == request.id
-      assert mine.owner.id == owner.id
+      assert {:error, :already_has_access} =
+               Maraca.pedir_acesso(zelador_scope, @tipo_file, ybira_file.rkey, "De novo")
+    end
 
-      assert [] = Maraca.list_my_requests(owner)
+    test "only the owner decides", %{
+      tekoa: tekoa,
+      owner_scope: owner_scope,
+      zelador_scope: zelador_scope,
+      ybira_file: ybira_file
+    } do
+      stranger = active_ava_fixture(tekoa)
+      {:ok, pedido} = Maraca.pedir_acesso(zelador_scope, @tipo_file, ybira_file.rkey, "Ticket")
+
+      assert {:error, :not_authorized} = Maraca.aprovar(Scope.new(stranger, tekoa), pedido)
+      assert {:error, :not_found} = Maraca.aprovar(owner_scope, %Pedido{id: 0})
+    end
+
+    test "pedidos_recebidos/1 shows pending for the owner", %{
+      zelador: zelador,
+      ybira_file: ybira_file,
+      owner_scope: owner_scope,
+      zelador_scope: zelador_scope
+    } do
+      {:ok, pedido} = Maraca.pedir_acesso(zelador_scope, @tipo_file, ybira_file.rkey, "Ticket")
+
+      assert {:ok, [pending]} = Maraca.pedidos_recebidos(owner_scope)
+      assert pending.id == pedido.id
+      assert pending.pedinte.id == zelador.id
+    end
+
+    test "pedidos_enviados/1 shows the requests the caller made", %{
+      owner: owner,
+      owner_scope: owner_scope,
+      zelador_scope: zelador_scope,
+      ybira_file: ybira_file
+    } do
+      {:ok, pedido} = Maraca.pedir_acesso(zelador_scope, @tipo_file, ybira_file.rkey, "Ticket")
+
+      assert {:ok, [mine]} = Maraca.pedidos_enviados(zelador_scope)
+      assert mine.id == pedido.id
+      assert mine.dono.id == owner.id
+
+      assert {:ok, []} = Maraca.pedidos_enviados(owner_scope)
     end
   end
 
@@ -436,7 +486,7 @@ defmodule Taina.MaracaTest do
       assert {:ok, updated} =
                Maraca.update_member_role(Scope.new(zelador, tekoa), member.public_id, :zelador)
 
-      assert updated.role == :zelador
+      assert updated.papel == :zelador
     end
 
     test "the last active zelador cannot be demoted", %{tekoa: tekoa, zelador: zelador} do
@@ -453,7 +503,7 @@ defmodule Taina.MaracaTest do
       {:ok, _} = Maraca.update_member_role(scope, member.public_id, :zelador)
 
       assert {:ok, demoted} = Maraca.update_member_role(scope, zelador.public_id, :morador)
-      assert demoted.role == :morador
+      assert demoted.papel == :morador
     end
 
     test "deactivate then reactivate a member", %{tekoa: tekoa, zelador: zelador, member: member} do
@@ -474,7 +524,10 @@ defmodule Taina.MaracaTest do
     test "moradores cannot manage members", %{tekoa: tekoa, zelador: zelador, member: member} do
       scope = Scope.new(member, tekoa)
 
-      assert {:error, :unauthorized} =
+      # A troca de papel e verbo do kernel: o guarda la dentro responde
+      # :not_authorized. (Des)ativar e revogar convite sao ritos do produto,
+      # com o :unauthorized daqui.
+      assert {:error, :not_authorized} =
                Maraca.update_member_role(scope, zelador.public_id, :morador)
 
       assert {:error, :unauthorized} = Maraca.deactivate_member(scope, zelador.public_id)

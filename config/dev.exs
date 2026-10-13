@@ -19,7 +19,11 @@ config :taina, Taina.Repo,
   show_sensitive_data_on_connection_error: true,
   pool_size: 10,
   journal_mode: :wal,
-  busy_timeout: 5_000
+  busy_timeout: 5_000,
+  # Escritor pega o lock no BEGIN: com DEFERRED, a leitura que vira escrita
+  # falha na hora (SQLITE_BUSY_SNAPSHOT) se outro escritor commitou no meio --
+  # o busy_timeout nao cobre. E o caso upload (box) x rendition (Oban).
+  default_transaction_mode: :immediate
 
 config :taina, TainaWeb.Endpoint,
   http: [ip: {0, 0, 0, 0}, port: String.to_integer(System.get_env("PORT") || "4000")],

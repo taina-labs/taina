@@ -13,12 +13,12 @@ defmodule TainaWeb.FileThumbnailTest do
     owner = Scope.new(active_ava_fixture(tekoa), tekoa)
     other = Scope.new(active_ava_fixture(tekoa), tekoa)
     {:ok, photo} = Ybira.upload(owner, tmp_image_fixture(filename: "p.jpg"))
-    {:ok, photo} = Ybira.get_file(owner, photo.public_id)
+    {:ok, photo} = Ybira.get_file(owner, photo.rkey)
     %{owner: owner, other: other, ava: owner.ava, photo: photo}
   end
 
   test "serves a generated thumbnail as webp", %{conn: conn, ava: ava, photo: photo} do
-    conn = conn |> log_in(ava) |> get(~p"/files/#{photo.public_id}/thumbnail/sm")
+    conn = conn |> log_in(ava) |> get(~p"/files/#{photo.rkey}/thumbnail/sm")
 
     assert conn.status == 200
     assert get_resp_header(conn, "content-type") == ["image/webp"]
@@ -26,13 +26,13 @@ defmodule TainaWeb.FileThumbnailTest do
   end
 
   test "404 for an unsupported size", %{conn: conn, ava: ava, photo: photo} do
-    conn = conn |> log_in(ava) |> get(~p"/files/#{photo.public_id}/thumbnail/xl")
+    conn = conn |> log_in(ava) |> get(~p"/files/#{photo.rkey}/thumbnail/xl")
 
     assert conn.status == 404
   end
 
   test "redirects to login without a session", %{conn: conn, photo: photo} do
-    conn = get(conn, ~p"/files/#{photo.public_id}/thumbnail/sm")
+    conn = get(conn, ~p"/files/#{photo.rkey}/thumbnail/sm")
 
     assert redirected_to(conn, 302) == "/login"
   end
@@ -42,12 +42,12 @@ defmodule TainaWeb.FileThumbnailTest do
     other: other,
     photo: photo
   } do
-    conn = build_conn() |> log_in(other.ava) |> get(~p"/files/#{photo.public_id}/thumbnail/sm")
-    assert redirected_to(conn, 302) == "/arquivos/#{photo.public_id}"
+    conn = build_conn() |> log_in(other.ava) |> get(~p"/files/#{photo.rkey}/thumbnail/sm")
+    assert redirected_to(conn, 302) == "/arquivos/#{photo.rkey}"
 
-    {:ok, _} = Ybira.publicar_file(owner, photo.public_id)
+    {:ok, _} = Ybira.publicar_file(owner, photo.rkey)
 
-    conn = build_conn() |> log_in(other.ava) |> get(~p"/files/#{photo.public_id}/thumbnail/sm")
+    conn = build_conn() |> log_in(other.ava) |> get(~p"/files/#{photo.rkey}/thumbnail/sm")
     assert conn.status == 200
     assert get_resp_header(conn, "content-type") == ["image/webp"]
   end

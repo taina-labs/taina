@@ -2,10 +2,12 @@ defmodule Taina.Repo.Migrations.CreateGuaraSchema do
   use Ecto.Migration
 
   # Porta para SQLite: tabelas planas (sem schema `guara`), sem RLS DDL.
+  # As FKs apontam para as tabelas do kernel Ypy (`maraca_tekoas`,
+  # `maraca_avas`, `ybira_files`), que as owns agora.
   def change do
     create table(:chats) do
-      add :tekoa_id, references(:tekoas, on_delete: :delete_all), null: false
-      add :created_by_id, references(:avas, on_delete: :restrict), null: false
+      add :tekoa_id, references(:maraca_tekoas, on_delete: :delete_all), null: false
+      add :created_by_id, references(:maraca_avas, on_delete: :restrict), null: false
       add :name, :string
       add :icon, :string
       add :public_id, :string
@@ -22,7 +24,7 @@ defmodule Taina.Repo.Migrations.CreateGuaraSchema do
         null: false,
         primary_key: true
 
-      add :ava_id, references(:avas, on_delete: :delete_all),
+      add :ava_id, references(:maraca_avas, on_delete: :delete_all),
         null: false,
         primary_key: true
 
@@ -35,9 +37,9 @@ defmodule Taina.Repo.Migrations.CreateGuaraSchema do
 
     create table(:messages) do
       add :chat_id, references(:chats, on_delete: :delete_all), null: false
-      add :sender_id, references(:avas, on_delete: :restrict), null: false
+      add :sender_id, references(:maraca_avas, on_delete: :restrict), null: false
       add :parent_id, references(:messages, on_delete: :nilify_all)
-      add :file_id, references(:files, on_delete: :nilify_all)
+      add :file_id, references(:ybira_files, on_delete: :nilify_all)
       add :content, :text
       add :message_type, :string, default: "text"
       add :metadata, :map, default: %{}

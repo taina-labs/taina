@@ -42,6 +42,9 @@ result
 # Ybira dev storage
 /priv/storage/
 
+# SQLite local da caixa de dev (config/dev.exs)
+/taina_dev.db*
+
 # esbuild output (built from assets/ via `mix assets.build`)
 /priv/static/assets/
 

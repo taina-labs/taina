@@ -9,8 +9,8 @@ defmodule TainaWeb.MembersLive do
   use TainaWeb, :live_view
 
   alias Taina.Maraca
-  alias Taina.Maraca.Ava
   alias TainaWeb.Layouts
+  alias Ypy.Maraca.Ava
 
   @impl true
   def mount(_params, _session, socket) do
@@ -36,10 +36,10 @@ defmodule TainaWeb.MembersLive do
     member = Enum.find(socket.assigns.members, &(&1.public_id == public_id))
 
     with %Ava{} <- member,
-         {:ok, ava} <- Maraca.mint_reset_link(scope, member) do
+         {:ok, %{token: token}} <- Maraca.mint_reset_link(scope, member) do
       {:noreply,
        socket
-       |> assign(:reset_link, url(~p"/redefinir/#{ava.reset_token}"))
+       |> assign(:reset_link, url(~p"/redefinir/#{token}"))
        |> assign(:reset_member, display_name(member))}
     else
       _ -> {:noreply, flash_error(socket, gettext("Não foi possível gerar o link. Tente de novo."))}
@@ -196,7 +196,7 @@ defmodule TainaWeb.MembersLive do
     cond do
       deactivated?(member) -> gettext("Conta desativada")
       member.id == scope.ava.id -> gettext("Você")
-      member.role == :zelador -> gettext("Quem cuida da máquina")
+      member.papel == :zelador -> gettext("Quem cuida da máquina")
       true -> gettext("Entrou %{when}", when: relative_time(member.inserted_at))
     end
   end
@@ -278,7 +278,7 @@ defmodule TainaWeb.MembersLive do
                   <.avatar name={gettext("Convite pendente")} inactive />
                 </:leading>
                 <:actions>
-                  <.badge variant="soon">{role_label(invite.role)}</.badge>
+                  <.badge variant="soon">{role_label(invite.papel)}</.badge>
                   <.menu
                     :if={Maraca.zelador?(@current_scope.ava)}
                     id={"invite-menu-#{invite.public_id}"}
@@ -308,7 +308,7 @@ defmodule TainaWeb.MembersLive do
               <.avatar name={display_name(member)} inactive={deactivated?(member)} />
             </:leading>
             <:actions>
-              <.badge :if={member.role == :zelador} variant="zelador">
+              <.badge :if={member.papel == :zelador} variant="zelador">
                 {gettext("Zelador(a)")}
               </.badge>
               <.icon_button
@@ -324,14 +324,14 @@ defmodule TainaWeb.MembersLive do
                 label={gettext("Ações da conta")}
               >
                 <:item
-                  :if={member.role == :morador}
+                  :if={member.papel == :morador}
                   icon="shield"
                   click={JS.push("ask-role", value: %{id: member.public_id, role: "zelador"})}
                 >
                   {gettext("Tornar zelador(a)")}
                 </:item>
                 <:item
-                  :if={member.role == :zelador}
+                  :if={member.papel == :zelador}
                   icon="user"
                   click={JS.push("set-role", value: %{id: member.public_id, role: "morador"})}
                 >

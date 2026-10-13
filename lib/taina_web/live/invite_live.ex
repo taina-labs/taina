@@ -43,8 +43,8 @@ defmodule TainaWeb.InviteLive do
     role = String.to_existing_atom(socket.assigns.role)
 
     case Maraca.invite_user(scope.ava, scope.tekoa, role: role) do
-      {:ok, ava} ->
-        {:noreply, assign(socket, :invite_url, url(~p"/convite/#{ava.invite_token}"))}
+      {:ok, %{token: token}} ->
+        {:noreply, assign(socket, :invite_url, url(~p"/convite/#{token}"))}
 
       {:error, _reason} ->
         {:noreply,

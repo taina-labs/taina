@@ -10,12 +10,12 @@ defmodule Taina.Jaci.Behaviour do
 
   Espelha o padrão de `Taina.Ybira.Behaviour`: as regras de negócio vivem aqui
   (nos `@callback`); `Taina.Jaci` implementa com `@impl true`. Toda função recebe
-  um `Taina.Scope` e roda sob isolamento RLS.
+  um scope (`Ypy.Scope`) e roda dentro de `Repo.with_tekoa/2`.
   """
 
   alias Taina.Jaci.Timeline
-  alias Taina.Scope
   alias Taina.Ybira.File
+  alias Ypy.Scope
 
   @typedoc "Página de fotos por cursor: itens + cursor opaco da próxima página (`nil` no fim)."
   @type photo_page :: %{items: [File.t()], next_cursor: binary | nil}

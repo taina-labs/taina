@@ -72,13 +72,13 @@ defmodule TainaWeb.TrashLive do
   end
 
   defp days_left(file) do
-    deleted_days_ago = Date.diff(Date.utc_today(), DateTime.to_date(file.deleted_at))
+    deleted_days_ago = Date.diff(Date.utc_today(), DateTime.to_date(file.apagado_em))
     max(@retention_days - deleted_days_ago, 0)
   end
 
   defp trash_meta(file) do
     left = days_left(file)
-    deleted_days = Date.diff(Date.utc_today(), DateTime.to_date(file.deleted_at))
+    deleted_days = Date.diff(Date.utc_today(), DateTime.to_date(file.apagado_em))
 
     deleted_label =
       case deleted_days do
@@ -145,12 +145,12 @@ defmodule TainaWeb.TrashLive do
         <ul class="list">
           <.list_row
             :for={file <- @items}
-            title={file.original_filename}
+            title={file.nome}
             meta={trash_meta(file)}
             meta_class={warning?(file) && "text-warning"}
           >
             <:leading>
-              <% {_service, icon} = file_visual(file.mime_type) %>
+              <% {_service, icon} = file_visual(file.mime) %>
               <.service_square service="neutral" icon={icon} />
             </:leading>
             <:actions>
@@ -158,7 +158,7 @@ defmodule TainaWeb.TrashLive do
                 name="restore"
                 label={gettext("Restaurar")}
                 phx-click="restore"
-                phx-value-id={file.public_id}
+                phx-value-id={file.rkey}
               />
             </:actions>
           </.list_row>

@@ -60,7 +60,7 @@ defmodule Taina.MaracaMembersTest do
       tekoa = tekoa_fixture()
       zelador = zelador_fixture(tekoa)
       scope = Scope.new(zelador, tekoa)
-      {:ok, invited} = Maraca.invite_user(zelador, tekoa)
+      {:ok, %{ava: invited}} = Maraca.invite_user(zelador, tekoa)
 
       assert {:ok, _revoked} = Maraca.revoke_invite(scope, invited.public_id)
 
@@ -68,14 +68,14 @@ defmodule Taina.MaracaMembersTest do
       refute Enum.any?(members, &(&1.public_id == invited.public_id))
 
       assert {:ok, %{events: events}} = Maraca.list_events(scope)
-      assert Enum.any?(events, &(&1.type == :invite_revoked))
+      assert Enum.any?(events, &(&1.tipo == "invite_revoked"))
     end
 
     test "morador comum não revoga" do
       tekoa = tekoa_fixture()
       zelador = zelador_fixture(tekoa)
       morador = active_ava_fixture(tekoa)
-      {:ok, invited} = Maraca.invite_user(zelador, tekoa)
+      {:ok, %{ava: invited}} = Maraca.invite_user(zelador, tekoa)
 
       assert {:error, :unauthorized} =
                Maraca.revoke_invite(Scope.new(morador, tekoa), invited.public_id)
@@ -96,7 +96,7 @@ defmodule Taina.MaracaMembersTest do
       scope = Scope.new(zelador, tekoa)
       # O convite pendente não é gente ainda: não pode impedir a proteção do
       # último zelador de verdade.
-      {:ok, _invited} = Maraca.invite_user(zelador, tekoa, role: :zelador)
+      {:ok, %{ava: _invited}} = Maraca.invite_user(zelador, tekoa, role: :zelador)
 
       assert {:error, :last_zelador} = Maraca.deactivate_member(scope, zelador.public_id)
     end
@@ -106,7 +106,7 @@ defmodule Taina.MaracaMembersTest do
     test "convite recém-criado não está expirado" do
       tekoa = tekoa_fixture()
       zelador = zelador_fixture(tekoa)
-      {:ok, invited} = Maraca.invite_user(zelador, tekoa)
+      {:ok, %{ava: invited}} = Maraca.invite_user(zelador, tekoa)
 
       refute Maraca.invite_expired?(invited)
     end

@@ -96,7 +96,7 @@ defmodule TainaWeb.FilePreviewLiveTest do
     } do
       scope = Scope.new(owner, tekoa)
       {:ok, folder} = Ybira.create_folder(scope, %{name: "Documentos"})
-      {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("oi", "dentro.txt"), folder_id: folder.id)
+      {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("oi", "dentro.txt"), folder_rkey: folder.rkey)
 
       {:ok, _lv, html} = conn |> log_in(owner) |> live(~p"/arquivos/#{file.public_id}")
 

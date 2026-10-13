@@ -3,12 +3,12 @@ defmodule Taina.Ybira.Workers.PurgeTrashTest do
 
   import Taina.Fixtures
 
-  alias Taina.Maraca.Tekoa
   alias Taina.Scope
   alias Taina.Ybira
-  alias Taina.Ybira.File, as: YbiraFile
-  alias Taina.Ybira.Folder
   alias Taina.Ybira.Workers.PurgeTrash
+  alias Ypy.Maraca.Tekoa
+  alias Ypy.Ybira.File, as: YbiraFile
+  alias Ypy.Ybira.Folder
 
   @seconds_per_day 86_400
 
@@ -17,21 +17,21 @@ defmodule Taina.Ybira.Workers.PurgeTrashTest do
     {:ok, old} = Ybira.upload(scope, tmp_upload_fixture("antigo", "old.txt"))
     {:ok, recent} = Ybira.upload(scope, tmp_upload_fixture("recente", "new.txt"))
 
-    {:ok, _} = Ybira.delete_file(scope, old.public_id)
-    {:ok, _} = Ybira.delete_file(scope, recent.public_id)
+    {:ok, _} = Ybira.delete_file(scope, old.rkey)
+    {:ok, _} = Ybira.delete_file(scope, recent.rkey)
 
     backdate(YbiraFile, old.id, days_ago(31))
     backdate(YbiraFile, recent.id, days_ago(5))
 
     assert :ok = PurgeTrash.perform(%Oban.Job{args: %{}})
 
-    refute File.exists?(old.filepath)
-    assert File.exists?(recent.filepath)
+    refute blob_on_disk?(old)
+    assert blob_on_disk?(recent)
     refute Repo.get(YbiraFile, old.id, skip_tekoa_id: true)
     assert Repo.get(YbiraFile, recent.id, skip_tekoa_id: true)
 
     tekoa = Repo.get!(Tekoa, scope.tekoa.id, skip_tekoa_id: true)
-    assert tekoa.storage_used_bytes == recent.file_size_bytes
+    assert tekoa.storage_used_bytes == recent.tamanho
   end
 
   test "purges a batch of expired files across owners and reclaims the summed quota" do
@@ -44,10 +44,10 @@ defmodule Taina.Ybira.Workers.PurgeTrashTest do
     {:ok, c} = Ybira.upload(scope, tmp_upload_fixture("cccccc", "c.txt"))
     {:ok, keep} = Ybira.upload(scope, tmp_upload_fixture("ddddddd", "keep.txt"))
 
-    {:ok, _} = Ybira.delete_file(scope, a.public_id)
-    {:ok, _} = Ybira.delete_file(other_scope, b.public_id)
-    {:ok, _} = Ybira.delete_file(scope, c.public_id)
-    {:ok, _} = Ybira.delete_file(scope, keep.public_id)
+    {:ok, _} = Ybira.delete_file(scope, a.rkey)
+    {:ok, _} = Ybira.delete_file(other_scope, b.rkey)
+    {:ok, _} = Ybira.delete_file(scope, c.rkey)
+    {:ok, _} = Ybira.delete_file(scope, keep.rkey)
 
     backdate(YbiraFile, a.id, days_ago(31))
     backdate(YbiraFile, b.id, days_ago(40))
@@ -56,14 +56,14 @@ defmodule Taina.Ybira.Workers.PurgeTrashTest do
 
     assert :ok = PurgeTrash.perform(%Oban.Job{args: %{}})
 
-    refute File.exists?(a.filepath)
-    refute File.exists?(b.filepath)
-    refute File.exists?(c.filepath)
-    assert File.exists?(keep.filepath)
+    refute blob_on_disk?(a)
+    refute blob_on_disk?(b)
+    refute blob_on_disk?(c)
+    assert blob_on_disk?(keep)
     assert Repo.get(YbiraFile, keep.id, skip_tekoa_id: true)
 
     tekoa = Repo.get!(Tekoa, scope.tekoa.id, skip_tekoa_id: true)
-    assert tekoa.storage_used_bytes == keep.file_size_bytes
+    assert tekoa.storage_used_bytes == keep.tamanho
   end
 
   test "same bytes uploaded twice share the blob; purging one keeps the other's bytes" do
@@ -71,16 +71,17 @@ defmodule Taina.Ybira.Workers.PurgeTrashTest do
     {:ok, a} = Ybira.upload(scope, tmp_upload_fixture("iguais", "a.txt"))
     {:ok, b} = Ybira.upload(scope, tmp_upload_fixture("iguais", "b.txt"))
 
-    assert a.filepath == b.filepath
+    # Endereçado por conteúdo: os mesmos bytes, mesmo CID, mesmo caminho.
+    assert a.blob_cid == b.blob_cid
 
-    {:ok, _} = Ybira.delete_file(scope, a.public_id)
+    {:ok, _} = Ybira.delete_file(scope, a.rkey)
     backdate(YbiraFile, a.id, days_ago(31))
 
     assert :ok = PurgeTrash.perform(%Oban.Job{args: %{}})
 
     refute Repo.get(YbiraFile, a.id, skip_tekoa_id: true)
     assert Repo.get(YbiraFile, b.id, skip_tekoa_id: true)
-    assert File.exists?(b.filepath)
+    assert blob_on_disk?(b)
   end
 
   test "purges folders trashed before the cutoff, keeps the recent ones" do
@@ -88,8 +89,8 @@ defmodule Taina.Ybira.Workers.PurgeTrashTest do
     {:ok, old} = Ybira.create_folder(scope, %{name: "antiga"})
     {:ok, recent} = Ybira.create_folder(scope, %{name: "recente"})
 
-    {:ok, :deleted} = Ybira.delete_folder(scope, old.public_id)
-    {:ok, :deleted} = Ybira.delete_folder(scope, recent.public_id)
+    {:ok, :deleted} = Ybira.delete_folder(scope, old.rkey)
+    {:ok, :deleted} = Ybira.delete_folder(scope, recent.rkey)
 
     backdate(Folder, old.id, days_ago(31))
     backdate(Folder, recent.id, days_ago(5))
@@ -102,11 +103,18 @@ defmodule Taina.Ybira.Workers.PurgeTrashTest do
 
   defp days_ago(n), do: DateTime.shift(DateTime.utc_now(), second: -n * @seconds_per_day)
 
-  defp backdate(schema, id, deleted_at) do
+  defp backdate(schema, id, apagado_em) do
     Repo.update_all(
       from(r in schema, where: r.id == ^id),
-      [set: [deleted_at: deleted_at]],
+      [set: [apagado_em: apagado_em]],
       skip_tekoa_id: true
     )
+  end
+
+  defp blob_on_disk?(file) do
+    case Ybira.blob_path(file) do
+      {:ok, path} -> File.exists?(path)
+      {:error, :not_found} -> false
+    end
   end
 end

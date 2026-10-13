@@ -3,8 +3,8 @@ defmodule TainaWeb.AuthTest do
 
   import Taina.Fixtures
 
-  alias Taina.Scope
   alias TainaWeb.Auth
+  alias Ypy.Scope
 
   setup %{conn: conn} do
     scope = scope_fixture()

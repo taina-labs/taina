@@ -116,8 +116,8 @@ defmodule TainaWeb.HomeLive do
   # "Imagem, 2,4 MB, ontem, na praça".
   defp recent_meta(file) do
     [
-      file_kind(file.mime_type),
-      format_bytes(file.file_size_bytes),
+      file_kind(file.mime),
+      format_bytes(file.tamanho),
       relative_time(file.inserted_at),
       zona_label(file.zona)
     ]
@@ -192,12 +192,12 @@ defmodule TainaWeb.HomeLive do
       <ul class="list">
         <.list_row
           :for={file <- @recent}
-          title={file.original_filename}
+          title={file.nome}
           meta={recent_meta(file)}
-          navigate={~p"/arquivos/#{file.public_id}"}
+          navigate={~p"/arquivos/#{file.rkey}"}
         >
           <:leading>
-            <% {service, icon} = file_visual(file.mime_type) %>
+            <% {service, icon} = file_visual(file.mime) %>
             <.service_square service={service} icon={icon} />
           </:leading>
           <:actions>

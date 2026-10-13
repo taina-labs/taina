@@ -16,9 +16,9 @@ defmodule TainaWeb.ResetPasswordLiveTest do
   end
 
   test "link válido renderiza o formulário de redefinição", %{conn: conn, zelador: zelador, member: member, tekoa: tekoa} do
-    {:ok, with_token} = Maraca.mint_reset_link(Scope.new(zelador, tekoa), member)
+    {:ok, %{token: token}} = Maraca.mint_reset_link(Scope.new(zelador, tekoa), member)
 
-    {:ok, _lv, html} = live(conn, ~p"/redefinir/#{with_token.reset_token}")
+    {:ok, _lv, html} = live(conn, ~p"/redefinir/#{token}")
 
     assert html =~ "Redefinir senha"
     assert html =~ "Salvar nova senha"
@@ -38,18 +38,20 @@ defmodule TainaWeb.ResetPasswordLiveTest do
     member: member,
     tekoa: tekoa
   } do
-    {:ok, with_token} = Maraca.mint_reset_link(Scope.new(zelador, tekoa), member)
+    {:ok, %{ava: with_token, token: token}} = Maraca.mint_reset_link(Scope.new(zelador, tekoa), member)
 
     two_hours_ago = DateTime.shift(DateTime.utc_now(), hour: -2)
 
     Repo.with_tekoa(tekoa.public_id, fn ->
       {:ok,
        with_token
-       |> Ecto.Changeset.change(reset_token_sent_at: two_hours_ago)
+       |> Ecto.Changeset.change(reset_sent_at: DateTime.truncate(two_hours_ago, :second))
        |> Repo.update!()}
     end)
 
-    {:ok, _lv, html} = live(conn, ~p"/redefinir/#{with_token.reset_token}")
+    # O link real, já vencido: o estado de beco sem saída é o mesmo do token
+    # desconhecido, mas o teste prova o do token que um dia valeu.
+    {:ok, _lv, html} = live(conn, ~p"/redefinir/#{token}")
 
     assert html =~ "Este link expirou ou já foi usado"
     refute html =~ "reset_password"

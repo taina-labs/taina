@@ -17,13 +17,14 @@ defmodule TainaWeb.FilePreviewLive do
       {:ok, file} ->
         # O voltar devolve para a pasta onde o arquivo mora, não para o início;
         # arquivo da raiz (ou pasta que não se pode ver) volta para o início.
-        back = back_path(Ybira.file_folder_public_id(socket.assigns.current_scope, file))
+        back = back_path(Ybira.file_folder_rkey(socket.assigns.current_scope, file))
 
         {:ok,
          socket
-         |> assign(:page_title, file.original_filename)
+         |> assign(:page_title, file.nome)
          |> assign(:file, file)
          |> assign(:back, back)
+         |> assign(:photo_metadata, load_photo_metadata(socket.assigns.current_scope, file))
          |> assign(:text_preview, load_text_preview(file))
          |> assign(:show_details, false)
          |> assign(:show_confirm, false)
@@ -67,7 +68,14 @@ defmodule TainaWeb.FilePreviewLive do
 
   defp default_reason, do: gettext("Pedido de acesso pela tela do arquivo")
 
-  # Resultado do `Ybira.file_folder_public_id/2` vira caminho do voltar: pasta
+  # As rendições (dimensões, EXIF, thumbnails) moram nos metadados do produto;
+  # o arquivo do kernel só carrega o conteúdo.
+  defp load_photo_metadata(scope, file) do
+    {:ok, metadata} = Ybira.photo_metadata(scope, file)
+    metadata
+  end
+
+  # Resultado do `Ybira.file_folder_rkey/2` vira caminho do voltar: pasta
   # visível, volta para ela; qualquer outro caso, volta para o início.
   defp back_path({:ok, folder_public_id}), do: ~p"/arquivos/pasta/#{folder_public_id}"
   defp back_path(_other), do: ~p"/arquivos"
@@ -102,7 +110,7 @@ defmodule TainaWeb.FilePreviewLive do
   end
 
   def handle_event("confirm-delete", _params, socket) do
-    case Ybira.delete_file(socket.assigns.current_scope, socket.assigns.file.public_id) do
+    case Ybira.delete_file(socket.assigns.current_scope, socket.assigns.file.rkey) do
       {:ok, _file} ->
         {:noreply,
          socket
@@ -127,8 +135,8 @@ defmodule TainaWeb.FilePreviewLive do
 
     result =
       case file.zona do
-        :casa -> Ybira.publicar_file(scope, file.public_id)
-        :praca -> Ybira.tirar_file_da_praca(scope, file.public_id)
+        :casa -> Ybira.publicar_file(scope, file.rkey)
+        :praca -> Ybira.tirar_file_da_praca(scope, file.rkey)
       end
 
     case result do
@@ -159,7 +167,7 @@ defmodule TainaWeb.FilePreviewLive do
     target = socket.assigns.access_target
     scope = socket.assigns.current_scope
 
-    case Maraca.request_access(scope.ava, target.owner, "ybira_file", target.file_public_id, default_reason()) do
+    case Maraca.pedir_acesso(scope, "ypy.file.v0", target.rkey, default_reason()) do
       {:ok, _request} ->
         {:noreply,
          socket
@@ -167,10 +175,10 @@ defmodule TainaWeb.FilePreviewLive do
          |> Phoenix.LiveView.push_navigate(to: ~p"/conta/meus-pedidos")}
 
       {:error, :already_has_access} ->
-        {:noreply, Phoenix.LiveView.push_navigate(socket, to: ~p"/arquivos/#{target.file_public_id}")}
+        {:noreply, Phoenix.LiveView.push_navigate(socket, to: ~p"/arquivos/#{target.rkey}")}
 
       {:error, :cannot_request_own} ->
-        {:noreply, Phoenix.LiveView.push_navigate(socket, to: ~p"/arquivos/#{target.file_public_id}")}
+        {:noreply, Phoenix.LiveView.push_navigate(socket, to: ~p"/arquivos/#{target.rkey}")}
 
       {:error, _reason} ->
         {:noreply,
@@ -180,7 +188,7 @@ defmodule TainaWeb.FilePreviewLive do
     end
   end
 
-  defp own?(scope, file), do: scope.ava.id == file.ava_id
+  defp own?(scope, file), do: scope.ava.id == file.dono_id
 
   defp readability_line(:praca), do: gettext("Todos os moradores veem.")
   defp readability_line(:casa), do: gettext("Só você, e quem você deixar.")
@@ -213,15 +221,15 @@ defmodule TainaWeb.FilePreviewLive do
 
   # Dimensões intrínsecas para o <img> (metadata da Rendition): o layout não
   # pula enquanto a imagem carrega. Vídeo não tem metadata equivalente hoje.
-  defp file_dimension(file, "width") do
-    case file.metadata do
+  defp file_dimension(metadata, "width") do
+    case metadata do
       %{"width" => w, "height" => _h} -> w
       _ -> nil
     end
   end
 
-  defp file_dimension(file, "height") do
-    case file.metadata do
+  defp file_dimension(metadata, "height") do
+    case metadata do
       %{"width" => _w, "height" => h} -> h
       _ -> nil
     end
@@ -236,23 +244,32 @@ defmodule TainaWeb.FilePreviewLive do
   # ícone genérico.
   @text_preview_limit 256 * 1024
 
-  defp load_text_preview(%{mime_type: "text/" <> _} = file) do
-    case File.open(file.filepath, [:read, :binary], &IO.binread(&1, @text_preview_limit)) do
-      {:ok, content} when is_binary(content) -> content
+  defp load_text_preview(%{mime: "text/" <> _} = file) do
+    with {:ok, path} <- Ybira.blob_path(file),
+         {:ok, device} <- File.open(path, [:read, :binary, :raw]) do
+      try do
+        case :file.read(device, @text_preview_limit) do
+          {:ok, content} when is_binary(content) -> content
+          _ -> nil
+        end
+      after
+        :file.close(device)
+      end
+    else
       _ -> nil
     end
   end
 
   defp load_text_preview(_file), do: nil
 
-  defp file_meta(file) do
+  defp file_meta(file, metadata) do
     dimensions =
-      case file.metadata do
+      case metadata do
         %{"width" => w, "height" => h} -> ", #{w}x#{h}"
         _ -> ""
       end
 
-    "#{file_kind(file.mime_type)}, #{format_bytes(file.file_size_bytes)}#{dimensions}, " <>
+    "#{file_kind(file.mime)}, #{format_bytes(file.tamanho)}#{dimensions}, " <>
       gettext("enviado %{when}", when: relative_time(file.inserted_at))
   end
 
@@ -284,7 +301,7 @@ defmodule TainaWeb.FilePreviewLive do
 
       <.modal id="request-access" show={@show_request_modal} on_cancel={JS.push("close-access")}>
         <h2 class="type-h3 mb-2">
-          {gettext("Pedir acesso a \"%{name}\"?", name: @access_target.filename)}
+          {gettext("Pedir acesso a \"%{name}\"?", name: @access_target.nome)}
         </h2>
         <p class="type-body text-secondary mb-6">
           {gettext(
@@ -313,30 +330,30 @@ defmodule TainaWeb.FilePreviewLive do
       storage_stats={assigns[:storage_stats]}
       account_alert={assigns[:account_alert] || false}
     >
-      <Layouts.app_bar title={@file.original_filename} back={@back}>
+      <Layouts.app_bar title={@file.nome} back={@back}>
         <:action>
-          <.icon_button name="download" label={gettext("Baixar")} href={~p"/files/#{@file.public_id}"} download />
+          <.icon_button name="download" label={gettext("Baixar")} href={~p"/files/#{@file.rkey}"} download />
         </:action>
       </Layouts.app_bar>
 
       <div class="col gap-4 mx-auto w-full measure-wide">
         <div class="surface-raised radius-lg center media-frame">
-          <%= case media_kind(@file.mime_type) do %>
+          <%= case media_kind(@file.mime) do %>
             <% :image -> %>
               <img
-                src={~p"/files/#{@file.public_id}"}
-                alt={@file.original_filename}
-                width={file_dimension(@file, "width")}
-                height={file_dimension(@file, "height")}
+                src={~p"/files/#{@file.rkey}"}
+                alt={@file.nome}
+                width={file_dimension(@photo_metadata, "width")}
+                height={file_dimension(@photo_metadata, "height")}
               />
             <% :video -> %>
-              <video controls playsinline src={~p"/files/#{@file.public_id}"} class="w-full"></video>
+              <video controls playsinline src={~p"/files/#{@file.rkey}"} class="w-full"></video>
             <% :audio -> %>
-              <audio controls src={~p"/files/#{@file.public_id}"} class="w-full p-4"></audio>
+              <audio controls src={~p"/files/#{@file.rkey}"} class="w-full p-4"></audio>
             <% :pdf -> %>
               <iframe
-                src={~p"/files/#{@file.public_id}"}
-                title={@file.original_filename}
+                src={~p"/files/#{@file.rkey}"}
+                title={@file.nome}
                 class="w-full doc-frame"
               >
               </iframe>
@@ -348,7 +365,7 @@ defmodule TainaWeb.FilePreviewLive do
                 title={gettext("Pré-visualização indisponível")}
                 hint={gettext("O arquivo está intacto; baixe para ler por inteiro.")}
               >
-                <.button variant="secondary" href={~p"/files/#{@file.public_id}"} download>
+                <.button variant="secondary" href={~p"/files/#{@file.rkey}"} download>
                   {gettext("Baixar")}
                 </.button>
               </.empty_state>
@@ -358,7 +375,7 @@ defmodule TainaWeb.FilePreviewLive do
                 title={gettext("Pré-visualização indisponível")}
                 hint={gettext("O arquivo está intacto; baixe para abrir no seu dispositivo.")}
               >
-                <.button variant="secondary" href={~p"/files/#{@file.public_id}"} download>
+                <.button variant="secondary" href={~p"/files/#{@file.rkey}"} download>
                   {gettext("Baixar")}
                 </.button>
               </.empty_state>
@@ -366,10 +383,10 @@ defmodule TainaWeb.FilePreviewLive do
         </div>
 
         <.card>
-          <h2 class="type-h3 mb-1">{@file.original_filename}</h2>
-          <p class="type-body-sm text-muted">{file_meta(@file)}</p>
+          <h2 class="type-h3 mb-1">{@file.nome}</h2>
+          <p class="type-body-sm text-muted">{file_meta(@file, @photo_metadata)}</p>
           <p class="type-body-sm text-muted">{readability_line(@file.zona)}</p>
-          <% file_url = url(~p"/arquivos/#{@file.public_id}") %>
+          <% file_url = url(~p"/arquivos/#{@file.rkey}") %>
           <div class="field mt-4">
             <label for="file-page-link">{gettext("Link do arquivo")}</label>
             <div class="field__control">
@@ -419,16 +436,16 @@ defmodule TainaWeb.FilePreviewLive do
         <div class="col gap-3">
           <div>
             <p class="type-caption text-muted">{gettext("Nome original")}</p>
-            <p class="type-body">{@file.original_filename}</p>
+            <p class="type-body">{@file.nome}</p>
           </div>
           <div>
             <p class="type-caption text-muted">{gettext("Tipo")}</p>
-            <p class="type-body">{file_kind(@file.mime_type)}</p>
-            <p class="type-mono-sm text-muted">{@file.mime_type}</p>
+            <p class="type-body">{file_kind(@file.mime)}</p>
+            <p class="type-mono-sm text-muted">{@file.mime}</p>
           </div>
           <div>
             <p class="type-caption text-muted">{gettext("Tamanho")}</p>
-            <p class="type-body">{format_bytes(@file.file_size_bytes)}</p>
+            <p class="type-body">{format_bytes(@file.tamanho)}</p>
           </div>
           <div>
             <p class="type-caption text-muted">{gettext("Assinatura do arquivo")}</p>
@@ -448,14 +465,14 @@ defmodule TainaWeb.FilePreviewLive do
       <.confirm_dialog
         id="confirm-delete"
         show={@show_confirm}
-        title={gettext("Excluir \"%{name}\"?", name: @file.original_filename)}
+        title={gettext("Excluir \"%{name}\"?", name: @file.nome)}
         message={gettext("Vai para a lixeira. Dá para restaurar em até 30 dias.")}
         on_confirm="confirm-delete"
         on_cancel={JS.push("close-confirm")}
       />
 
       <.modal id="confirm-zona" show={@show_zona} on_cancel={JS.push("close-zona")}>
-        <h2 class="type-h3 mb-2">{zona_confirm_title(@file.zona, @file.original_filename)}</h2>
+        <h2 class="type-h3 mb-2">{zona_confirm_title(@file.zona, @file.nome)}</h2>
         <p class="type-body text-secondary mb-6">{zona_confirm_body(@file.zona)}</p>
         <div class="row gap-3">
           <.button variant="secondary" size="md" class="flex-1" phx-click="close-zona">

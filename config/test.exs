@@ -28,7 +28,8 @@ config :taina, Taina.Repo,
   pool: Sandbox,
   pool_size: System.schedulers_online() * 2,
   journal_mode: :wal,
-  busy_timeout: 5_000
+  busy_timeout: 5_000,
+  default_transaction_mode: :immediate
 
 # We don't run a server during test. If one is required,
 # you can enable the server option below.
