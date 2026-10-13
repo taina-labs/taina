@@ -16,8 +16,8 @@ defmodule TainaWeb.MyRequestsLiveTest do
     %{tekoa: tekoa, owner: owner, requester: requester, target_file: file}
   end
 
-  defp request(requester, owner, file) do
-    {:ok, req} = Maraca.request_access(requester, owner, "ybira_file", file.public_id, "Por favor")
+  defp request(requester, tekoa, file) do
+    {:ok, req} = Maraca.pedir_acesso(Scope.new(requester, tekoa), "ypy.file.v0", file.rkey, "Por favor")
     req
   end
 
@@ -29,11 +29,11 @@ defmodule TainaWeb.MyRequestsLiveTest do
 
   test "lists a pending request waiting on the owner", %{
     conn: conn,
-    owner: owner,
+    tekoa: tekoa,
     requester: requester,
     target_file: file
   } do
-    _req = request(requester, owner, file)
+    _req = request(requester, tekoa, file)
     {:ok, _lv, html} = conn |> log_in(requester) |> live(~p"/conta/meus-pedidos")
 
     assert html =~ "Joana"
@@ -42,12 +42,13 @@ defmodule TainaWeb.MyRequestsLiveTest do
 
   test "an approved request shows the liberation line instead of vanishing", %{
     conn: conn,
+    tekoa: tekoa,
     owner: owner,
     requester: requester,
     target_file: file
   } do
-    req = request(requester, owner, file)
-    {:ok, _} = Maraca.approve_access_request(owner, req.id)
+    req = request(requester, tekoa, file)
+    {:ok, _} = Maraca.aprovar(Scope.new(owner, tekoa), req)
     {:ok, _lv, html} = conn |> log_in(requester) |> live(~p"/conta/meus-pedidos")
 
     assert html =~ "Já decididos"
@@ -57,23 +58,30 @@ defmodule TainaWeb.MyRequestsLiveTest do
 
   test "a denied request shows the refusal line and invites trying again", %{
     conn: conn,
+    tekoa: tekoa,
     owner: owner,
     requester: requester,
     target_file: file
   } do
-    req = request(requester, owner, file)
-    {:ok, _} = Maraca.deny_access_request(owner, req.id)
+    req = request(requester, tekoa, file)
+    {:ok, _} = Maraca.negar(Scope.new(owner, tekoa), req)
     {:ok, _lv, html} = conn |> log_in(requester) |> live(~p"/conta/meus-pedidos")
 
     assert html =~ "Já decididos"
     assert html =~ "doc.txt: Joana recusou este pedido. Você pode pedir de novo quando quiser."
   end
 
-  test "approval refreshes the list and flashes", %{conn: conn, owner: owner, requester: requester, target_file: file} do
-    req = request(requester, owner, file)
+  test "approval refreshes the list and flashes", %{
+    conn: conn,
+    tekoa: tekoa,
+    owner: owner,
+    requester: requester,
+    target_file: file
+  } do
+    req = request(requester, tekoa, file)
     {:ok, lv, _html} = conn |> log_in(requester) |> live(~p"/conta/meus-pedidos")
 
-    {:ok, _} = Maraca.approve_access_request(owner, req.id)
+    {:ok, _} = Maraca.aprovar(Scope.new(owner, tekoa), req)
 
     html = render(lv)
     assert html =~ "Pedido aprovado"
@@ -82,11 +90,17 @@ defmodule TainaWeb.MyRequestsLiveTest do
     assert html =~ "Joana liberou"
   end
 
-  test "denial refreshes the list and flashes", %{conn: conn, owner: owner, requester: requester, target_file: file} do
-    req = request(requester, owner, file)
+  test "denial refreshes the list and flashes", %{
+    conn: conn,
+    tekoa: tekoa,
+    owner: owner,
+    requester: requester,
+    target_file: file
+  } do
+    req = request(requester, tekoa, file)
     {:ok, lv, _html} = conn |> log_in(requester) |> live(~p"/conta/meus-pedidos")
 
-    {:ok, _} = Maraca.deny_access_request(owner, req.id)
+    {:ok, _} = Maraca.negar(Scope.new(owner, tekoa), req)
 
     html = render(lv)
     assert html =~ "Seu pedido foi negado"

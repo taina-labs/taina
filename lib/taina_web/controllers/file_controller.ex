@@ -17,30 +17,33 @@ defmodule TainaWeb.FileController do
   alias Taina.Scope
   alias Taina.Ybira
 
-  def download(conn, %{"public_id" => public_id}) do
+  def download(conn, %{"rkey" => rkey}) do
     with {:ok, ava} <- Maraca.get_session_user(conn),
          scope = Scope.for_ava(ava),
-         {:ok, file} <- Ybira.get_file(scope, public_id) do
-      serve_file(conn, file)
+         {:ok, file} <- Ybira.get_file(scope, rkey),
+         {:ok, path} <- Ybira.blob_path(file) do
+      serve_file(conn, file, path)
     else
       # Casa de outra pessoa: o navegador recebe uma página, não um 403 vazio.
       # A tela do arquivo é que mostra o porquê e o caminho (Pedir acesso).
-      {:error, :forbidden} -> redirect(conn, to: ~p"/arquivos/#{public_id}")
+      {:error, :forbidden} -> redirect(conn, to: ~p"/arquivos/#{rkey}")
       {:error, :not_authenticated} -> redirect(conn, to: ~p"/login")
       {:error, :not_found} -> send_resp(conn, 404, "")
     end
   end
 
   # Tamanhos de thumbnail gerados pelo `Ybira.Workers.Rendition` ("sm" grade,
-  # "md" fullscreen). O caminho no disco vem do `metadata` do arquivo; se o job
-  # ainda não rodou (ou falhou), respondemos 404 e a UI mostra um placeholder.
+  # "md" fullscreen). O caminho no disco vem dos metadados de rendição do
+  # produto (`Taina.Jaci.Photo`); se o job ainda não rodou (ou falhou),
+  # respondemos 404 e a UI mostra um placeholder.
   @thumbnail_sizes ~w(sm md)
 
-  def thumbnail(conn, %{"public_id" => public_id, "size" => size}) when size in @thumbnail_sizes do
+  def thumbnail(conn, %{"rkey" => rkey, "size" => size}) when size in @thumbnail_sizes do
     with {:ok, ava} <- Maraca.get_session_user(conn),
          scope = Scope.for_ava(ava),
-         {:ok, file} <- Ybira.get_file(scope, public_id),
-         {:ok, path} <- thumbnail_path(file, size) do
+         {:ok, file} <- Ybira.get_file(scope, rkey),
+         {:ok, metadata} <- Ybira.photo_metadata(scope, file),
+         {:ok, path} <- thumbnail_path(metadata, size) do
       conn
       |> put_resp_header("content-type", "image/webp")
       |> put_resp_header("cache-control", "private, max-age=86400")
@@ -48,7 +51,7 @@ defmodule TainaWeb.FileController do
     else
       # Mesma regra do download: sem página em branco; quem não pode ler o
       # arquivo é levado à tela dele (Pedir acesso).
-      {:error, :forbidden} -> redirect(conn, to: ~p"/arquivos/#{public_id}")
+      {:error, :forbidden} -> redirect(conn, to: ~p"/arquivos/#{rkey}")
       {:error, :not_authenticated} -> redirect(conn, to: ~p"/login")
       _ -> send_resp(conn, 404, "")
     end
@@ -56,8 +59,8 @@ defmodule TainaWeb.FileController do
 
   def thumbnail(conn, _params), do: send_resp(conn, 404, "")
 
-  defp thumbnail_path(file, size) do
-    case get_in(file.metadata, ["thumbnails", size]) do
+  defp thumbnail_path(metadata, size) do
+    case get_in(metadata, ["thumbnails", size]) do
       path when is_binary(path) ->
         if File.exists?(path), do: {:ok, path}, else: {:error, :not_found}
 
@@ -66,17 +69,17 @@ defmodule TainaWeb.FileController do
     end
   end
 
-  defp serve_file(conn, file) do
+  defp serve_file(conn, file, path) do
     conn =
       conn
       |> put_resp_header("accept-ranges", "bytes")
-      |> put_resp_header("content-type", file.mime_type)
+      |> put_resp_header("content-type", file.mime)
       |> put_resp_header("content-disposition", content_disposition(file))
       |> put_last_modified(file)
 
     case get_req_header(conn, "range") do
-      ["bytes=" <> spec] -> serve_range(conn, file, spec)
-      _ -> send_file(conn, 200, file.filepath)
+      ["bytes=" <> spec] -> serve_range(conn, file, path, spec)
+      _ -> send_file(conn, 200, path)
     end
   end
 
@@ -85,32 +88,32 @@ defmodule TainaWeb.FileController do
   @inline_prefixes ["image/", "video/", "audio/", "application/pdf"]
 
   defp content_disposition(file) do
-    kind = if String.starts_with?(file.mime_type, @inline_prefixes), do: "inline", else: "attachment"
-    ~s(#{kind}; filename="#{file.original_filename}")
+    kind = if String.starts_with?(file.mime, @inline_prefixes), do: "inline", else: "attachment"
+    ~s(#{kind}; filename="#{file.nome}")
   end
 
   # `Last-Modified` ajuda o cache do cliente (revalidação barata em banda
   # limitada). Usa o `updated_at` do registro, que é UTC.
-  defp put_last_modified(conn, %{updated_at: %NaiveDateTime{} = at}) do
-    httpdate = at |> DateTime.from_naive!("Etc/UTC") |> Calendar.strftime("%a, %d %b %Y %H:%M:%S GMT")
+  defp put_last_modified(conn, %{updated_at: %DateTime{} = at}) do
+    httpdate = Calendar.strftime(at, "%a, %d %b %Y %H:%M:%S GMT")
     put_resp_header(conn, "last-modified", httpdate)
   end
 
   defp put_last_modified(conn, _file), do: conn
 
-  defp serve_range(conn, file, spec) do
-    case parse_range(spec, file.file_size_bytes) do
+  defp serve_range(conn, file, path, spec) do
+    case parse_range(spec, file.tamanho) do
       {:ok, first, last} ->
         conn
         |> put_resp_header(
           "content-range",
-          "bytes #{first}-#{last}/#{file.file_size_bytes}"
+          "bytes #{first}-#{last}/#{file.tamanho}"
         )
-        |> send_file(206, file.filepath, first, last - first + 1)
+        |> send_file(206, path, first, last - first + 1)
 
       :error ->
         conn
-        |> put_resp_header("content-range", "bytes */#{file.file_size_bytes}")
+        |> put_resp_header("content-range", "bytes */#{file.tamanho}")
         |> send_resp(416, "")
     end
   end

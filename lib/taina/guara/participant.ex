@@ -38,9 +38,8 @@ defmodule Taina.Guara.Participant do
   import Ecto.Changeset
 
   alias Taina.Guara.Chat
-  alias Taina.Maraca.Ava
+  alias Ypy.Maraca.Ava
 
-  @schema_prefix "guara"
   @primary_key false
   schema "participants" do
     belongs_to :chat, Chat, primary_key: true

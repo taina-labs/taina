@@ -28,12 +28,12 @@ defmodule TainaWeb.UploadLiveTest do
     assert html =~ "ata.txt"
 
     assert {:ok, %{items: [file]}} = Ybira.list_files(scope)
-    assert file.original_filename == "ata.txt"
+    assert file.nome == "ata.txt"
   end
 
   test "envia para a pasta indicada em ?pasta=", %{conn: conn, scope: scope, ava: ava} do
     {:ok, folder} = Ybira.create_folder(scope, %{name: "Atas"})
-    {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/arquivos/enviar?#{[pasta: folder.public_id]}")
+    {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/arquivos/enviar?#{[pasta: folder.rkey]}")
 
     input =
       file_input(lv, "#dropzone", :files, [
@@ -42,8 +42,8 @@ defmodule TainaWeb.UploadLiveTest do
 
     render_upload(input, "junho.txt")
 
-    assert {:ok, %{files: [file]}} = Ybira.list_folder_contents(scope, folder.public_id)
-    assert file.original_filename == "junho.txt"
+    assert {:ok, %{files: [file]}} = Ybira.list_folder_contents(scope, folder.rkey)
+    assert file.nome == "junho.txt"
   end
 
   test "arquivo rejeitado pelo Ybira aparece como falha", %{conn: conn, scope: scope, ava: ava} do
@@ -79,6 +79,6 @@ defmodule TainaWeb.UploadLiveTest do
     assert html =~ "foto-da-roca.jpg"
 
     assert {:ok, %{items: [file]}} = Ybira.list_files(scope)
-    assert file.original_filename == "foto-da-roca.jpg"
+    assert file.nome == "foto-da-roca.jpg"
   end
 end

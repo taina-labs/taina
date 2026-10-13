@@ -3,26 +3,35 @@ defmodule Taina.Fixtures do
   Fixtures de teste para as entidades centrais.
 
   Como o modo single-tekoa é imposto por índice único no banco, cada teste
-  deve criar no máximo uma Tekoa (o sandbox desfaz tudo ao final).
+  deve criar no máximo uma Tekoa (o sandbox desfaz tudo ao final). A Tekoa
+  nasce com a chave que assina a cadeia (`Taina.Keys.mint/2`): uploads e atos
+  sociais do kernel assinam.
   """
 
-  alias Taina.Maraca.Ava
-  alias Taina.Maraca.Tekoa
+  alias Taina.Keys
   alias Taina.Repo
   alias Taina.Scope
+  alias Ypy.Maraca.Ava
+  alias Ypy.Maraca.Tekoa
 
   @gb 1024 * 1024 * 1024
 
   def tekoa_fixture(attrs \\ %{}) do
+    n = System.unique_integer([:positive])
+
     attrs =
       Enum.into(attrs, %{
-        name: "Tekoa Teste #{System.unique_integer([:positive])}",
+        name: "Tekoa Teste #{n}",
+        domain: "tekoa-#{String.downcase(Integer.to_string(n, 36))}.test",
         storage_quota_bytes: @gb
       })
 
-    %Tekoa{}
-    |> Tekoa.changeset(attrs)
-    |> Repo.insert!()
+    {:ok, tekoa} =
+      Repo.insert(Tekoa.changeset(%Tekoa{}, attrs))
+
+    :ok = Keys.mint(Repo, tekoa.id)
+
+    Repo.reload!(tekoa, skip_tekoa_id: true)
   end
 
   # Convite pendente: tem nome mas ainda sem senha (conta não ativada).
@@ -35,36 +44,33 @@ defmodule Taina.Fixtures do
         tekoa_id: tekoa.id
       })
 
-    %Ava{}
-    |> Ava.changeset(attrs)
+    %Ava{tekoa_id: tekoa.id}
+    |> Ava.changeset(Map.take(attrs, [:username, :display_name, :papel]))
     |> Repo.insert!()
   end
 
-  # Conta ativa: nome de usuário + senha definidos (convite aceito).
+  # Conta ativa: nome de usuário + senha definidos (convite aceito). O papel
+  # não entra pelo accept_changeset do kernel (ele casta identidade e senha
+  # apenas): vai como change programático, como no zelador do bootstrap.
   def active_ava_fixture(%Tekoa{} = tekoa, attrs \\ %{}) do
     n = System.unique_integer([:positive])
-    password = Map.get(attrs, :password, "senhasegura123")
+
+    papel = Map.get(attrs, :papel, :morador)
 
     base = %{
       username: Map.get(attrs, :username, "ava#{n}"),
       display_name: Map.get(attrs, :display_name),
-      role: Map.get(attrs, :role, :morador),
-      tekoa_id: tekoa.id
+      password: Map.get(attrs, :password, "senhasegura123")
     }
 
-    %Ava{}
-    |> Ava.changeset(base)
-    |> Ava.accept_invite_changeset(%{
-      username: base.username,
-      display_name: base.display_name,
-      password: password,
-      password_confirmation: password
-    })
+    %Ava{tekoa_id: tekoa.id}
+    |> Ava.accept_changeset(base)
+    |> Ecto.Changeset.change(papel: papel)
     |> Repo.insert!()
   end
 
   def zelador_fixture(%Tekoa{} = tekoa, attrs \\ %{}) do
-    active_ava_fixture(tekoa, Map.put(attrs, :role, :zelador))
+    active_ava_fixture(tekoa, Map.put(attrs, :papel, :zelador))
   end
 
   def scope_fixture(attrs \\ %{}) do

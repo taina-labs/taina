@@ -20,9 +20,12 @@ defmodule TainaWeb.AccountLive do
   # separa entrada (Pedidos) de saída (Meus pedidos) para o ponto cair na linha
   # certa. Eventos do Ava (PubSub, já inscritos no shell) recomputam na hora.
   defp assign_alerts(socket, scope) do
+    {:ok, recebidos} = Maraca.pedidos_recebidos(scope)
+    {:ok, enviados} = Maraca.pedidos_enviados(scope)
+
     socket
-    |> assign(:incoming_alert, Maraca.list_access_requests(scope.ava) != [])
-    |> assign(:outgoing_alert, Maraca.list_my_requests(scope.ava) != [])
+    |> assign(:incoming_alert, recebidos != [])
+    |> assign(:outgoing_alert, enviados != [])
   end
 
   @impl true

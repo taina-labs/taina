@@ -4,10 +4,10 @@ defmodule Taina.JaciTest do
   import Taina.Fixtures
 
   alias Taina.Jaci
+  alias Taina.Jaci.Photo
   alias Taina.Maraca
   alias Taina.Scope
   alias Taina.Ybira
-  alias Taina.Ybira.File, as: YbiraFile
 
   @moduletag capture_log: true
 
@@ -19,7 +19,7 @@ defmodule Taina.JaciTest do
       {:ok, p2} = Ybira.upload(scope, tmp_image_fixture(filename: "2.jpg"))
 
       {:ok, %{items: items, next_cursor: nil}} = Jaci.list_photos(scope)
-      assert Enum.map(items, & &1.public_id) == [p2.public_id, p1.public_id]
+      assert Enum.map(items, & &1.rkey) == [p2.rkey, p1.rkey]
     end
 
     test "inclui vídeos e exclui tipos fora de image/video" do
@@ -29,9 +29,9 @@ defmodule Taina.JaciTest do
       {:ok, vid} = Ybira.upload(scope, tmp_video_fixture("clipe.mp4"))
 
       {:ok, %{items: items}} = Jaci.list_photos(scope)
-      ids = Enum.map(items, & &1.public_id)
-      assert img.public_id in ids
-      assert vid.public_id in ids
+      ids = Enum.map(items, & &1.rkey)
+      assert img.rkey in ids
+      assert vid.rkey in ids
       assert length(ids) == 2
     end
 
@@ -59,8 +59,8 @@ defmodule Taina.JaciTest do
       set_taken_at(recent.id, ~N[2024-01-01 10:00:00])
 
       {:ok, %{groups: groups}} = Jaci.timeline(scope)
-      ordered = groups |> Enum.flat_map(& &1.photos) |> Enum.map(& &1.public_id)
-      assert ordered == [other.public_id, recent.public_id]
+      ordered = groups |> Enum.flat_map(& &1.photos) |> Enum.map(& &1.rkey)
+      assert ordered == [other.rkey, recent.rkey]
     end
 
     test "groups photos by effective date" do
@@ -77,7 +77,7 @@ defmodule Taina.JaciTest do
     end
   end
 
-  # --- ZEETECH-70: regra de leitura das duas zonas ---
+  # --- regra de leitura das duas zonas (kernel) ---
 
   describe "read rule across zones" do
     test "list_photos hides another resident's casa photo until it is published" do
@@ -87,25 +87,25 @@ defmodule Taina.JaciTest do
       z = Scope.new(zelador_fixture(tekoa), tekoa)
       {:ok, photo} = Ybira.upload(a, tmp_image_fixture(filename: "p.jpg"))
 
-      refute photo.public_id in photo_ids(Jaci.list_photos(b))
-      refute photo.public_id in photo_ids(Jaci.list_photos(z))
-      assert photo.public_id in photo_ids(Jaci.list_photos(a))
+      refute photo.rkey in photo_ids(Jaci.list_photos(b))
+      refute photo.rkey in photo_ids(Jaci.list_photos(z))
+      assert photo.rkey in photo_ids(Jaci.list_photos(a))
 
-      {:ok, _} = Ybira.publicar_file(a, photo.public_id)
+      {:ok, _} = Ybira.publicar_file(a, photo.rkey)
 
-      assert photo.public_id in photo_ids(Jaci.list_photos(b))
-      assert photo.public_id in photo_ids(Jaci.list_photos(z))
+      assert photo.rkey in photo_ids(Jaci.list_photos(b))
+      assert photo.rkey in photo_ids(Jaci.list_photos(z))
     end
 
-    test "list_photos shows a casa photo to an Ava with an explicit :read grant" do
+    test "list_photos shows a casa photo to an Ava with an explicit concessao" do
       tekoa = tekoa_fixture()
       a = Scope.new(active_ava_fixture(tekoa), tekoa)
       b = Scope.new(active_ava_fixture(tekoa), tekoa)
       {:ok, photo} = Ybira.upload(a, tmp_image_fixture(filename: "p.jpg"))
 
-      {:ok, _} = Maraca.grant_permission(a.ava, b.ava, :read, "ybira_file", photo.public_id)
+      {:ok, _} = Maraca.conceder(a, "ypy.file.v0", photo.rkey, b.ava)
 
-      assert photo.public_id in photo_ids(Jaci.list_photos(b))
+      assert photo.rkey in photo_ids(Jaci.list_photos(b))
     end
 
     test "timeline hides another resident's casa photo until it is published" do
@@ -114,27 +114,29 @@ defmodule Taina.JaciTest do
       b = Scope.new(active_ava_fixture(tekoa), tekoa)
       {:ok, photo} = Ybira.upload(a, tmp_image_fixture(filename: "p.jpg"))
 
-      refute photo.public_id in timeline_ids(Jaci.timeline(b))
-      assert photo.public_id in timeline_ids(Jaci.timeline(a))
+      refute photo.rkey in timeline_ids(Jaci.timeline(b))
+      assert photo.rkey in timeline_ids(Jaci.timeline(a))
 
-      {:ok, _} = Ybira.publicar_file(a, photo.public_id)
+      {:ok, _} = Ybira.publicar_file(a, photo.rkey)
 
-      assert photo.public_id in timeline_ids(Jaci.timeline(b))
+      assert photo.rkey in timeline_ids(Jaci.timeline(b))
     end
   end
 
-  defp photo_ids({:ok, %{items: items}}), do: Enum.map(items, & &1.public_id)
+  defp photo_ids({:ok, %{items: items}}), do: Enum.map(items, & &1.rkey)
 
   defp timeline_ids({:ok, %{groups: groups}}) do
-    Enum.flat_map(groups, fn %{photos: photos} -> Enum.map(photos, & &1.public_id) end)
+    Enum.flat_map(groups, fn %{photos: photos} -> Enum.map(photos, & &1.rkey) end)
   end
 
-  # Sobrescreve o metadata para simular EXIF (a imagem gerada não tem). Operação
-  # de sistema -> `skip_tekoa_id`.
+  # Grava o metadata de rendicao com o EXIF simulado (a imagem gerada nao tem).
+  # Operacao de sistema -> `skip_tekoa_id`.
   defp set_taken_at(file_id, %NaiveDateTime{} = dt) do
-    Repo.update_all(
-      from(f in YbiraFile, where: f.id == ^file_id),
-      [set: [metadata: %{"taken_at" => NaiveDateTime.to_iso8601(dt)}]],
+    %Photo{file_id: file_id}
+    |> Photo.changeset(%{metadata: %{"taken_at" => NaiveDateTime.to_iso8601(dt)}})
+    |> Repo.insert!(
+      on_conflict: [set: [metadata: %{"taken_at" => NaiveDateTime.to_iso8601(dt)}]],
+      conflict_target: :file_id,
       skip_tekoa_id: true
     )
   end

@@ -5,26 +5,32 @@ defmodule Taina.Ybira.Workers.RenditionTest do
   import Taina.Fixtures
 
   alias Taina.Ybira
-
-  # Oban roda `:inline` em teste, então o job de rendition acontece durante o
-  # `upload/3`, daí podermos reler o arquivo logo em seguida.
-
   alias Taina.Ybira.Workers.Rendition
 
   @moduletag capture_log: true
+
+  # Oban roda `:inline` em teste, então o job de rendition acontece durante o
+  # `upload/2`, daí podermos reler o arquivo logo em seguida. Os metadados de
+  # rendição moram na tabela do produto (`Taina.Jaci.Photo`).
+
+  defp metadata!(scope, file) do
+    {:ok, metadata} = Ybira.photo_metadata(scope, file)
+    metadata
+  end
 
   test "image upload fills dimensions, EXIF slot and thumbnail paths" do
     scope = scope_fixture()
 
     {:ok, photo} = Ybira.upload(scope, tmp_image_fixture(width: 50, height: 40, filename: "p.jpg"))
-    {:ok, photo} = Ybira.get_file(scope, photo.public_id)
+    {:ok, photo} = Ybira.get_file(scope, photo.rkey)
+    metadata = metadata!(scope, photo)
 
-    assert photo.metadata["width"] == 50
-    assert photo.metadata["height"] == 40
+    assert metadata["width"] == 50
+    assert metadata["height"] == 40
     # imagem gerada não tem EXIF -> taken_at fica nulo (fallback é o upload)
-    assert Map.has_key?(photo.metadata, "taken_at")
-    assert is_nil(photo.metadata["taken_at"])
-    assert %{"sm" => sm, "md" => md} = photo.metadata["thumbnails"]
+    assert Map.has_key?(metadata, "taken_at")
+    assert is_nil(metadata["taken_at"])
+    assert %{"sm" => sm, "md" => md} = metadata["thumbnails"]
     assert File.exists?(sm)
     assert File.exists?(md)
   end
@@ -33,9 +39,9 @@ defmodule Taina.Ybira.Workers.RenditionTest do
     scope = scope_fixture()
 
     {:ok, doc} = Ybira.upload(scope, tmp_upload_fixture("texto", "a.txt"))
-    {:ok, doc} = Ybira.get_file(scope, doc.public_id)
+    {:ok, doc} = Ybira.get_file(scope, doc.rkey)
 
-    refute Map.has_key?(doc.metadata, "thumbnails")
+    refute Map.has_key?(metadata!(scope, doc), "thumbnails")
   end
 
   describe "render_file/2" do
@@ -45,8 +51,8 @@ defmodule Taina.Ybira.Workers.RenditionTest do
 
     test "regera a thumbnail que sumiu do disco", %{scope: scope} do
       {:ok, photo} = Ybira.upload(scope, tmp_image_fixture(width: 50, height: 40, filename: "r.jpg"))
-      {:ok, photo} = Ybira.get_file(scope, photo.public_id)
-      %{"sm" => sm, "md" => md} = photo.metadata["thumbnails"]
+      {:ok, photo} = Ybira.get_file(scope, photo.rkey)
+      %{"sm" => sm, "md" => md} = metadata!(scope, photo)["thumbnails"]
 
       File.rm!(sm)
       File.rm!(md)
@@ -59,7 +65,7 @@ defmodule Taina.Ybira.Workers.RenditionTest do
     test "arquivo apagado volta {:error, :gone}", %{scope: scope} do
       {:ok, photo} = Ybira.upload(scope, tmp_image_fixture(width: 50, height: 40, filename: "g.jpg"))
 
-      {:ok, _} = Ybira.delete_file(scope, photo.public_id)
+      {:ok, _} = Ybira.delete_file(scope, photo.rkey)
 
       assert {:error, :gone} = Rendition.render_file(photo.id, scope.tekoa.public_id)
     end
@@ -68,7 +74,8 @@ defmodule Taina.Ybira.Workers.RenditionTest do
       {:ok, photo} = Ybira.upload(scope, tmp_image_fixture(width: 50, height: 40, filename: "c.jpg"))
 
       # bytes destruídos por baixo: o processamento falha, o registro fica
-      File.write!(photo.filepath, "não é imagem nenhuma")
+      {:ok, path} = Ybira.blob_path(photo)
+      File.write!(path, "não é imagem nenhuma")
 
       assert {:error, _reason} = Rendition.render_file(photo.id, scope.tekoa.public_id)
     end
@@ -81,8 +88,8 @@ defmodule Taina.Ybira.Workers.RenditionTest do
 
     test "regera as miniaturas de uma tekoa, com resumo", %{scope: scope} do
       {:ok, photo} = Ybira.upload(scope, tmp_image_fixture(width: 50, height: 40, filename: "t.jpg"))
-      {:ok, photo} = Ybira.get_file(scope, photo.public_id)
-      %{"sm" => sm, "md" => md} = photo.metadata["thumbnails"]
+      {:ok, photo} = Ybira.get_file(scope, photo.rkey)
+      %{"sm" => sm, "md" => md} = metadata!(scope, photo)["thumbnails"]
 
       File.rm!(sm)
       File.rm!(md)

@@ -2,62 +2,64 @@ defmodule Taina.Jaci do
   @moduledoc """
   Jaci-lite, a galeria de fotos da comunidade.
 
-  Implementa `Taina.Jaci.Behaviour`; as regras de negócio estão lá, nos
-  `@callback`. Jaci é uma camada de **leitura** sobre o Ybira (RFC 002, D4):
-  consulta os arquivos de imagem (`mime_type image/*`) que o Ybira guarda e os
-  apresenta como grade (`list_photos/2`) e linha do tempo (`timeline/2`). Não
-  grava nem muta nada, upload, thumbnail e soft delete são do Ybira.
+  Jaci é uma camada de **leitura** sobre o Ybira (RFC 002, D4): consulta os
+  arquivos de imagem do kernel (`Ypy.Ybira.File`, `mime` de imagem e video)
+  sob a mesma regra de leitura (a do kernel, no nivel do SQL) e os apresenta
+  como grade (`list_photos/2`) e linha do tempo (`timeline/2`). Não grava nem
+  muta nada; upload, thumbnail e soft delete são do Ybira.
 
-  Como todo context, recebe um `Taina.Scope` e roda dentro de
-  `Repo.with_tekoa/2` (isolamento RLS). A paginação segue o keyset do Ybira: a
-  grade ordena por upload (`id` decrescente basta, pois é serial monótono); a
-  linha do tempo ordena pela data efetiva da foto (EXIF ou upload), exigindo um
-  cursor composto `(data, id)`.
+  Como todo context, recebe um scope (`Ypy.Scope`) e roda dentro de
+  `Repo.with_tekoa/2`. A paginação da grade segue a ordem de upload (rkey
+  decrescente, o TID é ordenável por tempo); a linha do tempo ordena pela data
+  efetiva da foto (EXIF ou upload, dos metadados de rendicao do produto),
+  exigindo um cursor composto `(data, id)`.
   """
-
-  @behaviour Taina.Jaci.Behaviour
 
   import Ecto.Query
 
+  alias Taina.Jaci.Photo
   alias Taina.Jaci.Timeline
-  alias Taina.Maraca
   alias Taina.Repo
-  alias Taina.Scope
-  alias Taina.Ybira.File, as: YbiraFile
+  alias Ypy.Scope
+  alias Ypy.Ybira.File
+  alias Ypy.Ybira.Queries, as: KernelQueries
 
   @default_limit 50
 
-  # Expressão SQL da data efetiva: captura do EXIF quando houver, senão upload.
-  # Espelha `Timeline.effective_datetime/1` e o índice de
-  # `*_jaci_photo_indexes`, os três precisam concordar.
-  defmacrop effective_ts(file) do
-    quote do
-      fragment("COALESCE((? ->> 'taken_at')::timestamp, ?)", unquote(file).metadata, unquote(file).inserted_at)
-    end
-  end
-
-  @impl true
+  @doc "A grade da galeria: fotos e videos legiveis, da mais recente para a mais antiga."
   def list_photos(%Scope{} = scope, opts \\ []) do
-    Repo.with_tekoa(scope.tekoa.public_id, fn ->
+    within_tekoa(scope, fn ->
       query =
-        from f in YbiraFile,
-          as: :readable,
-          where: is_nil(f.deleted_at) and (like(f.mime_type, "image/%") or like(f.mime_type, "video/%")),
-          where: ^Maraca.readable_dynamic(scope.ava, "ybira_file"),
-          # id serial monótono = ordem de upload; alinha com o cursor (id-only).
-          order_by: [desc: f.id]
+        scope
+        |> readable_photos()
+        |> apply_grid_cursor(Keyword.get(opts, :after_cursor))
 
       {items, next_cursor} = fetch_grid_page(query, opts)
       {:ok, %{items: items, next_cursor: next_cursor}}
     end)
   end
 
-  @impl true
+  @doc "A linha do tempo: as mesmas fotos, agrupadas pela data efetiva (EXIF ou upload)."
   def timeline(%Scope{} = scope, opts \\ []) do
-    Repo.with_tekoa(scope.tekoa.public_id, fn ->
-      {photos, next_cursor} = fetch_timeline_page(scope, opts)
-      {:ok, %{groups: Timeline.group_by_date(photos), next_cursor: next_cursor}}
+    within_tekoa(scope, fn ->
+      {rows, next_cursor} = fetch_timeline_page(scope, opts)
+      {:ok, %{groups: Timeline.group_by_date(rows), next_cursor: next_cursor}}
     end)
+  end
+
+  defp within_tekoa(%Scope{} = scope, cb), do: Repo.with_tekoa(scope.tekoa.public_id, cb)
+
+  # O conjunto legivel de fotos e videos: regra de leitura do kernel no SQL.
+  # Sem ordem: a grade ordena por upload (id), a linha do tempo pela data
+  # efetiva -- e Ecto concatena `order_by` em vez de substituir.
+  defp readable_photos(%Scope{} = scope) do
+    KernelQueries.readable(
+      from(f in File,
+        where: f.tekoa_id == ^scope.tekoa.id and is_nil(f.apagado_em),
+        where: like(f.mime, "image/%") or like(f.mime, "video/%")
+      ),
+      scope
+    )
   end
 
   # --- Grade: keyset por id (alinhado ao upload) ---
@@ -67,7 +69,7 @@ defmodule Taina.Jaci do
 
     rows =
       query
-      |> apply_id_cursor(Keyword.get(opts, :after_cursor))
+      |> order_by([f], desc: f.id)
       |> limit(^(limit + 1))
       |> Repo.all()
 
@@ -79,9 +81,9 @@ defmodule Taina.Jaci do
     end
   end
 
-  defp apply_id_cursor(query, nil), do: query
+  defp apply_grid_cursor(query, nil), do: query
 
-  defp apply_id_cursor(query, cursor) when is_binary(cursor) do
+  defp apply_grid_cursor(query, cursor) when is_binary(cursor) do
     case Base.url_decode64(cursor, padding: false) do
       {:ok, <<id::64>>} -> where(query, [f], f.id < ^id)
       _ -> query
@@ -91,17 +93,30 @@ defmodule Taina.Jaci do
   defp encode_id_cursor(%{id: id}), do: Base.url_encode64(<<id::64>>, padding: false)
 
   # --- Linha do tempo: keyset composto (data efetiva, id) ---
+  #
+  # A data efetiva mora nos metadados de rendicao do produto (`jaci_photos`),
+  # com o `inserted_at` do upload como fallback. No SQLite o `taken_at` sai de
+  # `json_extract` como texto ISO8601, que ordena como o `inserted_at` (também
+  # texto ISO8601) do Ecto.
+  defmacrop effective_ts(f, p) do
+    quote do
+      fragment(
+        "COALESCE(json_extract(?, '$.taken_at'), ?)",
+        unquote(p).metadata,
+        unquote(f).inserted_at
+      )
+    end
+  end
 
   defp fetch_timeline_page(%Scope{} = scope, opts) do
     limit = Keyword.get(opts, :limit, @default_limit)
 
     base =
-      from f in YbiraFile,
-        as: :readable,
-        where: is_nil(f.deleted_at) and (like(f.mime_type, "image/%") or like(f.mime_type, "video/%")),
-        where: ^Maraca.readable_dynamic(scope.ava, "ybira_file"),
-        order_by: [desc: effective_ts(f), desc: f.id],
-        select: %{file: f, ts: effective_ts(f)}
+      scope
+      |> readable_photos()
+      |> join(:left, [f], p in Photo, on: p.file_id == f.id)
+      |> order_by([f, p], desc: effective_ts(f, p), desc: f.id)
+      |> select([f, p], %{file: f, ts: effective_ts(f, p)})
 
     rows =
       base
@@ -111,10 +126,9 @@ defmodule Taina.Jaci do
 
     if length(rows) > limit do
       page = Enum.take(rows, limit)
-      last = List.last(page)
-      {Enum.map(page, & &1.file), encode_timeline_cursor(last)}
+      {page, encode_timeline_cursor(List.last(page))}
     else
-      {Enum.map(rows, & &1.file), nil}
+      {rows, nil}
     end
   end
 
@@ -123,25 +137,34 @@ defmodule Taina.Jaci do
   defp apply_timeline_cursor(query, {ts, id}) do
     where(
       query,
-      [f],
-      effective_ts(f) < ^ts or (effective_ts(f) == ^ts and f.id < ^id)
+      [f, p],
+      effective_ts(f, p) < ^ts or (effective_ts(f, p) == ^ts and f.id < ^id)
     )
   end
 
-  defp encode_timeline_cursor(%{ts: %NaiveDateTime{} = ts, file: %{id: id}}) do
-    Base.url_encode64("#{NaiveDateTime.to_iso8601(ts)}|#{id}", padding: false)
-  end
+  defp encode_timeline_cursor(%{ts: ts, file: %{id: id}}), do: Base.url_encode64("#{to_iso(ts)}|#{id}", padding: false)
+
+  defp to_iso(%NaiveDateTime{} = ts), do: NaiveDateTime.to_iso8601(ts)
+  defp to_iso(%DateTime{} = ts), do: DateTime.to_iso8601(ts)
+  defp to_iso(ts) when is_binary(ts), do: ts
 
   defp decode_timeline_cursor(nil), do: nil
 
   defp decode_timeline_cursor(cursor) when is_binary(cursor) do
     with {:ok, decoded} <- Base.url_decode64(cursor, padding: false),
          [iso, id] <- String.split(decoded, "|", parts: 2),
-         {:ok, ts} <- NaiveDateTime.from_iso8601(iso),
+         {:ok, ts} <- parse_ts(iso),
          {id, ""} <- Integer.parse(id) do
       {ts, id}
     else
       _ -> nil
+    end
+  end
+
+  defp parse_ts(iso) do
+    case NaiveDateTime.from_iso8601(iso) do
+      {:ok, ts} -> {:ok, ts}
+      _ -> DateTime.from_iso8601(iso)
     end
   end
 end

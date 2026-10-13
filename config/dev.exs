@@ -10,18 +10,18 @@ config :phoenix, :plug_init_mode, :runtime
 # in production as building large stacktraces may be expensive.
 config :phoenix, :stacktrace_depth, 20
 
-# Configure your database. Honors the standard libpq env vars (PGHOST/PGUSER/…)
-# so CI — and the `taina.backup.verify` round-trip — can point at a service DB
-# without code changes; falls back to local defaults otherwise.
+# SQLite local: um arquivo por caixa de dev.
 config :taina, Taina.Repo,
-  username: System.get_env("PGUSER") || "postgres",
-  password: System.get_env("PGPASSWORD") || "postgres",
-  hostname: System.get_env("PGHOST") || "localhost",
-  port: String.to_integer(System.get_env("PGPORT") || "5432"),
-  database: System.get_env("PGDATABASE") || "taina_dev",
+  database: Path.expand("../taina_dev.db", __DIR__),
   stacktrace: true,
   show_sensitive_data_on_connection_error: true,
-  pool_size: 10
+  pool_size: 10,
+  journal_mode: :wal,
+  busy_timeout: 5_000,
+  # Escritor pega o lock no BEGIN: com DEFERRED, a leitura que vira escrita
+  # falha na hora (SQLITE_BUSY_SNAPSHOT) se outro escritor commitou no meio --
+  # o busy_timeout nao cobre. E o caso upload (box) x rendition (Oban).
+  default_transaction_mode: :immediate
 
 config :taina, TainaWeb.Endpoint,
   http: [ip: {0, 0, 0, 0}, port: String.to_integer(System.get_env("PORT") || "4000")],

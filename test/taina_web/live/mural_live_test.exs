@@ -1,7 +1,8 @@
 defmodule TainaWeb.MuralLiveTest do
   @moduledoc """
   Tela do mural: frases simples de quem fez o quê, agrupadas por dia,
-  somente leitura para todos os papéis (zelador incluso).
+  somente leitura para todos os papéis (zelador incluso). O registro é a
+  projecao da cadeia unica: atos do produto e verbos do kernel.
   """
 
   use TainaWeb.ConnCase, async: true
@@ -28,39 +29,24 @@ defmodule TainaWeb.MuralLiveTest do
     assert html =~ "Ninguém edita e ninguém apaga"
   end
 
-  test "atos do dia a dia viram frases com quem fez e quando", %{conn: conn, tekoa: tekoa, zelador: zelador} do
+  test "verbos do kernel viram frases com quem fez e quando", %{conn: conn, tekoa: tekoa, zelador: zelador} do
     scope = Scope.new(zelador, tekoa)
     path = tmp_upload_fixture("conteúdo", "estatuto.pdf")
     {:ok, file} = Ybira.upload(scope, path, filename: "estatuto.pdf")
-    {:ok, _file} = Ybira.publicar_file(scope, file.public_id)
+    {:ok, _file} = Ybira.publicar_file(scope, file.rkey)
 
     {:ok, _lv, html} = conn |> log_in(zelador) |> live(~p"/mural")
 
-    assert html =~ "Ana publicou o arquivo &quot;estatuto.pdf&quot; na praça."
+    assert html =~ "Ana guardou um arquivo na caixa."
+    assert html =~ "Ana publicou um arquivo na praça."
     # sob "Hoje"/"Ontem" a hora basta: o dia nao se repete em cada linha
     assert html =~ "Hoje"
     assert html =~ ~r/\d{2}:\d{2}/
     refute html =~ "hoje"
   end
 
-  test "pedido de acesso vira frase com quem pediu e de quem", %{
-    conn: conn,
-    tekoa: tekoa,
-    zelador: zelador,
-    morador: morador
-  } do
-    owner_scope = Scope.new(zelador, tekoa)
-    path = tmp_upload_fixture("segredo", "diario.txt")
-    {:ok, file} = Ybira.upload(owner_scope, path, filename: "diario.txt")
-    {:ok, _request} = Maraca.request_access(morador, zelador, "ybira_file", file.public_id, "quero ler")
-
-    {:ok, _lv, html} = conn |> log_in(zelador) |> live(~p"/mural")
-
-    assert html =~ "Bruno pediu acesso à casa de Ana."
-  end
-
   test "zelador vê o mesmo mural, sem controle nenhum sobre o registro", %{conn: conn, tekoa: tekoa, zelador: zelador} do
-    :ok = Maraca.record_event(tekoa.public_id, zelador.id, :invite_created, %{"role" => "morador"})
+    :ok = Maraca.record_event(Scope.new(zelador, tekoa), :invite_created, %{"role" => "morador"})
 
     {:ok, lv, html} = conn |> log_in(zelador) |> live(~p"/mural")
 
@@ -76,10 +62,10 @@ defmodule TainaWeb.MuralLiveTest do
     tekoa: tekoa,
     zelador: zelador
   } do
-    assert {:ok, invited} = Maraca.invite_user(zelador, tekoa, role: :zelador)
+    assert {:ok, %{token: token}} = Maraca.invite_user(zelador, tekoa, role: :zelador)
 
     assert {:ok, _accepted} =
-             Maraca.accept_invite(invited.invite_token, %{
+             Maraca.accept_invite(token, %{
                "username" => "joana",
                "display_name" => "Joana",
                "password" => "senhasegura123",
@@ -96,7 +82,7 @@ defmodule TainaWeb.MuralLiveTest do
     tekoa: tekoa,
     zelador: zelador
   } do
-    :ok = Maraca.record_event(tekoa.public_id, zelador.id, :invite_revoked, %{"role" => "zelador"})
+    :ok = Maraca.record_event(Scope.new(zelador, tekoa), :invite_revoked, %{"role" => "zelador"})
 
     {:ok, _lv, html} = conn |> log_in(zelador) |> live(~p"/mural")
 
@@ -108,7 +94,7 @@ defmodule TainaWeb.MuralLiveTest do
     tekoa: tekoa,
     morador: morador
   } do
-    :ok = Maraca.record_event(tekoa.public_id, morador.id, :invite_accepted, %{})
+    :ok = Maraca.record_event(Scope.new(morador, tekoa), :invite_accepted, %{})
 
     {:ok, _lv, html} = conn |> log_in(morador) |> live(~p"/mural")
 
@@ -122,7 +108,7 @@ defmodule TainaWeb.MuralLiveTest do
     morador: morador
   } do
     scope = Scope.new(zelador, tekoa)
-    assert {:ok, _ava} = Maraca.mint_reset_link(scope, morador)
+    assert {:ok, _} = Maraca.mint_reset_link(scope, morador)
 
     {:ok, _lv, html} = conn |> log_in(zelador) |> live(~p"/mural")
 
@@ -144,26 +130,31 @@ defmodule TainaWeb.MuralLiveTest do
 
     {:ok, _lv, html} = conn |> log_in(zelador) |> live(~p"/mural")
 
-    # ganhou o papel, e depois voltou a ser morador
-    assert html =~ "Ana deu a Bruno o cuidado da máquina."
-    assert html =~ "Ana tirou de Bruno o cuidado da máquina."
+    # A troca de papel e verbo do kernel: o payload da cadeia nomina o papel,
+    # nao a pessoa (a projecao de nomes cobre o ator). Desativar e reativar
+    # sao atos do produto e nomeiam a pessoa.
+    assert html =~ "Ana deu a um morador o cuidado da máquina."
+    assert html =~ "Ana desativou a conta de Bruno."
     assert html =~ "Ana reativou a conta de Bruno."
+    assert html =~ "Ana tirou de um morador o cuidado da máquina."
   end
 
-  test "pagina com 'carregar mais' quando passa da primeira página", %{conn: conn, tekoa: tekoa, morador: morador} do
-    # 55 atos do sistema: a primeira página (50) deixa resto.
+  test "pagina com 'carregar mais' quando passa da primeira página", %{conn: conn, tekoa: tekoa, zelador: zelador} do
+    # 55 atos do zelador: a primeira página (50) deixa resto.
+    scope = Scope.new(zelador, tekoa)
+
     for i <- 1..55 do
-      :ok = Maraca.record_event(tekoa.public_id, nil, :quota_changed, %{"to" => i})
+      :ok = Maraca.record_event(scope, :quota_changed, %{"to" => i})
     end
 
-    {:ok, lv, html} = conn |> log_in(morador) |> live(~p"/mural")
+    {:ok, lv, html} = conn |> log_in(zelador) |> live(~p"/mural")
 
     assert html =~ "Carregando mais..."
 
     html = render_hook(lv, "load-more")
 
     refute html =~ "Carregando mais..."
-    assert html =~ "O sistema mudou o limite de armazenamento para"
+    assert html =~ "mudou o limite de armazenamento para"
   end
 
   test "Mural aparece na navegação de baixo e na lateral", %{conn: conn, morador: morador} do

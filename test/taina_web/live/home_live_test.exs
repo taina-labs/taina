@@ -22,6 +22,6 @@ defmodule TainaWeb.HomeLiveTest do
     assert html =~ "Quilombo do Café"
     assert html =~ "Espaço da comunidade"
     assert html =~ "Recentes"
-    assert html =~ file.original_filename
+    assert html =~ file.nome
   end
 end

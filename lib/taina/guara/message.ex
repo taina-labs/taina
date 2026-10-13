@@ -24,11 +24,10 @@ defmodule Taina.Guara.Message do
   import Ecto.Changeset
 
   alias Taina.Guara.Chat
-  alias Taina.Maraca.Ava
-  alias Taina.Repo.PublicId
-  alias Taina.Ybira.File
+  alias Ypy.Maraca.Ava
+  alias Ypy.PublicId
+  alias Ypy.Ybira.File
 
-  @schema_prefix "guara"
   schema "messages" do
     field :content, :string
     field :public_id, PublicId, autogenerate: true

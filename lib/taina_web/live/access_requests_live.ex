@@ -31,19 +31,22 @@ defmodule TainaWeb.AccessRequestsLive do
 
   @impl true
   def handle_event("approve", %{"id" => id}, socket) do
-    numeric_id = String.to_integer(id)
-    message = approved_message(socket.assigns.requests, socket.assigns.file_names, numeric_id)
+    pedido = Enum.find(socket.assigns.requests, &("#{&1.id}" == id))
+    message = approved_message(socket.assigns.requests, socket.assigns.file_names, pedido)
 
-    case Maraca.approve_access_request(socket.assigns.current_scope.ava, numeric_id) do
-      {:ok, _permission} ->
+    case pedido && Maraca.aprovar(socket.assigns.current_scope, pedido) do
+      {:ok, _concessao} ->
         {:noreply,
          socket
          |> remove_request(id)
          |> assign_grants()
          |> Phoenix.LiveView.put_flash(:info, message)}
 
-      {:error, reason} ->
-        {:noreply, handle_decision_error(socket, reason, id, &approve_error/1)}
+      result when result in [nil, {:error, :not_authorized}, {:error, :not_pending}, {:error, :not_found}] ->
+        {:noreply, socket |> remove_request(id) |> decision_gone()}
+
+      {:error, _reason} ->
+        {:noreply, Phoenix.LiveView.put_flash(socket, :error, gettext("Este pedido já foi resolvido."))}
     end
   end
 
@@ -60,16 +63,28 @@ defmodule TainaWeb.AccessRequestsLive do
   end
 
   def handle_event("deny", %{"id" => id}, socket) do
-    case Maraca.deny_access_request(socket.assigns.current_scope.ava, String.to_integer(id)) do
-      {:ok, _request} ->
+    pedido = Enum.find(socket.assigns.requests, &("#{&1.id}" == id))
+
+    case pedido && Maraca.negar(socket.assigns.current_scope, pedido) do
+      {:ok, _pedido} ->
         {:noreply,
          socket
          |> assign(:confirm_deny, nil)
          |> remove_request(id)
          |> Phoenix.LiveView.put_flash(:info, gettext("Pedido negado."))}
 
-      {:error, reason} ->
-        {:noreply, socket |> assign(:confirm_deny, nil) |> handle_decision_error(reason, id, &deny_error/1)}
+      result when result in [nil, {:error, :not_authorized}, {:error, :not_pending}, {:error, :not_found}] ->
+        {:noreply,
+         socket
+         |> assign(:confirm_deny, nil)
+         |> remove_request(id)
+         |> decision_gone()}
+
+      {:error, _reason} ->
+        {:noreply,
+         socket
+         |> assign(:confirm_deny, nil)
+         |> Phoenix.LiveView.put_flash(:error, gettext("Este pedido já foi resolvido."))}
     end
   end
 
@@ -77,17 +92,17 @@ defmodule TainaWeb.AccessRequestsLive do
   # primeiro, ou o pedido já não existe mais): recarrega em vez de culpar
   # ninguém, a lista volta certa.
   def handle_event("revoke", _params, socket) do
-    grant = find_grant(socket.assigns.grants, socket.assigns.confirm_revoke)
+    concessao = find_grant(socket.assigns.grants, socket.assigns.confirm_revoke)
 
-    case grant && revoke_grant(socket.assigns.current_scope.ava, grant) do
-      :ok ->
+    case concessao && Maraca.revogar(socket.assigns.current_scope, concessao) do
+      {:ok, _concessao} ->
         {:noreply,
          socket
          |> assign(:confirm_revoke, nil)
          |> assign_grants()
-         |> Phoenix.LiveView.put_flash(:info, revoked_message(grant))}
+         |> Phoenix.LiveView.put_flash(:info, revoked_message(concessao))}
 
-      result when result in [nil, {:error, :not_found}] ->
+      result when result in [nil, {:error, :not_authorized}, {:error, :invalid_status}, {:error, :not_found}] ->
         {:noreply, access_gone(socket)}
 
       _error ->
@@ -102,10 +117,6 @@ defmodule TainaWeb.AccessRequestsLive do
   end
 
   def handle_event("retry-grants", _params, socket), do: {:noreply, assign_grants(socket)}
-
-  defp revoke_grant(revoker, grant) do
-    Maraca.revoke_permission(revoker, grant.ava, :read, grant.resource_type, grant.resource_id)
-  end
 
   defp access_gone(socket) do
     {:noreply,
@@ -126,7 +137,7 @@ defmodule TainaWeb.AccessRequestsLive do
 
   defp assign_requests(socket) do
     scope = socket.assigns.current_scope
-    requests = Maraca.list_access_requests(scope.ava)
+    {:ok, requests} = Maraca.pedidos_recebidos(scope)
 
     socket
     |> assign(:requests, requests)
@@ -159,24 +170,14 @@ defmodule TainaWeb.AccessRequestsLive do
     end
   end
 
-  # O Maraca devolve a lista crua e levanta em falha de banco; na borda da
-  # tela resolvemos para o tuple de resultado, sem exceção como controle.
-  defp load_grants(scope) do
-    {:ok, Maraca.list_my_grants(scope.ava)}
-  rescue
-    _error -> {:error, :load_failed}
-  end
+  # O Maraca devolve `{:ok, lista}` (e `{:error, motivo}` em falha de banco);
+  # a borda da tela degrada para o estado de erro da seção, sem exceção.
+  defp load_grants(scope), do: Maraca.concessoes_concedidas(scope)
 
   # Pedido resolvido entre o render e o clique (decidido em outra aba): some a
   # linha sem mensagem de erro tecnica.
-  defp handle_decision_error(socket, reason, id, _mapper) when reason in [:invalid_status, :not_found] do
-    socket
-    |> remove_request(id)
-    |> Phoenix.LiveView.put_flash(:error, gettext("Este pedido já foi resolvido."))
-  end
-
-  defp handle_decision_error(socket, reason, _id, mapper) do
-    Phoenix.LiveView.put_flash(socket, :error, mapper.(reason))
+  defp decision_gone(socket) do
+    Phoenix.LiveView.put_flash(socket, :error, gettext("Este pedido já foi resolvido."))
   end
 
   defp remove_request(socket, id) do
@@ -194,69 +195,71 @@ defmodule TainaWeb.AccessRequestsLive do
   # --- core puro: dados -> dados ---
 
   defp account_alert?(scope) do
-    Maraca.list_access_requests(scope.ava) != [] or Maraca.list_my_requests(scope.ava) != []
+    {:ok, recebidos} = Maraca.pedidos_recebidos(scope)
+    {:ok, enviados} = Maraca.pedidos_enviados(scope)
+    recebidos != [] or enviados != []
   end
 
   # Nome do arquivo de cada pedido, resolvido no escopo do dono (o pedido traz
-  # o public_id; o dono pode ler o próprio arquivo). Arquivo que não existe
-  # mais vira rótulo neutro, nunca erro de tela.
+  # o rkey; o dono pode ler o próprio arquivo). Arquivo que não existe mais
+  # vira rótulo neutro, nunca erro de tela.
   defp file_names(scope, requests) do
     requests
-    |> Enum.filter(&(&1.resource_type == "ybira_file"))
-    |> Enum.uniq_by(& &1.resource_id)
-    |> Map.new(fn request -> {request.resource_id, resolve_file_name(scope, request.resource_id)} end)
+    |> Enum.filter(&(&1.tipo == "ypy.file.v0"))
+    |> Enum.uniq_by(& &1.recurso)
+    |> Map.new(fn request -> {request.recurso, resolve_file_name(scope, request.recurso)} end)
   end
 
-  defp resolve_file_name(scope, resource_id) do
-    case Ybira.get_file(scope, resource_id) do
-      {:ok, file} -> file.original_filename
+  defp resolve_file_name(scope, rkey) do
+    case Ybira.get_file(scope, rkey) do
+      {:ok, file} -> file.nome
       _error -> gettext("arquivo apagado")
     end
   end
 
   defp file_display_name(file_names, request) do
-    Map.get(file_names, request.resource_id, gettext("arquivo apagado"))
+    Map.get(file_names, request.recurso, gettext("arquivo apagado"))
   end
 
   defp requester_name(request) do
-    request.requester.display_name || request.requester.username
+    request.pedinte.display_name || request.pedinte.username
   end
 
-  defp recipient_name(grant) do
-    grant.ava.display_name || grant.ava.username
+  defp recipient_name(concessao) do
+    concessao.leitor.display_name || concessao.leitor.username
   end
 
   # Nome do recurso concedido, resolvido no escopo do dono (ele pode ler o que
   # concedeu). Recurso que não existe mais vira rótulo neutro: a linha segue
   # valendo, para limpar o acesso que ficou órfão.
-  defp grant_names(scope, grants) do
-    grants
-    |> Enum.uniq_by(& &1.resource_id)
-    |> Map.new(fn grant -> {grant.resource_id, resolve_resource_name(scope, grant)} end)
+  defp grant_names(scope, concessoes) do
+    concessoes
+    |> Enum.uniq_by(& &1.recurso)
+    |> Map.new(fn concessao -> {concessao.recurso, resolve_resource_name(scope, concessao)} end)
   end
 
-  defp resolve_resource_name(scope, %{resource_type: "ybira_file", resource_id: resource_id}) do
-    case Ybira.get_file(scope, resource_id) do
-      {:ok, file} -> file.original_filename
+  defp resolve_resource_name(scope, %{tipo: "ypy.file.v0", recurso: rkey}) do
+    case Ybira.get_file(scope, rkey) do
+      {:ok, file} -> file.nome
       _error -> gettext("arquivo apagado")
     end
   end
 
-  defp resolve_resource_name(scope, %{resource_type: "ybira_folder", resource_id: resource_id}) do
-    case Ybira.get_folder(scope, resource_id) do
-      {:ok, folder} -> folder.name
+  defp resolve_resource_name(scope, %{tipo: "ypy.folder.v0", recurso: rkey}) do
+    case Ybira.get_folder(scope, rkey) do
+      {:ok, folder} -> folder.nome
       _error -> gettext("pasta apagada")
     end
   end
 
-  defp resolve_resource_name(_scope, _grant), do: gettext("arquivo apagado")
+  defp resolve_resource_name(_scope, _concessao), do: gettext("arquivo apagado")
 
   # "doc.txt, desde há 2 semanas": o que foi liberado e há quanto, calmo, sem
   # virar tabela de auditoria.
-  defp grant_meta(grant, names) do
+  defp grant_meta(concessao, names) do
     gettext("%{file}, desde %{when}",
-      file: Map.get(names, grant.resource_id, gettext("arquivo apagado")),
-      when: relative_time(grant.inserted_at)
+      file: Map.get(names, concessao.recurso, gettext("arquivo apagado")),
+      when: relative_time(concessao.concedida_em)
     )
   end
 
@@ -288,7 +291,7 @@ defmodule TainaWeb.AccessRequestsLive do
         when: relative_time(request.inserted_at)
       )
 
-    case request.reason do
+    case request.motivo do
       nil -> base
       reason -> base <> " " <> gettext("Motivo: %{reason}", reason: reason)
     end
@@ -296,20 +299,12 @@ defmodule TainaWeb.AccessRequestsLive do
 
   # Flash da aprovação nomeia o arquivo: a decisão é sobre aquele arquivo, não
   # sobre "um pedido".
-  defp approved_message(requests, file_names, id) do
-    request = Enum.find(requests, &(&1.id == id))
-
-    case request && Map.fetch(file_names, request.resource_id) do
+  defp approved_message(_requests, file_names, pedido) do
+    case pedido && Map.fetch(file_names, pedido.recurso) do
       {:ok, file} -> gettext("Acesso a %{file} liberado. A pessoa já pode ler.", file: file)
       _other -> gettext("Acesso liberado. A pessoa já pode ler.")
     end
   end
-
-  defp approve_error(:not_owner), do: gettext("Este pedido não é seu para decidir.")
-  defp approve_error(_reason), do: gettext("Este pedido já foi resolvido.")
-
-  defp deny_error(:not_owner), do: gettext("Este pedido não é seu para decidir.")
-  defp deny_error(_reason), do: gettext("Este pedido já foi resolvido.")
 
   @impl true
   def render(assigns) do

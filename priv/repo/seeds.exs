@@ -39,11 +39,11 @@ else
   # --- Moradores: convite por link + aceite, o fluxo real (sem e-mail) ---
 
   convidar_e_aceitar = fn username, display_name ->
-    {:ok, convidado} = Maraca.invite_user(zelador, tekoa, role: :morador)
+    {:ok, %{token: token}} = Maraca.invite_user(zelador, tekoa, role: :morador)
     senha = "morador-#{username}-123"
 
     {:ok, _ava} =
-      Maraca.accept_invite(convidado.invite_token, %{
+      Maraca.accept_invite(token, %{
         "username" => username,
         "display_name" => display_name,
         "password" => senha,
@@ -117,7 +117,7 @@ else
     # Sobe as fotos para a pasta "Fotos da comunidade".
     Enum.each(paleta, fn {nome, rgb} ->
       caminho = gera_foto.(nome, rgb)
-      {:ok, _} = Ybira.upload(scope, caminho, filename: nome, folder_id: fotos.id)
+      {:ok, _} = Ybira.upload(scope, caminho, filename: nome, folder_rkey: fotos.rkey)
     end)
 
     # Documentos.
@@ -127,15 +127,15 @@ else
         "Ata da assembleia comunitária\n\nPauta: uso do espaço, mutirão de limpeza, festa junina.\n"
       )
 
-    {:ok, _} = Ybira.upload(scope, ata, filename: "Ata da assembleia.txt", folder_id: documentos.id)
+    {:ok, _} = Ybira.upload(scope, ata, filename: "Ata da assembleia.txt", folder_rkey: documentos.rkey)
 
     orcamento =
       gera_texto.("orcamento-2025.txt", "Orçamento 2025\n\nReceitas: rifas, doações.\nDespesas: materiais, manutenção.\n")
 
-    {:ok, _} = Ybira.upload(scope, orcamento, filename: "Orçamento 2025.txt", folder_id: documentos.id)
+    {:ok, _} = Ybira.upload(scope, orcamento, filename: "Orçamento 2025.txt", folder_rkey: documentos.rkey)
 
     estatuto = gera_pdf.("estatuto.pdf")
-    {:ok, _} = Ybira.upload(scope, estatuto, filename: "Estatuto.pdf", folder_id: documentos.id)
+    {:ok, _} = Ybira.upload(scope, estatuto, filename: "Estatuto.pdf", folder_rkey: documentos.rkey)
 
     # Um arquivo na raiz (logo), para a Home ter "recentes" variados.
     logo = gera_foto.("logo-da-radio.png", [255, 217, 163])

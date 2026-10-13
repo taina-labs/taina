@@ -74,7 +74,7 @@ packages.mixRelease {
   mixFodDeps = packages.fetchMixDeps {
     pname = "taina-deps";
     inherit version src;
-    hash = "sha256-8Vk85jwWA8qIxF0DCd8YjTpquFMRDgutgE8ERkrPvo0=";
+    hash = "sha256-/dyxM6kC4GUmHCyCB7rOaYALRfTzLde6RJQu43kdJoM=";
   };
 
   nativeBuildInputs = [ pkg-config ];
@@ -88,6 +88,17 @@ packages.mixRelease {
   ESBUILD_BINARY_PATH = "${esbuild}/bin/esbuild";
   # `vix` compiles a NIF against the libvips in buildInputs.
   VIX_COMPILATION_MODE = "PLATFORM_PROVIDED_LIBVIPS";
+
+  # Deps compile in mixRelease's configurePhase, so the force_build switch has
+  # to be in place before then (preBuild would be too late). exqlite's
+  # elixir_make would otherwise try to download a precompiled NIF, which the
+  # sandbox forbids (and its read-only HOME aborts before the source fallback).
+  preConfigure = ''
+    cat >> config/config.exs <<EOF
+
+config :elixir_make, :force_build, exqlite: true
+EOF
+  '';
 
   # Build and digest the assets before installPhase's `mix release` copies
   # priv/ into the release. postBuild runs after `mix compile`.

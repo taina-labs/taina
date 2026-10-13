@@ -7,17 +7,17 @@ defmodule Mix.Tasks.Taina.Backup.Verify do
 
   Faz um ciclo completo contra um **banco real** (não o sandbox de teste):
 
-    1. semeia um marcador no banco (`maraca.tekoas`) e no storage;
+    1. semeia um marcador no banco (`maraca_mural`) e no storage;
     2. roda `Backup.run/1`;
     3. destrói os dados (apaga a linha e o storage);
     4. roda `Backup.restore/1`;
     5. confere que marcador de banco **e** de storage voltaram.
 
-  Não sobe a árvore de supervisão da app (sem pool do Ecto, sem Oban): só carrega
-  a config, sobe o `:postgrex` e fala direto com o banco — assim o
-  `pg_restore --clean` não esbarra em planos em cache do pool.
+  Fala com o SQLite por conexões Exqlite próprias, sem subir a árvore de
+  supervisão da app (sem pool do Ecto, sem Oban): o restore substitui o arquivo
+  do banco inteiro, então nada dele pode estar aberto no processo.
 
-  > **Destrutivo.** Roda contra o banco apontado por `Taina.Repo`/`DATABASE_URL`.
+  > **Destrutivo.** Roda contra o banco apontado por `Taina.Repo`/`DATABASE_PATH`.
   > Use só em CI ou num banco descartável.
 
       MIX_ENV=dev mix taina.backup.verify
@@ -31,7 +31,7 @@ defmodule Mix.Tasks.Taina.Backup.Verify do
 
   @impl Mix.Task
   def run(_args) do
-    {:ok, _} = Application.ensure_all_started(:postgrex)
+    {:ok, _} = Application.ensure_all_started(:exqlite)
 
     uniq = System.unique_integer([:positive])
     storage = Path.join(System.tmp_dir!(), "taina_backup_verify_storage_#{uniq}")
@@ -39,25 +39,26 @@ defmodule Mix.Tasks.Taina.Backup.Verify do
     marker_rel = "verify/marker.txt"
     marker_path = Path.join(storage, marker_rel)
     token = "marker-#{uniq}"
-    public_id = "verify_#{uniq}"
+    marker = "verify_#{uniq}"
+    db_path = db_path()
 
     File.mkdir_p!(Path.dirname(marker_path))
     File.write!(marker_path, token)
 
-    {:ok, conn} = Postgrex.start_link(postgrex_opts())
-
-    seed(conn, public_id)
+    {:ok, conn} = Exqlite.Sqlite3.open(db_path)
+    seed(conn, marker)
 
     {:ok, %{archive: archive}} = Backup.run(dir: backup_dir, storage_root: storage)
     info("backup gerado: #{archive}")
 
-    destroy(conn, public_id, storage)
+    destroy(conn, marker, storage)
+    :ok = Exqlite.Sqlite3.close(conn)
     info("dados destruídos")
 
-    {:ok, :restored} = Backup.restore(archive, storage_root: storage)
+    {:ok, :restored} = Backup.restore(archive, storage_root: storage, database_path: db_path)
     info("restore concluído")
 
-    assert_db_restored!(public_id)
+    assert_db_restored!(db_path, marker)
     assert_storage_restored!(marker_path, token)
 
     File.rm_rf(storage)
@@ -66,29 +67,66 @@ defmodule Mix.Tasks.Taina.Backup.Verify do
     Mix.shell().info([:green, "backup/restore round-trip OK", :reset])
   end
 
-  defp seed(conn, public_id) do
-    Postgrex.query!(
-      conn,
-      "INSERT INTO maraca.tekoas (name, public_id, inserted_at, updated_at) VALUES ($1, $2, now(), now())",
-      ["backup-verify-#{public_id}", public_id]
-    )
+  # O marcador vai pro mural (append-only, N entradas por Tekoa). A Tekoa em si
+  # e unica por box (`single_tekoa_enforcement`), entao reusamos a existente ou
+  # criamos uma so quando o banco esta vazio (CI).
+  defp seed(conn, marker) do
+    now = "strftime('%Y-%m-%dT%H:%M:%SZ', 'now')"
+    seq = System.unique_integer([:positive])
+
+    exec!(conn, """
+    INSERT INTO maraca_mural (seq, tipo, payload, signature, cid, tekoa_id, inserted_at)
+    VALUES (#{seq}, 'verify', '{}', x'00', '#{marker}', #{tekoa_id(conn)}, #{now})
+    """)
   end
 
-  defp destroy(conn, public_id, storage) do
-    Postgrex.query!(conn, "DELETE FROM maraca.tekoas WHERE public_id = $1", [public_id])
+  defp tekoa_id(conn) do
+    case query_one(conn, "SELECT id FROM maraca_tekoas LIMIT 1") do
+      nil ->
+        now = "strftime('%Y-%m-%dT%H:%M:%SZ', 'now')"
+
+        exec!(conn, """
+        INSERT INTO maraca_tekoas (name, domain, public_id, inserted_at, updated_at)
+        VALUES ('backup-verify', 'backup-verify.local', 'backup_verify', #{now}, #{now})
+        """)
+
+        {:ok, id} = Exqlite.Sqlite3.last_insert_rowid(conn)
+        id
+
+      id ->
+        id
+    end
+  end
+
+  defp destroy(conn, marker, storage) do
+    exec!(conn, "DELETE FROM maraca_mural WHERE cid = '#{marker}'")
     File.rm_rf!(storage)
   end
 
-  # Conexão nova: após `pg_restore --clean` os objetos foram recriados, então
-  # consultamos com um cliente que não tem planos antigos em cache.
-  defp assert_db_restored!(public_id) do
-    {:ok, conn} = Postgrex.start_link(postgrex_opts())
+  # Conexão nova: o restore substituiu o arquivo do banco inteiro, então o
+  # handle anterior não serve mais.
+  defp assert_db_restored!(db_path, marker) do
+    {:ok, conn} = Exqlite.Sqlite3.open(db_path)
 
-    %{rows: [[count]]} =
-      Postgrex.query!(conn, "SELECT count(*) FROM maraca.tekoas WHERE public_id = $1", [public_id])
+    try do
+      {:ok, stmt} = Exqlite.Sqlite3.prepare(conn, "SELECT count(*) FROM maraca_mural WHERE cid = ?")
+      :ok = Exqlite.Sqlite3.bind(stmt, [marker])
+      {:ok, [[count]]} = Exqlite.Sqlite3.fetch_all(conn, stmt)
 
-    if count != 1 do
-      Mix.raise("restore do banco falhou: tekoa marcador não voltou (count=#{count})")
+      if count != 1 do
+        Mix.raise("restore do banco falhou: marcador do mural nao voltou (count=#{count})")
+      end
+    after
+      Exqlite.Sqlite3.close(conn)
+    end
+  end
+
+  defp query_one(conn, sql) do
+    {:ok, stmt} = Exqlite.Sqlite3.prepare(conn, sql)
+
+    case Exqlite.Sqlite3.step(conn, stmt) do
+      {:row, [value]} -> value
+      _ -> nil
     end
   end
 
@@ -99,26 +137,15 @@ defmodule Mix.Tasks.Taina.Backup.Verify do
     end
   end
 
-  defp postgrex_opts do
-    uri = URI.parse(Backup.database_url())
-    {user, pass} = parse_userinfo(uri.userinfo)
-    database = (uri.path || "/postgres") |> String.trim_leading("/") |> URI.decode()
-
-    [
-      hostname: uri.host || "localhost",
-      port: uri.port || 5432,
-      username: user,
-      password: pass,
-      database: database
-    ]
+  defp db_path do
+    Application.fetch_env!(:taina, Taina.Repo)[:database] ||
+      Mix.raise("Taina.Repo sem :database; aponte DATABASE_PATH para um arquivo SQLite")
   end
 
-  defp parse_userinfo(nil), do: {"postgres", nil}
-
-  defp parse_userinfo(userinfo) do
-    case String.split(userinfo, ":", parts: 2) do
-      [user] -> {URI.decode(user), nil}
-      [user, pass] -> {URI.decode(user), URI.decode(pass)}
+  defp exec!(conn, sql) do
+    case Exqlite.Sqlite3.execute(conn, sql) do
+      :ok -> :ok
+      {:error, reason} -> Mix.raise("falha no SQLite: #{inspect(reason)} (#{sql})")
     end
   end
 

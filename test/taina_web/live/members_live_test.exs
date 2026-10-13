@@ -95,7 +95,7 @@ defmodule TainaWeb.MembersLiveTest do
   end
 
   test "zelador revoga um convite pendente", %{conn: conn, zelador: zelador, tekoa: tekoa} do
-    {:ok, invited} = Maraca.invite_user(zelador, tekoa)
+    {:ok, %{ava: invited}} = Maraca.invite_user(zelador, tekoa)
 
     {:ok, lv, _html} = conn |> log_in(zelador) |> live(~p"/membros")
 

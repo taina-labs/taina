@@ -15,7 +15,7 @@ defmodule Taina.YbiraStatsTest do
       {:ok, old} = Ybira.upload(scope, tmp_upload_fixture("um", "a.txt"))
       {:ok, deleted} = Ybira.upload(scope, tmp_upload_fixture("dois", "b.txt"))
       {:ok, newest} = Ybira.upload(scope, tmp_upload_fixture("três", "c.txt"))
-      {:ok, _} = Ybira.delete_file(scope, deleted.public_id)
+      {:ok, _} = Ybira.delete_file(scope, deleted.rkey)
 
       assert {:ok, [first, second]} = Ybira.list_recent(scope, limit: 2)
       assert first.id == newest.id
@@ -29,7 +29,7 @@ defmodule Taina.YbiraStatsTest do
       {:ok, _img} = Ybira.upload(scope, tmp_image_fixture())
       {:ok, _vid} = Ybira.upload(scope, tmp_video_fixture())
       {:ok, trashed} = Ybira.upload(scope, tmp_upload_fixture("x", "x.txt"))
-      {:ok, _} = Ybira.delete_file(scope, trashed.public_id)
+      {:ok, _} = Ybira.delete_file(scope, trashed.rkey)
 
       assert {:ok, 3} = Ybira.count_files(scope)
       assert {:ok, 1} = Ybira.count_photos(scope)
@@ -42,8 +42,8 @@ defmodule Taina.YbiraStatsTest do
       {:ok, img} = Ybira.upload(scope, tmp_image_fixture())
 
       assert {:ok, by_kind} = Ybira.storage_stats_by_kind(scope)
-      assert by_kind.photos == img.file_size_bytes
-      assert by_kind.documents == doc.file_size_bytes
+      assert by_kind.photos == img.tamanho
+      assert by_kind.documents == doc.tamanho
       assert by_kind.videos == 0
       assert by_kind.others == 0
     end
@@ -64,19 +64,19 @@ defmodule Taina.YbiraStatsTest do
 
       # Uso e cota seguem o fato da máquina: comunitários.
       assert {:ok, %{used_bytes: used}} = Ybira.storage_stats(scope)
-      assert used == img.file_size_bytes
+      assert used == img.tamanho
 
       assert {:ok, 0} = Ybira.count_files(scope)
       assert {:ok, 0} = Ybira.count_photos(scope)
       assert {:ok, %{photos: 0, videos: 0, documents: 0, others: 0}} = Ybira.storage_stats_by_kind(scope)
 
-      {:ok, _} = Ybira.publicar_file(outra_scope, img.public_id)
+      {:ok, _} = Ybira.publicar_file(outra_scope, img.rkey)
 
       assert {:ok, 1} = Ybira.count_files(scope)
       assert {:ok, 1} = Ybira.count_photos(scope)
 
       assert {:ok, %{photos: photos, videos: 0, documents: 0, others: 0}} = Ybira.storage_stats_by_kind(scope)
-      assert photos == img.file_size_bytes
+      assert photos == img.tamanho
     end
   end
 end

@@ -19,13 +19,12 @@ defmodule TainaWeb.SaudeLive do
   use TainaWeb, :live_view
 
   alias Taina.Maraca
-  alias Taina.Maraca.Ava
   alias Taina.Nhaman.Backup
   alias Taina.Nhaman.Update
-  alias Taina.Scope
   alias Taina.Ybira
   alias TainaWeb.Layouts
   alias TainaWeb.Time
+  alias Ypy.Maraca.Ava
 
   # Limite "acabando" do disco: 90% da cota. Aviso ambiente, não alarme.
   @disk_warning_percent 90
@@ -126,7 +125,7 @@ defmodule TainaWeb.SaudeLive do
 
   # As linhas do painel, na ordem do RFC_003 seção 6. Cada linha é um fato do
   # presente; contagem zerada não mostra linha ("0" não é fato, é número).
-  defp painel_rows(%Scope{} = scope, %{
+  defp painel_rows(%Ypy.Scope{} = scope, %{
          stats: stats,
          trash: trash,
          members: members,
@@ -202,7 +201,7 @@ defmodule TainaWeb.SaudeLive do
   # Nenhum backup ainda: o estado dito como fato mais o próximo passo. Para
   # quem cuida da máquina, o passo é um botão (quando o backup está
   # configurado); para quem não cuida, cuidado é de quem cuida, não recusa.
-  defp backup_row({:error, reason}, %Scope{} = scope) when reason in [:none, :no_dir] do
+  defp backup_row({:error, reason}, %Ypy.Scope{} = scope) when reason in [:none, :no_dir] do
     zelador? = Maraca.zelador?(scope.ava)
 
     body =
@@ -256,7 +255,7 @@ defmodule TainaWeb.SaudeLive do
 
     zeladores =
       active
-      |> Enum.filter(&(&1.role == :zelador))
+      |> Enum.filter(&(&1.papel == :zelador))
       |> Enum.map(&ava_name/1)
 
     body = [ngettext("1 morador", "%{count} moradores", length(active))] ++ caretaker_line(zeladores)
@@ -304,14 +303,14 @@ defmodule TainaWeb.SaudeLive do
     ])
   end
 
-  defp identity_row(%Scope{} = scope) do
+  defp identity_row(%Ypy.Scope{} = scope) do
     row("home", gettext("A caixa"), caixa_body(scope))
   end
 
   # O endereço só entra como fato quando existe de verdade. O default
   # "example.com" não é fato: nesta tela, cujo trabalho é dizer a verdade,
   # endereço ausente é dito como estado.
-  defp caixa_body(%Scope{} = scope) do
+  defp caixa_body(%Ypy.Scope{} = scope) do
     base = [gettext("Esta é a caixa de %{tekoa}.", tekoa: scope.tekoa.name)]
 
     case box_address() do

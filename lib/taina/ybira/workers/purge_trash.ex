@@ -1,6 +1,6 @@
 defmodule Taina.Ybira.Workers.PurgeTrash do
   @moduledoc """
-  Esvazia a lixeira do Ybira: apaga de vez os arquivos com `deleted_at` há mais
+  Esvazia a lixeira do Ybira: apaga de vez os arquivos com `apagado_em` há mais
   de 30 dias e devolve a cota da Tekoa (ver `Taina.Ybira.purge_deleted_files/1`).
 
   Agendado por cron (todo dia às 03:00, em `config/config.exs`). Roda em nível de

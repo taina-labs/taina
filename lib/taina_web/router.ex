@@ -36,8 +36,8 @@ defmodule TainaWeb.Router do
   scope "/", TainaWeb do
     pipe_through :authenticated
 
-    get "/files/:public_id", FileController, :download
-    get "/files/:public_id/thumbnail/:size", FileController, :thumbnail
+    get "/files/:rkey", FileController, :download
+    get "/files/:rkey/thumbnail/:size", FileController, :thumbnail
   end
 
   scope "/", TainaWeb do

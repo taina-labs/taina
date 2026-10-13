@@ -112,7 +112,7 @@ defmodule TainaWeb.SaudeLiveTest do
   test "lixeira entra como fato agregado, sem nome nem dono", %{conn: conn, tekoa: tekoa, morador: morador} do
     scope = Scope.new(morador, tekoa)
     {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("x", "arquivo_da_casa.txt"))
-    {:ok, _} = Ybira.delete_file(scope, file.public_id)
+    {:ok, _} = Ybira.delete_file(scope, file.rkey)
 
     {:ok, _lv, html} = conn |> log_in(morador) |> live(~p"/saude")
 

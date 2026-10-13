@@ -9,22 +9,6 @@ defmodule Taina.Nhaman.BackupTest do
       {:ok, dt, 0} = DateTime.from_iso8601("2026-06-10T13:05:09Z")
       assert Backup.archive_filename(dt) == "taina-backup-20260610T130509Z.tar.gz"
     end
-
-    test "pg_dump_args/2 uses custom format and target file" do
-      args = Backup.pg_dump_args("postgresql://u@h/db", "/tmp/db.dump")
-
-      assert "--format=custom" in args
-      assert "--file=/tmp/db.dump" in args
-      assert "--dbname=postgresql://u@h/db" in args
-    end
-
-    test "pg_restore_args/2 cleans before reload and ends with the dump path" do
-      args = Backup.pg_restore_args("postgresql://u@h/db", "/tmp/db.dump")
-
-      assert "--clean" in args
-      assert "--if-exists" in args
-      assert List.last(args) == "/tmp/db.dump"
-    end
   end
 
   describe "storage archive round-trip" do

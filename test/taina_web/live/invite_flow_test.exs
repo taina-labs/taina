@@ -42,8 +42,7 @@ defmodule TainaWeb.InviteFlowTest do
   end
 
   test "convite aceito vira conta logada", %{conn: conn, zelador: zelador, tekoa: tekoa} do
-    {:ok, invited} = Maraca.invite_user(zelador, tekoa)
-    token = invited.invite_token
+    {:ok, %{token: token}} = Maraca.invite_user(zelador, tekoa)
 
     # a tela de aceite renderiza com o token na URL
     {:ok, _lv, html} = live(conn, ~p"/convite/#{token}")
@@ -91,18 +90,18 @@ defmodule TainaWeb.InviteFlowTest do
     zelador: zelador,
     tekoa: tekoa
   } do
-    {:ok, invited} = Maraca.invite_user(zelador, tekoa)
+    {:ok, %{ava: invited, token: token}} = Maraca.invite_user(zelador, tekoa)
 
     eight_days_ago = DateTime.shift(DateTime.utc_now(), day: -8)
 
     Repo.with_tekoa(tekoa.public_id, fn ->
       {:ok,
        invited
-       |> Ecto.Changeset.change(invite_sent_at: eight_days_ago)
+       |> Ecto.Changeset.change(invite_sent_at: DateTime.truncate(eight_days_ago, :second))
        |> Repo.update!()}
     end)
 
-    {:ok, _lv, html} = live(conn, ~p"/convite/#{invited.invite_token}")
+    {:ok, _lv, html} = live(conn, ~p"/convite/#{token}")
 
     assert html =~ "Este convite expirou ou já foi usado"
     refute html =~ "account[password]"

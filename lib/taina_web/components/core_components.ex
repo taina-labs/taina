@@ -571,9 +571,9 @@ defmodule TainaWeb.CoreComponents do
   opções para %{name}`). Itens com `click` viram botões que disparam o
   evento/JS; itens com `navigate` viram links de navegação.
 
-      <.menu id={"file-menu-\#{file.public_id}"} label={gettext("Mais opções para %{name}", name: file.name)}>
-        <:item icon="pencil" click={JS.push("rename", value: %{id: file.public_id})}>Renomear</:item>
-        <:item icon="trash" danger click={JS.push("delete", value: %{id: file.public_id})}>Excluir</:item>
+      <.menu id={"file-menu-\#{file.rkey}"} label={gettext("Mais opções para %{name}", name: file.nome)}>
+        <:item icon="pencil" click={JS.push("rename", value: %{id: file.rkey})}>Renomear</:item>
+        <:item icon="trash" danger click={JS.push("delete", value: %{id: file.rkey})}>Excluir</:item>
       </.menu>
   """
   attr :id, :string, required: true

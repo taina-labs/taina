@@ -4,8 +4,8 @@ defmodule Taina.Nhaman.Backup do
 
   Um backup é um único `.tar.gz` contendo:
 
-    * `db.dump` — dump do PostgreSQL em formato custom (`pg_dump -Fc`), pronto
-      para `pg_restore`;
+    * `db.dump` — snapshot do SQLite (`VACUUM INTO`), um arquivo de banco
+      standalone e completo;
     * `storage/…` — a árvore de arquivos do Ybira (`storage_root`).
 
   O destino (`dir`) é configurável — um disco USB montado, um remote sincronizado
@@ -14,13 +14,14 @@ defmodule Taina.Nhaman.Backup do
 
   ## Núcleo funcional / casca imperativa
 
-  Os construtores de argumento (`pg_dump_args/2`, `pg_restore_args/2`,
-  `database_url/0`, `archive_filename/1`) são puros e testáveis isoladamente. O
-  empacotamento/extração (`package_archive/3`, `extract_archive/2`,
-  `restore_storage/2`) usa só o `:erl_tar` da OTP — sem `tar` externo, bom para
-  ARM. O dump/restore do banco delega para `pg_dump`/`pg_restore` via
-  `System.cmd/3` — a única dependência de binário externo, coberta pela
-  verificação de restore no CI (ver `mix taina.backup.verify`).
+  Os helpers puros (`archive_filename/1`, `parse_archive_filename/1`,
+  `package_archive/3`, `extract_archive/2`, `restore_storage/2`) são testáveis
+  isoladamente e o empacotamento usa só o `:erl_tar` da OTP — sem binário
+  externo, bom para ARM. O snapshot do banco abre o arquivo SQLite com
+  `Exqlite.Sqlite3` direto (à margem do pool do Repo) e roda `VACUUM INTO`, que
+  lê o banco vivo numa transação de leitura e grava uma cópia standalone: o
+  backup roda com a instância no ar. O restore substitui o arquivo do banco
+  inteiro, então é operação de drill/recuperação com o app da caixa parado.
 
   `run/1` é exercido em produção pelo `Taina.Nhaman.Workers.Backup` (agendado) e
   pode ser disparado sob demanda ("backup com um clique").
@@ -85,7 +86,7 @@ defmodule Taina.Nhaman.Backup do
 
     * `:dir` — diretório destino do `.tar.gz` (default: config `:backup, :dir`)
     * `:storage_root` — árvore de arquivos a arquivar (default: config)
-    * `:database_url` — conexão para o `pg_dump` (default: derivada do Repo)
+    * `:database_path` — arquivo SQLite a copiar (default: config do Repo)
     * `:now` — `DateTime` para o nome do arquivo (injetável em teste)
 
   Retorna `{:ok, %{archive: path, bytes: n}}` ou `{:error, reason}`.
@@ -93,7 +94,7 @@ defmodule Taina.Nhaman.Backup do
   def run(opts \\ []) do
     dir = Keyword.get(opts, :dir) || backup_dir()
     storage_root = Keyword.get(opts, :storage_root, storage_root())
-    db_url = Keyword.get(opts, :database_url) || database_url()
+    db_path = Keyword.get(opts, :database_path) || repo_db_path()
     now = Keyword.get(opts, :now, DateTime.utc_now())
     workdir = tmp_workdir()
 
@@ -101,7 +102,7 @@ defmodule Taina.Nhaman.Backup do
       with :ok <- File.mkdir_p(dir),
            :ok <- File.mkdir_p(workdir),
            dump_path = Path.join(workdir, "db.dump"),
-           :ok <- pg_dump(db_url, dump_path),
+           :ok <- snapshot_db(db_path, dump_path),
            archive_path = Path.join(dir, archive_filename(now)),
            :ok <- package_archive(archive_path, dump_path, storage_root) do
         {:ok, %{archive: archive_path, bytes: file_size(archive_path)}}
@@ -114,26 +115,20 @@ defmodule Taina.Nhaman.Backup do
   @doc """
   Restaura a instância a partir de um `.tar.gz` gerado por `run/1`.
 
-  **Destrutivo:** `pg_restore --clean` derruba e recria os objetos do banco e o
-  `storage_root` é substituído pela árvore arquivada. Use em drills e recuperação.
+  **Destrutivo:** o arquivo do banco é substituído pelo snapshot arquivado e o
+  `storage_root` recebe a árvore arquivada. Como a instância mantém o banco
+  aberto, o restore é operação de drill/recuperação com o app da caixa parado.
 
-  O dump grava o dono de cada objeto e o `pg_restore` os repõe: em produção
-  (oka pós-split) os objetos já são do papel restrito `taina_app`, então o
-  restore pela conexão de superusuário devolve a propriedade a ele. Em dev/CI
-  o papel é o mesmo dos dois lados, então é no-op. Sem os donos gravados, os
-  objetos nasceriam dono de quem executou o restore e o app restrito ficaria
-  sem ser dono do próprio banco.
-
-  Opções: `:storage_root`, `:database_url` (mesmos defaults de `run/1`).
+  Opções: `:storage_root`, `:database_path` (mesmos defaults de `run/1`).
   """
   def restore(archive_path, opts \\ []) do
     storage_root = Keyword.get(opts, :storage_root, storage_root())
-    db_url = Keyword.get(opts, :database_url) || database_url()
+    db_path = Keyword.get(opts, :database_path) || repo_db_path()
     workdir = tmp_workdir()
 
     try do
       with :ok <- extract_archive(archive_path, workdir),
-           :ok <- pg_restore(db_url, Path.join(workdir, "db.dump")),
+           :ok <- restore_db(Path.join(workdir, "db.dump"), db_path),
            :ok <- restore_storage(Path.join(workdir, "storage"), storage_root) do
         {:ok, :restored}
       end
@@ -232,88 +227,67 @@ defmodule Taina.Nhaman.Backup do
 
   defp int(part), do: String.to_integer(part)
 
-  @doc "Argumentos do `pg_dump` (formato custom, portável)."
-  def pg_dump_args(db_url, dump_path) do
-    [
-      "--format=custom",
-      "--no-privileges",
-      "--file=#{dump_path}",
-      "--dbname=#{db_url}"
-    ]
+  ## Banco (SQLite, à margem do pool do Repo)
+
+  defp repo_db_path do
+    Application.fetch_env!(:taina, Taina.Repo)[:database] ||
+      raise "backup sem banco: Taina.Repo sem :database (passe :database_path)"
   end
 
-  @doc "Argumentos do `pg_restore` (limpa o destino antes de recarregar)."
-  def pg_restore_args(db_url, dump_path) do
-    [
-      "--clean",
-      "--if-exists",
-      "--no-privileges",
-      "--dbname=#{db_url}",
-      dump_path
-    ]
-  end
-
-  @doc """
-  URL de conexão para o `pg_dump`/`pg_restore`/`psql`.
-
-  Prefere a config `:backup, :database_url` (`BACKUP_DATABASE_URL`): em
-  produção o app conecta como o papel restrito `taina_app`, que não dá conta
-  de restaurar objetos de outros papéis, então o dump/restore roda pela
-  conexão de superusuário. Sem essa config (dev/CI, papel único), cai na URL
-  do próprio `Taina.Repo` (usa `:url` quando presente, senão monta a partir
-  dos campos discretos).
-  """
-  def database_url do
-    case Keyword.get(config(), :database_url) do
-      url when is_binary(url) ->
-        url
-
-      _ ->
-        config = Application.fetch_env!(:taina, Taina.Repo)
-
-        case config[:url] do
-          url when is_binary(url) -> url
-          _ -> build_url(config)
-        end
+  # O VACUUM INTO exige destino inexistente e grava um banco standalone: uma
+  # leitura do arquivo atual, feita por conexão efêmera. O busy_timeout cobre
+  # um escritor do app em curso (mesmo motivo do config do Repo).
+  defp snapshot_db(db_path, dump_path) do
+    with :ok <- rm_if_exists(dump_path),
+         {:ok, conn} <- open_db(db_path) do
+      try do
+        vacuum_into(conn, dump_path)
+      after
+        Exqlite.Sqlite3.close(conn)
+      end
     end
   end
 
-  defp build_url(config) do
-    user = config[:username] || "postgres"
-    pass = config[:password] || ""
-    host = config[:hostname] || "localhost"
-    port = config[:port] || 5432
-    db = config[:database] || raise "Taina.Repo sem :database nem :url para o backup"
+  defp open_db(db_path) do
+    # Sem :create: o banco desaparecido é erro, não um snapshot vazio.
+    case Exqlite.Sqlite3.open(db_path, mode: [:readwrite]) do
+      {:ok, conn} ->
+        Exqlite.Sqlite3.set_busy_timeout(conn, 5_000)
+        {:ok, conn}
 
-    userinfo =
-      if pass == "", do: encode(user), else: "#{encode(user)}:#{encode(pass)}"
-
-    URI.to_string(%URI{
-      scheme: "postgresql",
-      userinfo: userinfo,
-      host: host,
-      port: port,
-      path: "/" <> encode(db)
-    })
+      {:error, reason} ->
+        {:error, {:sqlite_failed, reason}}
+    end
   end
 
-  # Percent-encode de um componente da URL (userinfo, nome do banco): só os
-  # caracteres não reservados passam intactos, o resto vira %XX. Robusto a senhas
-  # e nomes com `@`, `:`, `/` etc., que quebrariam a conninfo do pg_dump.
-  defp encode(value), do: URI.encode(value, &URI.char_unreserved?/1)
-
-  ## Casca imperativa
-
-  defp pg_dump(db_url, dump_path), do: run_cmd("pg_dump", pg_dump_args(db_url, dump_path))
-  defp pg_restore(db_url, dump_path), do: run_cmd("pg_restore", pg_restore_args(db_url, dump_path))
-
-  defp run_cmd(bin, args) do
-    case System.cmd(bin, args, stderr_to_stdout: true) do
-      {_out, 0} -> :ok
-      {out, code} -> {:error, {:command_failed, bin, code, String.slice(out, 0, 2_000)}}
+  defp vacuum_into(conn, dump_path) do
+    with {:ok, stmt} <- Exqlite.Sqlite3.prepare(conn, "VACUUM INTO ?"),
+         :ok <- Exqlite.Sqlite3.bind(stmt, [dump_path]) do
+      case Exqlite.Sqlite3.step(conn, stmt) do
+        :done -> :ok
+        :busy -> {:error, {:sqlite_failed, :busy}}
+        {:error, reason} -> {:error, {:sqlite_failed, reason}}
+      end
     end
-  rescue
-    e in ErlangError -> {:error, {:command_unavailable, bin, e.original}}
+  end
+
+  # Substitui o arquivo do banco pelo snapshot. Os siblings -wal/-shm do banco
+  # vivo ficam obsoletos depois da troca: apontam para páginas que o snapshot
+  # não tem.
+  defp restore_db(dump_path, db_path) do
+    with :ok <- rm_if_exists(db_path <> "-wal"),
+         :ok <- rm_if_exists(db_path <> "-shm"),
+         :ok <- rm_if_exists(db_path) do
+      File.cp(dump_path, db_path)
+    end
+  end
+
+  defp rm_if_exists(path) do
+    case File.rm(path) do
+      :ok -> :ok
+      {:error, :enoent} -> :ok
+      {:error, reason} -> {:error, {:sqlite_failed, reason}}
+    end
   end
 
   defp storage_entries(storage_root) do

@@ -16,8 +16,8 @@ defmodule TainaWeb.AccessRequestsLiveTest do
     %{tekoa: tekoa, owner: owner, requester: requester, target_file: file}
   end
 
-  defp request(requester, owner, file) do
-    {:ok, req} = Maraca.request_access(requester, owner, "ybira_file", file.public_id, "Por favor")
+  defp request(requester, tekoa, file) do
+    {:ok, req} = Maraca.pedir_acesso(Scope.new(requester, tekoa), "ypy.file.v0", file.rkey, "Por favor")
     req
   end
 
@@ -31,11 +31,12 @@ defmodule TainaWeb.AccessRequestsLiveTest do
 
   test "approving removes the pending row and shows the grant as reversible", %{
     conn: conn,
+    tekoa: tekoa,
     owner: owner,
     requester: requester,
     target_file: file
   } do
-    _req = request(requester, owner, file)
+    _req = request(requester, tekoa, file)
     {:ok, lv, html} = conn |> log_in(owner) |> live(~p"/conta/pedidos")
 
     assert html =~ "Maria"
@@ -47,16 +48,17 @@ defmodule TainaWeb.AccessRequestsLiveTest do
     assert html =~ "Já liberados"
     assert html =~ "doc.txt, desde"
     refute html =~ "pediu acesso"
-    assert Maraca.authorize?(requester, :read, "ybira_file", file.public_id)
+    assert Maraca.authorize?(requester, :read, "ypy.file.v0", file.rkey)
   end
 
   test "a granted permission can be revoked from the Já liberados section", %{
     conn: conn,
+    tekoa: tekoa,
     owner: owner,
     requester: requester,
     target_file: file
   } do
-    _req = request(requester, owner, file)
+    _req = request(requester, tekoa, file)
     {:ok, lv, _html} = conn |> log_in(owner) |> live(~p"/conta/pedidos")
 
     lv |> element(~s(button[phx-click="approve"])) |> render_click()
@@ -72,16 +74,17 @@ defmodule TainaWeb.AccessRequestsLiveTest do
     assert html =~ "Acesso de Maria tirado"
     refute has_element?(lv, ~s(button[phx-click="ask-revoke"]))
     assert html =~ "Ninguém tem acesso liberado aos seus arquivos."
-    refute Maraca.authorize?(requester, :read, "ybira_file", file.public_id)
+    refute Maraca.authorize?(requester, :read, "ypy.file.v0", file.rkey)
   end
 
   test "denying is gated by the confirm dialog then removes the row", %{
     conn: conn,
+    tekoa: tekoa,
     owner: owner,
     requester: requester,
     target_file: file
   } do
-    _req = request(requester, owner, file)
+    _req = request(requester, tekoa, file)
     {:ok, lv, _html} = conn |> log_in(owner) |> live(~p"/conta/pedidos")
 
     lv |> element(~s(button[phx-click="ask-deny"])) |> render_click()
@@ -92,25 +95,32 @@ defmodule TainaWeb.AccessRequestsLiveTest do
     html = render(lv)
     refute html =~ "Maria"
     assert html =~ "Pedido negado"
-    refute Maraca.authorize?(requester, :read, "ybira_file", file.public_id)
+    refute Maraca.authorize?(requester, :read, "ypy.file.v0", file.rkey)
   end
 
-  test "an incoming request refreshes the inbox", %{conn: conn, owner: owner, requester: requester, target_file: file} do
+  test "an incoming request refreshes the inbox", %{
+    conn: conn,
+    tekoa: tekoa,
+    owner: owner,
+    requester: requester,
+    target_file: file
+  } do
     {:ok, lv, html} = conn |> log_in(owner) |> live(~p"/conta/pedidos")
     refute html =~ "Maria"
 
-    _req = request(requester, owner, file)
+    _req = request(requester, tekoa, file)
 
     assert render(lv) =~ "Maria"
   end
 
   test "the Conta nav shows the pending dot when there is an open request", %{
     conn: conn,
+    tekoa: tekoa,
     owner: owner,
     requester: requester,
     target_file: file
   } do
-    _req = request(requester, owner, file)
+    _req = request(requester, tekoa, file)
     {:ok, lv, _html} = conn |> log_in(owner) |> live(~p"/conta/pedidos")
 
     assert has_element?(lv, "a[aria-label*='há pedidos esperando'] .nav-dot")

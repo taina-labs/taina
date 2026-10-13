@@ -1,52 +1,42 @@
 defmodule Taina.Maraca do
   @moduledoc """
-  Interface pública para autenticação e autorização do serviço Maraca.
+  O Maraca do produto, sobre o kernel Ypy.
 
-  Implementa `Taina.Maraca.Behaviour`, consulte cada callback para regras de
-  negócio detalhadas.
+  Os verbos sociais (concessao, pedido, decisao do dono, troca de papel) sao
+  do kernel (`Ypy.Maraca`), que anexa cada ato a cadeia unica; aqui ficam os
+  fluxos de autenticacao e UX do box (RFC_006 D10): convite, aceite, login
+  com rate limit, sessao, reset mediado pelo zelador, ciclo de vida da conta
+  e a trava de uma-Tekoa-por-box. O mural e a projecao da cadeia
+  (`maraca_mural`), nao uma tabela propria.
 
   ## Filosofia
 
-  - **Moradores são donos de seus dados** - Propriedade explícita
-  - **Zeladores cuidam da máquina, não são deuses** - Devem pedir acesso
-  - **Permissões explícitas** - Nunca implícitas
-  - **Auditabilidade total** - Todas as tentativas de acesso registradas
-
-  ## Identidade sem e-mail (RFC_003, seção 4)
-
-  Convites são por **link/QR**: `invite_user/3` cria um Ava pendente e devolve
-  o token cru no campo virtual `invite_token`; o chamador monta a URL/QR e
-  entrega pelo canal que a comunidade já usa. Não há e-mail: login é por nome
-  (`username`) e a recuperação é mediada pelo zelador (`mint_reset_link/2`).
-
-  ## Ordem de Resolução de Permissões
-
-  1. **Isolamento de comunidade** (RLS garante tekoa_id)
-  2. **Propriedade do recurso** (ava_id == resource.ava_id)
-  3. **Permissões explícitas** (tabela maraca.permissions)
-  4. **Negação padrão** (se nada acima, acesso negado)
+  - **Moradores sao donos dos seus dados** - propriedade explicita
+  - **Zeladores cuidam da maquina, nao sao deuses** - pedem acesso como
+    qualquer morador (o kernel nao da atalho)
+  - **Concessoes explicitas** - nunca implicitas, cada uma uma entrada
+    assinada na cadeia
   """
-
-  @behaviour Taina.Maraca.Behaviour
 
   import Ecto.Query
 
-  alias Taina.Maraca.AccessRequest
-  alias Taina.Maraca.Ava
-  alias Taina.Maraca.Event
-  alias Taina.Maraca.Permission
-  alias Taina.Maraca.Tekoa
-  alias Taina.Maraca.UnauthorizedError
+  alias Taina.Keys
   alias Taina.RateLimit
   alias Taina.Repo
   alias Taina.Scope
+  alias Ypy.Maraca.Ava
+  alias Ypy.Maraca.Concessao
+  alias Ypy.Maraca.Pedido
+  alias Ypy.Maraca.Policy
+  alias Ypy.Maraca.Store, as: KernelStore
+  alias Ypy.Maraca.Tekoa
+  ## Bootstrap
+  alias Ypy.Mural.Store, as: MuralStore
 
   require Logger
 
   @invitation_max_age_seconds 7 * 24 * 60 * 60
   @reset_max_age_seconds 60 * 60
-  @grantable_actions ~w(read write delete)a
-  @event_page_limit 50
 
   # Janela de força bruta de login, por (tekoa, username): no máximo
   # @login_rate_limit tentativas a cada @login_rate_scale_ms. Folgado o
@@ -54,23 +44,23 @@ defmodule Taina.Maraca do
   @login_rate_scale_ms 60_000
   @login_rate_limit 5
 
-  # Mapa de tipos de recurso -> {schema, campo de dono}. A propriedade é o
-  # segundo nível da resolução de permissões; tipos fora deste mapa só podem
-  # ser autorizados por permissão explícita.
-  @owned_resources %{
-    "ybira_file" => {Taina.Ybira.File, :ava_id},
-    "ybira_folder" => {Taina.Ybira.Folder, :ava_id},
-    "guara_chat" => {Taina.Guara.Chat, :created_by_id}
-  }
+  @event_page_limit 50
 
-  ## Bootstrap
+  @kernel_tipos ["ypy.file.v0", "ypy.folder.v0"]
 
-  @impl true
+  @doc """
+  Cria a Tekoa e o zelador dela, com a chave que assina a cadeia. A trava de
+  uma-Tekoa-por-box e do banco (indice unico `single_tekoa_enforcement`,
+  RFC_006 D11); a checagem adiantada evita o erro feio, e fica na mesma
+  transacao para duas inicializacoes concorrentes nao passarem ambas.
+
+  O `domain` (a identidade `did:web` da Tekoa) vem nos attrs quando quem
+  instala declara o endereco da caixa; sem ele, o default do spike vale
+  (`tekoa.local`) ate o wizard de setup coletar o endereco.
+  """
   def bootstrap(tekoa_attrs, zelador_attrs) do
-    # Consulta e escrita de sistema: roda antes de haver qualquer contexto
-    # RLS (a Tekoa nem existe ainda), então cruza as políticas pela válvula.
-    # A checagem de existência entra na mesma transação do insert: duas
-    # inicializações concorrentes não podem ambas passar do `if`.
+    tekoa_attrs = Map.put_new(tekoa_attrs, :domain, "tekoa.local")
+
     Repo.with_system(fn ->
       if Repo.exists?(Tekoa, skip_tekoa_id: true) do
         {:error, :already_bootstrapped}
@@ -82,37 +72,33 @@ defmodule Taina.Maraca do
 
   defp create_tekoa_with_zelador(tekoa_attrs, zelador_attrs) do
     with {:ok, tekoa} <- Repo.insert(Tekoa.changeset(%Tekoa{}, tekoa_attrs)),
+         :ok <- Keys.mint(Repo, tekoa.id),
          {:ok, ava} <- insert_bootstrap_zelador(tekoa, zelador_attrs) do
       {:ok, %{tekoa: tekoa, ava: ava}}
     end
   end
 
+  # O zelador de bootstrap nasce no papel: o kernel aceita so
+  # username/display_name/password no accept_changeset, o papel e daqui.
   defp insert_bootstrap_zelador(%Tekoa{} = tekoa, attrs) do
-    base = %{
-      username: attrs[:username],
-      display_name: attrs[:display_name],
-      role: :zelador,
-      tekoa_id: tekoa.id
-    }
-
-    %Ava{}
-    |> Ava.changeset(base)
-    |> Ava.accept_invite_changeset(Map.take(attrs, [:username, :display_name, :password, :password_confirmation]))
+    ## Membros
+    %Ava{tekoa_id: tekoa.id}
+    |> Ava.accept_changeset(Map.take(attrs, [:username, :display_name, :password]))
+    |> Ecto.Changeset.change(papel: :zelador)
     |> Repo.insert()
   end
 
-  @impl true
+  @doc "A caixa ja tem Tekoa? Consulta de sistema: roda antes de haver contexto."
   def bootstrapped? do
-    # Consulta de sistema: sem a válvula, o papel de aplicação (RLS ativo)
-    # veria zero Tekoas e responderia "não bootstrapado" para sempre.
     {:ok, exists?} =
       Repo.with_system(fn -> {:ok, Repo.exists?(Tekoa, skip_tekoa_id: true)} end)
 
     exists?
   end
 
-  @impl true
+  @doc "A Tekoa da caixa (una por construcao, RFC_006 D11)."
   def get_tekoa do
+    ## Convite e aceite
     Repo.with_system(fn ->
       case Repo.one(Tekoa, skip_tekoa_id: true) do
         %Tekoa{} = tekoa -> {:ok, tekoa}
@@ -121,38 +107,41 @@ defmodule Taina.Maraca do
     end)
   end
 
-  ## Membros
-
-  @impl true
-  def list_members(%Scope{} = scope) do
-    Repo.with_tekoa(scope.tekoa.public_id, fn ->
+  def list_members(%Ypy.Scope{} = scope) do
+    within_tekoa(scope, fn ->
       members =
-        Repo.all(
-          from a in Ava,
-            where: a.tekoa_id == ^scope.tekoa.id,
-            order_by: [asc: fragment("CASE WHEN ? = 'zelador' THEN 0 ELSE 1 END", a.role), asc: a.inserted_at]
+        from(a in Ava,
+          where: a.tekoa_id == ^scope.tekoa.id,
+          order_by: [asc: fragment("CASE WHEN ? = 'zelador' THEN 0 ELSE 1 END", a.papel), asc: a.inserted_at]
         )
 
-      {:ok, members}
+      {:ok, Repo.all(members)}
     end)
   end
 
-  @impl true
-  def count_members(%Scope{} = scope) do
-    Repo.with_tekoa(scope.tekoa.public_id, fn ->
+  def count_members(%Ypy.Scope{} = scope) do
+    within_tekoa(scope, fn ->
       {:ok, Repo.aggregate(from(a in Ava, where: a.tekoa_id == ^scope.tekoa.id), :count)}
     end)
   end
 
-  ## Convite e aceite
-
-  @impl true
+  @doc """
+  O convite (fluxo do produto): um Ava pendente com token hasheado; o token
+  cru volta pro chamador montar o link/QR. O registro do mural vai para a
+  cadeia depois do commit: a escrita do ledger e consequencia, e nao pode
+  derrubar o convite.
+  """
   def invite_user(%Ava{} = zelador, %Tekoa{} = tekoa, opts \\ []) do
     if zelador?(zelador) and zelador.tekoa_id == tekoa.id do
+      raw_token = generate_token()
+
       attrs = %{
         tekoa_id: tekoa.id,
         invited_by_id: zelador.id,
-        role: Keyword.get(opts, :role, :morador)
+        papel: Keyword.get(opts, :role, :morador),
+        invite_token_hash: hash_token(raw_token),
+        invite_sent_at: agora(),
+        invited_at: agora()
       }
 
       result =
@@ -160,54 +149,62 @@ defmodule Taina.Maraca do
           Repo.insert(Ava.invitation_changeset(%Ava{}, attrs))
         end)
 
-      # O mural registra o convite só depois do ato commitar: a escrita do
-      # ledger é consequência, falhar nela não desfaz o convite.
-      with {:ok, _ava} <- result do
-        record_event(tekoa.public_id, zelador.id, :invite_created, %{
-          "role" => Atom.to_string(attrs.role)
+      with {:ok, ava} <- result do
+        record_event(Scope.new(zelador, tekoa), :invite_created, %{
+          "role" => Atom.to_string(attrs.papel)
         })
-      end
 
-      result
+        {:ok, %{ava: ava, token: raw_token}}
+      end
     else
       {:error, :not_zelador}
     end
   end
 
-  @impl true
+  @doc """
+  O aceite do convite: username, display_name e senha; a conta ativa. Token
+  expirado, conta desativada ou confirmacao de senha errada recusam. O papel
+  vai no registro do mural para o aceite de zelador ser legivel na cadeia.
+  """
   def accept_invite(token, attrs) do
     with %Ava{} = ava <- find_by_token(:invite_token_hash, token),
          false <- token_expired?(ava.invite_sent_at, @invitation_max_age_seconds),
-         # Convite de conta já desativada não vale: sem isto, "desativar" um
-         # convite pendente não invalidava o link e a pessoa aceitava para cair
-         # numa conta que não consegue logar.
-         nil <- ava.deactivated_at do
-      tekoa_public_id = tekoa_public_id(ava)
-
+         nil <- ava.deactivated_at,
+         :ok <- confirmation_ok?(attrs) do
       result =
-        Repo.with_tekoa(tekoa_public_id, fn ->
-          Repo.update(Ava.accept_invite_changeset(ava, attrs))
-        end)
+        Repo.with_tekoa(tekoa_public_id(ava), fn -> aceitar_convite(ava, attrs) end)
 
-      # Registro do mural depois da transação do aceite: uma falha na escrita
-      # do ledger não pode derrubar a conta que acabou de ser criada. O papel
-      # vai no payload para o aceite de um zelador ser legível na hora da
-      # concessão (o papel é o do convite, decidido em `invite_user/3`).
-      with {:ok, _accepted} <- result do
-        record_event(tekoa_public_id, ava.id, :invite_accepted, %{
-          "role" => Atom.to_string(ava.role)
+      with {:ok, %{ava: accepted, tekoa: tekoa}} <- result do
+        record_event(Scope.new(accepted, tekoa), :invite_accepted, %{
+          "role" => Atom.to_string(accepted.papel)
         })
-      end
 
-      result
+        {:ok, accepted}
+      end
     else
       _ -> {:error, :invalid_token}
     end
   end
 
-  @impl true
-  # Um convite pendente cujo token já passou da validade: a tela de moradores
-  # marca como expirado em vez de "aguardando a pessoa aceitar" para sempre.
+  # O attrs cru entra no changeset do kernel: o cast (nome, display e
+  # senha) e a whitelist, e aceita chaves de string ou atomo.
+  defp aceitar_convite(ava, attrs) do
+    with {:ok, accepted} <- Repo.update(Ava.accept_changeset(ava, attrs)) do
+      {:ok, %{ava: accepted, tekoa: Repo.get!(Tekoa, accepted.tekoa_id)}}
+    end
+  end
+
+  # A confirmacao de senha e fluxo do produto (o kernel cobra so a senha).
+  defp confirmation_ok?(attrs) do
+    password = fetch_attr(attrs, :password)
+    confirmation = fetch_attr(attrs, :password_confirmation)
+
+    if confirmation in [nil, password], do: :ok, else: {:error, :password_mismatch}
+  end
+
+  ## Autenticação e sessão
+
+  @doc "Um convite pendente cujo token ja passou da validade."
   def invite_expired?(%Ava{} = ava) do
     token_expired?(ava.invite_sent_at, @invitation_max_age_seconds)
   end
@@ -218,24 +215,19 @@ defmodule Taina.Maraca do
   contrário. Espelha as condições de `accept_invite/2` para a tela de aceite
   mostrar o beco sem saída antes de a pessoa preencher o formulário inteiro.
   """
-  @impl true
   def invite_status(token) do
     case find_by_token(:invite_token_hash, token) do
       %Ava{deactivated_at: nil} = ava ->
-        if token_expired?(ava.invite_sent_at, @invitation_max_age_seconds),
-          do: :invalid,
-          else: :ok
+        if token_expired?(ava.invite_sent_at, @invitation_max_age_seconds), do: :invalid, else: :ok
 
       _ ->
         :invalid
     end
   end
 
-  ## Autenticação e sessão
-
-  @impl true
+  @doc "Login por username e senha, com rate limit de força bruta (fluxo do produto)."
   def authenticate(username, password, %Tekoa{} = tekoa) do
-    username = normalize_username(username)
+    username = Ypy.Handle.normalize(to_string(username))
     key = login_rate_key(tekoa, username)
 
     if login_rate_exceeded?(key) do
@@ -251,7 +243,7 @@ defmodule Taina.Maraca do
   defp do_authenticate(username, password, %Tekoa{} = tekoa) do
     {:ok, result} =
       Repo.with_tekoa(tekoa.public_id, fn ->
-        {:ok, Repo.get_by(Ava, username: username, tekoa_id: tekoa.id)}
+        {:ok, KernelStore.get_ava_por_username(Repo, tekoa.id, username)}
       end)
 
     verify_credentials(result, password)
@@ -297,23 +289,18 @@ defmodule Taina.Maraca do
     end
   end
 
-  defp normalize_username(username) do
-    username |> to_string() |> String.trim() |> String.downcase()
-  end
-
-  @impl true
   def create_session(%Ava{} = ava) do
-    %{ava_id: ava.public_id, tekoa_id: tekoa_public_id(ava), role: ava.role}
+    %{ava_id: ava.public_id, tekoa_id: tekoa_public_id(ava), papel: ava.papel}
   end
 
-  @impl true
+  ## Gestão da Tekoa
+
   def destroy_session(%Plug.Conn{} = conn) do
     conn
     |> Plug.Conn.clear_session()
     |> Plug.Conn.configure_session(drop: true)
   end
 
-  @impl true
   def get_session_user(%Plug.Conn{} = conn) do
     conn |> Plug.Conn.get_session(:ava_id) |> resolve_session_ava()
   end
@@ -324,13 +311,13 @@ defmodule Taina.Maraca do
 
   # Revalida a cada request/mount: uma conta desativada pelo zelador deixa de
   # resolver, então a sessão ainda aberta cai no próximo acesso -- honra o
-  # "não vai mais conseguir entrar" da tela de membros. Consulta de sistema
-  # (`skip_tekoa_id: true` + válvula): roda antes de haver contexto RLS, no
-  # request que o próprio contexto constrói.
+  # "não vai mais conseguir entrar" da tela de membros. Consulta de sistema:
+  # roda antes de haver contexto, no request que o próprio contexto constrói.
   defp resolve_session_ava(public_id) when is_binary(public_id) do
     Repo.with_system(fn ->
       case Repo.get_by(Ava, [public_id: public_id], skip_tekoa_id: true) do
         %Ava{deactivated_at: nil} = ava ->
+          ## Gestão de membros (zelador)
           tekoa = Repo.get!(Tekoa, ava.tekoa_id, skip_tekoa_id: true)
           {:ok, %{ava | tekoa: tekoa}}
 
@@ -342,21 +329,12 @@ defmodule Taina.Maraca do
 
   defp resolve_session_ava(_public_id), do: {:error, :not_authenticated}
 
-  ## Gestão da Tekoa
-
-  @impl true
-  def update_tekoa_quota(%Scope{} = scope, quota_bytes) when is_integer(quota_bytes) do
+  def update_tekoa_quota(%Ypy.Scope{} = scope, quota_bytes) when is_integer(quota_bytes) do
     if zelador?(scope.ava) do
-      result =
-        Repo.with_tekoa(scope.tekoa.public_id, fn ->
-          Tekoa
-          |> Repo.get!(scope.tekoa.id)
-          |> Tekoa.changeset(%{storage_quota_bytes: quota_bytes})
-          |> Repo.update()
-        end)
+      result = within_tekoa(scope, fn -> mudar_cota(scope, quota_bytes) end)
 
       with {:ok, _tekoa} <- result do
-        record_event(scope.tekoa.public_id, scope.ava.id, :quota_changed, %{
+        record_event(scope, :quota_changed, %{
           "from" => scope.tekoa.storage_quota_bytes,
           "to" => quota_bytes
         })
@@ -368,71 +346,64 @@ defmodule Taina.Maraca do
     end
   end
 
-  ## Gestão de membros (zelador)
+  defp mudar_cota(%Ypy.Scope{} = scope, quota_bytes) do
+    case KernelStore.get_tekoa(Repo, scope.tekoa.id) do
+      %Tekoa{} = tekoa -> Repo.update(Tekoa.changeset(tekoa, %{storage_quota_bytes: quota_bytes}))
+      nil -> {:error, :not_found}
+    end
+  end
 
-  @impl true
-  def update_member_role(%Scope{} = scope, member_public_id, role) do
+  @doc """
+  A troca de papel e verbo do kernel (`Ypy.Maraca.mudar_papel/5`): guarda de
+  zelador, protecao da ultima zeladoria e a entrada na cadeia sao dela.
+  """
+  def update_member_role(%Ypy.Scope{} = scope, member_public_id, papel) do
+    within_tekoa(scope, fn ->
+      with {:ok, member} <- fetch_member(scope, member_public_id) do
+        Ypy.Maraca.mudar_papel(Repo, Keys.new(), scope, member, papel)
+      end
+    end)
+  end
+
+  @doc "Desativar e fluxo do produto: o kernel guarda o substantivo, aqui o rito."
+  def deactivate_member(%Ypy.Scope{} = scope, member_public_id) do
     with :ok <- ensure_zelador(scope) do
-      result = Repo.with_tekoa(scope.tekoa.public_id, fn -> do_update_role(member_public_id, role) end)
+      result = within_tekoa(scope, fn -> do_deactivate(scope, member_public_id) end)
 
       with {:ok, member} <- result do
-        record_event(scope.tekoa.public_id, scope.ava.id, :member_role_changed, %{
-          "member" => ava_name(member),
-          "role" => Atom.to_string(role)
-        })
+        record_event(scope, :member_deactivated, %{"member" => ava_name(member)})
       end
 
       result
     end
   end
 
-  @impl true
-  def deactivate_member(%Scope{} = scope, member_public_id) do
+  def reactivate_member(%Ypy.Scope{} = scope, member_public_id) do
     with :ok <- ensure_zelador(scope) do
-      result = Repo.with_tekoa(scope.tekoa.public_id, fn -> do_deactivate(member_public_id) end)
+      result = within_tekoa(scope, fn -> do_reactivate(scope, member_public_id) end)
 
       with {:ok, member} <- result do
-        record_event(scope.tekoa.public_id, scope.ava.id, :member_deactivated, %{
-          "member" => ava_name(member)
-        })
+        record_event(scope, :member_reactivated, %{"member" => ava_name(member)})
       end
 
       result
     end
   end
 
-  @impl true
-  def reactivate_member(%Scope{} = scope, member_public_id) do
+  def revoke_invite(%Ypy.Scope{} = scope, member_public_id) do
     with :ok <- ensure_zelador(scope) do
-      result = Repo.with_tekoa(scope.tekoa.public_id, fn -> do_reactivate(member_public_id) end)
+      result = within_tekoa(scope, fn -> do_revoke_invite(scope, member_public_id) end)
 
       with {:ok, member} <- result do
-        record_event(scope.tekoa.public_id, scope.ava.id, :member_reactivated, %{
-          "member" => ava_name(member)
-        })
+        record_event(scope, :invite_revoked, %{"role" => Atom.to_string(member.papel)})
       end
 
       result
     end
   end
 
-  @impl true
-  def revoke_invite(%Scope{} = scope, member_public_id) do
-    with :ok <- ensure_zelador(scope) do
-      result = Repo.with_tekoa(scope.tekoa.public_id, fn -> do_revoke_invite(member_public_id) end)
-
-      with {:ok, member} <- result do
-        record_event(scope.tekoa.public_id, scope.ava.id, :invite_revoked, %{
-          "role" => Atom.to_string(member.role)
-        })
-      end
-
-      result
-    end
-  end
-
-  defp do_revoke_invite(public_id) do
-    with {:ok, member} <- fetch_member(public_id),
+  defp do_revoke_invite(scope, public_id) do
+    with {:ok, member} <- fetch_member(scope, public_id),
          :ok <- ensure_pending_invite(member) do
       # O convite pendente não tem identidade nem dados (nada aponta para ele),
       # então revogar apaga a linha. Um soft-delete deixaria um "morador" sem
@@ -442,125 +413,123 @@ defmodule Taina.Maraca do
   end
 
   # Só convite ainda não aceito é revogável. Conta já ativada se remove com
-  # desativar (soft): apagar a linha levaria os eventos e as permissões junto
-  # (`on_delete: :delete_all`) e sumiria com o histórico.
+  # desativar (soft): apagar a linha levaria as concessões e os pedidos junto
+  # e sumiria com o histórico.
   defp ensure_pending_invite(%Ava{activated_at: nil}), do: :ok
   defp ensure_pending_invite(%Ava{}), do: {:error, :not_pending}
 
-  defp ensure_zelador(%Scope{ava: ava}) do
+  defp ensure_zelador(%Ypy.Scope{ava: ava}) do
     if zelador?(ava), do: :ok, else: {:error, :unauthorized}
   end
 
-  defp do_update_role(public_id, role) do
-    with {:ok, member} <- fetch_member(public_id),
-         :ok <- ensure_demotion_keeps_zelador(member, role) do
-      Repo.update(Ava.role_changeset(member, role))
+  defp do_deactivate(scope, public_id) do
+    with {:ok, member} <- fetch_member(scope, public_id) do
+      deactivate_if_allowed(scope, member)
     end
   end
 
-  defp do_deactivate(public_id) do
-    with {:ok, member} <- fetch_member(public_id) do
-      deactivate_if_allowed(member)
-    end
-  end
-
-  defp do_reactivate(public_id) do
-    with {:ok, member} <- fetch_member(public_id) do
+  defp do_reactivate(scope, public_id) do
+    with {:ok, member} <- fetch_member(scope, public_id) do
       Repo.update(Ava.deactivation_changeset(member, nil))
     end
   end
 
-  # Resolve um membro pelo public_id dentro do contexto de Tekoa (RLS escopa por
-  # comunidade -- public_id de outra Tekoa simplesmente não aparece).
-  defp fetch_member(public_id) do
-    case Repo.get_by(Ava, public_id: public_id) do
-      nil -> {:error, :not_found}
-      %Ava{} = ava -> {:ok, ava}
+  defp fetch_member(scope, public_id) do
+    # O public_id do kernel e estrito (12 caracteres do alfabeto): id
+    # malformado de URL/params nao chega a ser query, responde not_found.
+    ## Reset de senha
+    if Ypy.PublicId.valid?(public_id) do
+      case Repo.get_by(Ava, public_id: public_id, tekoa_id: scope.tekoa.id) do
+        nil -> {:error, :not_found}
+        %Ava{} = ava -> {:ok, ava}
+      end
+    else
+      {:error, :not_found}
     end
   end
 
   # Idempotente: conta já desativada não muda. O último zelador ativo não pode
   # ser desativado (a comunidade ficaria sem quem cuida da máquina).
-  defp deactivate_if_allowed(%Ava{deactivated_at: at} = member) when not is_nil(at) do
+  defp deactivate_if_allowed(_scope, %Ava{deactivated_at: at} = member) when not is_nil(at) do
     {:ok, member}
   end
 
-  defp deactivate_if_allowed(%Ava{} = member) do
-    if last_active_zelador?(member) do
+  defp deactivate_if_allowed(scope, %Ava{} = member) do
+    if last_active_zelador?(scope, member) do
       {:error, :last_zelador}
     else
-      Repo.update(Ava.deactivation_changeset(member, DateTime.utc_now()))
+      Repo.update(Ava.deactivation_changeset(member, agora()))
     end
   end
 
-  # Rebaixar zelador -> morador só é barrado quando esvaziaria a administração.
-  defp ensure_demotion_keeps_zelador(%Ava{role: :zelador} = member, :morador) do
-    if last_active_zelador?(member), do: {:error, :last_zelador}, else: :ok
-  end
+  defp last_active_zelador?(_scope, %Ava{papel: papel, deactivated_at: deactivated_at})
+       when papel != :zelador or not is_nil(deactivated_at), do: false
 
-  defp ensure_demotion_keeps_zelador(_member, _role), do: :ok
+  defp last_active_zelador?(scope, %Ava{}), do: active_zelador_count(scope) == 1
 
-  # `member` é o único zelador ativo da Tekoa? Só faz sentido quando ele próprio
-  # é um zelador já ativado; nesse caso, contagem == 1 significa que é o último.
-  # Um convite pendente de zelador não conta: a pessoa ainda não entrou.
-  defp last_active_zelador?(%Ava{role: :zelador, activated_at: activated_at, deactivated_at: nil})
-       when not is_nil(activated_at), do: active_zelador_count() == 1
-
-  defp last_active_zelador?(%Ava{}), do: false
-
-  # Trava os zeladores ativos com FOR UPDATE para serializar desativações e
-  # rebaixamentos concorrentes: dois zeladores se removendo ao mesmo tempo não
-  # podem ambos ler count == 2 e zerar a administração -- o segundo bloqueia,
-  # relê após o commit do primeiro e enxerga count == 1. Roda sempre dentro da
-  # transação de `Repo.with_tekoa`. `count(*)` não aceita FOR UPDATE no Postgres,
-  # então travamos as linhas e contamos no Elixir (teto de 50 membros, custo trivial).
-  # Só conta zelador já ativado: um convite pendente de zelador não é gente ainda.
-  defp active_zelador_count do
+  # Serialização de desativações e rebaixamentos concorrentes: no Postgres o
+  # `FOR UPDATE` travava as linhas dos zeladores ativos. O SQLite não tem row
+  # lock; a escrita inteira da caixa é serializada pelo lock do arquivo (com
+  # `busy_timeout`, o segundo bloqueia, relê após o commit do primeiro e
+  # enxerga o count atualizado). Roda sempre dentro do contexto de Tekoa. Só
+  # conta zelador já ativado: um convite pendente de zelador não é gente ainda.
+  defp active_zelador_count(scope) do
     from(a in Ava,
-      where: a.role == :zelador and is_nil(a.deactivated_at) and not is_nil(a.activated_at),
-      lock: "FOR UPDATE",
+      where:
+        a.tekoa_id == ^scope.tekoa.id and a.papel == :zelador and
+          is_nil(a.deactivated_at) and not is_nil(a.activated_at),
       select: a.id
     )
     |> Repo.all()
     |> length()
   end
 
-  ## Reset de senha
-
-  @impl true
-  def mint_reset_link(%Scope{} = scope, %Ava{} = member) do
+  @doc """
+  O zelador gera o link de redefinicao de um morador: o token cru volta para
+  o chamador montar a URL (a entrega e o canal sao do produto).
+  """
+  def mint_reset_link(%Ypy.Scope{} = scope, %Ava{} = member) do
     if zelador?(scope.ava) do
-      result = Repo.with_tekoa(scope.tekoa.public_id, fn -> do_mint_reset_link(scope, member) end)
-
-      # O registro vai no mural depois da transação, com o nome do membro para
-      # quem o link foi gerado (padrão dos demais atos do zelador).
-      with {:ok, %Ava{} = with_token} <- result do
-        record_event(scope.tekoa.public_id, scope.ava.id, :reset_link_created, %{
-          "member" => ava_name(with_token)
-        })
-      end
-
-      result
+      mint_reset_link_zelador(scope, member)
     else
       {:error, :unauthorized}
     end
   end
 
-  defp do_mint_reset_link(%Scope{} = scope, %Ava{} = member) do
-    case Repo.get_by(Ava, public_id: member.public_id, tekoa_id: scope.tekoa.id) do
-      nil -> {:error, :not_found}
-      %Ava{} = ava -> Repo.update(Ava.password_reset_request_changeset(ava))
+  defp mint_reset_link_zelador(%Ypy.Scope{} = scope, %Ava{} = member) do
+    raw_token = generate_token()
+
+    with {:ok, %{ava: with_token, token: token}} <-
+           within_tekoa(scope, fn -> mint_reset_token(scope, member, raw_token) end) do
+      record_event(scope, :reset_link_created, %{"member" => ava_name(with_token)})
+      {:ok, %{ava: with_token, token: token}}
     end
   end
 
-  @impl true
+  defp mint_reset_token(%Ypy.Scope{} = scope, %Ava{} = member, raw_token) do
+    case Repo.get_by(Ava, public_id: member.public_id, tekoa_id: scope.tekoa.id) do
+      nil ->
+        {:error, :not_found}
+
+      %Ava{} = ava ->
+        Repo.update(
+          Ava.reset_request_changeset(ava, %{
+            reset_token_hash: hash_token(raw_token),
+            reset_sent_at: agora()
+          })
+        )
+
+        {:ok, %{ava: ava, token: raw_token}}
+    end
+  end
+
   def reset_password(reset_token, new_password, password_confirmation) do
     with %Ava{} = ava <- find_by_token(:reset_token_hash, reset_token),
-         false <- token_expired?(ava.reset_token_sent_at, @reset_max_age_seconds) do
-      attrs = %{password: new_password, password_confirmation: password_confirmation}
-
+         false <- token_expired?(ava.reset_sent_at, @reset_max_age_seconds),
+         :ok <-
+           confirmation_ok?(%{password: new_password, password_confirmation: password_confirmation}) do
       Repo.with_tekoa(tekoa_public_id(ava), fn ->
-        Repo.update(Ava.password_reset_changeset(ava, attrs))
+        Repo.update(Ava.reset_changeset(ava, %{password: new_password}))
       end)
     else
       _ -> {:error, :invalid_token}
@@ -572,388 +541,228 @@ defmodule Taina.Maraca do
   link vale, `:invalid` quando expirou ou não existe. Mesma intenção do
   `invite_status/1` para a tela de redefinir senha.
   """
-  @impl true
   def reset_status(token) do
     case find_by_token(:reset_token_hash, token) do
       %Ava{} = ava ->
-        if token_expired?(ava.reset_token_sent_at, @reset_max_age_seconds),
-          do: :invalid,
-          else: :ok
+        if token_expired?(ava.reset_sent_at, @reset_max_age_seconds), do: :invalid, else: :ok
 
       _ ->
         :invalid
     end
   end
 
-  ## Autorização
+  ## Verbos sociais do kernel (concessao, pedido, decisao)
 
-  @impl true
-  def authorize?(%Ava{} = ava, action, resource_type, resource_id)
-      when is_atom(action) and is_binary(resource_type) and is_binary(resource_id) do
+  @doc """
+  Pode `ava` agir sobre o recurso? A leitura segue a regra das duas zonas do
+  kernel (praca OU dono OU concessao, RFC_003 D2); escrever e apagar sao do
+  dono (a concessao do kernel e sempre de leitura).
+  """
+  def authorize?(%Ava{} = ava, action, tipo, rkey)
+      when is_atom(action) and is_binary(tipo) and is_binary(rkey) and tipo in @kernel_tipos do
     {:ok, authorized?} =
       Repo.with_tekoa(tekoa_public_id(ava), fn ->
+        scope = Scope.new(ava, Repo.get!(Tekoa, ava.tekoa_id))
+
         {:ok,
-         owner_of?(ava, resource_type, resource_id) or
-           has_permission?(ava, action, resource_type, resource_id)}
+         cond do
+           action == :read -> Ypy.Ybira.readable?(Repo, scope, tipo, rkey)
+           Ypy.Ybira.owner?(Repo, scope.tekoa.id, tipo, rkey, ava.id) -> true
+           true -> false
+         end}
       end)
 
     authorized?
   end
 
-  @impl true
-  def authorize!(%Ava{} = ava, action, resource_type, resource_id) do
-    if authorize?(ava, action, resource_type, resource_id) do
+  def authorize?(_ava, _action, _tipo, _rkey), do: false
+
+  def authorize!(%Ava{} = ava, action, tipo, rkey) do
+    if authorize?(ava, action, tipo, rkey) do
       :ok
     else
-      raise UnauthorizedError,
+      raise Taina.Maraca.UnauthorizedError,
         ava: ava,
         action: action,
-        resource_type: resource_type,
-        resource_id: resource_id
+        resource_type: tipo,
+        resource_id: rkey
     end
   end
 
   @doc """
-  Pode `ava` ler este recurso ja carregado? Regra de leitura das duas zonas
-  (RFC_003 D2): `praca OU dono OU permissao explicita`. O zelador nao tem atalho.
-
-  Recebe a `zona` e o `owner_id` que o chamador (Ybira/Jaci) ja tem em maos no
-  struct, entao nao re-consulta o dono e so toca a tabela de permissoes como
-  ultimo recurso. Difere de `authorize?/4`, que resolve o dono por `public_id` e
-  desconhece zona; aqui a zona e a parte nova e o motor (dono OU permissao)
-  continua o mesmo.
-
-  Roda dentro do `with_tekoa` do chamador (a consulta de permissao precisa do
-  contexto RLS); chame-a so de dentro de um `Repo.with_tekoa/2` ja aberto.
+  A regra de leitura sobre um recurso resolvido pelo rkey, delegada ao kernel
+  (`Ypy.Ybira.readable?/4`): casa alheia sem concessao nao passa, e o zelador
+  nao tem atalho.
   """
-  @impl true
-  @spec can_read?(Ava.t(), :casa | :praca, integer(), String.t(), String.t()) :: boolean()
-  def can_read?(%Ava{} = ava, zona, owner_id, resource_type, public_id)
-      when zona in ~w(casa praca)a and is_integer(owner_id) and is_binary(resource_type) and is_binary(public_id) do
-    zona == :praca or ava.id == owner_id or
-      has_permission?(ava, :read, resource_type, public_id)
+  @spec can_read?(Ypy.Scope.t(), String.t(), String.t()) :: boolean()
+  def can_read?(%Ypy.Scope{} = scope, tipo, rkey) when tipo in @kernel_tipos do
+    Ypy.Ybira.readable?(Repo, scope, tipo, rkey)
+  end
+
+  @doc "Abre a propria casa para um leitor (kernel: `Ypy.Maraca.conceder/6`)."
+  def conceder(%Ypy.Scope{} = scope, tipo, rkey, %Ava{} = leitor) do
+    within_tekoa(scope, fn ->
+      Ypy.Maraca.conceder(Repo, Keys.new(), scope, tipo, rkey, leitor)
+    end)
+  end
+
+  @doc "Revoga a concessao ativa (kernel: `Ypy.Maraca.revogar/4`)."
+  def revogar(%Ypy.Scope{} = scope, %Concessao{} = concessao) do
+    within_tekoa(scope, fn ->
+      # Rele antes de revogar: o estado pode ter mudado desde o struct em
+      # maos (revogada em outra janela), e o guard do kernel julga o atual.
+      case KernelStore.get_concessao(Repo, scope.tekoa.id, concessao.id) do
+        nil -> {:error, :not_found}
+        %Concessao{} = atual -> Ypy.Maraca.revogar(Repo, Keys.new(), scope, atual)
+      end
+    end)
   end
 
   @doc """
-  Filtro de leitura para listagens, regra das duas zonas (RFC_003 D2) no nivel da
-  query, sem N+1. Devolve um `Ecto.Query.dynamic` que so deixa passar linhas
-  legiveis por `ava`: `zona == :praca OU ava_id == ava.id OU public_id em
-  permissoes(:read)`.
-
-  O chamador deve marcar o schema do recurso com `as: :readable` no `from` e
-  aplicar `where: ^Maraca.readable_dynamic(ava, resource_type)`. A subconsulta de
-  permissoes nao depende do binding externo, entao funciona tanto numa listagem
-  simples (Ybira) quanto numa que faz `select` de mapa (linha do tempo do Jaci).
-
-  Pressupoe o contexto RLS aberto (`with_tekoa`); a subconsulta de permissoes e
-  escopada por Tekoa pelas policies.
+  O pedido de acesso (kernel: `Ypy.Maraca.pedir_acesso/5`) mais a notificacao
+  do produto: o dono ouve no PubSub para a tela dele acender o aviso.
   """
-  @impl true
-  @spec readable_dynamic(Ava.t(), String.t()) :: Ecto.Query.dynamic_expr()
-  def readable_dynamic(%Ava{} = ava, resource_type) when is_binary(resource_type) do
-    permitted =
-      from p in Permission,
-        where: p.ava_id == ^ava.id,
-        where: p.action == :read,
-        where: p.resource_type == ^resource_type,
-        select: p.resource_id
-
-    dynamic(
-      [readable: r],
-      r.zona == :praca or r.ava_id == ^ava.id or r.public_id in subquery(permitted)
-    )
-  end
-
-  @impl true
-  def grant_permission(%Ava{} = granter, %Ava{} = recipient, action, resource_type, resource_id) do
-    if action in @grantable_actions do
-      Repo.with_tekoa(tekoa_public_id(granter), fn ->
-        insert_grant(granter, recipient, action, resource_type, resource_id)
-      end)
-    else
-      {:error, :invalid_action}
+  def pedir_acesso(%Ypy.Scope{} = scope, tipo, rkey, motivo) do
+    with {:ok, %{pedido: pedido, dono_pid: dono_pid}} <-
+           within_tekoa(scope, fn -> pedir_acesso_na_tekoa(scope, tipo, rkey, motivo) end) do
+      notify(dono_pid, {:access_requested, pedido})
+      {:ok, pedido}
     end
   end
 
-  defp insert_grant(granter, recipient, action, resource_type, resource_id) do
-    if owner_of?(granter, resource_type, resource_id) do
-      %Permission{}
-      |> Permission.grant_changeset(%{
-        ava_id: recipient.id,
-        resource_type: resource_type,
-        resource_id: resource_id,
-        action: action,
-        granted_by_id: granter.id,
-        tekoa_id: granter.tekoa_id
-      })
-      |> Repo.insert()
-    else
-      {:error, :not_owner}
+  defp pedir_acesso_na_tekoa(%Ypy.Scope{} = scope, tipo, rkey, motivo) do
+    with {:ok, pedido} <- Ypy.Maraca.pedir_acesso(Repo, scope, tipo, rkey, motivo) do
+      {:ok, %{pedido: pedido, dono_pid: ava_public_id(scope.tekoa.id, pedido.dono_id)}}
     end
   end
 
-  @impl true
-  def revoke_permission(%Ava{} = revoker, %Ava{} = recipient, action, resource_type, resource_id) do
-    result =
-      Repo.with_tekoa(tekoa_public_id(revoker), fn ->
-        permission =
-          Repo.get_by(Permission,
-            ava_id: recipient.id,
-            action: action,
-            resource_type: resource_type,
-            resource_id: resource_id
-          )
-
-        revoke_if_allowed(permission, revoker, resource_type, resource_id)
-      end)
-
-    with {:ok, :revoked} <- result, do: :ok
-  end
-
-  defp revoke_if_allowed(nil, _revoker, _type, _id), do: {:error, :not_found}
-
-  defp revoke_if_allowed(%Permission{} = permission, revoker, resource_type, resource_id) do
-    if owner_of?(revoker, resource_type, resource_id) or permission.granted_by_id == revoker.id do
-      Repo.delete!(permission)
-      {:ok, :revoked}
-    else
-      {:error, :not_authorized}
+  @doc "Aprova o pedido pendente; nasce a concessao, entrada na cadeia."
+  def aprovar(%Ypy.Scope{} = scope, %Pedido{} = pedido) do
+    with {:ok, %{concessao: concessao, pedinte_pid: pedinte_pid}} <-
+           within_tekoa(scope, fn -> aprovar_na_tekoa(scope, pedido) end) do
+      notify(pedinte_pid, {:access_request_approved, concessao})
+      {:ok, concessao}
     end
   end
 
-  @impl true
-  def list_permissions(resource_type, resource_id) do
-    # Listagem de sistema: o zelador vê as permissões de um recurso cruzando
-    # o contexto (quem pode ler um arquivo de outro, por exemplo, não é
-    # visível pela policy do próprio solicitante).
-    {:ok, permissions} =
-      Repo.with_system(fn ->
-        permissions =
-          from(p in Permission,
-            where: p.resource_type == ^resource_type,
-            where: p.resource_id == ^resource_id
-          )
-          |> Repo.all(skip_tekoa_id: true)
-          |> Repo.preload([:ava, :granted_by], skip_tekoa_id: true)
+  defp aprovar_na_tekoa(%Ypy.Scope{} = scope, %Pedido{} = pedido) do
+    with {:ok, %{pedido: pedido, concessao: concessao}} <-
+           Ypy.Maraca.aprovar(Repo, Keys.new(), scope, pedido) do
+      {:ok, %{concessao: concessao, pedinte_pid: ava_public_id(scope.tekoa.id, pedido.pedinte_id)}}
+    end
+  end
 
-        {:ok, permissions}
-      end)
+  @doc "Nega o pedido pendente. Nada muda de visibilidade, o pedido registra."
+  def negar(%Ypy.Scope{} = scope, %Pedido{} = pedido) do
+    with {:ok, %{pedido: pedido, pedinte_pid: pedinte_pid}} <-
+           within_tekoa(scope, fn -> negar_na_tekoa(scope, pedido) end) do
+      notify(pedinte_pid, {:access_request_denied, pedido})
+      {:ok, pedido}
+    end
+  end
 
-    permissions
+  defp negar_na_tekoa(%Ypy.Scope{} = scope, %Pedido{} = pedido) do
+    with {:ok, pedido} <- Ypy.Maraca.negar(Repo, scope, pedido) do
+      {:ok, %{pedido: pedido, pedinte_pid: ava_public_id(scope.tekoa.id, pedido.pedinte_id)}}
+    end
+  end
+
+  ## Mural (a projecao da cadeia, RFC_006 secao 8)
+
+  @doc "Os pedidos pendentes que o morador recebeu como dono (com quem pediu)."
+  def pedidos_recebidos(%Ypy.Scope{} = scope) do
+    within_tekoa(scope, fn ->
+      {:ok, Repo |> Ypy.Maraca.pedidos_recebidos(scope) |> Repo.preload(:pedinte)}
+    end)
   end
 
   @doc """
-  Permissões de leitura que `owner` concedeu nas próprias casa/praça, para a
-  tela de pedidos poder auditar e revogar o que já foi liberado (RFC_003 D2: o
-  poder concedido é visível e reversível). Traz a pessoa (`:ava`) preload para
-  a lista nomear quem recebeu.
+  Os pedidos ainda sem decisao que o morador fez (com o dono de quem espera).
+  Os ja decididos saem daqui para "Meus pedidos" (`list_my_recent_decisions/1`)
+  e nao voltam como pendentes: o kernel lista de todos os status, o produto
+  separa as secoes da tela.
   """
-  @impl true
-  def list_my_grants(%Ava{} = owner) do
-    {:ok, grants} =
-      Repo.with_tekoa(tekoa_public_id(owner), fn ->
-        query =
-          from p in Permission,
-            where: p.granted_by_id == ^owner.id,
-            where: p.action == :read,
-            order_by: [desc: p.inserted_at],
-            preload: [:ava]
+  def pedidos_enviados(%Ypy.Scope{} = scope) do
+    within_tekoa(scope, fn ->
+      pedidos =
+        Repo
+        |> Ypy.Maraca.pedidos_enviados(scope)
+        |> Repo.preload(:dono)
+        |> Enum.filter(&(&1.status == :pendente))
 
-        {:ok, Repo.all(query)}
-      end)
-
-    grants
-  end
-
-  ## Acesso do zelador (com aprovação do dono)
-
-  @impl true
-  def request_access(%Ava{} = requester, %Ava{} = owner, resource_type, resource_id, reason) do
-    cond do
-      owner.tekoa_id != requester.tekoa_id ->
-        {:error, :cross_tekoa_owner}
-
-      requester.id == owner.id ->
-        {:error, :cannot_request_own}
-
-      authorize?(requester, :read, resource_type, resource_id) ->
-        {:error, :already_has_access}
-
-      true ->
-        attrs = %{
-          requester_id: requester.id,
-          owner_id: owner.id,
-          resource_type: resource_type,
-          resource_id: resource_id,
-          reason: reason,
-          tekoa_id: requester.tekoa_id
-        }
-
-        result =
-          Repo.with_tekoa(tekoa_public_id(requester), fn ->
-            Repo.insert(AccessRequest.create_changeset(%AccessRequest{}, attrs))
-          end)
-
-        with {:ok, request} <- result do
-          record_event(tekoa_public_id(requester), requester.id, :access_requested, %{
-            "owner" => ava_name(owner)
-          })
-
-          notify(owner.public_id, {:access_requested, request})
-          {:ok, request}
-        end
-    end
-  end
-
-  @impl true
-  def approve_access_request(%Ava{} = owner, access_request_id) do
-    result =
-      Repo.with_tekoa(tekoa_public_id(owner), fn ->
-        with {:ok, request} <- fetch_pending_request(owner, access_request_id),
-             {:ok, _request} <- Repo.update(AccessRequest.changeset(request, %{status: :approved})) do
-          %Permission{}
-          |> Permission.grant_changeset(%{
-            ava_id: request.requester_id,
-            resource_type: request.resource_type,
-            resource_id: request.resource_id,
-            action: :read,
-            granted_by_id: owner.id,
-            tekoa_id: owner.tekoa_id
-          })
-          |> Repo.insert()
-        end
-      end)
-
-    with {:ok, permission} <- result do
-      requester = system_ava(permission.ava_id)
-
-      record_event(tekoa_public_id(owner), owner.id, :access_granted, %{
-        "requester" => ava_name(requester)
-      })
-
-      notify_requester(permission.ava_id, {:access_request_approved, permission})
-      {:ok, permission}
-    end
-  end
-
-  @impl true
-  def deny_access_request(%Ava{} = owner, access_request_id) do
-    result =
-      Repo.with_tekoa(tekoa_public_id(owner), fn ->
-        with {:ok, request} <- fetch_pending_request(owner, access_request_id) do
-          Repo.update(AccessRequest.changeset(request, %{status: :denied}))
-        end
-      end)
-
-    with {:ok, request} <- result do
-      requester = system_ava(request.requester_id)
-
-      record_event(tekoa_public_id(owner), owner.id, :access_denied, %{
-        "requester" => ava_name(requester)
-      })
-
-      notify_requester(request.requester_id, {:access_request_denied, request})
-      {:ok, request}
-    end
-  end
-
-  defp fetch_pending_request(%Ava{} = owner, access_request_id) do
-    case Repo.get(AccessRequest, access_request_id) do
-      nil -> {:error, :not_found}
-      %AccessRequest{owner_id: owner_id} when owner_id != owner.id -> {:error, :not_owner}
-      %AccessRequest{status: :pending} = request -> {:ok, request}
-      %AccessRequest{} -> {:error, :invalid_status}
-    end
-  end
-
-  @impl true
-  def list_access_requests(%Ava{} = owner) do
-    {:ok, requests} =
-      Repo.with_tekoa(tekoa_public_id(owner), fn ->
-        query =
-          from r in AccessRequest,
-            where: r.owner_id == ^owner.id,
-            where: r.status == :pending,
-            order_by: [desc: r.inserted_at],
-            preload: [:requester]
-
-        {:ok, Repo.all(query)}
-      end)
-
-    requests
-  end
-
-  @impl true
-  def list_my_requests(%Ava{} = requester) do
-    {:ok, requests} =
-      Repo.with_tekoa(tekoa_public_id(requester), fn ->
-        query =
-          from r in AccessRequest,
-            where: r.requester_id == ^requester.id,
-            where: r.status == :pending,
-            order_by: [desc: r.inserted_at],
-            preload: [:owner]
-
-        {:ok, Repo.all(query)}
-      end)
-
-    requests
+      {:ok, pedidos}
+    end)
   end
 
   @doc """
-  Pedidos feitos por `requester` já decididos (aprovados ou recusados), para
+  As concessoes ainda em pe que o morador concedeu (com o leitor): as da
+  secao "Ja liberados". Revogadas saem da tela (o rito delas fica registrado
+  na cadeia; o kernel lista de todos os status).
+  """
+  def concessoes_concedidas(%Ypy.Scope{} = scope) do
+    within_tekoa(scope, fn ->
+      concessoes =
+        Repo
+        |> Ypy.Maraca.concessoes_concedidas(scope)
+        |> Enum.reject(& &1.revogada_em)
+        |> Repo.preload(:leitor)
+
+      {:ok, concessoes}
+    end)
+  end
+
+  @doc """
+  Pedidos feitos por `scope.ava` já decididos (aprovados ou recusados), para
   "Meus pedidos" não deixar o pedido sumir sem explicação (RFC_003: sem
-  resultado silencioso). Ordena pela última decisão; traz o dono (`:owner`)
-  preload para a frase nomear quem decidiu.
+  resultado silencioso). Ordena pela última decisão.
   """
-  @impl true
-  def list_my_recent_decisions(%Ava{} = requester) do
-    {:ok, requests} =
-      Repo.with_tekoa(tekoa_public_id(requester), fn ->
-        query =
-          from r in AccessRequest,
-            where: r.requester_id == ^requester.id,
-            where: r.status != :pending,
-            order_by: [desc: r.updated_at],
-            preload: [:owner]
+  def list_my_recent_decisions(%Ypy.Scope{} = scope) do
+    within_tekoa(scope, fn ->
+      decisions =
+        from(p in Pedido,
+          where: p.tekoa_id == ^scope.tekoa.id,
+          where: p.pedinte_id == ^scope.ava.id,
+          where: p.status != :pendente,
+          order_by: [desc: p.decidido_em]
+        )
+        |> Repo.all()
+        |> Repo.preload(:dono)
 
-        {:ok, Repo.all(query)}
-      end)
-
-    requests
+      {:ok, decisions}
+    end)
   end
 
-  @impl true
   def subscribe_to_my_events(%Ava{public_id: pid}) do
     Phoenix.PubSub.subscribe(Taina.PubSub, "maraca:ava:" <> pid)
   end
 
-  ## Mural (transparência, RFC_003 seção 6)
-
-  @impl true
-  def record_event(tekoa_public_id, ava_id, type, payload)
-      when is_binary(tekoa_public_id) and (is_integer(ava_id) or is_nil(ava_id)) do
+  @doc """
+  Registra o ato do produto (convite, desativacao, cota...) como entrada da
+  cadeia unica, assinada pela chave da Tekoa. O ato ja aconteceu: falha de
+  cadeia vira log, nunca derruba quem chamou. Verbos do kernel (concessao,
+  publicar, mudar papel...) anexam a propria entrada, sem passar daqui.
+  """
+  def record_event(%Ypy.Scope{} = scope, type, payload) when is_map(payload) do
     result =
-      Repo.with_tekoa(tekoa_public_id, fn ->
-        case Repo.get_by(Tekoa, public_id: tekoa_public_id) do
-          %Tekoa{id: tekoa_id} ->
-            %Event{}
-            |> Event.changeset(%{tekoa_id: tekoa_id, ava_id: ava_id, type: type, payload: payload})
-            |> Repo.insert()
-
-          nil ->
-            {:error, :tekoa_not_found}
-        end
+      within_tekoa(scope, fn ->
+        MuralStore.append(
+          Repo,
+          Keys.new(),
+          scope.tekoa.id,
+          to_string(type),
+          Map.put(payload, "actor", scope.ava.public_id)
+        )
       end)
 
     case result do
-      {:ok, _event} ->
+      {:ok, _entry} ->
         # Camada 3 da transparência (RFC_003 seção 6): métrica na caixa, sem
         # reporter para fora. O tipo no metadata, nunca ids de tekoa/ava.
         :telemetry.execute([:taina, :maraca, :event], %{count: 1}, %{type: type})
         :ok
 
       {:error, reason} ->
+        ## Helpers internos
         Logger.warning("Mural: falha ao registrar evento (o ato já aconteceu), #{inspect(type)}",
           reason: inspect(reason)
         )
@@ -969,17 +778,21 @@ defmodule Taina.Maraca do
       :ok
   end
 
-  @impl true
-  def list_events(%Scope{} = scope, opts \\ []) do
+  @doc """
+  A projecao legivel do mural: as entradas da cadeia, da mais recente para a
+  mais antiga, com paginação por offset. O `payload` de cada entrada traz o
+  que a frase precisa (o ator vem em `"actor"`).
+  """
+  def list_events(%Ypy.Scope{} = scope, opts \\ []) do
     limit = Keyword.get(opts, :limit, @event_page_limit)
     offset = Keyword.get(opts, :offset, 0)
 
-    Repo.with_tekoa(scope.tekoa.public_id, fn ->
+    within_tekoa(scope, fn ->
       query =
-        from e in Event,
+        from(e in Ypy.Mural.Entry,
           where: e.tekoa_id == ^scope.tekoa.id,
-          order_by: [desc: e.inserted_at, desc: e.id],
-          preload: [:ava]
+          order_by: [desc: e.seq]
+        )
 
       rows =
         query
@@ -997,19 +810,21 @@ defmodule Taina.Maraca do
 
   ## Predicados
 
-  @impl true
-  def zelador?(%Ava{role: :zelador}), do: true
-  def zelador?(%Ava{}), do: false
+  # O predicado puro e do kernel (`Ypy.Maraca.Policy`); aqui so extrai o papel.
+  def zelador?(%Ava{papel: papel}), do: Policy.zelador?(papel)
 
-  @impl true
-  def morador?(%Ava{role: :morador}), do: true
-  def morador?(%Ava{}), do: false
+  def morador?(%Ava{papel: papel}), do: Policy.morador?(papel)
 
-  @impl true
-  def activated?(%Ava{activated_at: nil}), do: false
-  def activated?(%Ava{}), do: true
+  def activated?(%Ava{} = ava), do: Ava.active?(ava)
 
-  ## Helpers internos
+  defp within_tekoa(%Ypy.Scope{} = scope, cb), do: Repo.with_tekoa(scope.tekoa.public_id, cb)
+
+  defp ava_public_id(tekoa_id, ava_id) do
+    case KernelStore.get_ava(Repo, tekoa_id, ava_id) do
+      %Ava{public_id: public_id} -> public_id
+      nil -> nil
+    end
+  end
 
   # Nome social do Ava para as frases do mural: nome de exibição quando existe,
   # senão o nome de usuário. Convite pendente (sem nome ainda) cai em nil e o
@@ -1017,37 +832,12 @@ defmodule Taina.Maraca do
   defp ava_name(%Ava{} = ava), do: ava.display_name || ava.username
   defp ava_name(_other), do: nil
 
-  defp owner_of?(%Ava{} = ava, resource_type, resource_id) do
-    case Map.fetch(@owned_resources, resource_type) do
-      {:ok, {schema, owner_field}} ->
-        case Repo.get_by(schema, public_id: resource_id) do
-          nil -> false
-          resource -> Map.fetch!(resource, owner_field) == ava.id
-        end
-
-      :error ->
-        false
-    end
-  end
-
-  defp has_permission?(%Ava{} = ava, action, resource_type, resource_id) do
-    query =
-      from p in Permission,
-        where: p.ava_id == ^ava.id,
-        where: p.action == ^action,
-        where: p.resource_type == ^resource_type,
-        where: p.resource_id == ^resource_id
-
-    Repo.exists?(query)
-  end
-
   defp find_by_token(hash_field, token) when is_binary(token) do
-    # Consulta de sistema (`skip_tekoa_id: true` + válvula): usada no login e
-    # no aceite/reset, antes de haver contexto RLS -- a busca é justamente o
-    # que constrói o contexto.
+    # Consulta de sistema: usada no aceite/reset, antes de haver contexto --
+    # a busca é justamente o que constrói o contexto.
     {:ok, ava} =
       Repo.with_system(fn ->
-        {:ok, Repo.get_by(Ava, [{hash_field, Ava.hash_token(token)}], skip_tekoa_id: true)}
+        {:ok, Repo.get_by(Ava, [{hash_field, hash_token(token)}], skip_tekoa_id: true)}
       end)
 
     ava
@@ -1074,25 +864,20 @@ defmodule Taina.Maraca do
     public_id
   end
 
-  # Re-busca de Ava fora do contexto de Tekoa, pós-transação (mural e
-  # notificação do pedido de acesso): em produção as policies de RLS
-  # esconderiam a linha do papel de aplicação sem contexto, então a busca
-  # cruza pela válvula. Devolve `%Ava{}` ou `nil`, como o `Repo.get/3` que
-  # substitui nos sites de sistema.
-  defp system_ava(ava_id) do
-    {:ok, ava} = Repo.with_system(fn -> {:ok, Repo.get(Ava, ava_id, skip_tekoa_id: true)} end)
-
-    ava
-  end
-
-  defp notify_requester(requester_ava_id, message) do
-    case system_ava(requester_ava_id) do
-      nil -> :ok
-      %Ava{} = requester -> notify(requester.public_id, message)
-    end
-  end
+  defp notify(nil, _message), do: :ok
 
   defp notify(ava_public_id, message) do
     Phoenix.PubSub.broadcast(Taina.PubSub, "maraca:ava:" <> ava_public_id, message)
   end
+
+  defp generate_token, do: Nanoid.generate(32)
+
+  # Hash SHA256 do token cru, o mesmo formato consultado por find_by_token/2.
+  defp hash_token(raw_token) do
+    :sha256 |> :crypto.hash(raw_token) |> Base.encode64(padding: false)
+  end
+
+  defp fetch_attr(attrs, key) when is_map(attrs), do: Map.get(attrs, key) || Map.get(attrs, to_string(key))
+
+  defp agora, do: DateTime.truncate(DateTime.utc_now(), :second)
 end

@@ -2,6 +2,14 @@ import Config
 
 alias Ecto.Adapters.SQL.Sandbox
 
+# SQLite por partição de teste: um arquivo temporario por MIX_TEST_PARTITION,
+# recriado do zero pelo `mix test` (ecto.create + ecto.migrate).
+test_db =
+  Path.join(
+    System.tmp_dir!(),
+    "taina_test#{System.get_env("MIX_TEST_PARTITION")}.db"
+  )
+
 # Fast password hashing in tests
 config :bcrypt_elixir, log_rounds: 4
 
@@ -11,24 +19,17 @@ config :logger, level: :warning
 # Initialize plugs at runtime for faster test compilation
 config :phoenix, :plug_init_mode, :runtime
 
-if db_url = System.get_env("DATABASE_URL") do
-  config :taina, Taina.Repo,
-    url: db_url,
-    pool: Sandbox,
-    pool_size: System.schedulers_online() * 2
-else
-  config :taina, Taina.Repo,
-    username: "postgres",
-    password: "postgres",
-    hostname: "localhost",
-    database: "taina_test#{System.get_env("MIX_TEST_PARTITION")}",
-    pool: Sandbox,
-    pool_size: System.schedulers_online() * 2
-end
-
 # Jobs rodam síncronos (inline) no processo de teste, dentro do sandbox Ecto,
 # sem filas nem cron de verdade.
 config :taina, Oban, testing: :inline
+
+config :taina, Taina.Repo,
+  database: test_db,
+  pool: Sandbox,
+  pool_size: System.schedulers_online() * 2,
+  journal_mode: :wal,
+  busy_timeout: 5_000,
+  default_transaction_mode: :immediate
 
 # We don't run a server during test. If one is required,
 # you can enable the server option below.

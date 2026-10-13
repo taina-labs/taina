@@ -19,15 +19,15 @@ defmodule TainaWeb.FileControllerTest do
   defp authed(conn, ava), do: log_in(conn, ava)
 
   test "serves the full ybira_file with 200 and accept-ranges", %{conn: conn, ava: ava, ybira_file: ybira_file} do
-    conn = conn |> authed(ava) |> get(~p"/files/#{ybira_file.public_id}")
+    conn = conn |> authed(ava) |> get(~p"/files/#{ybira_file.rkey}")
 
     assert conn.status == 200
     assert response(conn, 200) == @contents
     assert get_resp_header(conn, "accept-ranges") == ["bytes"]
-    assert get_resp_header(conn, "content-type") == [ybira_file.mime_type]
+    assert get_resp_header(conn, "content-type") == [ybira_file.mime]
 
     assert get_resp_header(conn, "content-disposition") == [
-             ~s(attachment; filename="#{ybira_file.original_filename}")
+             ~s(attachment; filename="#{ybira_file.nome}")
            ]
   end
 
@@ -36,11 +36,11 @@ defmodule TainaWeb.FileControllerTest do
       conn
       |> authed(ava)
       |> put_req_header("range", "bytes=0-4")
-      |> get(~p"/files/#{ybira_file.public_id}")
+      |> get(~p"/files/#{ybira_file.rkey}")
 
     assert conn.status == 206
     assert response(conn, 206) == binary_part(@contents, 0, 5)
-    assert get_resp_header(conn, "content-range") == ["bytes 0-4/#{ybira_file.file_size_bytes}"]
+    assert get_resp_header(conn, "content-range") == ["bytes 0-4/#{ybira_file.tamanho}"]
   end
 
   test "answers 416 for an unsatisfiable range", %{conn: conn, ava: ava, ybira_file: ybira_file} do
@@ -48,14 +48,14 @@ defmodule TainaWeb.FileControllerTest do
       conn
       |> authed(ava)
       |> put_req_header("range", "bytes=999999-")
-      |> get(~p"/files/#{ybira_file.public_id}")
+      |> get(~p"/files/#{ybira_file.rkey}")
 
     assert conn.status == 416
-    assert get_resp_header(conn, "content-range") == ["bytes */#{ybira_file.file_size_bytes}"]
+    assert get_resp_header(conn, "content-range") == ["bytes */#{ybira_file.tamanho}"]
   end
 
   test "redirects to login without a session", %{conn: conn, ybira_file: ybira_file} do
-    conn = get(conn, ~p"/files/#{ybira_file.public_id}")
+    conn = get(conn, ~p"/files/#{ybira_file.rkey}")
 
     assert redirected_to(conn, 302) == "/login"
   end
@@ -67,9 +67,9 @@ defmodule TainaWeb.FileControllerTest do
   end
 
   test "redirects another resident's casa file to its screen", %{conn: conn, other: other, ybira_file: ybira_file} do
-    conn = conn |> authed(other.ava) |> get(~p"/files/#{ybira_file.public_id}")
+    conn = conn |> authed(other.ava) |> get(~p"/files/#{ybira_file.rkey}")
 
-    assert redirected_to(conn, 302) == "/arquivos/#{ybira_file.public_id}"
+    assert redirected_to(conn, 302) == "/arquivos/#{ybira_file.rkey}"
   end
 
   test "200 once the file is published to the praca", %{
@@ -78,16 +78,16 @@ defmodule TainaWeb.FileControllerTest do
     other: other,
     ybira_file: ybira_file
   } do
-    {:ok, _} = Ybira.publicar_file(owner, ybira_file.public_id)
+    {:ok, _} = Ybira.publicar_file(owner, ybira_file.rkey)
 
-    conn = conn |> authed(other.ava) |> get(~p"/files/#{ybira_file.public_id}")
+    conn = conn |> authed(other.ava) |> get(~p"/files/#{ybira_file.rkey}")
 
     assert conn.status == 200
     assert response(conn, 200) == @contents
   end
 
   test "200 for the owner's own casa file (no lockout)", %{conn: conn, ava: ava, ybira_file: ybira_file} do
-    conn = conn |> authed(ava) |> get(~p"/files/#{ybira_file.public_id}")
+    conn = conn |> authed(ava) |> get(~p"/files/#{ybira_file.rkey}")
 
     assert conn.status == 200
     assert response(conn, 200) == @contents
