@@ -74,7 +74,7 @@ packages.mixRelease {
   mixFodDeps = packages.fetchMixDeps {
     pname = "taina-deps";
     inherit version src;
-    hash = "sha256-8Vk85jwWA8qIxF0DCd8YjTpquFMRDgutgE8ERkrPvo0=";
+    hash = "sha256-0dX2atg1Hf41OdQJQT/sJ3oH4sBb4cusGdX8KDu0+j8=";
   };
 
   nativeBuildInputs = [ pkg-config ];
@@ -89,9 +89,22 @@ packages.mixRelease {
   # `vix` compiles a NIF against the libvips in buildInputs.
   VIX_COMPILATION_MODE = "PLATFORM_PROVIDED_LIBVIPS";
 
-  # Build and digest the assets before installPhase's `mix release` copies
-  # priv/ into the release. postBuild runs after `mix compile`.
-  postBuild = "mix assets.deploy";
+  # Deps compile in mixRelease's configurePhase, so the force_build switch has
+  # to be in place before then (preBuild would be too late). exqlite's
+  # elixir_make would otherwise try to download a precompiled NIF, which the
+  # sandbox forbids (and its read-only HOME aborts before the source fallback).
+  preConfigure = ''
+    cat >> config/config.exs <<EOF
+
+config :elixir_make, :force_build, exqlite: true
+EOF
+  '';
+
+  # fetchMixDeps strips each git dep's .git down to HEAD, which breaks Mix's git
+  # dep check for ypy (it reads as a lock mismatch), so the check is skipped
+  # here as the builder's own compile already does. Mirrors the assets.deploy
+  # alias in mix.exs.
+  postBuild = "mix do compile --no-deps-check, esbuild taina --minify, phx.digest";
 
   # nixpkgs strips releases/COOKIE from the store, which the release script
   # reads unconditionally. taina is a single node and never joins a cluster, so

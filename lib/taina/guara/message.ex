@@ -24,8 +24,8 @@ defmodule Taina.Guara.Message do
   import Ecto.Changeset
 
   alias Taina.Guara.Chat
-  alias Taina.Repo.PublicId
   alias Ypy.Maraca.Ava
+  alias Ypy.PublicId
   alias Ypy.Ybira.File
 
   schema "messages" do

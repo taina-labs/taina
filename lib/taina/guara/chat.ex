@@ -34,9 +34,9 @@ defmodule Taina.Guara.Chat do
 
   alias Taina.Guara.Message
   alias Taina.Guara.Participant
-  alias Taina.Repo.PublicId
   alias Ypy.Maraca.Ava
   alias Ypy.Maraca.Tekoa
+  alias Ypy.PublicId
 
   schema "chats" do
     field :public_id, PublicId, autogenerate: true
