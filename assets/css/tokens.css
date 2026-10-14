@@ -22,6 +22,7 @@
   --color-dawn-500: #f2a65a;
   --color-dawn-600: #dd8a3e;
   --color-dawn-700: #b96d2c;
+  --color-dawn-800: #a35c1e;
 
   --color-ember-400: #f08a6c;
   --color-ember-500: #e2674a;
@@ -56,6 +57,10 @@
   --color-red-500: #e5484d;
   --color-red-600: #c03538;
   --color-amber-500: #efb54a;
+  --color-amber-700: #8a6114;
+
+  /* papel: o branco do tema claro (superficie elevada) */
+  --color-paper-0: #ffffff;
 
   /* ---------- primitives - scale ---------- */
   --space-1: 4px;
@@ -120,6 +125,9 @@
   --bg-app: var(--color-night-900);
   --bg-deep: var(--color-night-950);
   --bg-qr: var(--color-star-50);
+  /* visualizador fullscreen: fundo escuro nos dois temas (foto/video pedem
+     moldura neutra), por isso nao segue o bg-deep do shell */
+  --bg-viewer: var(--color-night-950);
 
   --surface-default: var(--color-night-800);
   --surface-raised: var(--color-night-700);
@@ -155,6 +163,11 @@
   --service-nhaman: var(--color-sky-500);
   --service-video: var(--color-sky-300);
   --service-guara: var(--color-guara-500);
+  /* Maraca (identidade, acesso: Moradores, Mural, Pedidos) nao empresta o
+     acento dos outros servicos: ganha o proprio, no ember. */
+  --service-maraca: var(--color-ember-500);
+  --service-maraca-soft: rgb(226 103 74 / 0.16);
+  --service-maraca-tint: var(--color-ember-400);
 
   --feedback-success: var(--color-forest-400);
   --feedback-warning: var(--color-amber-500);
@@ -187,4 +200,73 @@
 
   /* preenchimento dos campos de formulario (night-800 translucido) */
   --field-bg: rgb(15 23 41 / 0.6);
+}
+
+/* ---------- tema claro (prefers-color-scheme) ----------
+   Derivado do tema padrao: superficies quentes da escala star, texto da night
+   e variantes mais escuras dos acentos para manter contraste sobre claro. So
+   os tokens semanticos mudam, nenhum componente sabe que o tema existe. */
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+
+    --bg-app: var(--color-star-50);
+    --bg-deep: var(--color-star-100);
+    --bg-qr: var(--color-paper-0);
+
+    --surface-default: var(--color-paper-0);
+    --surface-raised: var(--color-star-100);
+    --surface-high: var(--color-star-200);
+    --surface-overlay: rgb(255 255 255 / 0.9);
+    --surface-dim: var(--color-star-200);
+    --surface-scrim: rgb(6 10 20 / 0.32);
+    --surface-scrim-strong: rgb(6 10 20 / 0.38);
+    --surface-tint-brand: rgb(221 138 62 / 0.12);
+
+    --border-subtle: rgb(21 32 58 / 0.08);
+    --border-default: rgb(21 32 58 / 0.16);
+    --border-strong: rgb(21 32 58 / 0.28);
+
+    --text-primary: var(--color-night-900);
+    --text-secondary: var(--color-night-600);
+    --text-muted: var(--color-night-400);
+    --text-faint: var(--color-night-300);
+    --text-on-brand: var(--color-paper-0);
+
+    /* dawn-800 como primaria: a dawn-500/600 sumiria sobre o creme, e o
+       ghost/link precisam de contraste de texto (>= 4.5:1). O texto sobre a
+       marca vira branco. */
+    --brand-primary: var(--color-dawn-800);
+    --brand-primary-hover: var(--color-dawn-700);
+    --brand-primary-pressed: var(--color-dawn-800);
+
+    --service-ybira: var(--color-forest-600);
+    --service-ybira-soft: rgb(47 129 89 / 0.14);
+    --service-ybira-hover: var(--color-forest-500);
+    --service-ybira-tint: var(--color-forest-700);
+    --service-jaci: var(--color-moon-600);
+    --service-jaci-soft: rgb(196 154 72 / 0.18);
+    --service-jaci-tint: var(--color-moon-700);
+    --service-nhaman: var(--color-sky-600);
+    --service-video: var(--color-sky-600);
+    --service-guara: var(--color-guara-600);
+    --service-maraca: var(--color-ember-600);
+    --service-maraca-soft: rgb(196 78 51 / 0.14);
+    --service-maraca-tint: var(--color-ember-600);
+
+    --feedback-success: var(--color-forest-600);
+    --feedback-warning: var(--color-amber-700);
+    --feedback-error: var(--color-red-600);
+    --feedback-info: var(--color-sky-600);
+
+    --avatar-tint-0: rgb(221 138 62 / 0.18);
+    --avatar-tint-1: rgb(47 129 89 / 0.18);
+    --avatar-tint-2: rgb(196 154 72 / 0.2);
+    --avatar-tint-3: rgb(63 132 214 / 0.18);
+
+    --field-bg: rgb(255 255 255 / 0.8);
+
+    --elevation-soft: 0 4px 16px 0 rgb(6 10 20 / 0.08);
+    --elevation-lifted: 0 12px 32px -4px rgb(6 10 20 / 0.16);
+  }
 }

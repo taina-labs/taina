@@ -1,14 +1,16 @@
 defmodule TainaWeb.AccessRequestsLive do
   @moduledoc """
-  Caixa de pedidos do dono ("Conta -> Pedidos", RFC_003 D4): quem pediu para
-  abrir um arquivo seu, com o arquivo nomeado e o motivo explicado. O dono
-  aprova (libera leitura) ou nega (a pessoa pode pedir de novo depois).
+  Pedidos ("Conta -> Pedidos", RFC_003 D4), recebidos e enviados numa tela só:
+  quem pediu para abrir um arquivo seu (com o motivo), o que você pediu e
+  aguarda decisão, o que já foi decidido e as permissões que você liberou.
 
-  O poder concedido também é legível e reversível (RFC_003): a seção "Já
-  liberados" lista as permissões de leitura que o dono concedeu, com quem
-  recebeu, o arquivo e desde quando. Tirar o acesso pede confirmação, e
-  quem perdeu o acesso volta a precisar pedir. Sem board próprio no Penpot,
-  composto com os componentes de linha do design system.
+  O dono aprova (libera leitura) ou nega (a pessoa pode pedir de novo depois).
+  Um pedido decidido não desaparece (RFC_003: sem resultado silencioso):
+  aprovado ou recusado, ele desce para "Já decididos" com a resposta dita por
+  quem pediu. O poder concedido também é legível e reversível: "Já liberados"
+  lista as permissões de leitura que o dono concedeu, com quem recebeu, o
+  arquivo e desde quando. Sem board próprio no Penpot, composto com os
+  componentes de linha do design system.
   """
 
   use TainaWeb, :live_view
@@ -32,7 +34,7 @@ defmodule TainaWeb.AccessRequestsLive do
   @impl true
   def handle_event("approve", %{"id" => id}, socket) do
     pedido = Enum.find(socket.assigns.requests, &("#{&1.id}" == id))
-    message = approved_message(socket.assigns.requests, socket.assigns.file_names, pedido)
+    message = approved_message(socket.assigns.incoming_names, pedido)
 
     case pedido && Maraca.aprovar(socket.assigns.current_scope, pedido) do
       {:ok, _concessao} ->
@@ -131,6 +133,22 @@ defmodule TainaWeb.AccessRequestsLive do
     {:noreply, assign_requests(socket)}
   end
 
+  def handle_info({:access_request_approved, concessao}, socket) do
+    message = outgoing_approved_message(socket.assigns.outgoing_names, concessao.recurso)
+
+    {:noreply,
+     socket
+     |> assign_requests()
+     |> Phoenix.LiveView.put_flash(:info, message)}
+  end
+
+  def handle_info({:access_request_denied, _request}, socket) do
+    {:noreply,
+     socket
+     |> assign_requests()
+     |> Phoenix.LiveView.put_flash(:info, gettext("Seu pedido foi negado."))}
+  end
+
   def handle_info(_message, socket), do: {:noreply, socket}
 
   # --- shell imperativo: assign/stream/put_flash ---
@@ -138,18 +156,25 @@ defmodule TainaWeb.AccessRequestsLive do
   defp assign_requests(socket) do
     scope = socket.assigns.current_scope
     {:ok, requests} = Maraca.pedidos_recebidos(scope)
+    {:ok, outgoing} = Maraca.pedidos_enviados(scope)
+    {:ok, decisions} = Maraca.list_my_recent_decisions(scope)
 
     socket
     |> assign(:requests, requests)
-    |> assign(:file_names, file_names(scope, requests))
+    |> assign(:incoming_names, incoming_names(scope, requests))
     |> assign(:any_requests?, requests != [])
+    |> assign(:outgoing, outgoing)
+    |> assign(:outgoing_names, outgoing_names(scope, outgoing))
+    |> assign(:any_outgoing?, outgoing != [])
+    |> assign(:decisions, decisions)
+    |> assign(:decision_names, decision_names(scope, decisions))
     |> assign(:account_alert, account_alert?(scope))
     |> stream(:requests, requests, reset: true)
     |> assign_grants()
   end
 
-  # A seção "Já liberados" carrega por último e decai sozinha: se falhar, a
-  # caixa de pedidos continua no ar, com o estado de erro (e a saída) só nela.
+  # A seção "Já liberados" carrega por último e decai sozinha: se falhar, o
+  # resto da tela continua no ar, com o estado de erro (e a saída) só nela.
   defp assign_grants(socket) do
     scope = socket.assigns.current_scope
 
@@ -187,7 +212,7 @@ defmodule TainaWeb.AccessRequestsLive do
     socket
     |> stream_delete(:requests, %{id: id})
     |> assign(:requests, requests)
-    |> assign(:file_names, file_names(scope, requests))
+    |> assign(:incoming_names, incoming_names(scope, requests))
     |> assign(:any_requests?, requests != [])
     |> assign(:account_alert, account_alert?(scope))
   end
@@ -200,33 +225,84 @@ defmodule TainaWeb.AccessRequestsLive do
     recebidos != [] or enviados != []
   end
 
-  # Nome do arquivo de cada pedido, resolvido no escopo do dono (o pedido traz
-  # o rkey; o dono pode ler o próprio arquivo). Arquivo que não existe mais
-  # vira rótulo neutro, nunca erro de tela.
-  defp file_names(scope, requests) do
-    requests
-    |> Enum.filter(&(&1.tipo == "ypy.file.v0"))
-    |> Enum.uniq_by(& &1.recurso)
-    |> Map.new(fn request -> {request.recurso, resolve_file_name(scope, request.recurso)} end)
-  end
-
-  defp resolve_file_name(scope, rkey) do
-    case Ybira.get_file(scope, rkey) do
-      {:ok, file} -> file.nome
-      _error -> gettext("arquivo apagado")
-    end
-  end
-
-  defp file_display_name(file_names, request) do
-    Map.get(file_names, request.recurso, gettext("arquivo apagado"))
+  # A tela só mostra o vazio de verdade quando não há nada em nenhuma seção.
+  defp empty?(assigns) do
+    not assigns.any_requests? and not assigns.any_outgoing? and assigns.decisions == [] and
+      not assigns.any_grants? and not assigns.grants_error
   end
 
   defp requester_name(request) do
     request.pedinte.display_name || request.pedinte.username
   end
 
+  defp owner_name(request) do
+    request.dono.display_name || request.dono.username
+  end
+
   defp recipient_name(concessao) do
     concessao.leitor.display_name || concessao.leitor.username
+  end
+
+  # Nome do arquivo de cada pedido recebido, resolvido no escopo do dono (ele
+  # pode ler o próprio arquivo). Arquivo que não existe mais vira rótulo
+  # neutro, nunca erro de tela.
+  defp incoming_names(scope, requests) do
+    requests
+    |> Enum.filter(&(&1.tipo == "ypy.file.v0"))
+    |> Enum.uniq_by(& &1.recurso)
+    |> Map.new(fn request -> {request.recurso, resolve_owned_name(scope, request.recurso)} end)
+  end
+
+  # Quem pediu não tem leitura (o pedido é justamente para ler), então o nome
+  # vem do caminho de pedido do Ybira, que devolve o nome sem liberar o
+  # arquivo. Sem resposta, rótulo neutro.
+  defp outgoing_names(scope, requests) do
+    requests
+    |> Enum.filter(&(&1.tipo == "ypy.file.v0"))
+    |> Enum.uniq_by(& &1.recurso)
+    |> Map.new(fn request -> {request.recurso, resolve_requested_name(scope, request.recurso)} end)
+  end
+
+  defp resolve_owned_name(scope, rkey) do
+    case Ybira.get_file(scope, rkey) do
+      {:ok, file} -> file.nome
+      _error -> gettext("arquivo apagado")
+    end
+  end
+
+  defp resolve_requested_name(scope, rkey) do
+    case Ybira.fetch_access_target(scope, rkey) do
+      {:ok, %{nome: nome}} -> nome
+      _error -> gettext("arquivo apagado")
+    end
+  end
+
+  defp file_display_name(names, request) do
+    Map.get(names, request.recurso, gettext("arquivo apagado"))
+  end
+
+  # O pedido aprovado deixa a pessoa podendo ler o arquivo (o caminho de pedido
+  # responde :already_readable), então o nome sai primeiro do caminho de
+  # leitura; o recusado continua pelo caminho de pedido. Sem os dois, rótulo
+  # neutro.
+  defp decision_names(scope, decisions) do
+    decisions
+    |> Enum.filter(&(&1.tipo == "ypy.file.v0"))
+    |> Enum.uniq_by(& &1.recurso)
+    |> Map.new(fn decision -> {decision.recurso, resolve_decision_name(scope, decision.recurso)} end)
+  end
+
+  defp resolve_decision_name(scope, rkey) do
+    case Ybira.get_file(scope, rkey) do
+      {:ok, file} ->
+        file.nome
+
+      _error ->
+        case Ybira.fetch_access_target(scope, rkey) do
+          {:ok, %{nome: nome}} -> nome
+          _other -> gettext("arquivo apagado")
+        end
+    end
   end
 
   # Nome do recurso concedido, resolvido no escopo do dono (ele pode ler o que
@@ -263,6 +339,32 @@ defmodule TainaWeb.AccessRequestsLive do
     )
   end
 
+  # "Pedido para abrir relatorio.pdf, esperando Joana decidir, hoje."
+  defp outgoing_meta(request, names) do
+    gettext("Pedido para abrir %{file}, esperando %{name} decidir, %{when}",
+      file: file_display_name(names, request),
+      name: owner_name(request),
+      when: relative_time(request.inserted_at)
+    )
+  end
+
+  # A resposta dita por quem pediu, com o arquivo na frente para a linha não
+  # ficar ambígua quando há mais de um pedido para a mesma pessoa.
+  defp decision_meta(decision, names) do
+    file = file_display_name(names, decision)
+
+    case decision.status do
+      :aprovado ->
+        gettext("%{file}: %{name} liberou. Você já pode abrir.", file: file, name: owner_name(decision))
+
+      :negado ->
+        gettext("%{file}: %{name} recusou este pedido. Você pode pedir de novo quando quiser.",
+          file: file,
+          name: owner_name(decision)
+        )
+    end
+  end
+
   defp find_grant(grants, id) when is_binary(id) do
     Enum.find(grants, &("#{&1.id}" == id))
   end
@@ -283,11 +385,11 @@ defmodule TainaWeb.AccessRequestsLive do
   # "Ana pediu acesso a relatorio.pdf, há 3 dias." O motivo vem na sequência e
   # a linha quebra em vez de cortar com reticências (`list-row__meta--wrap`
   # no render): decidir sem ler o porquê é decidir às cegas.
-  defp request_meta(request, file_names) do
+  defp request_meta(request, names) do
     base =
       gettext("%{name} pediu acesso a %{file}, %{when}",
         name: requester_name(request),
-        file: file_display_name(file_names, request),
+        file: file_display_name(names, request),
         when: relative_time(request.inserted_at)
       )
 
@@ -299,10 +401,19 @@ defmodule TainaWeb.AccessRequestsLive do
 
   # Flash da aprovação nomeia o arquivo: a decisão é sobre aquele arquivo, não
   # sobre "um pedido".
-  defp approved_message(_requests, file_names, pedido) do
-    case pedido && Map.fetch(file_names, pedido.recurso) do
+  defp approved_message(names, pedido) do
+    case pedido && Map.fetch(names, pedido.recurso) do
       {:ok, file} -> gettext("Acesso a %{file} liberado. A pessoa já pode ler.", file: file)
       _other -> gettext("Acesso liberado. A pessoa já pode ler.")
+    end
+  end
+
+  # Aprovação chegando pelo PubSub nomeia o arquivo quando o nome já está na
+  # tela (pedido que veio depois do mount deixa o flash genérico).
+  defp outgoing_approved_message(names, rkey) do
+    case names && Map.fetch(names, rkey) do
+      {:ok, file} -> gettext("Pedido aprovado: agora você pode abrir %{file}.", file: file)
+      _other -> gettext("Seu pedido foi aprovado. Você já pode abrir.")
     end
   end
 
@@ -318,8 +429,15 @@ defmodule TainaWeb.AccessRequestsLive do
     >
       <Layouts.app_bar title={gettext("Pedidos")} back={~p"/conta"} />
 
-      <div class="col gap-4 mx-auto w-full measure">
-        <h1 class="desktop-only type-h1 mb-4">{gettext("Pedidos")}</h1>
+      <div class="col gap-6 mx-auto w-full measure">
+        <h1 class="desktop-only type-h1">{gettext("Pedidos")}</h1>
+
+        <.empty_state
+          :if={empty?(assigns)}
+          icon="shield"
+          title={gettext("Nenhum pedido por enquanto")}
+          hint={gettext("Ninguém acessa seus arquivos sem você deixar. Quando alguém pedir, ou você pedir acesso a algo, aparece aqui.")}
+        />
 
         <div :if={@any_requests?} class="col gap-2">
           <p class="type-overline text-muted">
@@ -335,7 +453,7 @@ defmodule TainaWeb.AccessRequestsLive do
               :for={{dom_id, request} <- @streams.requests}
               id={dom_id}
               title={requester_name(request)}
-              meta={request_meta(request, @file_names)}
+              meta={request_meta(request, @incoming_names)}
               meta_class="list-row__meta--wrap"
             >
               <:leading><.avatar name={requester_name(request)} /></:leading>
@@ -351,12 +469,35 @@ defmodule TainaWeb.AccessRequestsLive do
           </ul>
         </div>
 
-        <.empty_state
-          :if={!@any_requests?}
-          icon="shield"
-          title={gettext("Nenhum pedido por enquanto")}
-          hint={gettext("Ninguém acessa seus arquivos sem você deixar. Quando alguém pedir, aparece aqui.")}
-        />
+        <div :if={@any_outgoing?} class="col gap-2">
+          <p class="type-overline text-muted">{gettext("Seus pedidos")}</p>
+
+          <ul class="list">
+            <.list_row
+              :for={request <- @outgoing}
+              title={owner_name(request)}
+              meta={outgoing_meta(request, @outgoing_names)}
+              meta_class="list-row__meta--wrap"
+            >
+              <:leading><.avatar name={owner_name(request)} /></:leading>
+            </.list_row>
+          </ul>
+        </div>
+
+        <div :if={@decisions != []} class="col gap-2">
+          <p class="type-overline text-muted">{gettext("Já decididos")}</p>
+
+          <ul class="list">
+            <.list_row
+              :for={decision <- @decisions}
+              title={owner_name(decision)}
+              meta={decision_meta(decision, @decision_names)}
+              meta_class="list-row__meta--wrap"
+            >
+              <:leading><.avatar name={owner_name(decision)} /></:leading>
+            </.list_row>
+          </ul>
+        </div>
 
         <div :if={@any_grants?} class="col gap-2">
           <p class="type-overline text-muted">{gettext("Já liberados")}</p>
@@ -376,10 +517,6 @@ defmodule TainaWeb.AccessRequestsLive do
             </.list_row>
           </ul>
         </div>
-
-        <p :if={!@any_grants? and !@grants_error} class="type-body-sm text-secondary">
-          {gettext("Ninguém tem acesso liberado aos seus arquivos.")}
-        </p>
 
         <.empty_state
           :if={@grants_error}

@@ -164,7 +164,6 @@ defmodule TainaWeb.Router do
       live "/saude", SaudeLive
       live "/conta", AccountLive
       live "/conta/pedidos", AccessRequestsLive
-      live "/conta/meus-pedidos", MyRequestsLive
     end
   end
 
