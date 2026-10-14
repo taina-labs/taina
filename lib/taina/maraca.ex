@@ -21,6 +21,7 @@ defmodule Taina.Maraca do
   import Ecto.Query
 
   alias Taina.Keys
+  alias Taina.Maraca.DeviceToken
   alias Taina.RateLimit
   alias Taina.Repo
   alias Taina.Scope
@@ -30,8 +31,8 @@ defmodule Taina.Maraca do
   alias Ypy.Maraca.Policy
   alias Ypy.Maraca.Store, as: KernelStore
   alias Ypy.Maraca.Tekoa
-  ## Bootstrap
   alias Ypy.Mural.Store, as: MuralStore
+  alias Ypy.PublicId
 
   require Logger
 
@@ -169,6 +170,7 @@ defmodule Taina.Maraca do
   def accept_invite(token, attrs) do
     with %Ava{} = ava <- find_by_token(:invite_token_hash, token),
          false <- token_expired?(ava.invite_sent_at, @invitation_max_age_seconds),
+         ## Autenticação e sessão
          nil <- ava.deactivated_at,
          :ok <- confirmation_ok?(attrs) do
       result =
@@ -201,8 +203,6 @@ defmodule Taina.Maraca do
 
     if confirmation in [nil, password], do: :ok, else: {:error, :password_mismatch}
   end
-
-  ## Autenticação e sessão
 
   @doc "Um convite pendente cujo token ja passou da validade."
   def invite_expired?(%Ava{} = ava) do
@@ -254,6 +254,8 @@ defmodule Taina.Maraca do
   # Só as falhas contam para a janela: lemos a contagem sem incrementar, então
   # uma senha correta nunca a queima (login/logout/login não tranca ninguém).
   # Acima do limite recusamos antes do bcrypt, blindando a CPU contra força
+  ## Gestão da Tekoa
+
   # bruta. Conta inexistente compartilha a janela do username (não vaza existência).
   defp login_rate_exceeded?(key) do
     RateLimit.get(key, @login_rate_scale_ms) >= @login_rate_limit
@@ -292,8 +294,6 @@ defmodule Taina.Maraca do
   def create_session(%Ava{} = ava) do
     %{ava_id: ava.public_id, tekoa_id: tekoa_public_id(ava), papel: ava.papel}
   end
-
-  ## Gestão da Tekoa
 
   def destroy_session(%Plug.Conn{} = conn) do
     conn
@@ -438,7 +438,7 @@ defmodule Taina.Maraca do
     # O public_id do kernel e estrito (12 caracteres do alfabeto): id
     # malformado de URL/params nao chega a ser query, responde not_found.
     ## Reset de senha
-    if Ypy.PublicId.valid?(public_id) do
+    if PublicId.valid?(public_id) do
       case Repo.get_by(Ava, public_id: public_id, tekoa_id: scope.tekoa.id) do
         nil -> {:error, :not_found}
         %Ava{} = ava -> {:ok, ava}
@@ -489,6 +489,7 @@ defmodule Taina.Maraca do
   o chamador montar a URL (a entrega e o canal sao do produto).
   """
   def mint_reset_link(%Ypy.Scope{} = scope, %Ava{} = member) do
+    ## Verbos sociais do kernel (concessao, pedido, decisao)
     if zelador?(scope.ava) do
       mint_reset_link_zelador(scope, member)
     else
@@ -551,8 +552,6 @@ defmodule Taina.Maraca do
     end
   end
 
-  ## Verbos sociais do kernel (concessao, pedido, decisao)
-
   @doc """
   Pode `ava` agir sobre o recurso? A leitura segue a regra das duas zonas do
   kernel (praca OU dono OU concessao, RFC_003 D2); escrever e apagar sao do
@@ -598,6 +597,8 @@ defmodule Taina.Maraca do
   def can_read?(%Ypy.Scope{} = scope, tipo, rkey) when tipo in @kernel_tipos do
     Ypy.Ybira.readable?(Repo, scope, tipo, rkey)
   end
+
+  ## Mural (a projecao da cadeia, RFC_006 secao 8)
 
   @doc "Abre a propria casa para um leitor (kernel: `Ypy.Maraca.conceder/6`)."
   def conceder(%Ypy.Scope{} = scope, tipo, rkey, %Ava{} = leitor) do
@@ -666,8 +667,6 @@ defmodule Taina.Maraca do
       {:ok, %{pedido: pedido, pedinte_pid: ava_public_id(scope.tekoa.id, pedido.pedinte_id)}}
     end
   end
-
-  ## Mural (a projecao da cadeia, RFC_006 secao 8)
 
   @doc "Os pedidos pendentes que o morador recebeu como dono (com quem pediu)."
   def pedidos_recebidos(%Ypy.Scope{} = scope) do
@@ -806,6 +805,191 @@ defmodule Taina.Maraca do
         {:ok, %{events: rows, next_offset: nil}}
       end
     end)
+  end
+
+  ## Dispositivos (RFC_005 secao 4)
+
+  # O carimbo de uso so vale a pena a cada janela: sem escrita no caminho quente.
+  @device_last_used_window_seconds 5 * 60
+
+  @doc """
+  Cria um token de dispositivo para quem esta agindo: o irmao mobile da sessao
+  Phoenix. O segredo cru (`tnd_` mais 32 caracteres) volta uma unica vez, para
+  o cliente guardar; no banco fica so o hash. Sem evento no mural: entrar no
+  proprio celular e higiene de conta, como trocar a senha.
+  """
+  def create_device_token(%Ypy.Scope{} = scope, name) do
+    raw_token = "tnd_" <> generate_token()
+
+    device =
+      %DeviceToken{}
+      |> DeviceToken.changeset(%{name: name})
+      |> Ecto.Changeset.change(%{
+        token_hash: hash_token(raw_token),
+        ava_id: scope.ava.id,
+        tekoa_id: scope.tekoa.id
+      })
+
+    within_tekoa(scope, fn ->
+      case Repo.insert(device) do
+        {:ok, device} -> {:ok, %{device: device, token: raw_token}}
+        {:error, changeset} -> {:error, changeset}
+      end
+    end)
+  end
+
+  @doc """
+  Resolve o segredo cru de um dispositivo no contexto da requisicao. Consulta
+  de sistema: o token e justamente o que constroi o contexto. Revalida a conta
+  a cada chamada (conta desativada nao resolve, mesmo com o token intacto),
+  igual a sessao web.
+  """
+  def resolve_device_token(token) when is_binary(token) do
+    token_hash = hash_token(token)
+
+    {:ok, device} =
+      Repo.with_system(fn -> {:ok, load_device(token_hash)} end)
+
+    case active_device(device) do
+      {:ok, device} ->
+        device = touch_last_used(device)
+        {:ok, %{scope: Scope.new(device.ava, device.tekoa), device: device}}
+
+      :error ->
+        {:error, :not_authenticated}
+    end
+  end
+
+  def resolve_device_token(_token), do: {:error, :not_authenticated}
+
+  # Consulta de sistema: busca o dispositivo pelo hash e carrega a conta e a
+  # Tekoa explicitamente (o preload nao aceita skip_tekoa_id).
+  defp load_device(token_hash) do
+    case Repo.get_by(DeviceToken, [token_hash: token_hash], skip_tekoa_id: true) do
+      nil ->
+        nil
+
+      device ->
+        ava = Repo.get(Ava, device.ava_id, skip_tekoa_id: true)
+        tekoa = Repo.get(Tekoa, device.tekoa_id, skip_tekoa_id: true)
+        %{device | ava: ava, tekoa: tekoa}
+    end
+  end
+
+  @doc """
+  Os dispositivos de quem esta agindo, do mais recente para o mais antigo. A
+  listagem e da propria pessoa: a zeladora revoga o dispositivo de outra, mas
+  nao ve a lista dela.
+  """
+  def list_devices(%Ypy.Scope{} = scope) do
+    within_tekoa(scope, fn ->
+      devices =
+        from(d in DeviceToken,
+          where: d.tekoa_id == ^scope.tekoa.id and d.ava_id == ^scope.ava.id,
+          order_by: [desc: d.inserted_at, desc: d.id]
+        )
+
+      {:ok, Repo.all(devices)}
+    end)
+  end
+
+  @doc """
+  Revoga um dispositivo pela dona ou pela zeladora. Idempotente: revogar de
+  novo devolve o mesmo dispositivo, sem erro.
+  """
+  def revoke_device(%Ypy.Scope{} = scope, device_public_id) do
+    if PublicId.valid?(device_public_id) do
+      revoke_known_device(scope, device_public_id)
+    else
+      {:error, :not_found}
+    end
+  end
+
+  defp revoke_known_device(%Ypy.Scope{} = scope, device_public_id) do
+    within_tekoa(scope, fn ->
+      case Repo.get_by(DeviceToken, public_id: device_public_id, tekoa_id: scope.tekoa.id) do
+        nil -> {:error, :not_found}
+        %DeviceToken{} = device -> revoke_allowed(scope, device)
+      end
+    end)
+  end
+
+  defp revoke_allowed(%Ypy.Scope{} = scope, %DeviceToken{ava_id: ava_id} = device) do
+    if ava_id == scope.ava.id or zelador?(scope.ava) do
+      {:ok, revoke(device)}
+    else
+      {:error, :unauthorized}
+    end
+  end
+
+  defp active_device(%DeviceToken{revoked_at: nil, ava: %Ava{} = ava} = device) do
+    if ava.activated_at != nil and ava.deactivated_at == nil do
+      {:ok, device}
+    else
+      :error
+    end
+  end
+
+  defp active_device(_device), do: :error
+
+  defp touch_last_used(%DeviceToken{last_used_at: at} = device) do
+    if stale_usage?(at), do: stamp_usage(device), else: device
+  end
+
+  # O carimbo e auxiliar: se a escrita falhar, a autenticacao segue com o
+  # dispositivo ja lido, em vez de derrubar uma requisicao valida.
+  defp stamp_usage(%DeviceToken{} = device) do
+    result =
+      Repo.with_tekoa(device.tekoa.public_id, fn ->
+        device
+        |> Ecto.Changeset.change(last_used_at: agora())
+        |> Repo.update()
+      end)
+
+    case result do
+      {:ok, updated} -> updated
+      {:error, _changeset} -> device
+    end
+  end
+
+  defp stale_usage?(nil), do: true
+
+  defp stale_usage?(%DateTime{} = at) do
+    DateTime.diff(agora(), at) >= @device_last_used_window_seconds
+  end
+
+  defp revoke(%DeviceToken{revoked_at: %DateTime{}} = device), do: device
+
+  defp revoke(%DeviceToken{} = device) do
+    {:ok, revoked} =
+      device
+      |> Ecto.Changeset.change(revoked_at: agora())
+      |> Repo.update()
+
+    revoked
+  end
+
+  ## Buscas por id publico (RFC_005 secao 9)
+
+  @doc "Um morador pelo id publico, dentro da Tekoa."
+  def get_member(%Ypy.Scope{} = scope, member_public_id) do
+    within_tekoa(scope, fn -> fetch_member(scope, member_public_id) end)
+  end
+
+  @doc "Um pedido de acesso pelo id publico, dentro da Tekoa."
+  def get_pedido(%Ypy.Scope{} = scope, pedido_public_id) do
+    if PublicId.valid?(pedido_public_id) do
+      within_tekoa(scope, fn -> fetch_pedido(scope, pedido_public_id) end)
+    else
+      {:error, :not_found}
+    end
+  end
+
+  defp fetch_pedido(%Ypy.Scope{} = scope, pedido_public_id) do
+    case Repo.get_by(Pedido, public_id: pedido_public_id, tekoa_id: scope.tekoa.id) do
+      nil -> {:error, :not_found}
+      %Pedido{} = pedido -> {:ok, pedido}
+    end
   end
 
   ## Predicados

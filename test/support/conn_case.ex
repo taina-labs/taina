@@ -43,4 +43,15 @@ defmodule TainaWeb.ConnCase do
   def log_in(conn, ava) do
     Plug.Test.init_test_session(conn, %{ava_id: ava.public_id})
   end
+
+  @doc """
+  Autentica a conn com um token de dispositivo da pessoa, como o app faz:
+  cria o token e poe o `Authorization: Bearer`.
+  """
+  def authorize_device(conn, ava) do
+    tekoa = Taina.Repo.get!(Ypy.Maraca.Tekoa, ava.tekoa_id, skip_tekoa_id: true)
+    {:ok, %{token: token}} = Taina.Maraca.create_device_token(Taina.Scope.new(ava, tekoa), "teste")
+
+    Plug.Conn.put_req_header(conn, "authorization", "Bearer " <> token)
+  end
 end

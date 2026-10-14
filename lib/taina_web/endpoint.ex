@@ -46,10 +46,13 @@ defmodule TainaWeb.Endpoint do
   plug Plug.RequestId
   plug Plug.Telemetry, event_prefix: [:phoenix, :endpoint]
 
+  # Tetos de corpo: multipart ate 2 GiB (paridade com o upload da web via
+  # LiveView); urlencoded e json ficam no padrao de 8 MB.
   plug Plug.Parsers,
     parsers: [:urlencoded, :multipart, :json],
     pass: ["*/*"],
-    json_decoder: Phoenix.json_library()
+    json_decoder: Phoenix.json_library(),
+    multipart: [length: 2_147_483_648]
 
   plug Plug.MethodOverride
   plug Plug.Head

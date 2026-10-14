@@ -27,8 +27,10 @@ defmodule TainaWeb.FileControllerTest do
     assert get_resp_header(conn, "content-type") == [ybira_file.mime]
 
     assert get_resp_header(conn, "content-disposition") == [
-             ~s(attachment; filename="#{ybira_file.nome}")
+             ~s(attachment; filename="#{ybira_file.nome}"; filename*=UTF-8''#{ybira_file.nome})
            ]
+
+    assert get_resp_header(conn, "x-content-type-options") == ["nosniff"]
   end
 
   test "serves a byte range with 206 and content-range", %{conn: conn, ava: ava, ybira_file: ybira_file} do
