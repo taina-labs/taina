@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/taina-labs/taina/compare/v0.2.0...v0.2.1) (2026-10-14)
+
+
+### Bug Fixes
+
+* **api:** accept any content type and answer the thumbnail envelope ([#170](https://github.com/taina-labs/taina/issues/170)) ([d718057](https://github.com/taina-labs/taina/commit/d7180576c5627db5ad622ccdc7f252d7f1100be0))
+
 ## [0.2.0](https://github.com/taina-labs/taina/compare/v0.1.0...v0.2.0) (2026-10-14)
 
 
