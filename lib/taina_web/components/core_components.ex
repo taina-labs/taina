@@ -362,7 +362,7 @@ defmodule TainaWeb.CoreComponents do
   """
   attr :service, :string,
     default: "neutral",
-    values: ~w(ybira jaci nhaman guara doc video neutral)
+    values: ~w(ybira jaci nhaman guara maraca doc video neutral)
 
   attr :icon, :string, required: true
   attr :size, :string, default: "md", values: ~w(md lg)

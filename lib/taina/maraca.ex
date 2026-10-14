@@ -677,9 +677,9 @@ defmodule Taina.Maraca do
 
   @doc """
   Os pedidos ainda sem decisao que o morador fez (com o dono de quem espera).
-  Os ja decididos saem daqui para "Meus pedidos" (`list_my_recent_decisions/1`)
-  e nao voltam como pendentes: o kernel lista de todos os status, o produto
-  separa as secoes da tela.
+  Os ja decididos saem daqui para a secao "Ja decididos" da tela de Pedidos
+  (`list_my_recent_decisions/1`) e nao voltam como pendentes: o kernel lista de
+  todos os status, o produto separa as secoes da tela.
   """
   def pedidos_enviados(%Ypy.Scope{} = scope) do
     within_tekoa(scope, fn ->
@@ -711,9 +711,9 @@ defmodule Taina.Maraca do
   end
 
   @doc """
-  Pedidos feitos por `scope.ava` já decididos (aprovados ou recusados), para
-  "Meus pedidos" não deixar o pedido sumir sem explicação (RFC_003: sem
-  resultado silencioso). Ordena pela última decisão.
+  Pedidos feitos por `scope.ava` já decididos (aprovados ou recusados), para a
+  seção "Já decididos" da tela de Pedidos não deixar o pedido sumir sem
+  explicação (RFC_003: sem resultado silencioso). Ordena pela última decisão.
   """
   def list_my_recent_decisions(%Ypy.Scope{} = scope) do
     within_tekoa(scope, fn ->

@@ -10,7 +10,7 @@ defmodule TainaWeb.AccessRequestsLiveTest do
 
   setup do
     tekoa = tekoa_fixture()
-    owner = active_ava_fixture(tekoa)
+    owner = active_ava_fixture(tekoa, %{display_name: "Joana"})
     requester = active_ava_fixture(tekoa, %{display_name: "Maria"})
     {:ok, file} = Ybira.upload(Scope.new(owner, tekoa), tmp_upload_fixture())
     %{tekoa: tekoa, owner: owner, requester: requester, target_file: file}
@@ -26,7 +26,6 @@ defmodule TainaWeb.AccessRequestsLiveTest do
 
     assert html =~ "Nenhum pedido por enquanto"
     assert html =~ "Ninguém acessa seus arquivos sem você deixar"
-    assert html =~ "Ninguém tem acesso liberado aos seus arquivos."
   end
 
   test "approving removes the pending row and shows the grant as reversible", %{
@@ -73,7 +72,7 @@ defmodule TainaWeb.AccessRequestsLiveTest do
     html = render(lv)
     assert html =~ "Acesso de Maria tirado"
     refute has_element?(lv, ~s(button[phx-click="ask-revoke"]))
-    assert html =~ "Ninguém tem acesso liberado aos seus arquivos."
+    assert html =~ "Nenhum pedido por enquanto"
     refute Maraca.authorize?(requester, :read, "ypy.file.v0", file.rkey)
   end
 
@@ -130,5 +129,95 @@ defmodule TainaWeb.AccessRequestsLiveTest do
     {:ok, lv, _html} = conn |> log_in(owner) |> live(~p"/conta/pedidos")
 
     refute has_element?(lv, ".nav-dot")
+  end
+
+  describe "pedidos enviados" do
+    test "empty screen shows the teaching copy", %{conn: conn, requester: requester} do
+      {:ok, _lv, html} = conn |> log_in(requester) |> live(~p"/conta/pedidos")
+
+      assert html =~ "Nenhum pedido por enquanto"
+    end
+
+    test "lists a pending request waiting on the owner", %{
+      conn: conn,
+      tekoa: tekoa,
+      requester: requester,
+      target_file: file
+    } do
+      _req = request(requester, tekoa, file)
+      {:ok, _lv, html} = conn |> log_in(requester) |> live(~p"/conta/pedidos")
+
+      assert html =~ "Seus pedidos"
+      assert html =~ "Joana"
+      assert html =~ "esperando"
+    end
+
+    test "an approved request shows the liberation line instead of vanishing", %{
+      conn: conn,
+      tekoa: tekoa,
+      owner: owner,
+      requester: requester,
+      target_file: file
+    } do
+      req = request(requester, tekoa, file)
+      {:ok, _} = Maraca.aprovar(Scope.new(owner, tekoa), req)
+      {:ok, _lv, html} = conn |> log_in(requester) |> live(~p"/conta/pedidos")
+
+      assert html =~ "Já decididos"
+      assert html =~ "doc.txt: Joana liberou. Você já pode abrir."
+      refute html =~ "esperando"
+    end
+
+    test "a denied request shows the refusal line and invites trying again", %{
+      conn: conn,
+      tekoa: tekoa,
+      owner: owner,
+      requester: requester,
+      target_file: file
+    } do
+      req = request(requester, tekoa, file)
+      {:ok, _} = Maraca.negar(Scope.new(owner, tekoa), req)
+      {:ok, _lv, html} = conn |> log_in(requester) |> live(~p"/conta/pedidos")
+
+      assert html =~ "Já decididos"
+      assert html =~ "doc.txt: Joana recusou este pedido. Você pode pedir de novo quando quiser."
+    end
+
+    test "approval refreshes the list and flashes", %{
+      conn: conn,
+      tekoa: tekoa,
+      owner: owner,
+      requester: requester,
+      target_file: file
+    } do
+      req = request(requester, tekoa, file)
+      {:ok, lv, _html} = conn |> log_in(requester) |> live(~p"/conta/pedidos")
+
+      {:ok, _} = Maraca.aprovar(Scope.new(owner, tekoa), req)
+
+      html = render(lv)
+      assert html =~ "Pedido aprovado"
+      refute html =~ "esperando"
+      assert html =~ "Já decididos"
+      assert html =~ "Joana liberou"
+    end
+
+    test "denial refreshes the list and flashes", %{
+      conn: conn,
+      tekoa: tekoa,
+      owner: owner,
+      requester: requester,
+      target_file: file
+    } do
+      req = request(requester, tekoa, file)
+      {:ok, lv, _html} = conn |> log_in(requester) |> live(~p"/conta/pedidos")
+
+      {:ok, _} = Maraca.negar(Scope.new(owner, tekoa), req)
+
+      html = render(lv)
+      assert html =~ "Seu pedido foi negado"
+      refute html =~ "esperando"
+      assert html =~ "Joana recusou este pedido"
+    end
   end
 end

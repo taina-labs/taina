@@ -3,15 +3,15 @@ defmodule TainaWeb.FilesLive do
   Navegador de arquivos do Ybira: pastas + arquivos da pasta atual, breadcrumb
   com a cadeia completa de pastas (Início / ... / pasta atual; em telas
   pequenas o meio encolhe em "..."), ordenação (nome/data/tamanho),
-  alternância lista/grade, e ações por item: renomear, mover (seletor ou
-  arrastar-e-soltar) e excluir (com confirmação). Telas "Ybira - Arquivos" e
-  "Desktop - Arquivos".
+  alternância lista/grade, e ações por item no menu de três pontinhos: abrir,
+  renomear, mover (seletor ou arrastar-e-soltar), publicar/tirar da praça e
+  excluir (com confirmação). Telas "Ybira - Arquivos" e "Desktop - Arquivos".
 
-  No desktop (1024+) a lista ganha um painel de detalhes ao lado: o olho da
-  linha carrega o arquivo ali (`?arquivo=` na URL) sem sair da pasta. Abaixo de
-  1024 o painel some e abrir um arquivo navega para a tela dele.
+  Abrir um item (o corpo da linha ou da grade) navega para a tela dele, com os
+  detalhes completos; não há painel lateral, o mesmo caminho no mobile e no
+  desktop.
 
-  Ordenação, visão e painel moram na URL (`?sort=name-asc&view=grid&arquivo=`),
+  Ordenação, visão e zona moram na URL (`?sort=name-asc&view=grid&zona=praca`),
   então sobrevivem a navegação, recarga e compartilhamento de link. Paginação
   por offset (`list_folder_contents`), o que permite qualquer ordem.
   """
@@ -27,7 +27,6 @@ defmodule TainaWeb.FilesLive do
     sort = parse_sort(params["sort"])
     view = if params["view"] == "grid", do: :grid, else: :list
     zona = parse_zona(params["zona"])
-    peek = params["arquivo"]
     scope = socket.assigns.current_scope
 
     case load_folder(scope, folder_rkey) do
@@ -49,8 +48,6 @@ defmodule TainaWeb.FilesLive do
              |> assign(:sort, sort)
              |> assign(:view, view)
              |> assign(:zona, zona)
-             |> assign(:peek, load_peek(scope, peek))
-             |> assign(:peek_metadata, peek_metadata(scope, peek))
              |> assign(:modal, nil)
              |> assign(:rename_target, nil)
              |> assign(:move_target, nil)
@@ -149,22 +146,6 @@ defmodule TainaWeb.FilesLive do
 
   def handle_event("open-modal", %{"modal" => modal}, socket) do
     {:noreply, assign(socket, :modal, modal)}
-  end
-
-  # Olho da linha (desktop 1024+): carrega o arquivo no painel de detalhes sem
-  # sair da pasta. O estado mora na URL (?arquivo=), como ordenação e visão.
-  def handle_event("peek", %{"id" => rkey}, socket) do
-    {:noreply,
-     Phoenix.LiveView.push_patch(socket,
-       to:
-         browse_path(
-           socket.assigns.folder_rkey,
-           socket.assigns.sort,
-           socket.assigns.view,
-           socket.assigns.zona,
-           rkey
-         )
-     )}
   end
 
   def handle_event("open-rename", %{"kind" => kind, "id" => id, "name" => name}, socket) do
@@ -357,8 +338,7 @@ defmodule TainaWeb.FilesLive do
           socket.assigns.folder_rkey,
           socket.assigns.sort,
           socket.assigns.view,
-          socket.assigns.zona,
-          peek_id(socket.assigns.peek)
+          socket.assigns.zona
         )
     )
   end
@@ -395,68 +375,15 @@ defmodule TainaWeb.FilesLive do
   defp sort_check({:size, _}, :size), do: "check"
   defp sort_check(_sort, _item), do: nil
 
-  defp browse_path(folder_rkey, sort, view, zona, peek) do
+  defp browse_path(folder_rkey, sort, view, zona) do
     params = %{sort: sort_param(sort)}
     params = if view == :grid, do: Map.put(params, :view, "grid"), else: params
     # Com o default na casa, quem precisa de marca na URL e a praca.
     params = if zona == :praca, do: Map.put(params, :zona, "praca"), else: params
-    params = if peek, do: Map.put(params, :arquivo, peek), else: params
 
     case folder_rkey do
       nil -> ~p"/arquivos?#{params}"
       id -> ~p"/arquivos/pasta/#{id}?#{params}"
-    end
-  end
-
-  # Arquivo do painel de detalhes: silencioso se não der mais para ler (apagado,
-  # saiu da pasta, perdeu acesso), o painel volta a convidar.
-  defp load_peek(_scope, nil), do: nil
-
-  defp load_peek(scope, rkey) when is_binary(rkey) do
-    case Ybira.get_file(scope, rkey) do
-      {:ok, file} -> file
-      _error -> nil
-    end
-  end
-
-  defp peek_id(%{rkey: rkey}), do: rkey
-  defp peek_id(nil), do: nil
-
-  # Os metadados de rendicao do arquivo em destaque (dimensoes, thumbnail).
-  defp peek_metadata(_scope, nil), do: %{}
-
-  defp peek_metadata(scope, rkey) when is_binary(rkey) do
-    case Ybira.get_file(scope, rkey) do
-      {:ok, file} ->
-        {:ok, metadata} = Ybira.photo_metadata(scope, file)
-        metadata
-
-      _error ->
-        %{}
-    end
-  end
-
-  defp image?("image/" <> _rest), do: true
-  defp image?(_mime), do: false
-
-  # Miniatura pronta: o caminho mora nos metadados de rendicao quando o
-  # Rendition rodou (mesma fonte do FileController); sem ela, a caixa do
-  # serviço entra no lugar.
-  defp thumbnail?(metadata), do: get_in(metadata, ["thumbnails", "md"]) != nil
-
-  # Dimensões intrínsecas para o <img>: as do original valem para o thumbnail
-  # (mesma proporção), e o layout não pula enquanto a imagem carrega.
-  defp peek_dimension(metadata, "width") do
-    case metadata do
-      %{"width" => w, "height" => _h} -> w
-      _ -> nil
-    end
-  end
-
-  defp peek_dimension(metadata, "height") do
-    case metadata do
-      %{"width" => _w, "height" => h} -> h
-      _ -> nil
     end
   end
 
@@ -552,7 +479,7 @@ defmodule TainaWeb.FilesLive do
       storage_stats={assigns[:storage_stats]}
       account_alert={assigns[:account_alert] || false}
     >
-      <div class="row between wrap gap-3 mb-2">
+      <div class="row between wrap gap-3 mb-4">
         <h1 class="type-h1">{gettext("Arquivos")}</h1>
         <div class="row gap-2">
           <.icon_button
@@ -575,35 +502,43 @@ defmodule TainaWeb.FilesLive do
         </div>
       </div>
 
-      <div class="row between mb-3">
-        <.menu id="sort-menu" icon="list" label={gettext("Ordenar")}>
-          <:item
-            icon={sort_check(@sort, :name_az)}
-            click={JS.patch(browse_path(@folder_rkey, {:name, :asc}, @view, @zona, peek_id(@peek)))}
-          >
-            {gettext("Nome (A-Z)")}
-          </:item>
-          <:item
-            icon={sort_check(@sort, :name_za)}
-            click={JS.patch(browse_path(@folder_rkey, {:name, :desc}, @view, @zona, peek_id(@peek)))}
-          >
-            {gettext("Nome (Z-A)")}
-          </:item>
-          <:item
-            icon={sort_check(@sort, :date)}
-            click={JS.patch(browse_path(@folder_rkey, toggle_sort(:date, @sort), @view, @zona, peek_id(@peek)))}
-          >
-            {gettext("Data")}
-          </:item>
-          <:item
-            icon={sort_check(@sort, :size)}
-            click={JS.patch(browse_path(@folder_rkey, toggle_sort(:size, @sort), @view, @zona, peek_id(@peek)))}
-          >
-            {gettext("Tamanho")}
-          </:item>
-        </.menu>
+      <div class="row between wrap gap-3 mb-4">
+        <.segmented>
+          <:option patch={browse_path(@folder_rkey, @sort, @view, :praca)} current={@zona == :praca}>
+            {gettext("Praça")}
+          </:option>
+          <:option patch={browse_path(@folder_rkey, @sort, @view, :casa)} current={@zona == :casa}>
+            {gettext("Casa")}
+          </:option>
+        </.segmented>
 
-        <div class="row gap-2">
+        <div class="row gap-1">
+          <.menu id="sort-menu" icon="sort" label={gettext("Ordenar")}>
+            <:item
+              icon={sort_check(@sort, :name_az)}
+              click={JS.patch(browse_path(@folder_rkey, {:name, :asc}, @view, @zona))}
+            >
+              {gettext("Nome (A-Z)")}
+            </:item>
+            <:item
+              icon={sort_check(@sort, :name_za)}
+              click={JS.patch(browse_path(@folder_rkey, {:name, :desc}, @view, @zona))}
+            >
+              {gettext("Nome (Z-A)")}
+            </:item>
+            <:item
+              icon={sort_check(@sort, :date)}
+              click={JS.patch(browse_path(@folder_rkey, toggle_sort(:date, @sort), @view, @zona))}
+            >
+              {gettext("Data")}
+            </:item>
+            <:item
+              icon={sort_check(@sort, :size)}
+              click={JS.patch(browse_path(@folder_rkey, toggle_sort(:size, @sort), @view, @zona))}
+            >
+              {gettext("Tamanho")}
+            </:item>
+          </.menu>
           <span class="type-caption text-muted self-center">
             {sort_label(@sort)} <.icon name={sort_arrow_icon(@sort)} size={14} />
           </span>
@@ -616,8 +551,7 @@ defmodule TainaWeb.FilesLive do
                   @folder_rkey,
                   @sort,
                   if(@view == :grid, do: :list, else: :grid),
-                  @zona,
-                  peek_id(@peek)
+                  @zona
                 )
               )
             }
@@ -625,16 +559,7 @@ defmodule TainaWeb.FilesLive do
         </div>
       </div>
 
-      <.segmented>
-        <:option patch={browse_path(@folder_rkey, @sort, @view, :praca, peek_id(@peek))} current={@zona == :praca}>
-          {gettext("Praça")}
-        </:option>
-        <:option patch={browse_path(@folder_rkey, @sort, @view, :casa, peek_id(@peek))} current={@zona == :casa}>
-          {gettext("Casa")}
-        </:option>
-      </.segmented>
-
-      <nav class="breadcrumb mb-4" id="ybira-breadcrumb">
+      <nav class="breadcrumb mb-3" id="ybira-breadcrumb">
         <.link navigate={~p"/arquivos"} class="breadcrumb__link" data-drop-folder="">{gettext("Início")}</.link>
         <%= for item <- breadcrumb_items(@breadcrumb) do %>
           <span class="breadcrumb__sep"><.icon name="chevron-right" size={14} /></span>
@@ -658,23 +583,75 @@ defmodule TainaWeb.FilesLive do
         <% end %>
       </p>
 
-      <div id="ybira-dnd" phx-hook="DnD" class="files-split">
-        <div class="files-split__list">
-          <%= if @view == :grid do %>
-            <div class="tiles">
+      <div id="ybira-dnd" phx-hook="DnD">
+        <%= if @view == :grid do %>
+          <div class="tiles">
+            <div
+              :for={folder <- @folders}
+              class="tile"
+              style="position: relative;"
+              data-drop-folder={drop_folder(@current_scope, folder)}
+            >
+              <.link navigate={~p"/arquivos/pasta/#{folder.rkey}"} class="col gap-1">
+                <.service_square service="ybira" icon="folder" size="lg" />
+                <p class="tile__title">{folder.nome}</p>
+                <p class="tile__meta">{gettext("Pasta")}</p>
+                <p class="tile__meta">{readability_line(folder.zona)}</p>
+              </.link>
+              <div style="position: absolute; top: var(--space-2); right: var(--space-2);">
+                <.item_menu
+                  kind="folder"
+                  id={folder.rkey}
+                  name={folder.nome}
+                  zona={folder.zona}
+                  own?={own?(@current_scope, folder)}
+                />
+              </div>
+            </div>
+
+            <div id="files-grid" phx-update="stream" class="contents">
               <div
-                :for={folder <- @folders}
+                :for={{dom_id, file} <- @streams.files}
+                id={dom_id}
                 class="tile"
                 style="position: relative;"
-                data-drop-folder={drop_folder(@current_scope, folder)}
               >
-                <.link navigate={~p"/arquivos/pasta/#{folder.rkey}"} class="col gap-1">
-                  <.service_square service="ybira" icon="folder" size="lg" />
-                  <p class="tile__title">{folder.nome}</p>
-                  <p class="tile__meta">{gettext("Pasta")}</p>
-                  <p class="tile__meta">{readability_line(folder.zona)}</p>
+                <.link navigate={~p"/arquivos/#{file.rkey}"} class="col gap-1">
+                  <% {service, icon} = file_visual(file.mime) %>
+                  <.service_square service={service} icon={icon} size="lg" />
+                  <p class="tile__title">{file.nome}</p>
+                  <p class="tile__meta">{file_meta(file)}</p>
+                  <p class="tile__meta">{readability_line(file.zona)}</p>
                 </.link>
                 <div style="position: absolute; top: var(--space-2); right: var(--space-2);">
+                  <.item_menu
+                    kind="file"
+                    id={file.rkey}
+                    name={file.nome}
+                    zona={file.zona}
+                    own?={own?(@current_scope, file)}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        <% else %>
+          <div class="list">
+            <ul :if={@folders != []} class="list">
+              <.list_row
+                :for={folder <- @folders}
+                title={folder.nome}
+                meta={"#{gettext("Pasta")} / #{readability_short(folder.zona)}"}
+                navigate={~p"/arquivos/pasta/#{folder.rkey}"}
+                draggable="true"
+                data-drag-id={folder.rkey}
+                data-drag-kind="folder"
+                data-drop-folder={drop_folder(@current_scope, folder)}
+              >
+                <:leading>
+                  <.service_square service="ybira" icon="folder" />
+                </:leading>
+                <:actions>
                   <.item_menu
                     kind="folder"
                     id={folder.rkey}
@@ -682,159 +659,38 @@ defmodule TainaWeb.FilesLive do
                     zona={folder.zona}
                     own?={own?(@current_scope, folder)}
                   />
-                </div>
-              </div>
+                </:actions>
+              </.list_row>
+            </ul>
 
-              <div id="files-grid" phx-update="stream" class="contents">
-                <div
-                  :for={{dom_id, file} <- @streams.files}
-                  id={dom_id}
-                  class="tile"
-                  style="position: relative;"
-                >
-                  <.link navigate={~p"/arquivos/#{file.rkey}"} class="col gap-1">
-                    <% {service, icon} = file_visual(file.mime) %>
-                    <.service_square service={service} icon={icon} size="lg" />
-                    <p class="tile__title">{file.nome}</p>
-                    <p class="tile__meta">{file_meta(file)}</p>
-                    <p class="tile__meta">{readability_line(file.zona)}</p>
-                  </.link>
-                  <div style="position: absolute; top: var(--space-2); right: var(--space-2);">
-                    <.item_menu
-                      kind="file"
-                      id={file.rkey}
-                      name={file.nome}
-                      zona={file.zona}
-                      own?={own?(@current_scope, file)}
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-          <% else %>
-            <div class="list">
-              <ul :if={@folders != []} class="list">
-                <.list_row
-                  :for={folder <- @folders}
-                  title={folder.nome}
-                  meta={"#{gettext("Pasta")} / #{readability_short(folder.zona)}"}
-                  navigate={~p"/arquivos/pasta/#{folder.rkey}"}
-                  draggable="true"
-                  data-drag-id={folder.rkey}
-                  data-drag-kind="folder"
-                  data-drop-folder={drop_folder(@current_scope, folder)}
-                >
-                  <:leading>
-                    <.service_square service="ybira" icon="folder" />
-                  </:leading>
-                  <:actions>
-                    <.item_menu
-                      kind="folder"
-                      id={folder.rkey}
-                      name={folder.nome}
-                      zona={folder.zona}
-                      own?={own?(@current_scope, folder)}
-                    />
-                  </:actions>
-                </.list_row>
-              </ul>
-
-              <ul id="files" phx-update="stream" class="list">
-                <.list_row
-                  :for={{dom_id, file} <- @streams.files}
-                  id={dom_id}
-                  title={file.nome}
-                  meta={"#{file_meta(file)} / #{readability_short(file.zona)}"}
-                  navigate={~p"/arquivos/#{file.rkey}"}
-                  draggable="true"
-                  data-drag-id={file.rkey}
-                  data-drag-kind="file"
-                >
-                  <:leading>
-                    <% {service, icon} = file_visual(file.mime) %>
-                    <.service_square service={service} icon={icon} />
-                  </:leading>
-                  <:actions>
-                    <span class="files-split__peek">
-                      <.icon_button
-                        name="eye"
-                        label={gettext("Ver detalhes")}
-                        phx-click="peek"
-                        phx-value-id={file.rkey}
-                      />
-                    </span>
-                    <.item_menu
-                      kind="file"
-                      id={file.rkey}
-                      name={file.nome}
-                      zona={file.zona}
-                      own?={own?(@current_scope, file)}
-                    />
-                  </:actions>
-                </.list_row>
-              </ul>
-            </div>
-          <% end %>
-        </div>
-
-        <aside class="files-split__details" aria-label={gettext("Detalhes do arquivo")} aria-live="polite">
-          <%= if @peek do %>
-            <div class="card col gap-4">
-              <div class="row gap-2">
-                <p class="type-h3 flex-1 truncate">{@peek.nome}</p>
-                <.icon_button
-                  name="close"
-                  label={gettext("Fechar detalhes")}
-                  phx-click={JS.patch(browse_path(@folder_rkey, @sort, @view, @zona, nil))}
-                />
-              </div>
-              <% has_thumb = image?(@peek.mime) and thumbnail?(@peek) %>
-              <% {service, icon} = file_visual(@peek.mime) %>
-              <img
-                :if={has_thumb}
-                src={~p"/files/#{@peek.rkey}/thumbnail/md"}
-                alt={@peek.nome}
-                class="files-split__thumb"
-                loading="lazy"
-                width={peek_dimension(@peek, "width")}
-                height={peek_dimension(@peek, "height")}
-              />
-              <.service_square :if={!has_thumb} service={service} icon={icon} size="lg" />
-              <div class="col gap-1">
-                <p class="type-body-sm text-muted">{file_meta(@peek)}</p>
-                <p class="type-body-sm text-muted">{readability_line(@peek.zona)}</p>
-              </div>
-              <div class="col gap-2">
-                <.button
-                  variant="secondary"
-                  size="md"
-                  class="w-full"
-                  navigate={~p"/arquivos/#{@peek.rkey}"}
-                >
-                  {gettext("Abrir")}
-                </.button>
-                <.button
-                  variant="secondary"
-                  size="md"
-                  class="w-full"
-                  href={~p"/files/#{@peek.rkey}"}
-                  download
-                >
-                  {gettext("Baixar")}
-                </.button>
-              </div>
-            </div>
-          <% else %>
-            <div class="card">
-              <p class="type-label mb-2">{gettext("Detalhes")}</p>
-              <p class="type-body-sm text-muted">
-                {gettext(
-                  "Na visão de lista, clique no olho ao lado de um arquivo. Os detalhes aparecem aqui, sem sair da pasta."
-                )}
-              </p>
-            </div>
-          <% end %>
-        </aside>
+            <ul id="files" phx-update="stream" class="list">
+              <.list_row
+                :for={{dom_id, file} <- @streams.files}
+                id={dom_id}
+                title={file.nome}
+                meta={"#{file_meta(file)} / #{readability_short(file.zona)}"}
+                navigate={~p"/arquivos/#{file.rkey}"}
+                draggable="true"
+                data-drag-id={file.rkey}
+                data-drag-kind="file"
+              >
+                <:leading>
+                  <% {service, icon} = file_visual(file.mime) %>
+                  <.service_square service={service} icon={icon} />
+                </:leading>
+                <:actions>
+                  <.item_menu
+                    kind="file"
+                    id={file.rkey}
+                    name={file.nome}
+                    zona={file.zona}
+                    own?={own?(@current_scope, file)}
+                  />
+                </:actions>
+              </.list_row>
+            </ul>
+          </div>
+        <% end %>
       </div>
 
       <div :if={@next_cursor} id="load-more" phx-viewport-bottom="load-more" class="list-row" aria-hidden="true">

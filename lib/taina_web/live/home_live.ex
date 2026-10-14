@@ -71,15 +71,15 @@ defmodule TainaWeb.HomeLive do
     end
   end
 
-  # Serviços na ordem da navegação (sidebar). Moradores e Mural são Maracá:
-  # cada serviço tem o próprio acento, e Maracá fica neutro em vez de pegar
-  # emprestado o acento dos outros.
+  # Serviços na ordem da navegação (sidebar). Moradores e Mural são Maracá e
+  # usam o acento próprio do Maracá (identidade/acesso), como Ybira e Jaci usam
+  # os seus: nenhum quadradinho de serviço fica sem cor ao lado dos outros.
   defp services do
     [
       {gettext("Arquivos"), gettext("Documentos e pastas"), "ybira", "folder", ~p"/arquivos"},
       {gettext("Fotos"), gettext("Fotos e vídeos"), "jaci", "image", ~p"/fotos"},
-      {gettext("Moradores"), gettext("Quem faz parte"), "neutral", "user", ~p"/membros"},
-      {gettext("Mural"), gettext("O que aconteceu"), "neutral", "mural", ~p"/mural"},
+      {gettext("Moradores"), gettext("Quem faz parte"), "maraca", "user", ~p"/membros"},
+      {gettext("Mural"), gettext("O que aconteceu"), "maraca", "mural", ~p"/mural"},
       {gettext("Saúde"), gettext("Estado da máquina"), "nhaman", "saude", ~p"/saude"}
     ]
   end

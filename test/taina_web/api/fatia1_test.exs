@@ -297,13 +297,49 @@ defmodule TainaWeb.API.Fatia1Test do
       assert get_resp_header(response, "content-type") == ["image/webp"]
     end
 
-    test "miniatura de tamanho desconhecido responde 404", %{conn: conn} do
+    test "miniatura de tamanho desconhecido responde 404 no envelope", %{conn: conn} do
       file =
         conn
         |> post(~p"/api/v1/files", %{"file" => upload(tmp_upload_fixture("x", "x.txt"))})
         |> json_response(201)
 
-      assert conn |> get(~p"/api/v1/files/#{file["rkey"]}/thumbnail/xl") |> response(404)
+      body = conn |> get(~p"/api/v1/files/#{file["rkey"]}/thumbnail/xl") |> json_response(404)
+      assert body["error"]["code"] == "not_found"
+    end
+
+    test "arquivo sem rendition responde 404 no envelope, nao corpo vazio", %{conn: conn} do
+      # Achado contra uma caixa de verdade: a miniatura saia por
+      # `send_resp(404, "")`, sem envelope, e o cliente caia no fallback
+      # `internal_error`.
+      file =
+        conn
+        |> post(~p"/api/v1/files", %{"file" => upload(tmp_upload_fixture("so texto", "nota.txt"))})
+        |> json_response(201)
+
+      body = conn |> get(~p"/api/v1/files/#{file["rkey"]}/thumbnail/sm") |> json_response(404)
+      assert body["error"]["code"] == "not_found"
+    end
+
+    test "Accept de outro tipo nao derruba rota JSON", %{conn: conn} do
+      # O pipeline da API nao negocia por `Accept`: o tipo e por rota. Antes,
+      # um cliente que pedia `image/webp` levava 406 em toda rota, cortado
+      # antes do controller e com `code: internal_error`.
+      conn = put_req_header(conn, "accept", "image/webp")
+
+      assert conn |> get(~p"/api/v1/me") |> json_response(200)
+    end
+
+    test "Accept de outro tipo tambem nao derruba a miniatura", %{conn: conn} do
+      file =
+        conn
+        |> post(~p"/api/v1/files", %{"file" => upload(tmp_image_fixture(filename: "p.jpg"), "p.jpg")})
+        |> json_response(201)
+
+      conn = put_req_header(conn, "accept", "image/webp")
+      response = get(conn, ~p"/api/v1/files/#{file["rkey"]}/thumbnail/sm")
+
+      assert response.status == 200
+      assert get_resp_header(response, "content-type") == ["image/webp"]
     end
 
     test "rkey inexistente responde 404", %{conn: conn} do

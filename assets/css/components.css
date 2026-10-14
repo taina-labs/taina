@@ -392,6 +392,10 @@
   background: var(--surface-raised);
   color: var(--service-guara);
 }
+.service-square--maraca {
+  background: var(--service-maraca-soft);
+  color: var(--service-maraca-tint);
+}
 .service-square--doc {
   background: var(--surface-raised);
   color: var(--brand-ember);
@@ -622,41 +626,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-/* ---------- duas colunas do Ybira (desktop 1024+): lista + detalhes ---------- */
-
-/* Abaixo de 1024 é uma coluna só: o painel e o olho das linhas somem, a lista
-   ocupa tudo e abrir um arquivo continua navegando para a tela dele. */
-.files-split__details,
-.files-split__peek {
-  display: none;
-}
-
-@media (min-width: 1024px) {
-  .files-split {
-    display: grid;
-    grid-template-columns: minmax(0, 5fr) minmax(0, 3fr);
-    gap: var(--space-6);
-    align-items: start;
-  }
-
-  .files-split__details {
-    display: block;
-  }
-
-  .files-split__peek {
-    display: inline-flex;
-  }
-}
-
-/* miniatura do painel de detalhes (só imagens têm thumbnail) */
-.files-split__thumb {
-  width: 100%;
-  max-height: 40dvh;
-  object-fit: cover;
-  border-radius: var(--radius-md);
-  background: var(--surface-raised);
 }
 
 /* ---------- avatar ---------- */
@@ -967,7 +936,7 @@
   z-index: 50;
   display: flex;
   flex-direction: column;
-  background: var(--bg-deep);
+  background: var(--bg-viewer);
   overscroll-behavior: contain;
 }
 
@@ -1249,6 +1218,9 @@
      do modal (55) e do flash (60). */
   z-index: 45;
   min-width: var(--size-menu-min);
+  /* nunca estoura a tela: em viewport estreita o menu encolhe em vez de
+     vazar para fora (a lista de ordenação abria para a esquerda e sumia). */
+  max-width: calc(100vw - var(--space-8));
   padding: var(--space-2);
   background: var(--surface-raised);
   border: var(--border-hairline) solid var(--border-default);

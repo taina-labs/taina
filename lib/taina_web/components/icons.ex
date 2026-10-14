@@ -38,6 +38,7 @@ defmodule TainaWeb.Icons do
       ~S(<rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/>),
     "list" =>
       ~S(<line x1="8" x2="21" y1="6" y2="6"/><line x1="8" x2="21" y1="12" y2="12"/><line x1="8" x2="21" y1="18" y2="18"/><line x1="3" x2="3.01" y1="6" y2="6"/><line x1="3" x2="3.01" y1="12" y2="12"/><line x1="3" x2="3.01" y1="18" y2="18"/>),
+    "sort" => ~S(<path d="m21 16-4 4-4-4"/><path d="M17 20V4"/><path d="m3 8 4-4 4 4"/><path d="M7 4v16"/>),
     "check" => ~S(<path d="M20 6 9 17l-5-5"/>),
     "close" => ~S(<path d="M18 6 6 18"/><path d="m6 6 12 12"/>),
     "clock" => ~S(<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>),

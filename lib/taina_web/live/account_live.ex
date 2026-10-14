@@ -1,8 +1,9 @@
 defmodule TainaWeb.AccountLive do
   @moduledoc """
   Hub "Conta" (aba do bottom-nav mobile): cartão da pessoa logada e atalhos
-  para membros, convites, armazenamento, lixeira e sair. Não tem board próprio
-  no Penpot, composto com os componentes de linha do design system.
+  para pedidos (recebidos e enviados), membros, convites, armazenamento,
+  lixeira e sair. Não tem board próprio no Penpot, composto com os componentes
+  de linha do design system.
   """
 
   use TainaWeb, :live_view
@@ -16,16 +17,14 @@ defmodule TainaWeb.AccountLive do
     {:ok, assign(socket, :page_title, gettext("Conta"))}
   end
 
-  # O ponto total da nav (a aba Conta) vem do hook compartilhado; aqui a tela
-  # separa entrada (Pedidos) de saída (Meus pedidos) para o ponto cair na linha
-  # certa. Eventos do Ava (PubSub, já inscritos no shell) recomputam na hora.
+  # O ponto da nav (a aba Conta) e o da linha "Pedidos" vem do hook
+  # compartilhado; a tela so acende a linha quando ha algo esperando, recebido
+  # ou enviado. Eventos do Ava (PubSub, ja inscritos no shell) recomputam.
   defp assign_alerts(socket, scope) do
     {:ok, recebidos} = Maraca.pedidos_recebidos(scope)
     {:ok, enviados} = Maraca.pedidos_enviados(scope)
 
-    socket
-    |> assign(:incoming_alert, recebidos != [])
-    |> assign(:outgoing_alert, enviados != [])
+    assign(socket, :pedidos_alert, recebidos != [] or enviados != [])
   end
 
   @impl true
@@ -58,30 +57,18 @@ defmodule TainaWeb.AccountLive do
         <ul class="list">
           <.list_row
             title={gettext("Pedidos")}
-            meta={gettext("quem pediu para abrir seus arquivos")}
+            meta={gettext("quem pediu e o que você pediu")}
             navigate={~p"/conta/pedidos"}
           >
-            <:leading><.service_square service="neutral" icon="shield" /></:leading>
+            <:leading><.service_square service="maraca" icon="shield" /></:leading>
             <:actions>
-              <span :if={@incoming_alert} class="nav-dot" aria-hidden="true"></span>
-              <.icon name="chevron-right" size={18} class="text-faint" />
-            </:actions>
-          </.list_row>
-
-          <.list_row
-            title={gettext("Meus pedidos")}
-            meta={gettext("o que você está esperando")}
-            navigate={~p"/conta/meus-pedidos"}
-          >
-            <:leading><.service_square service="neutral" icon="folder" /></:leading>
-            <:actions>
-              <span :if={@outgoing_alert} class="nav-dot" aria-hidden="true"></span>
+              <span :if={@pedidos_alert} class="nav-dot" aria-hidden="true"></span>
               <.icon name="chevron-right" size={18} class="text-faint" />
             </:actions>
           </.list_row>
 
           <.list_row title={gettext("Moradores")} meta={gettext("quem faz parte da comunidade")} navigate={~p"/membros"}>
-            <:leading><.service_square service="neutral" icon="user" /></:leading>
+            <:leading><.service_square service="maraca" icon="user" /></:leading>
             <:actions><.icon name="chevron-right" size={18} class="text-faint" /></:actions>
           </.list_row>
 
@@ -91,7 +78,7 @@ defmodule TainaWeb.AccountLive do
             meta={gettext("link + QR code")}
             navigate={~p"/membros/convidar"}
           >
-            <:leading><.service_square service="neutral" icon="qr" /></:leading>
+            <:leading><.service_square service="maraca" icon="qr" /></:leading>
             <:actions><.icon name="chevron-right" size={18} class="text-faint" /></:actions>
           </.list_row>
 
@@ -100,12 +87,12 @@ defmodule TainaWeb.AccountLive do
             meta={gettext("uso do disco e cota")}
             navigate={~p"/armazenamento"}
           >
-            <:leading><.service_square service="jaci" icon="disk" /></:leading>
+            <:leading><.service_square service="ybira" icon="disk" /></:leading>
             <:actions><.icon name="chevron-right" size={18} class="text-faint" /></:actions>
           </.list_row>
 
           <.list_row title={gettext("Lixeira")} meta={gettext("itens dos últimos 30 dias")} navigate={~p"/arquivos/lixeira"}>
-            <:leading><.service_square service="neutral" icon="trash" /></:leading>
+            <:leading><.service_square service="ybira" icon="trash" /></:leading>
             <:actions><.icon name="chevron-right" size={18} class="text-faint" /></:actions>
           </.list_row>
         </ul>

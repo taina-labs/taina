@@ -171,8 +171,8 @@ defmodule TainaWeb.FilePreviewLive do
       {:ok, _request} ->
         {:noreply,
          socket
-         |> Phoenix.LiveView.put_flash(:info, gettext("Pedido enviado. Você vê o andamento em Meus pedidos."))
-         |> Phoenix.LiveView.push_navigate(to: ~p"/conta/meus-pedidos")}
+         |> Phoenix.LiveView.put_flash(:info, gettext("Pedido enviado. Você vê o andamento em Pedidos."))
+         |> Phoenix.LiveView.push_navigate(to: ~p"/conta/pedidos")}
 
       {:error, :already_has_access} ->
         {:noreply, Phoenix.LiveView.push_navigate(socket, to: ~p"/arquivos/#{target.rkey}")}

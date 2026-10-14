@@ -23,7 +23,7 @@ defmodule TainaWeb.FilePreviewLiveTest do
     assert html =~ "Pedir acesso"
   end
 
-  test "requesting access creates the request and redirects to Meus pedidos", %{
+  test "requesting access creates the request and redirects to Pedidos", %{
     conn: conn,
     tekoa: tekoa,
     owner: owner,
@@ -34,7 +34,7 @@ defmodule TainaWeb.FilePreviewLiveTest do
 
     lv |> element(~s(button[phx-click="ask-access"])) |> render_click()
 
-    assert {:error, {:live_redirect, %{to: "/conta/meus-pedidos"}}} =
+    assert {:error, {:live_redirect, %{to: "/conta/pedidos"}}} =
              lv |> element(~s(button[phx-click="request-access"])) |> render_click()
 
     assert {:ok, [request]} = Maraca.pedidos_recebidos(Scope.new(owner, tekoa))
