@@ -12,8 +12,12 @@ defmodule TainaWeb.Router do
 
   # A API v1 (RFC_005): Bearer de dispositivo, nunca cookie. O `fetch_api_scope`
   # nao barra ninguem; `:api_v1_auth` e `:api_v1_zelador` sao os portoes.
+  #
+  # Sem `:accepts` de proposito: o tipo da resposta e por rota e esta no
+  # contrato (JSON, webp, bytes). Negociar por `Accept` fazia um cliente que
+  # pedia `image/webp` levar 406 em toda rota, cortado antes do controller e
+  # com `code: internal_error` no envelope.
   pipeline :api_v1 do
-    plug :accepts, ["json"]
     plug :fetch_api_scope
   end
 

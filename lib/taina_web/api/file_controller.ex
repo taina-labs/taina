@@ -50,9 +50,18 @@ defmodule TainaWeb.API.FileController do
   end
 
   def thumbnail(conn, %{"id" => rkey, "size" => size}) do
-    with {:ok, file} <- Ybira.get_file(conn.assigns[:current_scope], rkey),
-         {:ok, metadata} <- Ybira.photo_metadata(conn.assigns[:current_scope], file) do
-      FileServing.thumbnail(conn, metadata, size)
+    scope = conn.assigns[:current_scope]
+
+    with {:ok, file} <- Ybira.get_file(scope, rkey),
+         {:ok, metadata} <- Ybira.photo_metadata(scope, file) do
+      # Sem rendition e caso normal, nao falha de servidor: a API responde o
+      # envelope (404 not_found), que e onde o cliente le o code. A web segue
+      # com o 404 seco do `FileServing`, que e o que um `<img>` precisa.
+      if FileServing.thumbnail?(metadata, size) do
+        FileServing.thumbnail(conn, metadata, size)
+      else
+        Error.reply(conn, :not_found)
+      end
     else
       {:error, reason} -> Error.reply(conn, reason)
     end

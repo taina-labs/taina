@@ -39,6 +39,14 @@ defmodule TainaWeb.FileServing do
   end
 
   @doc """
+  Se a miniatura do tamanho existe no disco. A web responde 404 seco, que e o
+  que um `<img>` precisa; a API responde o envelope, que e o contrato do
+  cliente, entao ela pergunta antes.
+  """
+  @spec thumbnail?(map(), String.t()) :: boolean()
+  def thumbnail?(metadata, size), do: match?({:ok, _}, thumbnail_path(metadata, size))
+
+  @doc """
   Serve a miniatura webp a partir dos metadados de rendicao do produto. Tamanho
   desconhecido ou ainda nao gerado (job falhou, imagem sem rendition) responde
   404, e a UI mostra o placeholder.
