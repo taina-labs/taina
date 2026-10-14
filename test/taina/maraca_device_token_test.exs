@@ -44,6 +44,16 @@ defmodule Taina.MaracaDeviceTokenTest do
       assert {:error, %Ecto.Changeset{}} = Maraca.create_device_token(scope, "")
       assert {:error, %Ecto.Changeset{}} = Maraca.create_device_token(scope, String.duplicate("a", 81))
     end
+
+    test "normaliza espacos externos no rotulo" do
+      scope = active_scope()
+
+      assert {:ok, %{device: device}} = Maraca.create_device_token(scope, "  celular da ana  ")
+      assert device.name == "celular da ana"
+
+      [row] = tokens_for(scope.tekoa.id)
+      assert row.name == "celular da ana"
+    end
   end
 
   describe "resolve_device_token/1" do

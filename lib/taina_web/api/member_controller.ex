@@ -24,18 +24,24 @@ defmodule TainaWeb.API.MemberController do
   def create(conn, params) do
     scope = conn.assigns[:current_scope]
 
-    case Maraca.invite_user(scope.ava, scope.tekoa, role: role(params["papel"])) do
-      {:ok, %{ava: ava, token: token}} ->
-        conn
-        |> put_status(201)
-        |> json(%{
-          "ava" => Wire.Ava.json(ava),
-          "token" => token,
-          "invite_url" => "taina://convite/" <> token
-        })
+    case invite_role(params["papel"]) do
+      {:ok, role} ->
+        case Maraca.invite_user(scope.ava, scope.tekoa, role: role) do
+          {:ok, %{ava: ava, token: token}} ->
+            conn
+            |> put_status(201)
+            |> json(%{
+              "ava" => Wire.Ava.json(ava),
+              "token" => token,
+              "invite_url" => "taina://convite/" <> token
+            })
 
-      {:error, reason} ->
-        Error.reply(conn, reason)
+          {:error, reason} ->
+            Error.reply(conn, reason)
+        end
+
+      :error ->
+        Error.reply(conn, :invalid_action)
     end
   end
 
@@ -92,10 +98,10 @@ defmodule TainaWeb.API.MemberController do
     end
   end
 
-  # Sem papel no corpo, convida como morador (o default do contexto).
-  defp role(nil), do: :morador
-  defp role("zelador"), do: :zelador
-  defp role(_), do: :morador
+  # Sem papel no corpo, convida como morador (o default do contexto). Um papel
+  # explicito desconhecido e erro: melhor 422 do que convidar com o papel errado.
+  defp invite_role(nil), do: {:ok, :morador}
+  defp invite_role(papel), do: papel(papel)
 
   defp papel("morador"), do: {:ok, :morador}
   defp papel("zelador"), do: {:ok, :zelador}

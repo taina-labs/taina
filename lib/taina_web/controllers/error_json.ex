@@ -8,14 +8,14 @@ defmodule TainaWeb.ErrorJSON do
   @codes %{
     "400.json" => "invalid_action",
     "404.json" => "not_found",
-    "413.json" => "missing_file",
+    "413.json" => "payload_too_large",
     "500.json" => "internal_error"
   }
 
   @messages %{
     "invalid_action" => "Essa ação não vale aqui.",
     "not_found" => "Não encontramos isso aqui.",
-    "missing_file" => "O envio passou do tamanho permitido.",
+    "payload_too_large" => "O envio passou do tamanho permitido.",
     "internal_error" => "Algo falhou do nosso lado. Tente de novo."
   }
 

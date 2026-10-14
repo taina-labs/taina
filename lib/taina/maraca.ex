@@ -933,17 +933,22 @@ defmodule Taina.Maraca do
   defp active_device(_device), do: :error
 
   defp touch_last_used(%DeviceToken{last_used_at: at} = device) do
-    if stale_usage?(at) do
-      {:ok, updated} =
-        Repo.with_tekoa(device.tekoa.public_id, fn ->
-          device
-          |> Ecto.Changeset.change(last_used_at: agora())
-          |> Repo.update()
-        end)
+    if stale_usage?(at), do: stamp_usage(device), else: device
+  end
 
-      updated
-    else
-      device
+  # O carimbo e auxiliar: se a escrita falhar, a autenticacao segue com o
+  # dispositivo ja lido, em vez de derrubar uma requisicao valida.
+  defp stamp_usage(%DeviceToken{} = device) do
+    result =
+      Repo.with_tekoa(device.tekoa.public_id, fn ->
+        device
+        |> Ecto.Changeset.change(last_used_at: agora())
+        |> Repo.update()
+      end)
+
+    case result do
+      {:ok, updated} -> updated
+      {:error, _changeset} -> device
     end
   end
 

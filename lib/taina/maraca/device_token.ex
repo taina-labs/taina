@@ -49,6 +49,7 @@ defmodule Taina.Maraca.DeviceToken do
   def changeset(device_token, attrs) do
     device_token
     |> cast(attrs, [:name])
+    |> update_change(:name, &String.trim/1)
     |> validate_required([:name])
     |> validate_length(:name, min: 1, max: 80)
   end

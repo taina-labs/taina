@@ -44,6 +44,16 @@ defmodule TainaWeb.API.FatiaUsTest do
       assert created["token"] == String.replace_prefix(created["invite_url"], "taina://convite/", "")
     end
 
+    test "papel explicito desconhecido no convite responde 422", %{conn: conn, zelador: zelador} do
+      body =
+        conn
+        |> authorize_device(zelador)
+        |> post(~p"/api/v1/members", %{"papel" => "curador"})
+        |> json_response(422)
+
+      assert body["error"]["code"] == "invalid_action"
+    end
+
     test "a zeladora muda o papel e desativa", %{conn: conn, zelador: zelador, morador: morador} do
       conn = authorize_device(conn, zelador)
 

@@ -71,6 +71,19 @@ defmodule TainaWeb.API.Fatia1Test do
       assert body["device"]["name"] == "iPhone da Ana"
     end
 
+    test "rotulo de aparelho longo e truncado, sem derrubar o login", %{conn: conn, ava: ava} do
+      body =
+        conn
+        |> post(~p"/api/v1/session", %{
+          "username" => ava.username,
+          "password" => "senhasegura123",
+          "device_name" => String.duplicate("a", 200)
+        })
+        |> json_response(201)
+
+      assert body["device"]["name"] == String.duplicate("a", 80)
+    end
+
     test "senha errada responde 401 no envelope", %{conn: conn, ava: ava} do
       body =
         conn

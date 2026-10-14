@@ -29,6 +29,7 @@ defmodule TainaWeb.FileServing do
       |> put_resp_header("accept-ranges", "bytes")
       |> put_resp_header("content-type", file.mime)
       |> put_resp_header("content-disposition", content_disposition(file))
+      |> put_resp_header("x-content-type-options", "nosniff")
       |> put_last_modified(file)
 
     case get_req_header(conn, "range") do
@@ -67,9 +68,13 @@ defmodule TainaWeb.FileServing do
     end
   end
 
+  # O nome vem do cliente: o `filename` fica ASCII e sem aspas/barra (nao quebra
+  # o parametro) e a versao fiel vai percent-encoded em `filename*` (RFC 5987).
   defp content_disposition(file) do
     kind = if String.starts_with?(file.mime, @inline_prefixes), do: "inline", else: "attachment"
-    ~s(#{kind}; filename="#{file.nome}")
+    ascii = String.replace(file.nome, ~r/[^\x20-\x7E]|["\\]/, "_")
+    encoded = URI.encode(file.nome, &URI.char_unreserved?/1)
+    ~s(#{kind}; filename="#{ascii}"; filename*=UTF-8''#{encoded})
   end
 
   # `Last-Modified` ajuda o cache do cliente (revalidacao barata em banda
