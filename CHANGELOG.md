@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.2.0](https://github.com/taina-labs/taina/compare/v0.1.0...v0.2.0) (2026-10-14)
+
+
+### Features
+
+* **api:** add the json api v1 and the device token ([#169](https://github.com/taina-labs/taina/issues/169)) ([3ce1615](https://github.com/taina-labs/taina/commit/3ce1615ae21a704768b35a47f07937b55e9d2ba4))
+
+
+### Bug Fixes
+
+* live health with running version ([889f680](https://github.com/taina-labs/taina/commit/889f680a2683d0795f8c6572b93d01c9ce855b0b))
+
+
+### Build System
+
+* **nix:** move the NixOS module to oka ([#167](https://github.com/taina-labs/taina/issues/167)) ([e5b1215](https://github.com/taina-labs/taina/commit/e5b121506376ad99fca2e7d5e31fcf66a27cecaf))
+
 ## 0.1.0 (2026-10-13)
 
 
