@@ -11,6 +11,7 @@ defmodule TainaWeb.SaudeLiveTest do
   import Taina.Fixtures
 
   alias Ecto.Changeset
+  alias Taina.Nhaman
   alias Taina.Nhaman.Backup
   alias Taina.Repo
   alias Taina.Scope
@@ -53,7 +54,8 @@ defmodule TainaWeb.SaudeLiveTest do
     # fingir "atualizado".
     assert html =~ "A verificação de atualizações está desligada"
     assert html =~ "não conversa com a internet por conta própria"
-    assert html =~ "A caixa está na versão 0.1.0."
+    version = Nhaman.Update.running_version()
+    assert html =~ "A caixa está na versão " <> version
 
     # A caixa: nome da Tekoa e o endereço que a comunidade usa.
     assert html =~ "Esta é a caixa de #{tekoa.name}."
