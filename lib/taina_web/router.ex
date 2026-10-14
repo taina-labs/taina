@@ -3,10 +3,26 @@ defmodule TainaWeb.Router do
 
   import Phoenix.LiveDashboard.Router
   import Phoenix.LiveView.Router
+  import TainaWeb.API.Auth
   import TainaWeb.Auth
 
   pipeline :api do
     plug :accepts, ["json"]
+  end
+
+  # A API v1 (RFC_005): Bearer de dispositivo, nunca cookie. O `fetch_api_scope`
+  # nao barra ninguem; `:api_v1_auth` e `:api_v1_zelador` sao os portoes.
+  pipeline :api_v1 do
+    plug :accepts, ["json"]
+    plug :fetch_api_scope
+  end
+
+  pipeline :api_v1_auth do
+    plug :require_api_auth
+  end
+
+  pipeline :api_v1_zelador do
+    plug :require_api_zelador
   end
 
   pipeline :authenticated do
@@ -31,6 +47,73 @@ defmodule TainaWeb.Router do
     pipe_through :api
 
     get "/health", HealthController, :show
+  end
+
+  # Superficie v1 (RFC_005 secao 9). Fatia 1: a vertical minima do app
+  # (login, navegar, subir, ver). As fatias 2 e 3 entram nos mesmos escopos.
+  scope "/api/v1", TainaWeb.API do
+    pipe_through :api_v1
+
+    get "/instance", InstanceController, :show
+    post "/session", SessionController, :create
+  end
+
+  scope "/api/v1", TainaWeb.API do
+    pipe_through [:api_v1, :api_v1_auth]
+
+    delete "/session", SessionController, :delete
+    get "/me", MeController, :show
+
+    get "/folders", FolderController, :index
+    post "/folders", FolderController, :create
+    get "/folders/:id", FolderController, :show
+    patch "/folders/:id", FolderController, :update
+    post "/folders/:id/move", FolderController, :move
+    delete "/folders/:id", FolderController, :delete
+    get "/contents", FolderController, :contents
+
+    post "/files", FileController, :create
+    get "/files/:id", FileController, :show
+    patch "/files/:id", FileController, :update
+    post "/files/:id/move", FileController, :move
+    delete "/files/:id", FileController, :delete
+    get "/files/:id/download", FileController, :download
+    get "/files/:id/thumbnail/:size", FileController, :thumbnail
+    get "/files/:id/access-target", AccessController, :show
+    post "/files/:id/access-request", AccessController, :create
+
+    get "/recent", FileController, :recent
+    get "/trash", TrashController, :index
+    post "/trash/:file_id/restore", TrashController, :restore
+    get "/photos", PhotoController, :index
+    get "/photos/timeline", PhotoController, :timeline
+
+    get "/devices", DeviceController, :index
+    delete "/devices/:id", DeviceController, :delete
+    get "/members", MemberController, :index
+
+    get "/access-requests", AccessRequestController, :index
+    get "/my-requests", AccessRequestController, :mine
+    post "/access-requests/:id/approve", AccessRequestController, :approve
+    post "/access-requests/:id/deny", AccessRequestController, :deny
+
+    get "/mural", MuralController, :index
+    get "/storage", StorageController, :show
+    get "/saude", SaudeController, :show
+  end
+
+  scope "/api/v1", TainaWeb.API do
+    pipe_through [:api_v1, :api_v1_auth, :api_v1_zelador]
+
+    post "/members", MemberController, :create
+    patch "/members/:id", MemberController, :update
+    delete "/members/:id", MemberController, :delete
+    post "/members/:id/reactivate", MemberController, :reactivate
+    delete "/members/:id/invite", MemberController, :revoke_invite
+    post "/members/:id/reset-link", MemberController, :reset_link
+
+    patch "/storage/quota", StorageController, :update_quota
+    post "/saude/backup", SaudeController, :backup
   end
 
   scope "/", TainaWeb do

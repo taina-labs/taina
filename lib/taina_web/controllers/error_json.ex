@@ -1,21 +1,26 @@
 defmodule TainaWeb.ErrorJSON do
   @moduledoc """
-  This module is invoked by your endpoint in case of errors on JSON requests.
-
-  See config/config.exs.
+  Erros de JSON que o endpoint levanta antes de chegar a um controller (rota
+  inexistente, corpo grande demais): mesmo envelope da API (RFC_005 D6), para o
+  cliente ter um so decoder de erro.
   """
 
-  # If you want to customize a particular status code,
-  # you may add your own clauses, such as:
-  #
-  # def render("500.json", _assigns) do
-  #   %{errors: %{detail: "Internal Server Error"}}
-  # end
+  @codes %{
+    "400.json" => "invalid_action",
+    "404.json" => "not_found",
+    "413.json" => "missing_file",
+    "500.json" => "internal_error"
+  }
 
-  # By default, Phoenix returns the status message from
-  # the template name. For example, "404.json" becomes
-  # "Not Found".
+  @messages %{
+    "invalid_action" => "Essa ação não vale aqui.",
+    "not_found" => "Não encontramos isso aqui.",
+    "missing_file" => "O envio passou do tamanho permitido.",
+    "internal_error" => "Algo falhou do nosso lado. Tente de novo."
+  }
+
   def render(template, _assigns) do
-    %{errors: %{detail: Phoenix.Controller.status_message_from_template(template)}}
+    code = Map.get(@codes, template, "internal_error")
+    %{"error" => %{"code" => code, "message" => @messages[code]}}
   end
 end
