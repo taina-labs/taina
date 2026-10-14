@@ -237,7 +237,7 @@
        ghost/link precisam de contraste de texto (>= 4.5:1). O texto sobre a
        marca vira branco. */
     --brand-primary: var(--color-dawn-800);
-    --brand-primary-hover: var(--color-dawn-700);
+    --brand-primary-hover: var(--color-dawn-800);
     --brand-primary-pressed: var(--color-dawn-800);
 
     --service-ybira: var(--color-forest-600);
