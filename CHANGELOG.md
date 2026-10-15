@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/taina-labs/taina/compare/v0.2.1...v0.3.0) (2026-10-15)
+
+
+### Features
+
+* **web:** add light theme and refresh home, files and account ([84ca61a](https://github.com/taina-labs/taina/commit/84ca61a8ed9eb75cc5ff0ede5f9d1f052a0dceca))
+
 ## [0.2.1](https://github.com/taina-labs/taina/compare/v0.2.0...v0.2.1) (2026-10-14)
 
 
