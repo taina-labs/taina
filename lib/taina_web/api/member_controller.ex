@@ -4,8 +4,9 @@ defmodule TainaWeb.API.MemberController do
   gestao (convite, papel, desativar, reativar, revogar convite, link de senha)
   so para a zeladora.
 
-  Aceitar o convite e redefinir a senha ficam fora da API (RFC_005 secao 12):
-  o app recebe o token e o endereco sai por deep link.
+  Aceitar o convite e redefinir a senha andam pelo app (RFC_005 secao 12): o
+  deep link carrega o token e o endereco da caixa, e o consumo fica no
+  `InviteController` e no `PasswordController`.
   """
 
   use TainaWeb, :controller
@@ -28,12 +29,14 @@ defmodule TainaWeb.API.MemberController do
       {:ok, role} ->
         case Maraca.invite_user(scope.ava, scope.tekoa, role: role) do
           {:ok, %{ava: ava, token: token}} ->
+            # O endereco da caixa vai no deep link: quem chega pelo convite
+            # ainda nao tem host salvo no app.
             conn
             |> put_status(201)
             |> json(%{
               "ava" => Wire.Ava.json(ava),
               "token" => token,
-              "invite_url" => "taina://convite/" <> token
+              "invite_url" => "taina://convite/" <> token <> "?host=" <> URI.encode_www_form(TainaWeb.Endpoint.url())
             })
 
           {:error, reason} ->
@@ -91,7 +94,7 @@ defmodule TainaWeb.API.MemberController do
       |> json(%{
         "ava" => Wire.Ava.json(member),
         "token" => token,
-        "reset_url" => "taina://redefinir/" <> token
+        "reset_url" => "taina://redefinir/" <> token <> "?host=" <> URI.encode_www_form(TainaWeb.Endpoint.url())
       })
     else
       {:error, reason} -> Error.reply(conn, reason)

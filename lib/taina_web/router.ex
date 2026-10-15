@@ -60,6 +60,13 @@ defmodule TainaWeb.Router do
 
     get "/instance", InstanceController, :show
     post "/session", SessionController, :create
+
+    # O app (Okena) resolve o deep link nativamente: status e consumo do convite
+    # e da redefinicao de senha, sem passar pela web.
+    get "/invites/:token", InviteController, :show
+    post "/invites/:token/accept", InviteController, :accept
+    get "/password-resets/:token", PasswordController, :show
+    post "/password-resets/:token", PasswordController, :update
   end
 
   scope "/api/v1", TainaWeb.API do

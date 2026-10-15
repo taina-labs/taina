@@ -40,8 +40,7 @@ defmodule TainaWeb.API.FatiaUsTest do
         |> post(~p"/api/v1/members", %{"papel" => "morador"})
         |> json_response(201)
 
-      assert String.starts_with?(created["invite_url"], "taina://convite/")
-      assert created["token"] == String.replace_prefix(created["invite_url"], "taina://convite/", "")
+      assert String.starts_with?(created["invite_url"], "taina://convite/#{created["token"]}?host=")
     end
 
     test "papel explicito desconhecido no convite responde 422", %{conn: conn, zelador: zelador} do

@@ -11,6 +11,7 @@ defmodule TainaWeb.API.SessionController do
   alias Taina.Maraca
   alias Taina.Scope
   alias TainaWeb.API.Error
+  alias TainaWeb.API.Params
   alias TainaWeb.API.Serializer
 
   def create(conn, params) do
@@ -18,7 +19,7 @@ defmodule TainaWeb.API.SessionController do
          {:ok, ava} <- Maraca.authenticate(params["username"], params["password"], tekoa),
          scope = Scope.new(ava, tekoa),
          {:ok, %{device: device, token: token}} <-
-           Maraca.create_device_token(scope, device_name(params)) do
+           Maraca.create_device_token(scope, Params.device_name(params)) do
       conn
       |> put_status(201)
       |> json(Serializer.session(token, device, scope))
@@ -34,22 +35,6 @@ defmodule TainaWeb.API.SessionController do
     case Maraca.revoke_device(scope, device.public_id) do
       {:ok, _device} -> send_resp(conn, 204, "")
       {:error, reason} -> Error.reply(conn, reason)
-    end
-  end
-
-  # O rotulo do aparelho vem do cliente (ex.: "iPhone da Ana"); sem ele, um nome
-  # generico, porque o campo e obrigatorio (1 a 80) e a lista precisa de nome.
-  # Trunca em 80: um rotulo longo nao pode derrubar o login inteiro.
-  defp device_name(params) do
-    case params["device_name"] do
-      name when is_binary(name) ->
-        case String.trim(name) do
-          "" -> "Dispositivo"
-          trimmed -> String.slice(trimmed, 0, 80)
-        end
-
-      _ ->
-        "Dispositivo"
     end
   end
 end
