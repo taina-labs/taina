@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/taina-labs/taina/compare/v0.3.0...v0.4.0) (2026-10-16)
+
+
+### Features
+
+* **api:** accept an invite and reset a password from the app ([d6bfe62](https://github.com/taina-labs/taina/commit/d6bfe62ed3c0b1360d5c9c0f19bf57540354084d))
+
 ## [0.3.0](https://github.com/taina-labs/taina/compare/v0.2.1...v0.3.0) (2026-10-15)
 
 
