@@ -3,16 +3,44 @@ defmodule TainaWeb.API.Serializer do
   As formas do fio que so o box conhece (RFC_005 secao 9): instancia, Tekoa,
   dispositivo, sessao, armazenamento, saude, pedido, concessao e alvo de acesso.
 
-  Arquivo, pasta, pessoa e entrada do mural vem do kernel (`Ypy.Wire.File`,
-  `Ypy.Wire.Ava`, `Ypy.Wire.Mural`), que e a fonte unica dessas formas: os
-  controllers chamam o shape do kernel direto e este modulo nao os repete.
+  Arquivo, pasta, pessoa e entrada do mural tem a forma crua no kernel
+  (`Ypy.Wire.File`, `Ypy.Wire.Ava`, `Ypy.Wire.Mural`), que e a fonte unica
+  dessas formas. O arquivo do produto embala a forma do kernel com os campos
+  do produto (`file/2`), sem repeti-los.
   """
 
   alias Taina.Maraca.DeviceToken
+  alias Taina.Ybira
+  alias Taina.Ybira.RenditionStatus
   alias Ypy.Maraca.Concessao
   alias Ypy.Maraca.Pedido
   alias Ypy.Maraca.Tekoa
+  alias Ypy.Scope
   alias Ypy.Wire
+  alias Ypy.Ybira.File
+
+  @doc """
+  O arquivo no fio do produto (contrato review 0.1.0, A): a forma do kernel
+  (`Ypy.Wire.File.json/1`, que fica intacta) mais os campos do produto. A
+  pasta pai vem resolvida pela regra de leitura, os metadados de foto
+  (`taken_at`, dimensoes) e o estado da rendition vem do Jaci -- e valem para
+  TODO endpoint que devolve arquivo, inclusive recentes, fotos e lixeira,
+  onde o `folder` do kernel chegava sempre nulo.
+  """
+  @spec file(Scope.t(), File.t()) :: map()
+  def file(%Scope{} = scope, %File{} = file) do
+    {:ok, metadata} = Ybira.photo_metadata(scope, file)
+
+    file
+    |> Wire.File.json()
+    |> Map.merge(%{
+      "taken_at" => taken_at(metadata["taken_at"]),
+      "width" => dimension(metadata["width"]),
+      "height" => dimension(metadata["height"]),
+      "rendition" => rendition(scope, file),
+      "folder" => folder_rkey(scope, file)
+    })
+  end
 
   @doc "A Tekoa no fio."
   @spec tekoa(Tekoa.t()) :: map()
@@ -46,7 +74,7 @@ defmodule TainaWeb.API.Serializer do
   end
 
   @doc "A sessao: o segredo cru volta uma unica vez, aqui."
-  @spec session(String.t(), DeviceToken.t(), Ypy.Scope.t()) :: map()
+  @spec session(String.t(), DeviceToken.t(), Scope.t()) :: map()
   def session(token, %DeviceToken{} = device, scope) do
     %{
       "token" => token,
@@ -57,7 +85,7 @@ defmodule TainaWeb.API.Serializer do
   end
 
   @doc "Quem esta agindo: a pessoa, a Tekoa e o dispositivo da chamada."
-  @spec me(Ypy.Scope.t(), nil | DeviceToken.t()) :: map()
+  @spec me(Scope.t(), nil | DeviceToken.t()) :: map()
   def me(scope, device) do
     %{
       "ava" => Wire.Ava.json(scope.ava),
@@ -140,6 +168,55 @@ defmodule TainaWeb.API.Serializer do
 
   defp ava_json(%Ypy.Maraca.Ava{} = ava), do: Wire.Ava.json(ava)
   defp ava_json(_not_loaded), do: nil
+
+  # A pasta pai resolvida pela regra de leitura (a mesma que autoriza a
+  # leitura do arquivo): null quando ele esta solto na raiz, quando a pasta
+  # ja foi para a lixeira ou quando a casa dela nao e legivel.
+  defp folder_rkey(scope, file) do
+    case Ybira.file_folder_rkey(scope, file) do
+      {:ok, folder_rkey} -> folder_rkey
+      _error -> nil
+    end
+  end
+
+  # O estado da rendition, do dono dela no produto (`RenditionStatus`, a
+  # mesma leitura que o endpoint de miniatura usa).
+  defp rendition(scope, file), do: scope |> RenditionStatus.status(file) |> to_string()
+
+  # A data de captura (EXIF) em UTC com `Z`, segundo truncado. Sem data, ou
+  # com data que nao parseia, null (parse leniente, nunca levanta).
+  defp taken_at(nil), do: nil
+  defp taken_at(%DateTime{} = dt), do: wire_at(dt)
+  defp taken_at(%NaiveDateTime{} = ndt), do: wire_at(DateTime.from_naive!(ndt, "Etc/UTC"))
+
+  defp taken_at(value) when is_binary(value) do
+    case parse_datetime(value) do
+      {:ok, dt} -> wire_at(dt)
+      :error -> nil
+    end
+  end
+
+  defp taken_at(_other), do: nil
+
+  # O fio guarda a data do EXIF sem fuso (ISO8601 cru do worker); com fuso
+  # tambem passa, normalizado para UTC.
+  defp parse_datetime(value) do
+    case DateTime.from_iso8601(value) do
+      {:ok, dt, _offset} ->
+        {:ok, dt}
+
+      _ ->
+        case NaiveDateTime.from_iso8601(value) do
+          {:ok, ndt} -> {:ok, DateTime.from_naive!(ndt, "Etc/UTC")}
+          _error -> :error
+        end
+    end
+  end
+
+  defp wire_at(dt), do: dt |> DateTime.truncate(:second) |> DateTime.to_iso8601()
+
+  defp dimension(value) when is_integer(value), do: value
+  defp dimension(_other), do: nil
 
   defp version do
     case Application.spec(:taina, :vsn) do

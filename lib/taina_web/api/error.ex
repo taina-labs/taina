@@ -47,10 +47,17 @@ defmodule TainaWeb.API.Error do
     "missing_file" => "Nenhum arquivo foi enviado.",
     "rate_limited" => "Muitas tentativas seguidas. Espere um pouco.",
     "validation_failed" => "Confira os campos e tente de novo.",
+    "rendition_pending" => "A miniatura ainda está sendo gerada. Tente de novo daqui a pouco.",
+    "rendition_unavailable" => "Não deu para gerar a miniatura deste arquivo.",
     "internal_error" => "Algo falhou do nosso lado. Tente de novo."
   }
 
   @fallback_code "internal_error"
+
+  # Codigos do produto que o kernel nao conhece (Ypy.Wire.Errors e congelado,
+  # contrato review 0.1.0, B): a tabela local manda o status, o code segue
+  # sendo o proprio atomo em string.
+  @local_statuses %{rendition_pending: 404, rendition_unavailable: 404}
 
   @doc """
   Responde o motivo no envelope, com o status da tabela do fio. Um
@@ -59,7 +66,7 @@ defmodule TainaWeb.API.Error do
   """
   @spec reply(Plug.Conn.t(), term()) :: Plug.Conn.t()
   def reply(conn, reason) do
-    {status, code} = Errors.resolve(reason)
+    {status, code} = resolve(reason)
 
     # O motivo de um 500 fica no log, para o operador; o corpo nao o carrega.
     if status >= 500, do: Logger.error("api: motivo nao mapeado #{inspect(reason)}")
@@ -68,6 +75,24 @@ defmodule TainaWeb.API.Error do
     |> put_status(status)
     |> Phoenix.Controller.json(body(code, details(reason)))
   end
+
+  @doc """
+  Responde um code do vocabulario com status dado, para os motivos que a
+  tabela do fio julga diferente do produto precisa (a senha atual errada na
+  troca de senha e 403, nao 401: quem chama ja esta autenticado).
+  """
+  @spec reply(Plug.Conn.t(), non_neg_integer(), String.t()) :: Plug.Conn.t()
+  def reply(conn, status, code) when is_integer(status) and is_binary(code) do
+    conn
+    |> put_status(status)
+    |> Phoenix.Controller.json(body(code, nil))
+  end
+
+  defp resolve(reason) when is_atom(reason) and is_map_key(@local_statuses, reason) do
+    {Map.fetch!(@local_statuses, reason), Atom.to_string(reason)}
+  end
+
+  defp resolve(reason), do: Errors.resolve(reason)
 
   defp body(code, nil), do: %{"error" => %{"code" => code, "message" => message(code)}}
 

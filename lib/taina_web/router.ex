@@ -84,6 +84,8 @@ defmodule TainaWeb.Router do
     get "/contents", FolderController, :contents
 
     post "/files", FileController, :create
+    get "/files/manifest", FileController, :manifest
+    post "/files/batch", FileController, :batch
     get "/files/:id", FileController, :show
     patch "/files/:id", FileController, :update
     post "/files/:id/move", FileController, :move
@@ -98,6 +100,15 @@ defmodule TainaWeb.Router do
     post "/trash/:file_id/restore", TrashController, :restore
     get "/photos", PhotoController, :index
     get "/photos/timeline", PhotoController, :timeline
+
+    # As duas pontas do espelho de concessoes (contrato review 0.1.0, C3/C4):
+    # ver as proprias e revogar as que sao suas.
+    get "/grants", GrantController, :index
+    delete "/grants/:public_id", GrantController, :revoke
+
+    # A troca da propria senha (contrato review 0.1.0, C5): o app chama por
+    # aqui; a web tem o equivalente na Conta.
+    post "/session/password", SessionController, :update_password
 
     get "/devices", DeviceController, :index
     delete "/devices/:id", DeviceController, :delete

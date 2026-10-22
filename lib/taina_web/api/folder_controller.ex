@@ -8,7 +8,9 @@ defmodule TainaWeb.API.FolderController do
 
   alias Taina.Ybira
   alias TainaWeb.API.Error
+  alias TainaWeb.API.Etag
   alias TainaWeb.API.Query
+  alias TainaWeb.API.Serializer
   alias Ypy.Wire
 
   def index(conn, _params) do
@@ -38,28 +40,26 @@ defmodule TainaWeb.API.FolderController do
   end
 
   def contents(conn, params) do
+    scope = conn.assigns[:current_scope]
     opts = maybe_sort([limit: Query.limit(params), offset: Query.offset(params)], params)
 
-    case Ybira.list_folder_contents(conn.assigns[:current_scope], params["folder"], opts) do
-      {:ok, %{folders: folders, files: files, next_cursor: next}} ->
-        json(
-          conn,
-          Wire.folder_page(
-            Enum.map(folders, &folder_json(&1, params["folder"])),
-            Enum.map(files, &file_json(&1, params["folder"])),
-            Query.encode_offset(next)
-          )
+    with {:ok, etag} <- Etag.folder_files(scope, params["folder"]),
+         {:fresh, conn} <- Etag.handle(conn, etag),
+         {:ok, %{folders: folders, files: files, next_cursor: next}} <-
+           Ybira.list_folder_contents(scope, params["folder"], opts) do
+      json(
+        conn,
+        Wire.folder_page(
+          Enum.map(folders, &folder_json(&1, params["folder"])),
+          Enum.map(files, &Serializer.file(scope, &1)),
+          Query.encode_offset(next)
         )
-
-      {:error, reason} ->
-        Error.reply(conn, reason)
+      )
+    else
+      {:not_modified, conn} -> conn
+      {:error, reason} -> Error.reply(conn, reason)
     end
   end
-
-  # O conteudo ja sabe onde os arquivos moram: sem query extra para a pasta pai.
-  defp file_json(file, nil), do: Wire.File.json(file)
-
-  defp file_json(file, folder_rkey), do: Map.put(Wire.File.json(file), "folder", folder_rkey)
 
   defp folder_json(folder, nil), do: Wire.File.json(folder)
 

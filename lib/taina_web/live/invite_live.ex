@@ -2,8 +2,9 @@ defmodule TainaWeb.InviteLive do
   @moduledoc """
   Convite por link + QR (RFC 002 D6, RFC_003 seção 4): o zelador escolhe o papel
   e recebe a URL com token; QR renderizado no servidor (`eqrcode`, SVG inline,
-  zero JS) e botões de copiar/compartilhar. O convite não pede e-mail: o token
-  viaja no link e a pessoa escolhe nome e senha ao aceitar.
+  zero JS) e botões de copiar/compartilhar. São dois QR: o link https da web e
+  o deep link `taina://` do aplicativo (contrato review 0.1.0, E). O convite não
+  pede e-mail: o token viaja no link e a pessoa escolhe nome e senha ao aceitar.
   """
 
   use TainaWeb, :live_view
@@ -20,7 +21,8 @@ defmodule TainaWeb.InviteLive do
        socket
        |> assign(:page_title, gettext("Convidar pessoas"))
        |> assign(:role, "morador")
-       |> assign(:invite_url, nil)}
+       |> assign(:invite_url, nil)
+       |> assign(:app_url, nil)}
     else
       {:ok,
        socket
@@ -44,7 +46,9 @@ defmodule TainaWeb.InviteLive do
 
     case Maraca.invite_user(scope.ava, scope.tekoa, role: role) do
       {:ok, %{token: token}} ->
-        {:noreply, assign(socket, :invite_url, url(~p"/convite/#{token}"))}
+        invite_url = url(~p"/convite/#{token}")
+
+        {:noreply, assign(socket, invite_url: invite_url, app_url: deep_link(invite_url))}
 
       {:error, _reason} ->
         {:noreply,
@@ -69,7 +73,18 @@ defmodule TainaWeb.InviteLive do
   end
 
   def handle_event("reset", _params, socket) do
-    {:noreply, assign(socket, :invite_url, nil)}
+    {:noreply, assign(socket, invite_url: nil, app_url: nil)}
+  end
+
+  # O deep link do app (contrato review 0.1.0, E): o mesmo token, com o host
+  # da caixa, no scheme proprio -- o que o app sabe abrir direto (e o que o
+  # QR dedicado codifica). O host e a autoridade do proprio link de convite
+  # (host com porta, quando ha).
+  defp deep_link(invite_url) do
+    uri = URI.parse(invite_url)
+    token = uri.path |> String.split("/") |> List.last()
+
+    "taina://convite/#{token}?host=#{uri.authority}"
   end
 
   defp qr_svg(invite_url) do
@@ -94,12 +109,25 @@ defmodule TainaWeb.InviteLive do
 
       <div class="col gap-6 mx-auto w-full measure-sm">
         <%= if @invite_url do %>
-          <div class="qr-card" role="img" aria-label={gettext("QR code do link de convite")}>
-            {qr_svg(@invite_url)}
+          <div>
+            <p class="type-overline text-faint mb-2">{gettext("Pelo navegador")}</p>
+            <div class="qr-card" role="img" aria-label={gettext("QR code do link de convite")}>
+              {qr_svg(@invite_url)}
+            </div>
+            <p class="type-body-sm text-secondary text-center">
+              {gettext("Aponte a câmera ou compartilhe o link abaixo")}
+            </p>
           </div>
-          <p class="type-body-sm text-secondary text-center">
-            {gettext("Aponte a câmera ou compartilhe o link abaixo")}
-          </p>
+
+          <div>
+            <p class="type-overline text-faint mb-2">{gettext("Pelo aplicativo")}</p>
+            <div class="qr-card" role="img" aria-label={gettext("QR code do convite para o aplicativo")}>
+              {qr_svg(@app_url)}
+            </div>
+            <p class="type-body-sm text-secondary text-center">
+              {gettext("No aplicativo, escaneie este QR ou cole o link no campo de convite.")}
+            </p>
+          </div>
 
           <div>
             <p class="type-overline text-faint mb-2">{gettext("Link do convite")}</p>

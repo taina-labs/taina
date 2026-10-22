@@ -37,4 +37,38 @@ defmodule TainaWeb.API.SessionController do
       {:error, reason} -> Error.reply(conn, reason)
     end
   end
+
+  @doc """
+  A troca da propria senha (contrato review 0.1.0, C5): a senha atual confere,
+  a nova entra, e os OUTROS aparelhos da pessoa perdem o token -- o da chamada
+  fica, para nao derrubar quem acabou de trocar.
+  """
+  def update_password(conn, params) do
+    scope = conn.assigns[:current_scope]
+    device = conn.assigns[:api_device]
+
+    case Maraca.update_password(scope, params["current_password"], params["new_password"]) do
+      {:ok, _ava} ->
+        revoke_other_devices(scope, device.public_id)
+        json(conn, %{"ok" => true})
+
+      # A senha atual errada e 403, nao 401: quem chama ja esta autenticado,
+      # e 401 pediria login de novo (contrato review 0.1.0, C5).
+      {:error, :invalid_credentials} ->
+        Error.reply(conn, 403, "invalid_credentials")
+
+      {:error, reason} ->
+        Error.reply(conn, reason)
+    end
+  end
+
+  # Best-effort, como o logout: um aparelho que sumiu da mesa (expurgo,
+  # corrida) nao devolve erro ao cliente, o token dele ja nao vale nada.
+  defp revoke_other_devices(scope, current_public_id) do
+    {:ok, devices} = Maraca.list_devices(scope)
+
+    devices
+    |> Enum.reject(&(&1.public_id == current_public_id))
+    |> Enum.each(fn device -> _ = Maraca.revoke_device(scope, device.public_id) end)
+  end
 end
