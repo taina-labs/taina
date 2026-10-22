@@ -81,4 +81,29 @@ defmodule TainaWeb.UploadLiveTest do
     assert {:ok, %{items: [file]}} = Ybira.list_files(scope)
     assert file.nome == "foto-da-roca.jpg"
   end
+
+  test "a linha concluída oferece o publicar na praça, e publicar muda a zona", %{
+    conn: conn,
+    scope: scope,
+    ava: ava
+  } do
+    {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/arquivos/enviar")
+
+    input = file_input(lv, "#dropzone", :files, [%{name: "ata.txt", content: "ata da assembleia", type: "text/plain"}])
+    render_upload(input, "ata.txt")
+
+    # a linha concluída nasce na casa, com a alavanca a um toque
+    assert has_element?(lv, ~s(button[phx-click="publish"]), "Publicar na praça")
+
+    lv |> element(~s(button[phx-click="publish"])) |> render_click()
+
+    html = render(lv)
+    assert html =~ "Publicado na praça."
+    assert html =~ "Na praça"
+    refute has_element?(lv, ~s(button[phx-click="publish"]))
+
+    # a zona mudou de verdade, não só na tela
+    assert {:ok, %{items: [file]}} = Ybira.list_files(scope)
+    assert file.zona == :praca
+  end
 end

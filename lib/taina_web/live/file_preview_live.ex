@@ -66,8 +66,6 @@ defmodule TainaWeb.FilePreviewLive do
     end
   end
 
-  defp default_reason, do: gettext("Pedido de acesso pela tela do arquivo")
-
   # As rendições (dimensões, EXIF, thumbnails) moram nos metadados do produto;
   # o arquivo do kernel só carrega o conteúdo.
   defp load_photo_metadata(scope, file) do
@@ -163,11 +161,14 @@ defmodule TainaWeb.FilePreviewLive do
     {:noreply, assign(socket, :show_request_modal, false)}
   end
 
+  # O pedido vai sem motivo: a tela não tem campo para a pessoa escrever, e
+  # motivo fabricado por servidor ("pedido pela tela do arquivo") parece
+  # coisa que ninguém disse. Quem quiser explicar, explica na aprovação.
   def handle_event("request-access", _params, socket) do
     target = socket.assigns.access_target
     scope = socket.assigns.current_scope
 
-    case Maraca.pedir_acesso(scope, "ypy.file.v0", target.rkey, default_reason()) do
+    case Maraca.pedir_acesso(scope, "ypy.file.v0", target.rkey, nil) do
       {:ok, _request} ->
         {:noreply,
          socket
@@ -189,6 +190,13 @@ defmodule TainaWeb.FilePreviewLive do
   end
 
   defp own?(scope, file), do: scope.ava.id == file.dono_id
+
+  # O nome do dono para gente: o display quando existe, o username como
+  # reserva (a mesma regra das telas de pedidos). O fetch_access_target ja
+  # o trouxe; pedir acesso e pedir a uma pessoa, nao a um arquivo solto.
+  defp owner_name(%{owner: %{display_name: display_name, username: username}}) do
+    display_name || username
+  end
 
   defp readability_line(:praca), do: gettext("Todos os moradores veem.")
   defp readability_line(:casa), do: gettext("Só você, e quem você deixar.")
@@ -291,7 +299,8 @@ defmodule TainaWeb.FilePreviewLive do
           title={gettext("Esta casa é particular")}
           hint={
             gettext(
-              "Só quem mora aqui vê este arquivo. Para abrir, peça acesso e a pessoa decide. O Tainá ainda não criptografa: é promessa de software, não cadeado."
+              "O arquivo é de %{name}. Para abrir, peça acesso e a pessoa decide. O Tainá ainda não criptografa: é promessa de software, não cadeado.",
+              name: owner_name(@access_target)
             )
           }
         >
@@ -301,11 +310,12 @@ defmodule TainaWeb.FilePreviewLive do
 
       <.modal id="request-access" show={@show_request_modal} on_cancel={JS.push("close-access")}>
         <h2 class="type-h3 mb-2">
-          {gettext("Pedir acesso a \"%{name}\"?", name: @access_target.nome)}
+          {gettext("Pedir acesso a %{name}?", name: owner_name(@access_target))}
         </h2>
         <p class="type-body text-secondary mb-6">
-          {gettext(
-            "Quem guarda este arquivo vai receber seu pedido e decide se abre. Você só verá o conteúdo se a pessoa deixar."
+          {gettext("%{name} recebe seu pedido sobre \"%{file}\" e decide se deixa você ver.",
+            name: owner_name(@access_target),
+            file: @access_target.nome
           )}
         </p>
         <div class="row gap-3">

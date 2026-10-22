@@ -153,7 +153,7 @@ defmodule TainaWeb.API.Fatia1Test do
       assert body == %{"items" => [], "next_cursor" => nil}
     end
 
-    test "cria pasta e a devolve no indice e no conteudo", %{conn: conn} do
+    test "cria pasta e a devolve no indice e no conteudo", %{conn: conn, ava: ava} do
       created =
         conn
         |> post(~p"/api/v1/folders", %{"name" => "Documentos"})
@@ -162,12 +162,16 @@ defmodule TainaWeb.API.Fatia1Test do
       assert created["name"] == "Documentos"
       assert created["zona"] == "casa"
       assert created["rkey"]
+      # o dono sai resolvido em toda rota que devolve pasta
+      assert created["dono"] == ava.public_id
 
       index = conn |> get(~p"/api/v1/folders") |> json_response(200)
       assert Enum.map(index["items"], & &1["rkey"]) == [created["rkey"]]
+      assert Enum.map(index["items"], & &1["dono"]) == [ava.public_id]
 
       contents = conn |> get(~p"/api/v1/contents") |> json_response(200)
       assert Enum.map(contents["folders"], & &1["rkey"]) == [created["rkey"]]
+      assert Enum.map(contents["folders"], & &1["dono"]) == [ava.public_id]
       assert contents["items"] == []
       assert contents["next_cursor"] == nil
     end
@@ -191,7 +195,7 @@ defmodule TainaWeb.API.Fatia1Test do
       %{conn: authorize_device(conn, ava), ava: ava, tekoa: tekoa}
     end
 
-    test "upload devolve 201 com o sha256 e mime", %{conn: conn} do
+    test "upload devolve 201 com o sha256 e mime", %{conn: conn, ava: ava} do
       body =
         conn
         |> post(~p"/api/v1/files", %{"file" => upload(tmp_upload_fixture("ola taina", "nota.txt"), "nota.txt")})
@@ -203,6 +207,7 @@ defmodule TainaWeb.API.Fatia1Test do
       assert is_binary(body["sha256"])
       assert body["zona"] == "casa"
       assert is_binary(body["rkey"])
+      assert body["dono"] == ava.public_id
     end
 
     test "upload com destino numa pasta", %{conn: conn} do

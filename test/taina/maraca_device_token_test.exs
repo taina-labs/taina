@@ -177,4 +177,45 @@ defmodule Taina.MaracaDeviceTokenTest do
       assert {:error, :not_found} = Maraca.revoke_device(scope, "AAAAAAAAAAAA")
     end
   end
+
+  describe "revoke_other_devices/2 (trocou a senha, derrubou os aparelhos)" do
+    test "except: nil derruba todos os aparelhos de quem esta agindo, so dela" do
+      tekoa = tekoa_fixture()
+      ana = active_ava_fixture(tekoa)
+      bia = active_ava_fixture(tekoa)
+      scope = Scope.new(ana, tekoa)
+
+      {:ok, %{device: first}} = Maraca.create_device_token(scope, "primeiro")
+      {:ok, %{device: second}} = Maraca.create_device_token(scope, "segundo")
+      {:ok, %{device: da_bia}} = Maraca.create_device_token(Scope.new(bia, tekoa), "da bia")
+
+      assert :ok = Maraca.revoke_other_devices(scope, except: nil)
+
+      [revoked_first, revoked_second] = Enum.map([first, second], &Repo.reload!(&1, skip_tekoa_id: true))
+
+      assert %DateTime{} = revoked_first.revoked_at
+      assert %DateTime{} = revoked_second.revoked_at
+
+      # o da bia nao se mexe: a regra e por pessoa
+      refute Repo.reload!(da_bia, skip_tekoa_id: true).revoked_at
+    end
+
+    test "except: o aparelho da chamada fica; os outros caem" do
+      scope = active_scope()
+      {:ok, %{device: chamada}} = Maraca.create_device_token(scope, "da chamada")
+      {:ok, %{device: outro}} = Maraca.create_device_token(scope, "outro")
+
+      assert :ok = Maraca.revoke_other_devices(scope, except: chamada.public_id)
+
+      # o da chamada fica (quem acabou de trocar a senha nao cai), o outro cai
+      assert %DateTime{} = Repo.reload!(outro, skip_tekoa_id: true).revoked_at
+      refute Repo.reload!(chamada, skip_tekoa_id: true).revoked_at
+    end
+
+    test "sem aparelho nenhum, e um no-op" do
+      scope = active_scope()
+
+      assert :ok = Maraca.revoke_other_devices(scope, except: nil)
+    end
+  end
 end

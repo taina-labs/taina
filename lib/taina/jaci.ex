@@ -11,13 +11,13 @@ defmodule Taina.Jaci do
   Como todo context, recebe um scope (`Ypy.Scope`) e roda dentro de
   `Repo.with_tekoa/2`. A paginação da grade segue a ordem de upload (rkey
   decrescente, o TID é ordenável por tempo); a linha do tempo ordena pela data
-  efetiva da foto (EXIF ou upload, dos metadados de rendicao do produto),
-  exigindo um cursor composto `(data, id)`.
+  efetiva da foto (`effective_at` de `ybira_files`, que o worker de renditions
+  preenche com o EXIF, ou o instante do upload como fallback), exigindo um
+  cursor composto `(data, id)`.
   """
 
   import Ecto.Query
 
-  alias Taina.Jaci.Photo
   alias Taina.Jaci.Timeline
   alias Taina.Repo
   alias Ypy.Scope
@@ -32,6 +32,7 @@ defmodule Taina.Jaci do
       query =
         scope
         |> readable_photos()
+        |> apply_zona(Keyword.get(opts, :zona))
         |> apply_grid_cursor(Keyword.get(opts, :after_cursor))
 
       {items, next_cursor} = fetch_grid_page(query, opts)
@@ -61,6 +62,13 @@ defmodule Taina.Jaci do
       scope
     )
   end
+
+  # A zona entra NA consulta, nao depois da pagina: se o filtro mora na tela,
+  # o cursor caminha no conjunto inteiro e a aba de zona recebe paginas
+  # curtas (e fotos que so aparecem depois de varios carregamentos). Sem
+  # zona (`:tudo` da tela), nenhum filtro a mais.
+  defp apply_zona(query, nil), do: query
+  defp apply_zona(query, zona) when is_atom(zona), do: where(query, [f], f.zona == ^zona)
 
   # --- Grade: keyset por id (alinhado ao upload) ---
 
@@ -94,15 +102,22 @@ defmodule Taina.Jaci do
 
   # --- Linha do tempo: keyset composto (data efetiva, id) ---
   #
-  # A data efetiva mora nos metadados de rendicao do produto (`jaci_photos`),
-  # com o `inserted_at` do upload como fallback. No SQLite o `taken_at` sai de
-  # `json_extract` como texto ISO8601, que ordena como o `inserted_at` (também
-  # texto ISO8601) do Ecto.
-  defmacrop effective_ts(f, p) do
+  # A data efetiva agora é a coluna `effective_at` do próprio `ybira_files`
+  # (kernel 0.2): o worker de renditions a preenche com a captura do EXIF,
+  # e o `inserted_at` do upload fica como fallback (arquivo sem EXIF, vídeo,
+  # worker que não rodou). As duas fontes são colunas do MESMO encoder Ecto
+  # (`:utc_datetime`), mas a consulta segue normalizando as duas para UMA
+  # representação canônica e ordenável: epoch de segundos. É a mesma chave
+  # que o cursor carrega (`epoch|id`), então a virada de página compara
+  # inteiro com inteiro, sem depender da codificação do texto no banco.
+  # `strftime` do SQLite lê texto sem zona como UTC, o máximo que um EXIF
+  # sem timezone permite de qualquer forma (e o `inserted_at` já é UTC).
+  # O desempate é o id do arquivo.
+  defmacrop effective_ts(f) do
     quote do
       fragment(
-        "COALESCE(json_extract(?, '$.taken_at'), ?)",
-        unquote(p).metadata,
+        "COALESCE(CAST(strftime('%s', ?) AS INTEGER), CAST(strftime('%s', ?) AS INTEGER))",
+        unquote(f).effective_at,
         unquote(f).inserted_at
       )
     end
@@ -114,9 +129,9 @@ defmodule Taina.Jaci do
     base =
       scope
       |> readable_photos()
-      |> join(:left, [f], p in Photo, on: p.file_id == f.id)
-      |> order_by([f, p], desc: effective_ts(f, p), desc: f.id)
-      |> select([f, p], %{file: f, ts: effective_ts(f, p)})
+      |> apply_zona(Keyword.get(opts, :zona))
+      |> order_by([f], desc: effective_ts(f), desc: f.id)
+      |> select([f], %{file: f, ts: effective_ts(f)})
 
     rows =
       base
@@ -137,34 +152,26 @@ defmodule Taina.Jaci do
   defp apply_timeline_cursor(query, {ts, id}) do
     where(
       query,
-      [f, p],
-      effective_ts(f, p) < ^ts or (effective_ts(f, p) == ^ts and f.id < ^id)
+      [f],
+      effective_ts(f) < ^ts or (effective_ts(f) == ^ts and f.id < ^id)
     )
   end
 
-  defp encode_timeline_cursor(%{ts: ts, file: %{id: id}}), do: Base.url_encode64("#{to_iso(ts)}|#{id}", padding: false)
-
-  defp to_iso(%NaiveDateTime{} = ts), do: NaiveDateTime.to_iso8601(ts)
-  defp to_iso(%DateTime{} = ts), do: DateTime.to_iso8601(ts)
-  defp to_iso(ts) when is_binary(ts), do: ts
+  defp encode_timeline_cursor(%{ts: epoch, file: %{id: id}}) when is_integer(epoch),
+    do: Base.url_encode64("#{epoch}|#{id}", padding: false)
 
   defp decode_timeline_cursor(nil), do: nil
 
   defp decode_timeline_cursor(cursor) when is_binary(cursor) do
     with {:ok, decoded} <- Base.url_decode64(cursor, padding: false),
-         [iso, id] <- String.split(decoded, "|", parts: 2),
-         {:ok, ts} <- parse_ts(iso),
+         [epoch, id] <- String.split(decoded, "|", parts: 2),
+         {ts, ""} <- Integer.parse(epoch),
          {id, ""} <- Integer.parse(id) do
       {ts, id}
     else
+      # Cursor ilegível (inclusive o formato ISO8601 anterior à normalização):
+      # pagina do começo em vez de quebrar.
       _ -> nil
-    end
-  end
-
-  defp parse_ts(iso) do
-    case NaiveDateTime.from_iso8601(iso) do
-      {:ok, ts} -> {:ok, ts}
-      _ -> DateTime.from_iso8601(iso)
     end
   end
 end

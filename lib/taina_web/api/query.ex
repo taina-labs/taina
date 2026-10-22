@@ -13,11 +13,14 @@ defmodule TainaWeb.API.Query do
   @max_limit 100
 
   @doc "O limite de pagina, entre 1 e o teto."
-  @spec limit(map()) :: pos_integer()
-  def limit(params) do
+  @spec limit(map(), keyword()) :: pos_integer()
+  def limit(params, opts \\ []) do
+    default = Keyword.get(opts, :default, @default_limit)
+    max = Keyword.get(opts, :max, @max_limit)
+
     case integer(params["limit"]) do
-      nil -> @default_limit
-      n -> n |> max(1) |> min(@max_limit)
+      nil -> default
+      n -> n |> max(1) |> min(max)
     end
   end
 
@@ -34,6 +37,15 @@ defmodule TainaWeb.API.Query do
   @spec cursor(map()) :: String.t() | nil
   def cursor(params) do
     case params["cursor"] do
+      value when is_binary(value) and value != "" -> value
+      _ -> nil
+    end
+  end
+
+  @doc "O cursor `after` das listas por rkey (o manifesto de backup), do mais antigo para o mais novo."
+  @spec after_cursor(map()) :: String.t() | nil
+  def after_cursor(params) do
+    case params["after"] do
       value when is_binary(value) and value != "" -> value
       _ -> nil
     end

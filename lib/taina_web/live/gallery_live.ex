@@ -11,6 +11,12 @@ defmodule TainaWeb.GalleryLive do
   Thumbnails: `/files/:id/thumbnail/sm` (grade) e `md` (visualizador), o
   worker `Rendition` gera depois do upload; enquanto não há thumbnail, o
   controller responde 404 e o quadradinho fica com o fundo de superfície.
+
+  Zonas casa/praca (RFC_003): o filtro mora na URL (`?zona=casa` /
+  `?zona=praca`; sem parametro a aba e Tudo, o conjunto legivel da
+  comunidade), cada tile carrega o badge da zona, o modal de Detalhes diz
+  quem ve, e o visualizador tem a alavanca "Publicar na praça" / "Tirar da
+  praça" para quem é dono.
   """
 
   use TainaWeb, :live_view
@@ -24,6 +30,9 @@ defmodule TainaWeb.GalleryLive do
     {:ok,
      socket
      |> assign(:page_title, gettext("Fotos"))
+     |> assign(:zona, :tudo)
+     |> assign(:grid_zona, nil)
+     |> assign(:timeline_zona, nil)
      |> assign(:photo_ids, [])
      |> assign(:next_cursor, nil)
      |> assign(:timeline_cursor, nil)
@@ -37,6 +46,7 @@ defmodule TainaWeb.GalleryLive do
      |> assign(:last_group, nil)
      |> assign(:show_confirm, false)
      |> assign(:show_details, false)
+     |> assign(:show_zona, false)
      |> stream(:photos, [])
      |> stream_configure(:timeline_groups, dom_id: &timeline_dom_id/1)
      |> stream(:timeline_groups, [])}
@@ -44,9 +54,11 @@ defmodule TainaWeb.GalleryLive do
 
   @impl true
   def handle_params(params, _uri, socket) do
+    zona = parse_zona(params["zona"])
+
     case socket.assigns.live_action do
-      :grid -> {:noreply, ensure_grid(socket)}
-      :timeline -> {:noreply, ensure_timeline(socket)}
+      :grid -> {:noreply, socket |> assign(:zona, zona) |> ensure_grid()}
+      :timeline -> {:noreply, socket |> assign(:zona, zona) |> ensure_timeline()}
       :viewer -> {:noreply, open_viewer(socket, params["id"])}
     end
   end
@@ -56,8 +68,9 @@ defmodule TainaWeb.GalleryLive do
   # poda os itens pendentes, então a flag `*_stale` obriga o refetch na
   # volta. O visualizador é a exceção: os dois containers seguem montados
   # embaixo dele (`:if` inclui :viewer), então fechar e trocar de aba volta
-  # sem refetch, com o scroll onde estava.
-  defp ensure_grid(%{assigns: %{grid_stale: false}} = socket) do
+  # sem refetch, com o scroll onde estava. Trocar a zona na URL é o outro
+  # caminho de refetch: o fast path só vale com a MESMA zona carregada.
+  defp ensure_grid(%{assigns: %{grid_stale: false, grid_zona: zona, zona: zona}} = socket) do
     socket
     |> assign(:current, nil)
     |> assign(:timeline_stale, true)
@@ -66,7 +79,7 @@ defmodule TainaWeb.GalleryLive do
   defp ensure_grid(socket) do
     socket = assign(socket, :timeline_stale, true)
 
-    case Jaci.list_photos(socket.assigns.current_scope) do
+    case Jaci.list_photos(socket.assigns.current_scope, zona: zona_filter(socket.assigns.zona)) do
       {:ok, %{items: photos, next_cursor: cursor}} ->
         socket
         |> assign(:loaded, true)
@@ -75,6 +88,7 @@ defmodule TainaWeb.GalleryLive do
         |> assign(:photo_ids, Enum.map(photos, & &1.rkey))
         |> assign(:grid_error, false)
         |> assign(:grid_stale, false)
+        |> assign(:grid_zona, socket.assigns.zona)
         |> stream(:photos, photos, reset: true)
 
       {:error, _reason} ->
@@ -85,7 +99,7 @@ defmodule TainaWeb.GalleryLive do
     end
   end
 
-  defp ensure_timeline(%{assigns: %{timeline_stale: false}} = socket) do
+  defp ensure_timeline(%{assigns: %{timeline_stale: false, timeline_zona: zona, zona: zona}} = socket) do
     socket
     |> assign(:current, nil)
     |> assign(:grid_stale, true)
@@ -94,7 +108,7 @@ defmodule TainaWeb.GalleryLive do
   defp ensure_timeline(socket) do
     socket = assign(socket, :grid_stale, true)
 
-    case Jaci.timeline(socket.assigns.current_scope) do
+    case Jaci.timeline(socket.assigns.current_scope, zona: zona_filter(socket.assigns.zona)) do
       {:ok, %{groups: groups, next_cursor: cursor}} ->
         socket
         |> assign(:current, nil)
@@ -104,6 +118,7 @@ defmodule TainaWeb.GalleryLive do
         |> assign(:photo_ids, timeline_photo_ids(groups))
         |> assign(:timeline_error, false)
         |> assign(:timeline_stale, false)
+        |> assign(:timeline_zona, socket.assigns.zona)
         |> stream(:timeline_groups, groups, reset: true, dom_id: &timeline_dom_id/1)
 
       {:error, _reason} ->
@@ -145,9 +160,11 @@ defmodule TainaWeb.GalleryLive do
 
   @impl true
   def handle_event("load-more", _params, socket) do
+    zona = zona_filter(socket.assigns.zona)
+
     case {socket.assigns.live_action, socket.assigns.next_cursor, socket.assigns.timeline_cursor} do
       {:grid, cursor, _t} when is_binary(cursor) ->
-        case Jaci.list_photos(socket.assigns.current_scope, after_cursor: cursor) do
+        case Jaci.list_photos(socket.assigns.current_scope, after_cursor: cursor, zona: zona) do
           {:ok, %{items: photos, next_cursor: next_cursor}} ->
             {:noreply,
              socket
@@ -160,7 +177,7 @@ defmodule TainaWeb.GalleryLive do
         end
 
       {:timeline, _g, cursor} when is_binary(cursor) ->
-        case Jaci.timeline(socket.assigns.current_scope, after_cursor: cursor) do
+        case Jaci.timeline(socket.assigns.current_scope, after_cursor: cursor, zona: zona) do
           {:ok, %{groups: groups, next_cursor: next_cursor}} ->
             {last_group, stream_page} = extend_timeline(socket.assigns.last_group, groups)
 
@@ -190,7 +207,7 @@ defmodule TainaWeb.GalleryLive do
     if modal_open?(socket.assigns) do
       {:noreply, socket}
     else
-      {:noreply, Phoenix.LiveView.push_patch(socket, to: ~p"/fotos")}
+      {:noreply, Phoenix.LiveView.push_patch(socket, to: gallery_path(:grid, socket.assigns.zona))}
     end
   end
 
@@ -230,6 +247,50 @@ defmodule TainaWeb.GalleryLive do
     {:noreply, assign(socket, :show_details, !socket.assigns.show_details)}
   end
 
+  # Publicar/tirar da praça no visualizador: a zona do arquivo é o
+  # consentimento (RFC_003), então a alavanca mora aqui também, não só em
+  # Arquivos. O contexto valida dono e zona; a tela espelha o que voltou.
+  def handle_event("ask-zona", _params, socket) do
+    {:noreply, assign(socket, :show_zona, true)}
+  end
+
+  def handle_event("close-zona", _params, socket) do
+    {:noreply, assign(socket, :show_zona, false)}
+  end
+
+  # O padrao e o estrito do `confirm-delete`: `current` nil (evento atrasado
+  # depois do patch que fechou o visualizador) cai na clausula de baixo, nao
+  # levanta no meio do handler.
+  def handle_event("confirm-zona", _params, %{assigns: %{current: %{rkey: rkey, zona: zona}}} = socket) do
+    scope = socket.assigns.current_scope
+
+    result =
+      case zona do
+        :casa -> Ybira.publicar_file(scope, rkey)
+        :praca -> Ybira.tirar_file_da_praca(scope, rkey)
+      end
+
+    case result do
+      {:ok, updated} ->
+        {:noreply,
+         socket
+         |> assign(:current, updated)
+         |> assign(:show_zona, false)
+         |> mark_zone_changed()
+         |> Phoenix.LiveView.put_flash(:info, zona_flash_ok(zona))}
+
+      {:error, _reason} ->
+        {:noreply,
+         socket
+         |> assign(:show_zona, false)
+         |> Phoenix.LiveView.put_flash(:error, zona_flash_error(zona))}
+    end
+  end
+
+  def handle_event("confirm-zona", _params, socket) do
+    {:noreply, assign(socket, :show_zona, false)}
+  end
+
   def handle_event("confirm-delete", _params, %{assigns: %{current: %{rkey: rkey}}} = socket) do
     case Ybira.delete_file(socket.assigns.current_scope, rkey) do
       {:ok, _file} ->
@@ -256,7 +317,17 @@ defmodule TainaWeb.GalleryLive do
     if modal_open?(socket.assigns), do: socket, else: step(socket, delta)
   end
 
-  defp modal_open?(%{show_confirm: show_confirm, show_details: show_details}), do: show_confirm or show_details
+  defp modal_open?(%{show_confirm: show_confirm, show_details: show_details, show_zona: show_zona}) do
+    show_confirm or show_details or show_zona
+  end
+
+  # Publicar muda o badge nos tiles embaixo do visualizador: as duas visões
+  # recarregam na volta. Os ids seguem em mãos, a navegação não pula.
+  defp mark_zone_changed(socket) do
+    socket
+    |> assign(:grid_stale, true)
+    |> assign(:timeline_stale, true)
+  end
 
   defp reset_gallery(socket) do
     socket
@@ -286,6 +357,10 @@ defmodule TainaWeb.GalleryLive do
   # grupo do acumulado (tudo o que a fusão precisa guardar fora do stream) e
   # a página pronta para o stream: quando o dia se repete, o grupo fundido
   # entra com o mesmo id e atualiza o item no lugar, sem repetir o dia.
+  # Página vazia (o filtro casa/praca pode esvaziar uma página inteira)
+  # devolve a âncora intacta: o dia pode continuar na próxima página.
+  defp extend_timeline(last_group, []), do: {last_group, []}
+
   defp extend_timeline(nil, new_groups), do: {List.last(new_groups), new_groups}
 
   defp extend_timeline(%{date: date} = last_group, [%{date: date} = first | rest]) do
@@ -329,6 +404,68 @@ defmodule TainaWeb.GalleryLive do
 
   defp video?(%{mime: mime}), do: String.starts_with?(mime, "video/")
 
+  # --- zonas casa/praca (RFC_003 D1/D2) ---
+
+  # Zona na URL, como em Arquivos; a diferenca e o default: Fotos e a galeria
+  # da comunidade (o conjunto legivel inteiro), entao sem parametro a aba e
+  # Tudo. ?zona=casa e ?zona=praca estreitam a leitura; a abertura do upload
+  # nunca "some", porque Tudo inclui a casa.
+  defp parse_zona("praca"), do: :praca
+  defp parse_zona("casa"), do: :casa
+  defp parse_zona(_tudo_default), do: :tudo
+
+  # A zona na consulta (Jaci filtra no SQL): o cursor caminha no conjunto
+  # filtrado, e a aba de zona recebe paginas completas.
+  defp zona_filter(:tudo), do: nil
+  defp zona_filter(zona), do: zona
+
+  defp gallery_path(:grid, :tudo), do: ~p"/fotos"
+  defp gallery_path(:grid, :praca), do: ~p"/fotos?#{[zona: "praca"]}"
+  defp gallery_path(:grid, :casa), do: ~p"/fotos?#{[zona: "casa"]}"
+
+  defp gallery_path(:timeline, :tudo), do: ~p"/fotos/linha-do-tempo"
+  defp gallery_path(:timeline, :praca), do: ~p"/fotos/linha-do-tempo?#{[zona: "praca"]}"
+  defp gallery_path(:timeline, :casa), do: ~p"/fotos/linha-do-tempo?#{[zona: "casa"]}"
+
+  defp view_action(:timeline), do: :timeline
+  defp view_action(_grade_default), do: :grid
+
+  # Badge do tile e aba compartilham as palavras. A casa propria e a
+  # compartilhada nao podem se misturar (a tela e sobre consentimento): a
+  # sua diz "Casa"; a de outra pessoa diz de quem e.
+  defp zona_short(:praca, _own), do: gettext("Praça")
+  defp zona_short(:casa, true), do: gettext("Casa")
+  defp zona_short(:casa, false), do: gettext("Casa de quem enviou")
+
+  # A zona nomeada no Detalhes: a palavra da aba e a leitura de quem ve. O
+  # conjunto legivel inclui a casa de OUTRA pessoa (o que te deixarem ver),
+  # entao o texto diz de quem e a casa em vez de fingir que e a sua.
+  defp zona_long(:praca, _own), do: gettext("Na praça: todos os moradores veem.")
+  defp zona_long(:casa, true), do: gettext("Na sua casa: só você, e quem você deixar.")
+  defp zona_long(:casa, false), do: gettext("Na casa de quem enviou: só a pessoa, e quem ela deixar.")
+
+  # A acao oferecida e sempre a oposta da zona atual.
+  defp zona_action_label(:casa), do: gettext("Publicar na praça")
+  defp zona_action_label(:praca), do: gettext("Tirar da praça")
+
+  defp zona_confirm_title(:casa, name), do: gettext("Publicar \"%{name}\" na praça?", name: name)
+  defp zona_confirm_title(:praca, name), do: gettext("Tirar \"%{name}\" da praça?", name: name)
+
+  defp zona_confirm_body(:casa), do: gettext("Todos os moradores vão poder ver. Você pode tirar da praça quando quiser.")
+
+  defp zona_confirm_body(:praca), do: gettext("Volta a ser só seu. Só você, e quem você deixar, vê de novo.")
+
+  defp zona_confirm_primary(:casa), do: gettext("Publicar")
+  defp zona_confirm_primary(:praca), do: gettext("Tirar da praça")
+
+  defp zona_flash_ok(:casa), do: gettext("Publicado na praça.")
+  defp zona_flash_ok(:praca), do: gettext("Tirado da praça.")
+
+  defp zona_flash_error(:casa), do: gettext("Não foi possível publicar na praça.")
+  defp zona_flash_error(:praca), do: gettext("Não foi possível tirar da praça.")
+
+  defp own?(scope, file), do: scope.ava.id == file.dono_id
+
   # Troca progressiva do visualizador: o `md` carrega primeiro e o JS troca
   # para o original depois. O original só entra no plano quando o tamanho
   # cabe no orçamento do Pi; arquivo gigante demais trava a caixa por causa
@@ -356,6 +493,19 @@ defmodule TainaWeb.GalleryLive do
     |> Calendar.strftime("%d/%m/%Y")
   end
 
+  # O estado vazio diz a verdade sobre a aba: em Tudo fala da comunidade; na
+  # casa, das suas fotos; na praca, das publicadas.
+  defp photo_empty_copy(:tudo),
+    do: {gettext("Nenhuma foto ainda"), gettext("As imagens que a comunidade enviar aparecem aqui.")}
+
+  defp photo_empty_copy(:casa),
+    do:
+      {gettext("Nenhuma foto sua ainda"),
+       gettext("As fotos que você enviar ficam aqui, na sua casa. Publique na praça para todos verem.")}
+
+  defp photo_empty_copy(:praca),
+    do: {gettext("A praça está vazia"), gettext("As fotos publicadas para a comunidade aparecem aqui.")}
+
   @impl true
   def render(assigns) do
     ~H"""
@@ -368,12 +518,28 @@ defmodule TainaWeb.GalleryLive do
     >
       <h1 class="type-h1 mb-4">{gettext("Fotos")}</h1>
 
-      <.segmented>
-        <:option patch={~p"/fotos"} current={@live_action == :grid}>{gettext("Grade")}</:option>
-        <:option patch={~p"/fotos/linha-do-tempo"} current={@live_action == :timeline}>
-          {gettext("Linha do tempo")}
-        </:option>
-      </.segmented>
+      <div class="row between wrap gap-3">
+        <.segmented>
+          <:option patch={gallery_path(:grid, @zona)} current={@live_action == :grid}>
+            {gettext("Grade")}
+          </:option>
+          <:option patch={gallery_path(:timeline, @zona)} current={@live_action == :timeline}>
+            {gettext("Linha do tempo")}
+          </:option>
+        </.segmented>
+
+        <.segmented>
+          <:option patch={gallery_path(view_action(@live_action), :tudo)} current={@zona == :tudo}>
+            {gettext("Tudo")}
+          </:option>
+          <:option patch={gallery_path(view_action(@live_action), :praca)} current={@zona == :praca}>
+            {gettext("Praça")}
+          </:option>
+          <:option patch={gallery_path(view_action(@live_action), :casa)} current={@zona == :casa}>
+            {gettext("Casa")}
+          </:option>
+        </.segmented>
+      </div>
 
       <div :if={@live_action in [:grid, :viewer]} class="mt-4">
         <div id="photo-grid" class="photo-grid" phx-update="stream">
@@ -384,6 +550,7 @@ defmodule TainaWeb.GalleryLive do
             class="photo-grid__item"
             aria-label={photo.nome}
           >
+            <span class="photo-grid__tag">{zona_short(photo.zona, own?(@current_scope, photo))}</span>
             <div :if={video?(photo)} class="photo-grid__video">
               <.icon name="play" size={28} />
             </div>
@@ -400,11 +567,13 @@ defmodule TainaWeb.GalleryLive do
           <p class="type-caption text-muted">{gettext("Carregando mais...")}</p>
         </div>
 
+        <% {empty_title, empty_hint} = photo_empty_copy(@zona) %>
+
         <.empty_state
           :if={@loaded && @photo_ids == [] and not @grid_error}
           icon="image"
-          title={gettext("Nenhuma foto ainda")}
-          hint={gettext("As imagens que a comunidade enviar aparecem aqui.")}
+          title={empty_title}
+          hint={empty_hint}
         >
           <.button variant="primary" size="md" navigate={~p"/arquivos/enviar"}>
             {gettext("Enviar fotos")}
@@ -434,6 +603,7 @@ defmodule TainaWeb.GalleryLive do
                 class="photo-grid__item"
                 aria-label={photo.nome}
               >
+                <span class="photo-grid__tag">{zona_short(photo.zona, own?(@current_scope, photo))}</span>
                 <div :if={video?(photo)} class="photo-grid__video">
                   <.icon name="play" size={28} />
                 </div>
@@ -452,11 +622,13 @@ defmodule TainaWeb.GalleryLive do
           <p class="type-caption text-muted">{gettext("Carregando mais...")}</p>
         </div>
 
+        <% {empty_title, empty_hint} = photo_empty_copy(@zona) %>
+
         <.empty_state
           :if={@live_action == :timeline and @timeline_empty and not @timeline_error}
           icon="image"
-          title={gettext("Nenhuma foto ainda")}
-          hint={gettext("As imagens que a comunidade enviar aparecem aqui.")}
+          title={empty_title}
+          hint={empty_hint}
         >
           <.button variant="primary" size="md" navigate={~p"/arquivos/enviar"}>
             {gettext("Enviar fotos")}
@@ -566,6 +738,15 @@ defmodule TainaWeb.GalleryLive do
             <.icon name="download" size={20} />
             <span>{gettext("Baixar")}</span>
           </a>
+          <button
+            :if={own?(@current_scope, @current)}
+            type="button"
+            class="viewer__action"
+            phx-click="ask-zona"
+          >
+            <.icon name="eye" size={20} />
+            <span>{zona_action_label(@current.zona)}</span>
+          </button>
           <button type="button" class="viewer__action" phx-click="toggle-details">
             <.icon name="shield" size={20} />
             <span>{gettext("Detalhes")}</span>
@@ -591,6 +772,10 @@ defmodule TainaWeb.GalleryLive do
         <h2 class="type-h3 mb-4">{gettext("Detalhes")}</h2>
         <div class="col gap-3">
           <div>
+            <p class="type-caption text-faint">{gettext("Quem vê")}</p>
+            <p class="type-body">{zona_long(@current.zona, own?(@current_scope, @current))}</p>
+          </div>
+          <div>
             <p class="type-caption text-faint">{gettext("Nome original")}</p>
             <p class="type-body">{@current.nome}</p>
           </div>
@@ -605,7 +790,7 @@ defmodule TainaWeb.GalleryLive do
           </div>
           <div>
             <p class="type-caption text-faint">{gettext("Tamanho")}</p>
-            <p class="type-body">{format_bytes(@current.file_size_bytes)}</p>
+            <p class="type-body">{format_bytes(@current.tamanho)}</p>
           </div>
           <div>
             <p class="type-caption text-faint">{gettext("Assinatura do arquivo")}</p>
@@ -620,6 +805,21 @@ defmodule TainaWeb.GalleryLive do
         <.button variant="secondary" class="w-full mt-6" phx-click="toggle-details">
           {gettext("Fechar")}
         </.button>
+      </.modal>
+
+      <.modal id="confirm-zona" show={@show_zona} on_cancel={JS.push("close-zona")}>
+        <div :if={@current}>
+          <h2 class="type-h3 mb-2">{zona_confirm_title(@current.zona, @current.nome)}</h2>
+          <p class="type-body text-secondary mb-6">{zona_confirm_body(@current.zona)}</p>
+          <div class="row gap-3">
+            <.button variant="secondary" size="md" class="flex-1" phx-click="close-zona">
+              {gettext("Cancelar")}
+            </.button>
+            <.button variant="primary" size="md" class="flex-1" phx-click="confirm-zona">
+              {zona_confirm_primary(@current.zona)}
+            </.button>
+          </div>
+        </div>
       </.modal>
     </Layouts.app>
     """

@@ -1,8 +1,9 @@
 defmodule TainaWeb.TrashLive do
   @moduledoc """
-  Lixeira (tela "Ybira - Lixeira"): itens apagados nos últimos 30 dias, com
-  restauração. A purga definitiva é automática (`PurgeTrash`, Oban, 30 dias),
-  o design mostra exclusão definitiva por item, mas o Ybira ainda não expõe
+  Lixeira (tela "Ybira - Lixeira"): arquivos e pastas apagados nos últimos 30
+  dias, com restauração (a pasta volta como unidade, com o que foi apagado
+  junto). A purga definitiva é automática (`PurgeTrash`, Oban, 30 dias), o
+  design mostra exclusão definitiva por item, mas o Ybira ainda não expõe
   essa operação; fica para quando o context ganhar `purge_file/2`.
   """
 
@@ -20,18 +21,22 @@ defmodule TainaWeb.TrashLive do
   end
 
   defp load_trash(socket) do
-    case Ybira.list_trash(socket.assigns.current_scope) do
-      {:ok, %{items: items, next_cursor: next_cursor}} ->
-        socket
-        |> assign(:items, items)
-        |> assign(:next_cursor, next_cursor)
-        |> assign(:load_error, false)
+    scope = socket.assigns.current_scope
 
-      {:error, _reason} ->
+    with {:ok, %{items: items, next_cursor: next_cursor}} <- Ybira.list_trash(scope),
+         {:ok, folders} <- Ybira.list_trash_folders(scope) do
+      socket
+      |> assign(:items, items)
+      |> assign(:folders, folders)
+      |> assign(:next_cursor, next_cursor)
+      |> assign(:load_error, false)
+    else
+      _error ->
         # Sem beco sem saída: flash com o que houve, e a lixeira vazia com a
         # saída ("Tentar de novo").
         socket
         |> assign(:items, [])
+        |> assign(:folders, [])
         |> assign(:next_cursor, nil)
         |> assign(:load_error, true)
         |> Phoenix.LiveView.put_flash(:error, gettext("Não foi possível carregar a lixeira."))
@@ -40,6 +45,19 @@ defmodule TainaWeb.TrashLive do
 
   @impl true
   def handle_event("retry-load", _params, socket), do: {:noreply, load_trash(socket)}
+
+  def handle_event("restore", %{"id" => rkey, "type" => "folder"}, socket) do
+    case Ybira.restore_folder(socket.assigns.current_scope, rkey) do
+      {:ok, _folder} ->
+        {:noreply,
+         socket
+         |> Phoenix.LiveView.put_flash(:info, gettext("Pasta restaurada com o que tinha dentro."))
+         |> load_trash()}
+
+      {:error, _reason} ->
+        {:noreply, Phoenix.LiveView.put_flash(socket, :error, gettext("Não foi possível restaurar a pasta."))}
+    end
+  end
 
   def handle_event("restore", %{"id" => rkey}, socket) do
     case Ybira.restore_file(socket.assigns.current_scope, rkey) do
@@ -136,13 +154,33 @@ defmodule TainaWeb.TrashLive do
 
         <p class="type-overline text-muted">
           <%= if @next_cursor do %>
-            {ngettext("%{count} item carregado", "%{count} itens carregados", length(@items))}
+            {ngettext("%{count} item carregado", "%{count} itens carregados", length(@folders) + length(@items))}
           <% else %>
-            {ngettext("%{count} item", "%{count} itens", length(@items))}
+            {ngettext("%{count} item", "%{count} itens", length(@folders) + length(@items))}
           <% end %>
         </p>
 
         <ul class="list">
+          <.list_row
+            :for={folder <- @folders}
+            title={folder.nome}
+            meta={trash_meta(folder)}
+            meta_class={warning?(folder) && "text-warning"}
+          >
+            <:leading>
+              <.service_square service="ybira" icon="folder" />
+            </:leading>
+            <:actions>
+              <.icon_button
+                name="restore"
+                label={gettext("Restaurar")}
+                phx-click="restore"
+                phx-value-id={folder.rkey}
+                phx-value-type="folder"
+              />
+            </:actions>
+          </.list_row>
+
           <.list_row
             :for={file <- @items}
             title={file.nome}
@@ -159,6 +197,7 @@ defmodule TainaWeb.TrashLive do
                 label={gettext("Restaurar")}
                 phx-click="restore"
                 phx-value-id={file.rkey}
+                phx-value-type="file"
               />
             </:actions>
           </.list_row>
@@ -170,7 +209,7 @@ defmodule TainaWeb.TrashLive do
         </div>
 
         <.empty_state
-          :if={@items == [] and @load_error}
+          :if={@items == [] and @folders == [] and @load_error}
           icon="alert"
           title={gettext("Não deu para abrir a lixeira")}
           hint={gettext("Pode ter sido um instante de rede ou da caixa. Tente de novo.")}
@@ -181,7 +220,7 @@ defmodule TainaWeb.TrashLive do
         </.empty_state>
 
         <.empty_state
-          :if={@items == [] and not @load_error}
+          :if={@items == [] and @folders == [] and not @load_error}
           icon="trash"
           title={gettext("Lixeira vazia")}
           hint={gettext("Nada esperando para ser apagado.")}

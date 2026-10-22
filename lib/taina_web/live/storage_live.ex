@@ -113,6 +113,16 @@ defmodule TainaWeb.StorageLive do
 
   defp free_class(_stats), do: "text-success"
 
+  # Resto nunca negativo: a cota pode ter sido definida abaixo do uso atual,
+  # e "-90 B livres" não é número que o público lê. O que falta, quando o uso
+  # passou do limite, é zero. `used_bytes` e `quota_bytes` seguem verdadeiros
+  # no contexto; o clamp é só de exibição.
+  defp remaining_bytes(%{used_bytes: used, quota_bytes: quota}) when is_integer(quota) do
+    max(quota - used, 0)
+  end
+
+  defp remaining_bytes(_stats), do: nil
+
   # Cota nil não é "0 B" (número que mente): é ausência de limite, dita como
   # estado, o mesmo falar da Saúde.
   defp quota_label(nil), do: gettext("Sem limite definido.")
@@ -163,7 +173,7 @@ defmodule TainaWeb.StorageLive do
               {gettext("Sem limite definido.")}
             </p>
             <p :if={@stats.quota_bytes} class={["type-body-sm", free_class(@stats)]}>
-              {format_bytes(@stats.quota_bytes - @stats.used_bytes)} {gettext("livres")}
+              {format_bytes(remaining_bytes(@stats))} {gettext("livres")}
             </p>
           </div>
           <.progress :if={segments(@by_kind, @stats) != []} segments={segments(@by_kind, @stats)} />
@@ -172,7 +182,11 @@ defmodule TainaWeb.StorageLive do
         </.card>
 
         <p class="type-caption text-muted">
-          {gettext("Só entra o que está na praça, a sua casa e o que te deixarem ver. A casa dos outros fica de fora.")}
+          {gettext("O número grande é o espaço de toda a Tekoa: a praça, a casa de cada morador e a lixeira. Apagar não libera espaço na hora: o que está na lixeira segue ocupando espaço por pelo menos 30 dias, até a limpeza automática.")}
+        </p>
+
+        <p class="type-caption text-muted">
+          {gettext("O detalhamento por tipo soma só o que você pode ver: a praça, a sua casa e o que te deixarem ver. A casa dos outros fica de fora, então a soma por tipo não fecha com o número de cima.")}
         </p>
 
         <ul class="list">

@@ -8,24 +8,29 @@ defmodule TainaWeb.API.TrashController do
 
   alias Taina.Ybira
   alias TainaWeb.API.Error
+  alias TainaWeb.API.Etag
   alias TainaWeb.API.Query
+  alias TainaWeb.API.Serializer
   alias Ypy.Wire
 
   def index(conn, params) do
+    scope = conn.assigns[:current_scope]
     opts = [limit: Query.limit(params), after_cursor: Query.cursor(params)]
 
-    case Ybira.list_trash(conn.assigns[:current_scope], opts) do
-      {:ok, %{items: items, next_cursor: next}} ->
-        json(conn, Wire.page(Enum.map(items, &Wire.File.json/1), next))
-
-      {:error, reason} ->
-        Error.reply(conn, reason)
+    with {:fresh, conn} <- Etag.handle(conn, Etag.trash(scope)),
+         {:ok, %{items: items, next_cursor: next}} <- Ybira.list_trash(scope, opts) do
+      json(conn, Wire.page(Serializer.files(scope, items), next))
+    else
+      {:not_modified, conn} -> conn
+      {:error, reason} -> Error.reply(conn, reason)
     end
   end
 
   def restore(conn, %{"file_id" => rkey}) do
-    case Ybira.restore_file(conn.assigns[:current_scope], rkey) do
-      {:ok, file} -> json(conn, Wire.File.json(file))
+    scope = conn.assigns[:current_scope]
+
+    case Ybira.restore_file(scope, rkey) do
+      {:ok, file} -> json(conn, Serializer.file(scope, file))
       {:error, reason} -> Error.reply(conn, reason)
     end
   end

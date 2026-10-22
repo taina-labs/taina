@@ -185,12 +185,12 @@ defmodule TainaWeb.FilesLive do
   end
 
   def handle_event("create-folder", %{"folder" => %{"name" => name}}, socket) do
-    # A pasta nova herda a zona que a pessoa esta vendo: na aba praca, nasce
-    # na praca; no default (casa), na casa.
+    # A pasta nasce sempre na casa: o kernel nao aceita zona na criacao
+    # (Ybira.create_folder so fala nome e pai). A praca e um passo seguinte,
+    # no menu do item; a copia do modal promete so o que o sistema faz.
     case Ybira.create_folder(socket.assigns.current_scope, %{
            name: name,
-           parent_rkey: socket.assigns.folder_rkey,
-           zona: socket.assigns.zona
+           parent_rkey: socket.assigns.folder_rkey
          }) do
       {:ok, _folder} ->
         {:noreply, socket |> Phoenix.LiveView.put_flash(:info, gettext("Pasta criada.")) |> refresh()}
@@ -415,10 +415,9 @@ defmodule TainaWeb.FilesLive do
   defp readability_line(:praca), do: gettext("Todos os moradores veem.")
   defp readability_line(:casa), do: gettext("Só você, e quem você deixar.")
 
-  # A pasta nova herda a zona da aba ativa; o modal diz onde ela nasce antes
-  # de nascer.
-  defp folder_zone_line(:praca), do: gettext("A pasta nasce na praça. Todos os moradores veem.")
-  defp folder_zone_line(:casa), do: gettext("A pasta nasce na sua casa. Só você vê.")
+  # O modal diz onde a pasta nasce antes de nascer: na casa, sempre. A
+  # praca e o passo seguinte, no menu do item.
+  defp folder_zone_line, do: gettext("A pasta nasce na sua casa. Para todos verem, publique na praça depois.")
 
   # O estado vazio diz a verdade sobre onde a pessoa está: na raiz, a aba
   # fala por si; dentro de pasta, a pasta fala. E na casa alheia a cópia
@@ -560,12 +559,18 @@ defmodule TainaWeb.FilesLive do
       </div>
 
       <nav class="breadcrumb mb-3" id="ybira-breadcrumb">
-        <.link navigate={~p"/arquivos"} class="breadcrumb__link" data-drop-folder="">{gettext("Início")}</.link>
+        <.link
+          navigate={browse_path(nil, @sort, @view, @zona)}
+          class="breadcrumb__link"
+          data-drop-folder=""
+        >
+          {gettext("Início")}
+        </.link>
         <%= for item <- breadcrumb_items(@breadcrumb) do %>
           <span class="breadcrumb__sep"><.icon name="chevron-right" size={14} /></span>
           <.link
             :if={item.kind == :link}
-            patch={~p"/arquivos/pasta/#{item.rkey}"}
+            patch={browse_path(item.rkey, @sort, @view, @zona)}
             class={["breadcrumb__link", item.middle? && "hide-mobile"]}
           >
             {item.nome}
@@ -592,7 +597,7 @@ defmodule TainaWeb.FilesLive do
               style="position: relative;"
               data-drop-folder={drop_folder(@current_scope, folder)}
             >
-              <.link navigate={~p"/arquivos/pasta/#{folder.rkey}"} class="col gap-1">
+              <.link navigate={browse_path(folder.rkey, @sort, @view, @zona)} class="col gap-1">
                 <.service_square service="ybira" icon="folder" size="lg" />
                 <p class="tile__title">{folder.nome}</p>
                 <p class="tile__meta">{gettext("Pasta")}</p>
@@ -642,7 +647,7 @@ defmodule TainaWeb.FilesLive do
                 :for={folder <- @folders}
                 title={folder.nome}
                 meta={"#{gettext("Pasta")} / #{readability_short(folder.zona)}"}
-                navigate={~p"/arquivos/pasta/#{folder.rkey}"}
+                navigate={browse_path(folder.rkey, @sort, @view, @zona)}
                 draggable="true"
                 data-drag-id={folder.rkey}
                 data-drag-kind="folder"
@@ -727,7 +732,7 @@ defmodule TainaWeb.FilesLive do
             required
             autofocus
           />
-          <p class="type-body-sm text-muted">{folder_zone_line(@zona)}</p>
+          <p class="type-body-sm text-muted">{folder_zone_line()}</p>
           <div class="row gap-3">
             <.button variant="secondary" size="md" class="flex-1" phx-click="close-modal">
               {gettext("Cancelar")}
@@ -894,11 +899,11 @@ defmodule TainaWeb.FilesLive do
   defp confirm_title(%{kind: "file", name: name}), do: gettext("Excluir \"%{name}\"?", name: name)
   defp confirm_title(_confirm), do: gettext("Excluir?")
 
-  # A pasta vai para a lixeira com o que tem dentro, mas a restauração é do
-  # conteúdo, um a um: a pasta em si não volta (o Ybira não expõe isso ainda).
-  # A cópia não promete o que o sistema não faz.
+  # A pasta vai para a lixeira com o que tem dentro e volta como unidade
+  # (`restore_folder/2`, na tela da lixeira): a cópia promete o que o sistema
+  # faz.
   defp confirm_message(%{kind: "folder"}),
-    do: gettext("A pasta e o que tem dentro vão para a lixeira. Os arquivos voltam um a um; a pasta em si, não.")
+    do: gettext("A pasta e o que tem dentro vão para a lixeira. A pasta volta com tudo o que tem dentro.")
 
   defp confirm_message(%{kind: "file"}), do: gettext("Vai para a lixeira. Dá para restaurar em até 30 dias.")
   defp confirm_message(_confirm), do: gettext("Vai para a lixeira.")

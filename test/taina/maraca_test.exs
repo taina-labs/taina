@@ -287,6 +287,115 @@ defmodule Taina.MaracaTest do
       assert {:error, :invalid_token} =
                Maraca.reset_password("token_qualquer", "novasenha123", "novasenha123")
     end
+
+    test "senhas diferentes sao erro do formulario, nao link vencido", %{
+      tekoa: tekoa,
+      zelador: zelador,
+      member: member
+    } do
+      {:ok, %{token: token}} = Maraca.mint_reset_link(Scope.new(zelador, tekoa), member)
+
+      assert {:error, :password_mismatch} =
+               Maraca.reset_password(token, "novasenha123", "outrasenha123")
+    end
+
+    test "quem resetou perde os aparelhos: o reset nao tem aparelho de chamada", %{
+      tekoa: tekoa,
+      zelador: zelador,
+      member: member
+    } do
+      scope = Scope.new(zelador, tekoa)
+      {:ok, %{token: token}} = Maraca.mint_reset_link(scope, member)
+
+      member_scope = Scope.new(member, tekoa)
+      {:ok, %{token: raw}} = Maraca.create_device_token(member_scope, "celular da pessoa")
+      assert {:ok, _} = Maraca.resolve_device_token(raw)
+
+      assert {:ok, _} = Maraca.reset_password(token, "novasenha123", "novasenha123")
+
+      # o token do celular da pessoa cai junto (a web e o shell nao tem
+      # aparelho de chamada: todos os aparelhos caem)
+      assert {:error, :not_authenticated} = Maraca.resolve_device_token(raw)
+    end
+  end
+
+  describe "update_password/3 (self-service)" do
+    setup do
+      tekoa = tekoa_fixture()
+      ava = active_ava_fixture(tekoa, %{username: "maria", password: "senhasegura123"})
+      %{tekoa: tekoa, ava: ava}
+    end
+
+    test "troca a senha com a atual certa e a nova entra no lugar", %{tekoa: tekoa, ava: ava} do
+      scope = Scope.new(ava, tekoa)
+
+      assert {:ok, updated} = Maraca.update_password(scope, "senhasegura123", "senha-nova-456")
+      refute updated.password_hash == ava.password_hash
+
+      assert {:ok, _} = Maraca.authenticate("maria", "senha-nova-456", tekoa)
+      assert {:error, :invalid_credentials} = Maraca.authenticate("maria", "senhasegura123", tekoa)
+    end
+
+    test "senha atual errada recusa com invalid_credentials", %{tekoa: tekoa, ava: ava} do
+      assert {:error, :invalid_credentials} =
+               Maraca.update_password(Scope.new(ava, tekoa), "senha-incorreta", "senha-nova-456")
+
+      # a senha antiga segue valendo
+      assert {:ok, _} = Maraca.authenticate("maria", "senhasegura123", tekoa)
+    end
+
+    test "senha nova curta volta changeset (regra do kernel)", %{tekoa: tekoa, ava: ava} do
+      assert {:error, %Ecto.Changeset{}} =
+               Maraca.update_password(Scope.new(ava, tekoa), "senhasegura123", "curta")
+    end
+
+    test "senha nova que nao e texto volta changeset, sem chegar ao banco", %{tekoa: tekoa, ava: ava} do
+      scope = Scope.new(ava, tekoa)
+
+      assert {:error, %Ecto.Changeset{}} = Maraca.update_password(scope, "senhasegura123", nil)
+      assert {:error, %Ecto.Changeset{}} = Maraca.update_password(scope, "senhasegura123", %{"a" => 1})
+
+      # a senha atual segue valendo (nada foi gravado)
+      assert {:ok, _} = Maraca.authenticate("maria", "senhasegura123", tekoa)
+    end
+
+    test "senha atual que nao e texto nao chega ao bcrypt: invalid_credentials", %{tekoa: tekoa, ava: ava} do
+      scope = Scope.new(ava, tekoa)
+
+      assert {:error, :invalid_credentials} = Maraca.update_password(scope, nil, "senha-nova-456")
+      assert {:error, :invalid_credentials} = Maraca.update_password(scope, %{"a" => 1}, "senha-nova-456")
+      assert {:error, :invalid_credentials} = Maraca.update_password(scope, 42, "senha-nova-456")
+
+      # a senha antiga segue valendo
+      assert {:ok, _} = Maraca.authenticate("maria", "senhasegura123", tekoa)
+    end
+
+    test "a conferencia da senha atual queima a janela do login (o mesmo limite do authenticate)", %{
+      tekoa: tekoa,
+      ava: ava
+    } do
+      scope = Scope.new(ava, tekoa)
+
+      # o limite do login: 5 tentativas erradas na janela
+      for _ <- 1..5 do
+        assert {:error, :invalid_credentials} = Maraca.update_password(scope, "errada", "senha-nova-456")
+      end
+
+      # estourou: nem a senha CORRETA passa, a conferencia nem roda
+      assert {:error, :rate_limited} = Maraca.update_password(scope, "senhasegura123", "senha-nova-456")
+
+      # e o login da conta compartilha a mesma janela
+      assert {:error, :rate_limited} = Maraca.authenticate("maria", "senhasegura123", tekoa)
+    end
+
+    test "queima um link de reset pendente", %{tekoa: tekoa, ava: ava} do
+      zelador = zelador_fixture(tekoa)
+      {:ok, %{token: token}} = Maraca.mint_reset_link(Scope.new(zelador, tekoa), ava)
+
+      assert {:ok, _} = Maraca.update_password(Scope.new(ava, tekoa), "senhasegura123", "senha-nova-456")
+
+      assert {:error, :invalid_token} = Maraca.reset_password(token, "terceira789", "terceira789")
+    end
   end
 
   describe "authorize?/4 and concessoes" do

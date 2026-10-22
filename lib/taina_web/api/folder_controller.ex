@@ -8,12 +8,16 @@ defmodule TainaWeb.API.FolderController do
 
   alias Taina.Ybira
   alias TainaWeb.API.Error
+  alias TainaWeb.API.Etag
   alias TainaWeb.API.Query
+  alias TainaWeb.API.Serializer
   alias Ypy.Wire
 
   def index(conn, _params) do
-    case Ybira.list_folders(conn.assigns[:current_scope]) do
-      {:ok, folders} -> json(conn, Wire.page(Enum.map(folders, &Wire.File.json/1), nil))
+    scope = conn.assigns[:current_scope]
+
+    case Ybira.list_folders(scope) do
+      {:ok, folders} -> json(conn, Wire.page(Serializer.folders(scope, folders), nil))
       {:error, reason} -> Error.reply(conn, reason)
     end
   end
@@ -32,47 +36,52 @@ defmodule TainaWeb.API.FolderController do
     attrs = %{name: params["name"], parent_rkey: params["parent_rkey"]}
 
     case Ybira.create_folder(scope, attrs) do
-      {:ok, folder} -> conn |> put_status(201) |> json(folder_json(folder, params["parent_rkey"]))
-      {:error, reason} -> Error.reply(conn, reason)
-    end
-  end
-
-  def contents(conn, params) do
-    opts = maybe_sort([limit: Query.limit(params), offset: Query.offset(params)], params)
-
-    case Ybira.list_folder_contents(conn.assigns[:current_scope], params["folder"], opts) do
-      {:ok, %{folders: folders, files: files, next_cursor: next}} ->
-        json(
-          conn,
-          Wire.folder_page(
-            Enum.map(folders, &folder_json(&1, params["folder"])),
-            Enum.map(files, &file_json(&1, params["folder"])),
-            Query.encode_offset(next)
-          )
-        )
+      {:ok, folder} ->
+        conn
+        |> put_status(201)
+        |> json(folder_json(scope, folder, params["parent_rkey"]))
 
       {:error, reason} ->
         Error.reply(conn, reason)
     end
   end
 
-  # O conteudo ja sabe onde os arquivos moram: sem query extra para a pasta pai.
-  defp file_json(file, nil), do: Wire.File.json(file)
+  def contents(conn, params) do
+    scope = conn.assigns[:current_scope]
+    opts = maybe_sort([limit: Query.limit(params), offset: Query.offset(params)], params)
 
-  defp file_json(file, folder_rkey), do: Map.put(Wire.File.json(file), "folder", folder_rkey)
+    with {:ok, etag} <- Etag.folder_files(scope, params["folder"]),
+         {:fresh, conn} <- Etag.handle(conn, etag),
+         {:ok, %{folders: folders, files: files, next_cursor: next}} <-
+           Ybira.list_folder_contents(scope, params["folder"], opts) do
+      json(
+        conn,
+        Wire.folder_page(
+          Enum.map(folders, &folder_json(scope, &1, params["folder"])),
+          Serializer.files(scope, files),
+          Query.encode_offset(next)
+        )
+      )
+    else
+      {:not_modified, conn} -> conn
+      {:error, reason} -> Error.reply(conn, reason)
+    end
+  end
 
-  defp folder_json(folder, nil), do: Wire.File.json(folder)
+  # A pasta no fio do produto (Serializer.folder, dono resolvido); o pai vem
+  # do parametro quando a rota o conhece (o conteudo de uma pasta).
+  defp folder_json(scope, folder, nil), do: Serializer.folder(scope, folder)
 
-  defp folder_json(folder, parent_rkey), do: Map.put(Wire.File.json(folder), "folder", parent_rkey)
+  defp folder_json(scope, folder, parent_rkey), do: Map.put(Serializer.folder(scope, folder), "folder", parent_rkey)
 
   # O pai de uma pasta sozinha: o penultimo elo do breadcrumb (raiz -> atual).
   defp resolved_folder_json(scope, folder) do
     case Ybira.folder_path(scope, folder.rkey) do
       {:ok, path} when length(path) > 1 ->
-        Map.put(Wire.File.json(folder), "folder", Enum.at(path, -2).rkey)
+        Map.put(Serializer.folder(scope, folder), "folder", Enum.at(path, -2).rkey)
 
       _ ->
-        Wire.File.json(folder)
+        Serializer.folder(scope, folder)
     end
   end
 
