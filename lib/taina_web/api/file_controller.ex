@@ -59,7 +59,6 @@ defmodule TainaWeb.API.FileController do
       json(conn, Wire.page(Enum.map(files, &Serializer.file(scope, &1)), next))
     else
       {:not_modified, conn} -> conn
-      {:error, reason} -> Error.reply(conn, reason)
     end
   end
 

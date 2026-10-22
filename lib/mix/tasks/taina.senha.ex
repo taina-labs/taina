@@ -130,16 +130,18 @@ defmodule Mix.Tasks.Taina.Senha do
     end
   end
 
-  # A entrada escondida e do terminal (:io.get_password, OTP 28). Sem terminal
-  # de verdade (entrada em pipe), o protocolo de senha nao existe: qualquer
-  # saida que nao seja a senha cai para a pergunta normal do Mix, que le de
-  # qualquer entrada (a senha aparece na tela, no pior caso).
+  # A entrada escondida e do terminal (:io.get_password/0, OTP 28): ele le sem
+  # eco mas nao mostra a pergunta, entao a pergunta sai antes. Sem terminal de
+  # verdade (entrada em pipe) ele devolve `:eof`, e caimos na pergunta normal
+  # do Mix, que le de qualquer entrada (a senha aparece na tela, no pior caso).
   defp ask(message) do
     password =
-      if function_exported?(:io, :get_password, 1) do
-        case :io.get_password(message) do
-          {:ok, password} -> password
-          {:error, _reason} -> Mix.shell().prompt(message)
+      if function_exported?(:io, :get_password, 0) do
+        Mix.shell().info(message)
+
+        case :io.get_password() do
+          :eof -> Mix.shell().prompt(message)
+          typed -> typed
         end
       else
         Mix.shell().prompt(message)

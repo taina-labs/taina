@@ -24,7 +24,6 @@ defmodule TainaWeb.API.GrantController do
       json(conn, Wire.page(Enum.map(concessoes, &Serializer.concessao/1), nil))
     else
       {:not_modified, conn} -> conn
-      {:error, reason} -> Error.reply(conn, reason)
     end
   end
 
