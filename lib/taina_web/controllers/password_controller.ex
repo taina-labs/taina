@@ -23,6 +23,11 @@ defmodule TainaWeb.PasswordController do
         |> put_flash(:error, gettext("Este link expirou ou já foi usado. Peça um novo a quem cuida da comunidade."))
         |> redirect(to: ~p"/login")
 
+      {:error, :password_mismatch} ->
+        conn
+        |> put_flash(:error, gettext("As duas senhas não são iguais."))
+        |> redirect(to: ~p"/redefinir/#{token}")
+
       {:error, changeset} ->
         conn
         |> put_flash(:error, reset_error_message(changeset))

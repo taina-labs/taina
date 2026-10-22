@@ -92,6 +92,13 @@ defmodule TainaWeb.API.GrantsTest do
       assert length(Enum.uniq(ids_primeira ++ ids_segunda)) == 3
     end
 
+    test "cursor ilegivel pagina do comeco em vez de quebrar", %{conn: conn} do
+      cursor = Base.url_encode64("abc|1", padding: false)
+
+      body = conn |> get(~p"/api/v1/grants", after: cursor) |> json_response(200)
+      assert [_ | _] = body["items"]
+    end
+
     test "o ETag bate de novo: 304 sem corpo", %{conn: conn} do
       first = get(conn, ~p"/api/v1/grants")
 

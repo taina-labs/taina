@@ -198,6 +198,20 @@ defmodule Taina.YbiraTest do
       assert {:ok, restored} = Ybira.restore_file(scope, file.rkey)
       assert restored.folder_id == folder.id
     end
+
+    test "a pasta na lixeira nao vira o folder do arquivo" do
+      scope = scope_fixture()
+      {:ok, folder} = Ybira.create_folder(scope, %{name: "sumida"})
+      {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("x", "x.txt"), folder_rkey: folder.rkey)
+
+      {:ok, :deleted} = Ybira.delete_folder(scope, folder.rkey)
+
+      # Pasta na lixeira não resolve (o contrato quer `folder: nil`), sozinho
+      # ou em lote: o caminho de um arquivo só já era assim, o lote não era.
+      assert {:error, :not_found} = Ybira.file_folder_rkey(scope, file)
+      assert {:ok, rkeys} = Ybira.files_folder_rkeys(scope, [file])
+      assert rkeys[file.id] == nil
+    end
   end
 
   describe "restore_folder/2" do

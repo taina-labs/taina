@@ -72,7 +72,8 @@ defmodule Taina.Maraca.Grants do
   defp decode_cursor(cursor) when is_binary(cursor) do
     with {:ok, decoded} <- Base.url_decode64(cursor, padding: false),
          [epoch, id] <- String.split(decoded, "|", parts: 2),
-         {:ok, at} <- DateTime.from_unix(String.to_integer(epoch)),
+         {epoch, ""} <- Integer.parse(epoch),
+         {:ok, at} <- DateTime.from_unix(epoch),
          {id, ""} <- Integer.parse(id) do
       {at, id}
     else

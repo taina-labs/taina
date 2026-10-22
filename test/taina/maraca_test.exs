@@ -288,6 +288,17 @@ defmodule Taina.MaracaTest do
                Maraca.reset_password("token_qualquer", "novasenha123", "novasenha123")
     end
 
+    test "senhas diferentes sao erro do formulario, nao link vencido", %{
+      tekoa: tekoa,
+      zelador: zelador,
+      member: member
+    } do
+      {:ok, %{token: token}} = Maraca.mint_reset_link(Scope.new(zelador, tekoa), member)
+
+      assert {:error, :password_mismatch} =
+               Maraca.reset_password(token, "novasenha123", "outrasenha123")
+    end
+
     test "quem resetou perde os aparelhos: o reset nao tem aparelho de chamada", %{
       tekoa: tekoa,
       zelador: zelador,

@@ -162,7 +162,7 @@ defmodule Taina.Ybira do
   end
 
   defp folder_rkey_visivel(%Scope{} = scope, folder_id) do
-    case Repo.one(from(p in Folder, where: p.id == ^folder_id)) do
+    case Repo.one(from(p in Folder, where: p.id == ^folder_id and is_nil(p.apagado_em))) do
       nil -> {:error, :not_found}
       folder -> if readable?(scope, folder), do: {:ok, folder.rkey}, else: {:error, :forbidden}
     end
@@ -182,7 +182,7 @@ defmodule Taina.Ybira do
   def restore_file(%Scope{} = scope, rkey) when is_binary(rkey) do
     within_tekoa(scope, fn ->
       with {:ok, file} <- Kernel.restaurar(Repo, Keys.new(), scope, @tipo_file, rkey) do
-        {:ok, restore_to_root_if_orphaned(scope, file)}
+        restore_to_root_if_orphaned(scope, file)
       end
     end)
   end
@@ -316,7 +316,7 @@ defmodule Taina.Ybira do
   def restore_folder(%Scope{} = scope, rkey) when is_binary(rkey) do
     within_tekoa(scope, fn ->
       with {:ok, folder} <- fetch_trashed_owned_folder(scope, rkey) do
-        {:ok, restore_folder_subtree(scope, folder)}
+        restore_folder_subtree(scope, folder)
       end
     end)
   end
@@ -808,7 +808,10 @@ defmodule Taina.Ybira do
 
   defp readable_folder_rkeys(%Scope{} = scope, folder_ids, concessoes) do
     folders =
-      Map.new(Repo.all(from(p in Folder, where: p.id in ^folder_ids)), fn p -> {p.id, p} end)
+      Map.new(
+        Repo.all(from(p in Folder, where: p.id in ^folder_ids and is_nil(p.apagado_em))),
+        fn p -> {p.id, p} end
+      )
 
     Map.new(folder_ids, fn folder_id ->
       case Map.get(folders, folder_id) do
@@ -1011,15 +1014,14 @@ defmodule Taina.Ybira do
     end
   end
 
-  # Sobe de um segundo enquanto o carimbo não for estritamente maior que o
-  # maior `apagado_em` da subárvore: dois lotes no mesmo segundo não podem
-  # compartilhar a chave que a restauração usa.
+  # O carimbo do lote, em passo único: o `agora` quando ele já é estritamente
+  # maior que o maior `apagado_em` da subárvore, senão um segundo depois dele.
+  # Dois lotes no mesmo segundo não podem compartilhar a chave que a
+  # restauração usa. Sem laço: um `apagado_em` muito à frente do relógio (um
+  # relógio adiantado que foi corrigido) não pode prender a requisição
+  # subindo segundo a segundo.
   defp bump_until_after(%DateTime{} = candidate, %DateTime{} = taken) do
-    if DateTime.after?(candidate, taken) do
-      candidate
-    else
-      candidate |> DateTime.shift(second: 1) |> bump_until_after(taken)
-    end
+    if DateTime.after?(candidate, taken), do: candidate, else: DateTime.shift(taken, second: 1)
   end
 
   # A pasta NA lixeira, dona por quem restaura: a loja só devolve pasta da
@@ -1086,7 +1088,7 @@ defmodule Taina.Ybira do
   # preenchido o tira da listagem de soltos) nem em pasta listável (a de
   # origem está fora). Nesse caso ele volta solto na raiz, que é onde
   # "restaurar" o torna visível de novo.
-  defp restore_to_root_if_orphaned(_scope, %File{folder_id: nil} = file), do: file
+  defp restore_to_root_if_orphaned(_scope, %File{folder_id: nil} = file), do: {:ok, file}
 
   defp restore_to_root_if_orphaned(%Scope{} = scope, %File{} = file) do
     if folder_orphaned?(file.folder_id) do
@@ -1097,18 +1099,19 @@ defmodule Taina.Ybira do
 
       # O verbo do kernel (`mover/5`, nil = solto na raiz): a troca de pasta
       # vira uma versão nova do arquivo na cadeia assinada, não um update
-      # calado no banco.
-      {:ok, file} = Kernel.mover(Repo, Keys.new(), scope, file.rkey, nil)
-      file
+      # calado no banco. O erro dele sobe para a borda (`Error.reply`) em vez
+      # de virar MatchError, e o `with_tekoa/2` desfaz a restauração: um
+      # arquivo restaurado com a pasta-pai na lixeira não fica pela metade.
+      Kernel.mover(Repo, Keys.new(), scope, file.rkey, nil)
     else
-      file
+      {:ok, file}
     end
   end
 
   # O kernel não tem mover-pasta (o verbo é do produto, `move_folder/3`): a
   # troca de pai da pasta restaurada segue sem entrada na cadeia (mesmo gap
   # documentado no `move_folder/3`).
-  defp restore_to_root_if_orphaned(_scope, %Folder{parent_id: nil} = folder), do: folder
+  defp restore_to_root_if_orphaned(_scope, %Folder{parent_id: nil} = folder), do: {:ok, folder}
 
   defp restore_to_root_if_orphaned(_scope, %Folder{} = folder) do
     if folder_orphaned?(folder.parent_id) do
@@ -1116,10 +1119,9 @@ defmodule Taina.Ybira do
         reason: "folder_id=#{folder.id} parent_id=#{folder.parent_id}"
       )
 
-      {:ok, folder} = Repo.update(Folder.changeset(folder, %{parent_id: nil}))
-      folder
+      Repo.update(Folder.changeset(folder, %{parent_id: nil}))
     else
-      folder
+      {:ok, folder}
     end
   end
 

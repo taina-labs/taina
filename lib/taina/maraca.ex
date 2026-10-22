@@ -553,6 +553,10 @@ defmodule Taina.Maraca do
       {:error, %Ecto.Changeset{}} = changeset ->
         changeset
 
+      # As duas senhas não batem: é erro do formulário, não link vencido.
+      {:error, :password_mismatch} ->
+        {:error, :password_mismatch}
+
       _ ->
         {:error, :invalid_token}
     end
