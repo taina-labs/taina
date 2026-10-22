@@ -933,7 +933,7 @@ defmodule Taina.Ybira do
 
     case Enum.reject([file_last, folder_last], &is_nil/1) do
       [] -> agora()
-      taken -> bump_until_after(agora(), Enum.max(taken, DateTime))
+      taken -> bump_until_after(agora(), Enum.max_by(taken, &DateTime.to_unix/1))
     end
   end
 

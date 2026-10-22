@@ -171,7 +171,7 @@ defmodule TainaWeb.API.Etag do
   defp latest(dates) do
     case Enum.reject(dates, &is_nil/1) do
       [] -> nil
-      dates -> Enum.max(dates, DateTime)
+      dates -> Enum.max_by(dates, &DateTime.to_unix/1)
     end
   end
 
