@@ -14,6 +14,14 @@ defmodule Taina.Ybira.Media do
   # Formato de data/hora do EXIF: "2023:07:15 14:30:00" (sem timezone).
   @exif_datetime ~r/^\d{4}:\d{2}:\d{2} \d{2}:\d{2}:\d{2}$/
 
+  # Frases que indicam ausência de decodificador na libvips compilada.
+  @unsupported_markers [
+    "failed to find load",
+    "not a known file format",
+    "unsupported",
+    "not supported"
+  ]
+
   @doc """
   Lê metadados leves de uma imagem: dimensões e, quando houver, a data de
   captura do EXIF (`taken_at`, `NaiveDateTime`, o EXIF não carrega timezone).
@@ -52,6 +60,27 @@ defmodule Taina.Ybira.Media do
   rescue
     e -> {:error, e}
   end
+
+  @doc """
+  Diz se uma falha de `analyze/1` ou `thumbnail/3` é "a libvips desta caixa
+  não tem decodificador para o formato" (ex.: HEIC sem libheif), e não outro
+  problema (arquivo corrompido, disco). O worker usa a resposta para nomear
+  a causa no log: problema de ambiente se resolve na caixa (instalar a
+  lib), problema de arquivo não se resolve reprocessando.
+
+  O texto do erro varia entre builds da libvips, então casamos por trecho,
+  em minúsculas: a frase atual de loader ausente ("Failed to find load"), a
+  de builds antigos ("is not a known file format") e as variantes genéricas
+  de "sem suporte".
+  """
+  def unsupported_format?(%Image.Error{message: message}), do: unsupported_format?(message)
+
+  def unsupported_format?(reason) when is_binary(reason) do
+    text = String.downcase(reason)
+    Enum.any?(@unsupported_markers, &String.contains?(text, &1))
+  end
+
+  def unsupported_format?(_reason), do: false
 
   # --- EXIF ---
 

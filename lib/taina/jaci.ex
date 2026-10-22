@@ -95,13 +95,20 @@ defmodule Taina.Jaci do
   # --- Linha do tempo: keyset composto (data efetiva, id) ---
   #
   # A data efetiva mora nos metadados de rendicao do produto (`jaci_photos`),
-  # com o `inserted_at` do upload como fallback. No SQLite o `taken_at` sai de
-  # `json_extract` como texto ISO8601, que ordena como o `inserted_at` (também
-  # texto ISO8601) do Ecto.
+  # com o `inserted_at` do upload como fallback. As duas fontes chegavam em
+  # codificações diferentes de texto ISO8601 (o `taken_at` gravado sem `Z`,
+  # o `inserted_at` do Ecto com `Z`), então a virada de página podia pular
+  # fotos de uma rajada no mesmo segundo: o cursor decodificava a data e a
+  # regravava na outra codificação, partindo o mesmo instante em duas chaves.
+  # A consulta normaliza as duas para UMA representação canônica e
+  # ordenável: epoch de segundos. O SQLite lê texto sem zona como UTC, o
+  # máximo que um EXIF sem timezone permite de qualquer forma (e o
+  # `inserted_at` já é UTC). `taken_at` inválido no JSON cai no NULL do
+  # `strftime` e volta ao fallback do upload. O desempate é o id do arquivo.
   defmacrop effective_ts(f, p) do
     quote do
       fragment(
-        "COALESCE(json_extract(?, '$.taken_at'), ?)",
+        "COALESCE(CAST(strftime('%s', json_extract(?, '$.taken_at')) AS INTEGER), CAST(strftime('%s', ?) AS INTEGER))",
         unquote(p).metadata,
         unquote(f).inserted_at
       )
@@ -142,29 +149,21 @@ defmodule Taina.Jaci do
     )
   end
 
-  defp encode_timeline_cursor(%{ts: ts, file: %{id: id}}), do: Base.url_encode64("#{to_iso(ts)}|#{id}", padding: false)
-
-  defp to_iso(%NaiveDateTime{} = ts), do: NaiveDateTime.to_iso8601(ts)
-  defp to_iso(%DateTime{} = ts), do: DateTime.to_iso8601(ts)
-  defp to_iso(ts) when is_binary(ts), do: ts
+  defp encode_timeline_cursor(%{ts: epoch, file: %{id: id}}) when is_integer(epoch),
+    do: Base.url_encode64("#{epoch}|#{id}", padding: false)
 
   defp decode_timeline_cursor(nil), do: nil
 
   defp decode_timeline_cursor(cursor) when is_binary(cursor) do
     with {:ok, decoded} <- Base.url_decode64(cursor, padding: false),
-         [iso, id] <- String.split(decoded, "|", parts: 2),
-         {:ok, ts} <- parse_ts(iso),
+         [epoch, id] <- String.split(decoded, "|", parts: 2),
+         {ts, ""} <- Integer.parse(epoch),
          {id, ""} <- Integer.parse(id) do
       {ts, id}
     else
+      # Cursor ilegível (inclusive o formato ISO8601 anterior à normalização):
+      # pagina do começo em vez de quebrar.
       _ -> nil
-    end
-  end
-
-  defp parse_ts(iso) do
-    case NaiveDateTime.from_iso8601(iso) do
-      {:ok, ts} -> {:ok, ts}
-      _ -> DateTime.from_iso8601(iso)
     end
   end
 end

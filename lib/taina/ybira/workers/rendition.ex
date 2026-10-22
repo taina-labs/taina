@@ -9,9 +9,13 @@ defmodule Taina.Ybira.Workers.Rendition do
   As renditions são uma feature da caixa sobre os bytes do kernel; o Jaci só
   **lê** o resultado para montar a galeria, composição, não herança.
 
-  Tudo é *best-effort*: HEIC sem suporte na libvips ou um arquivo corrompido
-  não devem virar retentativa infinita nem job morto barulhento. Falhou,
-  logamos e devolvemos `:ok`, a foto ainda existe, só não ganha thumbnail.
+  Tudo é *best-effort*: HEIC sem decodificador na libvips ou um arquivo
+  corrompido não devem virar retentativa infinita nem job morto barulhento.
+  Falhou, registramos o motivo nos metadados da foto (`rendition_error`) e
+  devolvemos `{:error, _}` sem retentar: a foto existe, só não ganha
+  thumbnail, e o cliente distingue "pendente" de "indisponível" (revisão
+  0.1.0, C3). Uma rodada posterior bem-sucedida substitui os metadados e
+  limpa o erro.
 
   Roda em nível de sistema (cruza Tekoas), então recebe o `tekoa_public_id` nos
   args e faz todo o trabalho dentro de `Repo.with_tekoa/2`.
@@ -86,18 +90,48 @@ defmodule Taina.Ybira.Workers.Rendition do
 
       save_metadata(file, metadata)
     else
-      error ->
-        Logger.warning("Rendition: processamento falhou",
-          file_id: file.id,
-          reason: inspect(error)
-        )
+      {:error, reason} = error ->
+        Logger.warning(failure_message(reason), file_id: file.id, reason: inspect(error))
+
+        record_failure(file, reason)
 
         error
     end
   rescue
     e ->
       Logger.warning("Rendition: exceção ao processar", file_id: file.id, reason: inspect(e))
+      record_failure(file, e)
       {:error, e}
+  end
+
+  # O log nomeia a causa: "a libvips desta caixa não abre esse formato" (ex.:
+  # HEIC sem libheif) é problema de ambiente, se resolve na caixa; outros
+  # erros (disco, arquivo corrompido) pertencem ao arquivo. Revisão 0.1.0, C3.
+  defp failure_message(reason) do
+    if Media.unsupported_format?(reason) do
+      "Rendition: a libvips desta caixa não tem decodificador para o formato " <>
+        "da imagem (ex.: HEIC sem libheif); miniatura não será gerada aqui"
+    else
+      "Rendition: processamento falhou"
+    end
+  end
+
+  # A falha fica registrada na foto (`metadata["rendition_error"]`, sem
+  # thumbnails), não só no log: é o que separa "pendente" de "indisponível"
+  # na API (C3). Upsert como na gravação de sucesso: substitui o mapa
+  # inteiro. Best-effort de novo: falhar ao registrar a falha vira log e
+  # segue.
+  defp record_failure(%YbiraFile{} = file, reason) do
+    case save_metadata(file, %{"rendition_error" => inspect(reason)}) do
+      :ok ->
+        :ok
+
+      {:error, changeset} ->
+        Logger.warning("Rendition: falha ao registrar o erro da rendição",
+          file_id: file.id,
+          errors: inspect(changeset.errors)
+        )
+    end
   end
 
   # A rendicao fica na tabela do produto; reprocessar substitui (upsert pelo
