@@ -18,6 +18,12 @@ defmodule Taina.Ybira do
   a pasta dele também foi apagada) e `restore_folder/2` traz a pasta inteira,
   com o que foi apagado junto dela.
 
+  Os bytes do expurgo não saem na hora: os CIDs vão para a fila do GC
+  diferido (`Taina.Ybira.BlobGc`) e o worker `Taina.Ybira.Workers.BlobGc`,
+  de hora em hora, apaga do disco só o CID que nenhuma linha referencia mais.
+  A graça de uma hora fecha a corrida com a dedup: um upload concorrente pode
+  commitar, dentro dela, um arquivo que compartilha o blob de um expurgado.
+
   ## Paginação
 
   Listagens usam cursor por rkey (TID, ordenável por tempo): o cursor é o
@@ -29,12 +35,13 @@ defmodule Taina.Ybira do
 
   alias Taina.Blobs
   alias Taina.Jaci.Photo
-  alias Taina.Keys
-  alias Taina.Repo
-  alias Taina.Ybira.MimeDetector
 
   ## Upload
 
+  alias Taina.Keys
+  alias Taina.Repo
+  alias Taina.Ybira.BlobGc
+  alias Taina.Ybira.MimeDetector
   alias Taina.Ybira.Workers.Rendition
   alias Ypy.BlobStore.Disk
   alias Ypy.Maraca.Policy
@@ -555,6 +562,7 @@ defmodule Taina.Ybira do
   def pending_job_counts do
     %{
       renditions: count_pending_jobs("Taina.Ybira.Workers.Rendition"),
+      ## GC diferido de blobs
       trash_purge: count_pending_jobs("Taina.Ybira.Workers.PurgeTrash")
     }
   end
@@ -570,13 +578,15 @@ defmodule Taina.Ybira do
 
   @doc """
   Expurga a lixeira: apaga de vez arquivos e pastas com `apagado_em` anterior
-  ao cutoff, devolve a cota e tira os bytes do disco (o CID que nenhuma linha
-  referencia mais). Job de sistema, cruza todas as Tekoas.
+  ao cutoff, devolve a cota e enfileira os CIDs dos bytes para o GC diferido
+  (o worker `Taina.Ybira.Workers.BlobGc` tira do disco, uma hora depois, o
+  CID que nenhuma linha referencia mais). Job de sistema, cruza todas as
+  Tekoas.
   """
   def purge_deleted_files(%DateTime{} = cutoff) do
     # Job de sistema que cruza todas as Tekoas: sem contexto, as queries
-    # declaram `skip_tekoa_id: true`. A válvula cobre SÓ o banco: os bytes em
-    # disco são apagados fora de qualquer transação, em `remove_disk_copy/1`.
+    # declaram `skip_tekoa_id: true`. Os bytes em disco NÃO são tocados aqui
+    # (GC diferido, `enqueue_blob_gc/1`).
     {:ok, files} =
       Repo.with_system(fn ->
         # Registros saem num só `delete_all` (com `select: f`, devolve as
@@ -606,18 +616,96 @@ defmodule Taina.Ybira do
           adjust_storage_used(tekoa_id, -bytes)
         end)
 
+        # A corrida da dedup (revisão 0.1.0, 1c): apagar os bytes aqui, logo
+        # após o commit da conferência, deixava uma janela em que um upload
+        # concorrente commita um arquivo que compartilha o CID -- e o expurgo
+        # apagava bytes de arquivo vivo. Os CIDs vão para a fila do GC
+        # diferido, na MESMA transação dos deletes: registro apagado e blob
+        # enfileirado caem juntos, ou nada cai.
+        _ = enqueue_blob_gc(Enum.map(files, & &1.blob_cid))
+
         {:ok, files}
       end)
 
-    # O binário vai embora DEPOIS, fora de qualquer transação. Invariante de
-    # crash: o banco fica sempre consistente (registro e cota são da mesma
-    # transação); o pior caso é byte órfão no disco se o processo morrer
-    # entre o commit e o `Disk.delete` -- logamos para dar visibilidade a
-    # problemas recorrentes de disco.
-    Enum.each(files, &remove_disk_copy/1)
-
     {:ok, length(files)}
   end
+
+  @doc """
+  Enfileira CIDs de blobs expurgados para o GC diferido (`Taina.Ybira.BlobGc`).
+  Idempotente: CID que já está na fila fica com o `enqueued_at` de origem,
+  para não re-envelhecer (a graça de uma hora conta do primeiro expurgo).
+  """
+  @spec enqueue_blob_gc([String.t()]) :: {:ok, non_neg_integer()}
+  def enqueue_blob_gc(blob_cids) when is_list(blob_cids) do
+    agora = DateTime.truncate(DateTime.utc_now(), :second)
+
+    {count, _} =
+      Repo.insert_all(
+        BlobGc,
+        blob_cids |> Enum.uniq() |> Enum.map(&%{blob_cid: &1, enqueued_at: agora}),
+        on_conflict: :nothing,
+        conflict_target: :blob_cid,
+        skip_tekoa_id: true
+      )
+
+    {:ok, count}
+  end
+
+  @doc """
+  Uma rodada do GC diferido: para cada fila enfileirada antes do `cutoff` (a
+  graça de uma hora fecha a janela da dedup), apaga os bytes do disco quando
+  nenhuma linha de `ybira_files` referencia o CID; quando o blob voltou a
+  viver (o upload concorrente que o compartilhou commitou), só a fila cai.
+  Devolve o placar `deleted`/`kept`.
+  """
+  @spec gc_blobs(DateTime.t()) :: {:ok, %{deleted: non_neg_integer(), kept: non_neg_integer()}}
+  def gc_blobs(%DateTime{} = cutoff) do
+    rows = Repo.all(from(g in BlobGc, where: g.enqueued_at < ^cutoff), skip_tekoa_id: true)
+
+    placar =
+      rows
+      |> Enum.map(&gc_blob_row/1)
+      |> Enum.frequencies()
+
+    {:ok, %{deleted: Map.get(placar, :deleted, 0), kept: Map.get(placar, :kept, 0)}}
+  end
+
+  @doc "Alguma linha de arquivo referencia o CID? (a mesma conferência do expurgo, agora no GC)."
+  @spec blob_referenced?(String.t()) :: boolean()
+  def blob_referenced?(blob_cid) when is_binary(blob_cid) do
+    Repo.exists?(from(f in File, where: f.blob_cid == ^blob_cid), skip_tekoa_id: true)
+  end
+
+  # O veredito de uma fila: referência viva (dedup) devolve os bytes para o
+  # arquivo que os referencia e derruba a fila; sem referência, os bytes saem
+  # do disco e a fila cai também. Falha de disco deixa a fila para a próxima
+  # rodada de hora em hora.
+  defp gc_blob_row(%BlobGc{} = row) do
+    if blob_referenced?(row.blob_cid) do
+      drop_blob_gc_row(row)
+      :kept
+    else
+      case Disk.delete(Blobs.new(), Ypy.Cid.parse(row.blob_cid)) do
+        :ok ->
+          drop_blob_gc_row(row)
+          :deleted
+
+        # Bytes já fora do disco (rodada anterior morreu no meio): a fila cai.
+        {:error, :not_found} ->
+          drop_blob_gc_row(row)
+          :deleted
+
+        {:error, reason} ->
+          Logger.warning("BlobGc: falha ao remover blob do disco, fila fica para a próxima rodada",
+            reason: "#{row.blob_cid} #{inspect(reason)}"
+          )
+
+          :kept
+      end
+    end
+  end
+
+  defp drop_blob_gc_row(%BlobGc{} = row), do: Repo.delete!(row, skip_tekoa_id: true)
 
   # Soma por Tekoa dos bytes dos arquivos apagados: um ajuste de cota por
   # comunidade, não um por arquivo.
@@ -630,37 +718,6 @@ defmodule Taina.Ybira do
   end
 
   ## Helpers internos
-
-  # Blob endereçado por conteudo: mais de uma linha pode apontar para o mesmo
-  # CID (os mesmos bytes enviados duas vezes). O disco so limpa o caminho
-  # quando nenhuma linha viva referencia o CID: com dedup, um upload
-  # concorrente pode compartilhar o blob de um arquivo expurgado, e apagar
-  # sem conferir deixaria o arquivo dele sem bytes. A conferencia roda depois
-  # do commit, numa query propria: a janela entre ela e o `Disk.delete` ainda
-  # deixa passar um upload que commita nesse intervalo; fechar de vez pediria
-  # expurga adiada de blob ou coordenacao no kernel (ypy), fora do escopo.
-  defp remove_disk_copy(file) do
-    if blob_referenced?(file.blob_cid, file.id) do
-      :ok
-    else
-      case Disk.delete(Blobs.new(), Ypy.Cid.parse(file.blob_cid)) do
-        :ok ->
-          :ok
-
-        {:error, reason} ->
-          Logger.warning("PurgeTrash: falha ao remover blob do disco",
-            reason: "#{file.id} #{file.blob_cid} #{inspect(reason)}"
-          )
-      end
-    end
-  end
-
-  defp blob_referenced?(blob_cid, except_id) do
-    Repo.exists?(
-      from(f in File, where: f.blob_cid == ^blob_cid and f.id != ^except_id),
-      skip_tekoa_id: true
-    )
-  end
 
   # Ajuste de cota de sistema (fora de contexto de Tekoa, job que cruza todas).
   defp adjust_storage_used(tekoa_id, delta) do

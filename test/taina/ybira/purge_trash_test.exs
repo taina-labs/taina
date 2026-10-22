@@ -5,6 +5,7 @@ defmodule Taina.Ybira.Workers.PurgeTrashTest do
 
   alias Taina.Scope
   alias Taina.Ybira
+  alias Taina.Ybira.BlobGc
   alias Taina.Ybira.Workers.PurgeTrash
   alias Ypy.Maraca.Tekoa
   alias Ypy.Ybira.File, as: YbiraFile
@@ -25,10 +26,14 @@ defmodule Taina.Ybira.Workers.PurgeTrashTest do
 
     assert :ok = PurgeTrash.perform(%Oban.Job{args: %{}})
 
-    refute blob_on_disk?(old)
+    # O blob nao sai inline: vai para a fila do GC diferido (a corrida da
+    # dedup). O que sai agora e o registro e a cota.
+    assert blob_on_disk?(old)
     assert blob_on_disk?(recent)
     refute Repo.get(YbiraFile, old.id, skip_tekoa_id: true)
     assert Repo.get(YbiraFile, recent.id, skip_tekoa_id: true)
+    assert gc_row?(old.blob_cid)
+    refute gc_row?(recent.blob_cid)
 
     tekoa = Repo.get!(Tekoa, scope.tekoa.id, skip_tekoa_id: true)
     assert tekoa.storage_used_bytes == recent.tamanho
@@ -56,11 +61,13 @@ defmodule Taina.Ybira.Workers.PurgeTrashTest do
 
     assert :ok = PurgeTrash.perform(%Oban.Job{args: %{}})
 
-    refute blob_on_disk?(a)
-    refute blob_on_disk?(b)
-    refute blob_on_disk?(c)
+    assert blob_on_disk?(a)
+    assert blob_on_disk?(b)
+    assert blob_on_disk?(c)
     assert blob_on_disk?(keep)
     assert Repo.get(YbiraFile, keep.id, skip_tekoa_id: true)
+    assert gc_row?(a.blob_cid) and gc_row?(b.blob_cid) and gc_row?(c.blob_cid)
+    refute gc_row?(keep.blob_cid)
 
     tekoa = Repo.get!(Tekoa, scope.tekoa.id, skip_tekoa_id: true)
     assert tekoa.storage_used_bytes == keep.tamanho
@@ -82,9 +89,12 @@ defmodule Taina.Ybira.Workers.PurgeTrashTest do
     refute Repo.get(YbiraFile, a.id, skip_tekoa_id: true)
     assert Repo.get(YbiraFile, b.id, skip_tekoa_id: true)
     assert blob_on_disk?(b)
+    # O CID compartilhado também entra na fila: é o GC que decide, uma hora
+    # depois, se sobrou referência viva.
+    assert gc_row?(a.blob_cid)
   end
 
-  test "purges every row sharing a blob: with no remaining reference the bytes go too" do
+  test "purges every row sharing a blob: the shared cid is queued once" do
     scope = scope_fixture()
     {:ok, a} = Ybira.upload(scope, tmp_upload_fixture("iguais", "a.txt"))
     {:ok, b} = Ybira.upload(scope, tmp_upload_fixture("iguais", "b.txt"))
@@ -98,10 +108,12 @@ defmodule Taina.Ybira.Workers.PurgeTrashTest do
 
     assert :ok = PurgeTrash.perform(%Oban.Job{args: %{}})
 
-    # Nenhuma linha sobrando referenciando o CID: os bytes saem do disco.
+    # Nenhuma linha sobrando referenciando o CID; os bytes ainda no disco,
+    # agora só no julgamento do GC diferido.
     refute Repo.get(YbiraFile, a.id, skip_tekoa_id: true)
     refute Repo.get(YbiraFile, b.id, skip_tekoa_id: true)
-    refute blob_on_disk?(a)
+    assert blob_on_disk?(a)
+    assert gc_row?(a.blob_cid)
   end
 
   test "purges folders trashed before the cutoff, keeps the recent ones" do
@@ -119,6 +131,9 @@ defmodule Taina.Ybira.Workers.PurgeTrashTest do
 
     refute Repo.get(Folder, old.id, skip_tekoa_id: true)
     assert Repo.get(Folder, recent.id, skip_tekoa_id: true)
+
+    # Pastas não têm bytes: o expurgo de pastas não enfileira GC.
+    assert Repo.all(BlobGc, skip_tekoa_id: true) == []
   end
 
   defp days_ago(n), do: DateTime.shift(DateTime.utc_now(), second: -n * @seconds_per_day)
@@ -129,6 +144,10 @@ defmodule Taina.Ybira.Workers.PurgeTrashTest do
       [set: [apagado_em: apagado_em]],
       skip_tekoa_id: true
     )
+  end
+
+  defp gc_row?(blob_cid) do
+    Repo.exists?(from(g in BlobGc, where: g.blob_cid == ^blob_cid), skip_tekoa_id: true)
   end
 
   defp blob_on_disk?(file) do

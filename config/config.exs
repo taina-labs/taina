@@ -29,6 +29,9 @@ config :phoenix, :json_library, JSON
 
 # Background jobs.
 #   - PurgeTrash apaga de vez os arquivos na lixeira há mais de 30 dias (03:00).
+#   - BlobGc processa a fila do GC diferido de blobs (hora em hora): apaga do
+#     disco o CID que nenhum arquivo referencia mais; a fila nasce no expurgo
+#     da lixeira, com uma hora de graça para a dedup (ver Taina.Ybira.BlobGc).
 #   - Backup faz snapshot do SQLite (VACUUM INTO) + arquivo do storage (04:00).
 #     É no-op até habilitar `config :taina, :backup, enabled: true`
 #     (ver Taina.Nhaman.Backup).
@@ -42,6 +45,7 @@ config :taina, Oban,
     {Oban.Plugins.Cron,
      crontab: [
        {"0 3 * * *", Taina.Ybira.Workers.PurgeTrash},
+       {"0 * * * *", Taina.Ybira.Workers.BlobGc},
        {"0 4 * * *", Taina.Nhaman.Workers.Backup}
      ]}
   ]
