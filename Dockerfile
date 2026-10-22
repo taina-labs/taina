@@ -76,9 +76,15 @@ FROM ${RUNNER_IMAGE}
 # Runtime libs (bookworm package names: libncurses6, not the bullseye
 # libncurses5). The backup (Taina.Nhaman.Backup) is a plain SQLite snapshot
 # with Exqlite, so no database client is needed here.
+#
+# The image libs are what the precompiled vix NIF loads at runtime: glib/
+# gobject for the NIF itself, the heif and turbo-jpeg runtimes for the HEIC
+# (iPhone default) and JPEG loaders. Without them every thumbnail of every
+# community fails silently inside the published image (review 0.1.0, C3).
 RUN apt-get update -y && \
   apt-get install -y --no-install-recommends \
     libstdc++6 openssl libncurses6 locales ca-certificates curl \
+    libglib2.0-0 libheif1 libjpeg62-turbo \
   && apt-get clean && rm -f /var/lib/apt/lists/*_*
 
 # Set the locale

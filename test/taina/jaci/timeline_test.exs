@@ -3,17 +3,17 @@ defmodule Taina.Jaci.TimelineTest do
 
   alias Taina.Jaci.Timeline
 
-  # A data efetiva vem resolvida da consulta (`COALESCE(taken_at, inserted_at)`);
-  # no SQLite ela pode chegar como %NaiveDateTime{} (fallback do upload) ou
-  # como texto ISO8601 (o `taken_at` do JSON do EXIF).
-  defp photo(ts), do: %{file: %Ypy.Ybira.File{id: 1}, ts: ts}
+  # A data efetiva vem resolvida da consulta (`COALESCE` normalizado a epoch
+  # de segundos, UTC): o `taken_at` do EXIF e o fallback do upload chegam na
+  # mesma representacao inteira.
+  defp photo(epoch), do: %{file: %Ypy.Ybira.File{id: 1}, ts: epoch}
 
   describe "group_by_date/1" do
     test "buckets consecutive same-day photos, keeping order" do
       rows = [
-        photo(~N[2023-07-16 10:00:00]),
-        photo("2023-07-15T18:00:00"),
-        photo(~N[2023-07-15 09:00:00])
+        ~D[2023-07-16] |> DateTime.new!(~T[10:00:00]) |> DateTime.to_unix() |> photo(),
+        ~D[2023-07-15] |> DateTime.new!(~T[18:00:00]) |> DateTime.to_unix() |> photo(),
+        ~D[2023-07-15] |> DateTime.new!(~T[09:00:00]) |> DateTime.to_unix() |> photo()
       ]
 
       assert [
