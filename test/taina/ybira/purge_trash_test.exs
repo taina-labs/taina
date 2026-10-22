@@ -84,6 +84,26 @@ defmodule Taina.Ybira.Workers.PurgeTrashTest do
     assert blob_on_disk?(b)
   end
 
+  test "purges every row sharing a blob: with no remaining reference the bytes go too" do
+    scope = scope_fixture()
+    {:ok, a} = Ybira.upload(scope, tmp_upload_fixture("iguais", "a.txt"))
+    {:ok, b} = Ybira.upload(scope, tmp_upload_fixture("iguais", "b.txt"))
+
+    assert a.blob_cid == b.blob_cid
+
+    {:ok, _} = Ybira.delete_file(scope, a.rkey)
+    {:ok, _} = Ybira.delete_file(scope, b.rkey)
+    backdate(YbiraFile, a.id, days_ago(31))
+    backdate(YbiraFile, b.id, days_ago(31))
+
+    assert :ok = PurgeTrash.perform(%Oban.Job{args: %{}})
+
+    # Nenhuma linha sobrando referenciando o CID: os bytes saem do disco.
+    refute Repo.get(YbiraFile, a.id, skip_tekoa_id: true)
+    refute Repo.get(YbiraFile, b.id, skip_tekoa_id: true)
+    refute blob_on_disk?(a)
+  end
+
   test "purges folders trashed before the cutoff, keeps the recent ones" do
     scope = scope_fixture()
     {:ok, old} = Ybira.create_folder(scope, %{name: "antiga"})

@@ -34,4 +34,24 @@ defmodule TainaWeb.TrashLiveTest do
     assert {:ok, restored} = Ybira.get_file(scope, file.rkey)
     assert is_nil(restored.apagado_em)
   end
+
+  test "restaura uma pasta junto com o que tem dentro", %{conn: conn, scope: scope, ava: ava} do
+    {:ok, folder} = Ybira.create_folder(scope, %{name: "ferias"})
+    {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("x", "foto.txt"), folder_rkey: folder.rkey)
+    {:ok, :deleted} = Ybira.delete_folder(scope, folder.rkey)
+
+    {:ok, lv, html} = conn |> log_in(ava) |> live(~p"/arquivos/lixeira")
+
+    # Pasta e arquivo somam com o da configuração: três itens na lixeira.
+    assert html =~ "ferias"
+    assert html =~ "3 itens"
+
+    lv |> element(~s(button[phx-value-id="#{folder.rkey}"])) |> render_click()
+
+    assert render(lv) =~ "Pasta restaurada com o que tinha dentro."
+    assert {:ok, restored_folder} = Ybira.get_folder(scope, folder.rkey)
+    assert {:ok, restored_file} = Ybira.get_file(scope, file.rkey)
+    # O arquivo volta dentro da pasta, não solto na raiz.
+    assert restored_file.folder_id == restored_folder.id
+  end
 end
