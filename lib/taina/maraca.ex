@@ -553,6 +553,33 @@ defmodule Taina.Maraca do
   end
 
   @doc """
+  A troca da propria senha (self-service): confere a senha atual pelo mesmo
+  caminho do login (bcrypt) e grava a nova pelo changeset do kernel, que
+  valida, hashea e queima qualquer link de reset pendente. Nao revoga tokens
+  de dispositivo: quem sabe qual aparelho fez a chamada (o endpoint da API)
+  que cuide dos outros.
+  """
+  @spec update_password(Ypy.Scope.t(), String.t(), String.t()) ::
+          {:ok, Ava.t()} | {:error, :invalid_credentials | Ecto.Changeset.t()}
+  def update_password(%Ypy.Scope{} = scope, current_password, new_password) do
+    within_tekoa(scope, fn ->
+      with {:ok, ava} <- fetch_member(scope, scope.ava.public_id),
+           :ok <- current_password_ok?(ava, current_password) do
+        Repo.update(Ava.reset_changeset(ava, %{password: new_password}))
+      end
+    end)
+  end
+
+  # Falha de credencial e um erro so: quem troca a propria senha nao distingue
+  # "senha errada" de conta desativada (conta desativada nem chega logada).
+  defp current_password_ok?(ava, current_password) do
+    case verify_credentials(ava, current_password) do
+      {:ok, _ava} -> :ok
+      {:error, _reason} -> {:error, :invalid_credentials}
+    end
+  end
+
+  @doc """
   Pode `ava` agir sobre o recurso? A leitura segue a regra das duas zonas do
   kernel (praca OU dono OU concessao, RFC_003 D2); escrever e apagar sao do
   dono (a concessao do kernel e sempre de leitura).

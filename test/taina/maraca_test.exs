@@ -289,6 +289,46 @@ defmodule Taina.MaracaTest do
     end
   end
 
+  describe "update_password/3 (self-service)" do
+    setup do
+      tekoa = tekoa_fixture()
+      ava = active_ava_fixture(tekoa, %{username: "maria", password: "senhasegura123"})
+      %{tekoa: tekoa, ava: ava}
+    end
+
+    test "troca a senha com a atual certa e a nova entra no lugar", %{tekoa: tekoa, ava: ava} do
+      scope = Scope.new(ava, tekoa)
+
+      assert {:ok, updated} = Maraca.update_password(scope, "senhasegura123", "senha-nova-456")
+      refute updated.password_hash == ava.password_hash
+
+      assert {:ok, _} = Maraca.authenticate("maria", "senha-nova-456", tekoa)
+      assert {:error, :invalid_credentials} = Maraca.authenticate("maria", "senhasegura123", tekoa)
+    end
+
+    test "senha atual errada recusa com invalid_credentials", %{tekoa: tekoa, ava: ava} do
+      assert {:error, :invalid_credentials} =
+               Maraca.update_password(Scope.new(ava, tekoa), "senha-incorreta", "senha-nova-456")
+
+      # a senha antiga segue valendo
+      assert {:ok, _} = Maraca.authenticate("maria", "senhasegura123", tekoa)
+    end
+
+    test "senha nova curta volta changeset (regra do kernel)", %{tekoa: tekoa, ava: ava} do
+      assert {:error, %Ecto.Changeset{}} =
+               Maraca.update_password(Scope.new(ava, tekoa), "senhasegura123", "curta")
+    end
+
+    test "queima um link de reset pendente", %{tekoa: tekoa, ava: ava} do
+      zelador = zelador_fixture(tekoa)
+      {:ok, %{token: token}} = Maraca.mint_reset_link(Scope.new(zelador, tekoa), ava)
+
+      assert {:ok, _} = Maraca.update_password(Scope.new(ava, tekoa), "senhasegura123", "senha-nova-456")
+
+      assert {:error, :invalid_token} = Maraca.reset_password(token, "terceira789", "terceira789")
+    end
+  end
+
   describe "authorize?/4 and concessoes" do
     setup do
       tekoa = tekoa_fixture()
