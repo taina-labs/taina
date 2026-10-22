@@ -1,5 +1,7 @@
 defmodule Taina.Ybira.Workers.BlobGcTest do
-  use Taina.DataCase, async: true
+  # `async: false`: o teste de corrida sobe tarefas (uploads + GC) em outros
+  # processos, que so usam a conexao do sandbox em modo compartilhado.
+  use Taina.DataCase, async: false
 
   import Taina.Fixtures
 
@@ -68,6 +70,44 @@ defmodule Taina.Ybira.Workers.BlobGcTest do
     assert :ok = BlobGc.perform(%Oban.Job{args: %{}})
     assert blob_on_disk?(c)
     refute queue_row?(a.blob_cid)
+  end
+
+  test "a GC round racing same-bytes uploads leaves every committed file with its blob" do
+    scope = scope_fixture()
+
+    # Fila vencida para o CID dos bytes compartilhados: os bytes ficam no
+    # disco sem nenhuma referencia, exatamente o pasto do GC.
+    file = upload_and_purge(scope, "iguais")
+    backdate_enqueue(file.blob_cid, hours_ago(2))
+
+    # Varios uploads dos MESMOS bytes (mesmo CID) correm com a rodada do GC:
+    # sem a travessa (`Taina.Ybira.BlobLock`), o GC confere referencias entre
+    # a gravacao dos bytes e o commit deles, apaga o blob e o arquivo
+    # commita apontando para bytes que sairam do disco.
+    gc_task = Task.async(fn -> Ybira.gc_blobs(hours_ago(1)) end)
+
+    upload_tasks =
+      for i <- 1..8 do
+        Task.async(fn -> Ybira.upload(scope, tmp_upload_fixture("iguais", "corrida-#{i}.txt")) end)
+      end
+
+    assert {:ok, %{deleted: _, kept: _}} = Task.await(gc_task, 15_000)
+
+    # Cada upload commita (a cota da Tekoa comporta os 9): a afirmacao do
+    # teste e que NENHUM fica com a referencia para um blob fora do disco.
+    files = Enum.map(Task.await_many(upload_tasks, 15_000), fn {:ok, file} -> file end)
+
+    assert files |> Enum.map(& &1.blob_cid) |> Enum.uniq() |> length() == 1
+    assert files |> Enum.map(& &1.blob_cid) |> Enum.uniq() == [file.blob_cid]
+
+    for file <- files do
+      assert {:ok, path} = Ybira.blob_path(file)
+      assert File.exists?(path)
+    end
+
+    # A rodada tambem derruba a fila: referencia viva (kept) ou bytes
+    # apagados (deleted), a fila cai dos dois jeitos.
+    refute queue_row?(file.blob_cid)
   end
 
   # Sobe um arquivo, manda para a lixeira, envelhece o apagado_em alem do

@@ -21,8 +21,13 @@ defmodule Taina.Ybira do
   Os bytes do expurgo não saem na hora: os CIDs vão para a fila do GC
   diferido (`Taina.Ybira.BlobGc`) e o worker `Taina.Ybira.Workers.BlobGc`,
   de hora em hora, apaga do disco só o CID que nenhuma linha referencia mais.
-  A graça de uma hora fecha a corrida com a dedup: um upload concorrente pode
-  commitar, dentro dela, um arquivo que compartilha o blob de um expurgado.
+  Duas cercas guardam a corrida com a dedup. A travessa local
+  (`Taina.Ybira.BlobLock`) faz a conferência de referências e o apagão do GC
+  se excluírem da gravação dos bytes no upload: o mesmo CID nunca anda nos
+  dois lados ao mesmo tempo, e só espera a vez quem sobe os MESMOS bytes. A
+  graça de uma hora é a cerca de trás: cobre a janela entre o enfileiramento
+  do CID e a rodada do GC, em que um upload concorrente pode reanimar o blob
+  (e a fila só registra o pleno).
 
   ## Paginação
 
@@ -41,6 +46,7 @@ defmodule Taina.Ybira do
   alias Taina.Keys
   alias Taina.Repo
   alias Taina.Ybira.BlobGc
+  alias Taina.Ybira.BlobLock
   alias Taina.Ybira.MimeDetector
   alias Taina.Ybira.Workers.Rendition
   alias Ypy.BlobStore.Disk
@@ -67,6 +73,14 @@ defmodule Taina.Ybira do
   `Ypy.BlobStore` e commita blob, record, arquivo e cota com a entrada na
   cadeia. O mime vem dos magic bytes (produto); a rendition de imagem
   enfileira depois do commit (best-effort: a foto existe sem thumbnail).
+
+  O kernel inteiro roda sob a travessa do CID dos bytes (`Taina.Ybira.BlobLock`):
+  os bytes entram no disco antes de a referencia commitar, e o GC diferido so
+  pode apagar bytes sem referencia DENTRO da mesma travessa. Sem ela, o GC
+  conferiria referencias entre a gravacao dos bytes e o commit, apagaria o
+  blob e o arquivo commitaria apontando para bytes que nao existem mais. So
+  espera a vez quem sobe os MESMOS bytes (mesmo CID, a corrida da dedup);
+  upload de conteudo diferente nunca espera.
   """
   def upload(%Scope{} = scope, tmp_path, opts \\ []) do
     opts =
@@ -76,14 +90,50 @@ defmodule Taina.Ybira do
         folder: Keyword.get(opts, :folder_rkey)
       ]
 
-    with {:ok, file} <-
-           within_tekoa(scope, fn ->
-             Kernel.upload(Repo, Keys.new(), Blobs.new(), scope, tmp_path, opts)
-           end) do
+    with {:ok, cid} <- blob_cid(tmp_path),
+         {:ok, file} <- locked_upload(scope, tmp_path, opts, cid) do
       ## Arquivos
 
       maybe_enqueue_rendition(scope, file)
       {:ok, file}
+    end
+  end
+
+  # O kernel inteiro sob a travessa do CID dos bytes: os bytes entram no disco
+  # dentro da secao critica, e a referencia commita nela tambem. Fora dela, o
+  # GC diferido nao apaga blob que este upload esta para referenciar.
+  defp locked_upload(%Scope{} = scope, tmp_path, opts, cid) do
+    BlobLock.run(Ypy.Cid.to_string(cid), fn ->
+      within_tekoa(scope, fn ->
+        Kernel.upload(Repo, Keys.new(), Blobs.new(), scope, tmp_path, opts)
+      end)
+    end)
+  end
+
+  # O mesmo CID que o kernel calcula ao transmitir (`Disk.put_file/2`):
+  # sha2-256 em stream sobre o arquivo, uma passada a mais sobre os bytes so
+  # para chavear a travessa ANTES de o kernel abrir a secao critica.
+  @chunk_bytes 65_536
+
+  defp blob_cid(path) do
+    case Elixir.File.open(path, [:read, :binary]) do
+      {:ok, dev} ->
+        try do
+          {:ok, cid_of_stream(dev, :crypto.hash_init(:sha256))}
+        after
+          :file.close(dev)
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp cid_of_stream(dev, hash) do
+    case :file.read(dev, @chunk_bytes) do
+      {:ok, chunk} -> cid_of_stream(dev, :crypto.hash_update(hash, chunk))
+      :eof -> Ypy.Cid.from_digest(:crypto.hash_final(hash), Ypy.Cid.raw())
+      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -654,10 +704,10 @@ defmodule Taina.Ybira do
 
   @doc """
   Uma rodada do GC diferido: para cada fila enfileirada antes do `cutoff` (a
-  graça de uma hora fecha a janela da dedup), apaga os bytes do disco quando
-  nenhuma linha de `ybira_files` referencia o CID; quando o blob voltou a
-  viver (o upload concorrente que o compartilhou commitou), só a fila cai.
-  Devolve o placar `deleted`/`kept`.
+  graça de uma hora fecha a janela entre o enfileiramento e a rodada), apaga
+  os bytes do disco quando nenhuma linha de `ybira_files` referencia o CID;
+  quando o blob voltou a viver (o upload concorrente que o compartilhou
+  commitou), só a fila cai. Devolve o placar `deleted`/`kept`.
   """
   @spec gc_blobs(DateTime.t()) :: {:ok, %{deleted: non_neg_integer(), kept: non_neg_integer()}}
   def gc_blobs(%DateTime{} = cutoff) do
@@ -677,11 +727,23 @@ defmodule Taina.Ybira do
     Repo.exists?(from(f in File, where: f.blob_cid == ^blob_cid), skip_tekoa_id: true)
   end
 
+  # A travessa e o predio: a secao critica (a conferencia seguida do
+  # veredito) fica em `gc_blob_verdict/1`, e o encaixe aqui e so a trava.
+  defp gc_blob_row(%BlobGc{} = row) do
+    BlobLock.run(row.blob_cid, fn -> gc_blob_verdict(row) end)
+  end
+
   # O veredito de uma fila: referência viva (dedup) devolve os bytes para o
   # arquivo que os referencia e derruba a fila; sem referência, os bytes saem
   # do disco e a fila cai também. Falha de disco deixa a fila para a próxima
   # rodada de hora em hora.
-  defp gc_blob_row(%BlobGc{} = row) do
+  #
+  # Tudo roda sob a travessa do CID (`Taina.Ybira.BlobLock`): o upload grava
+  # os bytes ANTES de commitar a referência, então conferir fora da travessa
+  # deixaria a resposta velha na hora entre a gravacao e o commit. A travessa
+  # e local (a caixa e um no) e por CID: so o upload dos mesmos bytes espera
+  # esta secao, que e uma consulta e um apagao no maximo.
+  defp gc_blob_verdict(%BlobGc{} = row) do
     if blob_referenced?(row.blob_cid) do
       drop_blob_gc_row(row)
       :kept
