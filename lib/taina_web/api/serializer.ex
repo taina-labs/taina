@@ -6,7 +6,8 @@ defmodule TainaWeb.API.Serializer do
   Arquivo, pasta, pessoa e entrada do mural tem a forma crua no kernel
   (`Ypy.Wire.File`, `Ypy.Wire.Ava`, `Ypy.Wire.Mural`), que e a fonte unica
   dessas formas. O arquivo do produto embala a forma do kernel com os campos
-  do produto (`file/2`), sem repeti-los.
+  do produto (`file/2`), sem repeti-los; a pasta ganha o mesmo embrulho
+  (`folder/2`), e o `dono` sai resolvido (o `public_id` do dono) em ambas.
   """
 
   alias Taina.Maraca.DeviceToken
@@ -18,21 +19,24 @@ defmodule TainaWeb.API.Serializer do
   alias Ypy.Scope
   alias Ypy.Wire
   alias Ypy.Ybira.File
+  alias Ypy.Ybira.Folder
 
   @doc """
   O arquivo no fio do produto (contrato review 0.1.0, A): a forma do kernel
   (`Ypy.Wire.File.json/1`, que fica intacta) mais os campos do produto. A
-  pasta pai vem resolvida pela regra de leitura, os metadados de foto
-  (`taken_at`, dimensoes) e o estado da rendition vem do Jaci -- e valem para
-  TODO endpoint que devolve arquivo, inclusive recentes, fotos e lixeira,
-  onde o `folder` do kernel chegava sempre nulo.
+  pasta pai vem resolvida pela regra de leitura, o dono pelo `public_id`
+  (`Ybira.donos_public_ids/2`, sem N+1), os metadados de foto (`taken_at`,
+  dimensões) e o estado da rendition vem do Jaci -- e valem para TODO
+  endpoint que devolve arquivo, inclusive recentes, fotos e lixeira, onde o
+  `folder` do kernel chegava sempre nulo.
 
-  Um arquivo sozinho: tres leituras curtas (metadados, estado, pasta). Para
-  lista, use `files/2`, que carrega tudo em lote.
+  Um arquivo sozinho: quatro leituras curtas (metadados, estado, pasta,
+  dono). Para lista, use `files/2`, que carrega tudo em lote.
   """
   @spec file(Scope.t(), File.t()) :: map()
   def file(%Scope{} = scope, %File{} = file) do
     {:ok, metadata} = Ybira.photo_metadata(scope, file)
+    {:ok, donos} = Ybira.donos_public_ids(scope, [file.dono_id])
 
     file
     |> Wire.File.json()
@@ -41,22 +45,25 @@ defmodule TainaWeb.API.Serializer do
       "width" => dimension(metadata["width"]),
       "height" => dimension(metadata["height"]),
       "rendition" => rendition(scope, file),
-      "folder" => folder_rkey(scope, file)
+      "folder" => folder_rkey(scope, file),
+      "dono" => Map.get(donos, file.dono_id)
     })
   end
 
   @doc """
   A pagina de arquivos no fio do produto: os mesmos mapas de `file/2`, com
   as leituras em lote. Uma consulta para os metadados de foto da pagina
-  (`where file_id in ...`), uma para as pastas pai distintas; o estado da
-  rendition sai dos metadados que ja vieram, sem reconsulta. Quem lista
-  muitos arquivos (manifesto, lote, recentes, conteudo, fotos, linha do
-  tempo, lixeira) paga tres consultas, nao tres por arquivo.
+  (`where file_id in ...`), uma para as pastas pai distintas, uma para os
+  donos distintos; o estado da rendition sai dos metadados que já vieram,
+  sem reconsulta. Quem lista muitos arquivos (manifesto, lote, recentes,
+  conteúdo, fotos, linha do tempo, lixeira) paga quatro consultas, não
+  quatro por arquivo.
   """
   @spec files(Scope.t(), [File.t()]) :: [map()]
   def files(%Scope{} = scope, files) when is_list(files) do
     {:ok, metadata_by_file_id} = Ybira.photos_metadata(scope, Enum.map(files, & &1.id))
     {:ok, folder_rkeys} = Ybira.files_folder_rkeys(scope, files)
+    {:ok, donos} = Ybira.donos_public_ids(scope, Enum.map(files, & &1.dono_id))
 
     Enum.map(files, fn file ->
       metadata = Map.get(metadata_by_file_id, file.id, %{})
@@ -68,8 +75,38 @@ defmodule TainaWeb.API.Serializer do
         "width" => dimension(metadata["width"]),
         "height" => dimension(metadata["height"]),
         "rendition" => file.mime |> RenditionStatus.from_metadata(metadata) |> to_string(),
-        "folder" => Map.get(folder_rkeys, file.id)
+        "folder" => Map.get(folder_rkeys, file.id),
+        "dono" => Map.get(donos, file.dono_id)
       })
+    end)
+  end
+
+  @doc """
+  A pasta no fio do produto: a forma do kernel mais o dono resolvido (o
+  `public_id`, `Ybira.donos_public_ids/2`). Sozinha: uma leitura curta.
+  Para lista, use `folders/2`.
+  """
+  @spec folder(Scope.t(), Folder.t()) :: map()
+  def folder(%Scope{} = scope, %Folder{} = folder) do
+    {:ok, donos} = Ybira.donos_public_ids(scope, [folder.dono_id])
+
+    folder
+    |> Wire.File.json()
+    |> Map.put("dono", Map.get(donos, folder.dono_id))
+  end
+
+  @doc """
+  A página de pastas no fio do produto: os mesmos mapas de `folder/2`, com
+  os donos da página em uma consulta.
+  """
+  @spec folders(Scope.t(), [Folder.t()]) :: [map()]
+  def folders(%Scope{} = scope, folders) when is_list(folders) do
+    {:ok, donos} = Ybira.donos_public_ids(scope, Enum.map(folders, & &1.dono_id))
+
+    Enum.map(folders, fn folder ->
+      folder
+      |> Wire.File.json()
+      |> Map.put("dono", Map.get(donos, folder.dono_id))
     end)
   end
 

@@ -44,6 +44,7 @@ defmodule Taina.Ybira do
   alias Taina.Ybira.MimeDetector
   alias Taina.Ybira.Workers.Rendition
   alias Ypy.BlobStore.Disk
+  alias Ypy.Maraca.Ava
   alias Ypy.Maraca.Policy
   alias Ypy.Maraca.Store
   alias Ypy.Maraca.Tekoa
@@ -758,6 +759,22 @@ defmodule Taina.Ybira do
     within_tekoa(scope, fn ->
       photos = Repo.all(from(p in Photo, where: p.file_id in ^file_ids))
       {:ok, Map.new(photos, fn p -> {p.file_id, p.metadata || %{}} end)}
+    end)
+  end
+
+  @doc """
+  O `public_id` do dono de vários recursos, em UMA consulta sobre
+  `Ypy.Maraca.Ava` (o serializer da API): mapa `dono_id => public_id`. Sem
+  entrada para id nulo (arquivo/pasta órfão, caso defensivo do FK).
+  """
+  @spec donos_public_ids(Scope.t(), [integer()]) :: {:ok, %{integer() => String.t()}}
+  def donos_public_ids(%Scope{} = scope, dono_ids) when is_list(dono_ids) do
+    within_tekoa(scope, fn ->
+      ids = dono_ids |> Enum.reject(&is_nil/1) |> Enum.uniq()
+
+      donos = Repo.all(from(a in Ava, where: a.id in ^ids, select: {a.id, a.public_id}))
+
+      {:ok, Map.new(donos)}
     end)
   end
 

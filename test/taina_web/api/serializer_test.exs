@@ -52,6 +52,20 @@ defmodule TainaWeb.API.SerializerTest do
     assert Serializer.files(scope, []) == []
   end
 
+  test "o dono sai resolvido (public_id), em arquivo e pasta, do mesmo jeito no lote", %{
+    scope: scope
+  } do
+    {:ok, folder} = Taina.Ybira.create_folder(scope, %{name: "ferias"})
+    {:ok, file} = Taina.Ybira.upload(scope, tmp_upload_fixture("a", "a.txt"))
+
+    assert Serializer.file(scope, file)["dono"] == scope.ava.public_id
+    assert Serializer.folder(scope, folder)["dono"] == scope.ava.public_id
+
+    # o lote devolve exatamente os mesmos mapas do unitario, dono inclusive
+    assert Serializer.files(scope, [file]) == [Serializer.file(scope, file)]
+    assert Serializer.folders(scope, [folder]) == [Serializer.folder(scope, folder)]
+  end
+
   # A linha de foto pode ja existir (o worker roda no upload em teste):
   # upsert, com o `updated_at` sob controle do teste (o carimbo e o que o
   # ETag observa).

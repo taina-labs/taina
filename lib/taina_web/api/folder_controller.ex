@@ -14,8 +14,10 @@ defmodule TainaWeb.API.FolderController do
   alias Ypy.Wire
 
   def index(conn, _params) do
-    case Ybira.list_folders(conn.assigns[:current_scope]) do
-      {:ok, folders} -> json(conn, Wire.page(Enum.map(folders, &Wire.File.json/1), nil))
+    scope = conn.assigns[:current_scope]
+
+    case Ybira.list_folders(scope) do
+      {:ok, folders} -> json(conn, Wire.page(Serializer.folders(scope, folders), nil))
       {:error, reason} -> Error.reply(conn, reason)
     end
   end
@@ -34,8 +36,13 @@ defmodule TainaWeb.API.FolderController do
     attrs = %{name: params["name"], parent_rkey: params["parent_rkey"]}
 
     case Ybira.create_folder(scope, attrs) do
-      {:ok, folder} -> conn |> put_status(201) |> json(folder_json(folder, params["parent_rkey"]))
-      {:error, reason} -> Error.reply(conn, reason)
+      {:ok, folder} ->
+        conn
+        |> put_status(201)
+        |> json(folder_json(scope, folder, params["parent_rkey"]))
+
+      {:error, reason} ->
+        Error.reply(conn, reason)
     end
   end
 
@@ -50,7 +57,7 @@ defmodule TainaWeb.API.FolderController do
       json(
         conn,
         Wire.folder_page(
-          Enum.map(folders, &folder_json(&1, params["folder"])),
+          Enum.map(folders, &folder_json(scope, &1, params["folder"])),
           Serializer.files(scope, files),
           Query.encode_offset(next)
         )
@@ -61,18 +68,20 @@ defmodule TainaWeb.API.FolderController do
     end
   end
 
-  defp folder_json(folder, nil), do: Wire.File.json(folder)
+  # A pasta no fio do produto (Serializer.folder, dono resolvido); o pai vem
+  # do parametro quando a rota o conhece (o conteudo de uma pasta).
+  defp folder_json(scope, folder, nil), do: Serializer.folder(scope, folder)
 
-  defp folder_json(folder, parent_rkey), do: Map.put(Wire.File.json(folder), "folder", parent_rkey)
+  defp folder_json(scope, folder, parent_rkey), do: Map.put(Serializer.folder(scope, folder), "folder", parent_rkey)
 
   # O pai de uma pasta sozinha: o penultimo elo do breadcrumb (raiz -> atual).
   defp resolved_folder_json(scope, folder) do
     case Ybira.folder_path(scope, folder.rkey) do
       {:ok, path} when length(path) > 1 ->
-        Map.put(Wire.File.json(folder), "folder", Enum.at(path, -2).rkey)
+        Map.put(Serializer.folder(scope, folder), "folder", Enum.at(path, -2).rkey)
 
       _ ->
-        Wire.File.json(folder)
+        Serializer.folder(scope, folder)
     end
   end
 
