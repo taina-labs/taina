@@ -7,6 +7,7 @@ defmodule Taina.YbiraTest do
   alias Taina.Scope
   alias Taina.Ybira
   alias Ypy.Maraca.Tekoa
+  alias Ypy.Ybira.File, as: YbiraFile
 
   describe "upload/3" do
     test "stores the file on disk, inserts the record and updates usage" do
@@ -165,6 +166,120 @@ defmodule Taina.YbiraTest do
       assert {:ok, %{items: []}} = Ybira.list_trash(zelador_scope)
       assert {:ok, %{items: [trashed]}} = Ybira.list_trash(morador_scope)
       assert trashed.id == file.id
+    end
+  end
+
+  describe "restore_file/2 reparent (C2)" do
+    @tag capture_log: true
+    test "a file restored while its folder is in the trash comes back visible at the root" do
+      scope = scope_fixture()
+      {:ok, folder} = Ybira.create_folder(scope, %{name: "ferias"})
+      {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("x", "foto.txt"), folder_rkey: folder.rkey)
+
+      {:ok, :deleted} = Ybira.delete_folder(scope, folder.rkey)
+
+      assert {:ok, restored} = Ybira.restore_file(scope, file.rkey)
+      assert is_nil(restored.apagado_em)
+      assert is_nil(restored.folder_id)
+
+      # Visível de novo: na raiz, não escondido dentro de pasta apagada.
+      assert {:ok, %{items: [root_file]}} = Ybira.list_files(scope)
+      assert root_file.id == file.id
+      assert {:ok, %{items: []}} = Ybira.list_trash(scope)
+    end
+
+    test "a file whose folder is alive stays inside it" do
+      scope = scope_fixture()
+      {:ok, folder} = Ybira.create_folder(scope, %{name: "destino"})
+      {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("x", "x.txt"), folder_rkey: folder.rkey)
+
+      {:ok, _} = Ybira.delete_file(scope, file.rkey)
+
+      assert {:ok, restored} = Ybira.restore_file(scope, file.rkey)
+      assert restored.folder_id == folder.id
+    end
+  end
+
+  describe "restore_folder/2" do
+    test "restores the folder with the subtree deleted together with it" do
+      scope = scope_fixture()
+      {:ok, folder} = Ybira.create_folder(scope, %{name: "ferias"})
+      {:ok, child} = Ybira.create_folder(scope, %{name: "praia", parent_rkey: folder.rkey})
+      {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("x", "foto.txt"), folder_rkey: child.rkey)
+
+      {:ok, :deleted} = Ybira.delete_folder(scope, folder.rkey)
+      assert {:error, :not_found} = Ybira.get_file(scope, file.rkey)
+
+      assert {:ok, restored} = Ybira.restore_folder(scope, folder.rkey)
+      assert restored.id == folder.id
+      assert is_nil(restored.apagado_em)
+      assert {:ok, _} = Ybira.get_folder(scope, child.rkey)
+      assert {:ok, _} = Ybira.get_file(scope, file.rkey)
+
+      # O arquivo volta DENTRO da pasta: a subpasta na listagem da raiz, o
+      # arquivo na listagem da subpasta.
+      assert {:ok, %{folders: [child_folder], files: []}} =
+               Ybira.list_folder_contents(scope, folder.rkey)
+
+      assert child_folder.id == child.id
+
+      assert {:ok, %{files: [listed]}} = Ybira.list_folder_contents(scope, child.rkey)
+      assert listed.id == file.id
+      assert {:ok, %{items: []}} = Ybira.list_trash(scope)
+      assert {:ok, []} = Ybira.list_trash_folders(scope)
+    end
+
+    @tag capture_log: true
+    test "a folder restored while its own parent is trashed comes back at the root" do
+      scope = scope_fixture()
+      {:ok, parent} = Ybira.create_folder(scope, %{name: "pai"})
+      {:ok, child} = Ybira.create_folder(scope, %{name: "filho", parent_rkey: parent.rkey})
+
+      {:ok, :deleted} = Ybira.delete_folder(scope, parent.rkey)
+
+      assert {:ok, restored} = Ybira.restore_folder(scope, child.rkey)
+      assert is_nil(restored.parent_id)
+
+      # A pasta-filha voltou visível na raiz; o pai continua na lixeira.
+      assert {:ok, %{folders: [root_folder]}} = Ybira.list_folder_contents(scope, nil)
+      assert root_folder.id == child.id
+      assert {:ok, [trashed]} = Ybira.list_trash_folders(scope)
+      assert trashed.id == parent.id
+    end
+
+    test "a file deleted on its own before the folder delete stays in the trash" do
+      scope = scope_fixture()
+      {:ok, folder} = Ybira.create_folder(scope, %{name: "ferias"})
+      {:ok, gone} = Ybira.upload(scope, tmp_upload_fixture("a", "apagado_antes.txt"), folder_rkey: folder.rkey)
+      {:ok, kept} = Ybira.upload(scope, tmp_upload_fixture("b", "foto.txt"), folder_rkey: folder.rkey)
+
+      {:ok, _} = Ybira.delete_file(scope, gone.rkey)
+      backdate(YbiraFile, gone.id, days_ago(1))
+      {:ok, :deleted} = Ybira.delete_folder(scope, folder.rkey)
+
+      assert {:ok, _} = Ybira.restore_folder(scope, folder.rkey)
+
+      # O "apagado_antes" tinha outro `apagado_em`: não volta com a pasta.
+      assert {:ok, %{items: [trashed]}} = Ybira.list_trash(scope)
+      assert trashed.id == gone.id
+      assert {:ok, restored_kept} = Ybira.get_file(scope, kept.rkey)
+      assert restored_kept.folder_id == folder.id
+    end
+
+    test "only the owner restores, and only what is in the trash" do
+      tekoa = tekoa_fixture()
+      dona = active_ava_fixture(tekoa)
+      other = active_ava_fixture(tekoa)
+      dona_scope = Scope.new(dona, tekoa)
+      other_scope = Scope.new(other, tekoa)
+
+      {:ok, folder} = Ybira.create_folder(dona_scope, %{name: "casa dela"})
+
+      assert {:error, :invalid_status} = Ybira.restore_folder(dona_scope, folder.rkey)
+      assert {:error, :not_found} = Ybira.restore_folder(dona_scope, "naoexiste12")
+
+      {:ok, :deleted} = Ybira.delete_folder(dona_scope, folder.rkey)
+      assert {:error, :not_found} = Ybira.restore_folder(other_scope, folder.rkey)
     end
   end
 
@@ -340,12 +455,12 @@ defmodule Taina.YbiraTest do
   describe "prepare_query guard" do
     test "raises when querying tenant tables outside with_tekoa" do
       assert_raise RuntimeError, ~r/fora do contexto de Tekoa/, fn ->
-        Repo.all(Ypy.Ybira.File)
+        Repo.all(YbiraFile)
       end
     end
 
     test "allows system queries with skip_tekoa_id" do
-      assert Repo.all(Ypy.Ybira.File, skip_tekoa_id: true) == []
+      assert Repo.all(YbiraFile, skip_tekoa_id: true) == []
     end
   end
 
@@ -542,6 +657,16 @@ defmodule Taina.YbiraTest do
 
   defp listed_file_ids({:ok, %{items: items}}), do: Enum.map(items, & &1.rkey)
   defp recent_ids({:ok, files}), do: Enum.map(files, & &1.rkey)
+
+  defp days_ago(n), do: DateTime.shift(DateTime.utc_now(), day: -n)
+
+  defp backdate(schema, id, apagado_em) do
+    Repo.update_all(
+      from(r in schema, where: r.id == ^id),
+      [set: [apagado_em: apagado_em]],
+      skip_tekoa_id: true
+    )
+  end
 
   describe "fetch_access_target/2" do
     test "forbidden casa returns the owner, file id and filename" do

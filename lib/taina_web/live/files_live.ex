@@ -894,11 +894,11 @@ defmodule TainaWeb.FilesLive do
   defp confirm_title(%{kind: "file", name: name}), do: gettext("Excluir \"%{name}\"?", name: name)
   defp confirm_title(_confirm), do: gettext("Excluir?")
 
-  # A pasta vai para a lixeira com o que tem dentro, mas a restauração é do
-  # conteúdo, um a um: a pasta em si não volta (o Ybira não expõe isso ainda).
-  # A cópia não promete o que o sistema não faz.
+  # A pasta vai para a lixeira com o que tem dentro e volta como unidade
+  # (`restore_folder/2`, na tela da lixeira): a cópia promete o que o sistema
+  # faz.
   defp confirm_message(%{kind: "folder"}),
-    do: gettext("A pasta e o que tem dentro vão para a lixeira. Os arquivos voltam um a um; a pasta em si, não.")
+    do: gettext("A pasta e o que tem dentro vão para a lixeira. A pasta volta com tudo o que tem dentro.")
 
   defp confirm_message(%{kind: "file"}), do: gettext("Vai para a lixeira. Dá para restaurar em até 30 dias.")
   defp confirm_message(_confirm), do: gettext("Vai para a lixeira.")

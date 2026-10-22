@@ -768,6 +768,11 @@ msgstr ""
 msgid "Não foi possível renomear."
 msgstr ""
 
+#: lib/taina_web/live/trash_live.ex:60
+#, elixir-autogen, elixir-format
+msgid "Não foi possível restaurar a pasta."
+msgstr ""
+
 #: lib/taina_web/live/trash_live.ex:53
 #, elixir-autogen, elixir-format
 msgid "Não foi possível restaurar o arquivo."
@@ -819,6 +824,11 @@ msgstr ""
 #: lib/taina_web/live/files_live.ex:214
 #, elixir-autogen, elixir-format
 msgid "Pasta criada."
+msgstr ""
+
+#: lib/taina_web/live/trash_live.ex:47
+#, elixir-autogen, elixir-format
+msgid "Pasta restaurada com o que tinha dentro."
 msgstr ""
 
 #: lib/taina_web/live/files_live.ex:277
@@ -2013,9 +2023,9 @@ msgstr ""
 msgid "A foto começa na sua casa. Publique na praça para todos verem."
 msgstr ""
 
-#: lib/taina_web/live/files_live.ex:1025
+#: lib/taina_web/live/files_live.ex:901
 #, elixir-autogen, elixir-format
-msgid "A pasta e o que tem dentro vão para a lixeira. Os arquivos voltam um a um; a pasta em si, não."
+msgid "A pasta e o que tem dentro vão para a lixeira. A pasta volta com tudo o que tem dentro."
 msgstr ""
 
 #: lib/taina_web/live/upload_live.ex:63
@@ -2360,7 +2370,12 @@ msgstr ""
 
 #: lib/taina_web/live/storage_live.ex:175
 #, elixir-autogen, elixir-format
-msgid "Só entra o que está na praça, a sua casa e o que te deixarem ver. A casa dos outros fica de fora."
+msgid "O número grande é o espaço de toda a Tekoa: a praça, a casa de cada morador e a lixeira. Apagar não libera espaço na hora: o que está na lixeira segue ocupando espaço por até 30 dias, até a limpeza automática."
+msgstr ""
+
+#: lib/taina_web/live/storage_live.ex:179
+#, elixir-autogen, elixir-format
+msgid "O detalhamento por tipo soma só o que você pode ver: a praça, a sua casa e o que te deixarem ver. A casa dos outros fica de fora, então a soma por tipo não fecha com o número de cima."
 msgstr ""
 
 #: lib/taina_web/live/files_live.ex:499

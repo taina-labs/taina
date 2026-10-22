@@ -14,7 +14,9 @@ defmodule Taina.Ybira do
   Deletar um arquivo ou pasta só preenche `apagado_em`, os bytes ficam no
   disco e a cota não é devolvida na hora. O worker `Taina.Ybira.Workers.PurgeTrash`
   apaga de vez o que está na lixeira há mais de 30 dias e só então recupera a
-  cota. Até lá, `restore_file/2` traz o arquivo de volta.
+  cota. Até lá, `restore_file/2` traz o arquivo de volta (solto na raiz quando
+  a pasta dele também foi apagada) e `restore_folder/2` traz a pasta inteira,
+  com o que foi apagado junto dela.
 
   ## Paginação
 
@@ -162,9 +164,18 @@ defmodule Taina.Ybira do
     within_tekoa(scope, fn -> Kernel.apagar(Repo, Keys.new(), scope, @tipo_file, rkey) end)
   end
 
-  @doc "Tira da lixeira (kernel: `Ypy.Ybira.restaurar/5`)."
+  @doc """
+  Tira da lixeira (kernel: `Ypy.Ybira.restaurar/5`). Se a pasta-pai do
+  arquivo também estiver na lixeira (ou já tiver sido expurgada), o arquivo
+  volta solto na raiz: com o `folder_id` apontando para pasta apagada, ele
+  não apareceria em listagem nenhuma.
+  """
   def restore_file(%Scope{} = scope, rkey) when is_binary(rkey) do
-    within_tekoa(scope, fn -> Kernel.restaurar(Repo, Keys.new(), scope, @tipo_file, rkey) end)
+    within_tekoa(scope, fn ->
+      with {:ok, file} <- Kernel.restaurar(Repo, Keys.new(), scope, @tipo_file, rkey) do
+        {:ok, restore_to_root_if_orphaned(file)}
+      end
+    end)
   end
 
   @doc "A lixeira do próprio morador (só o dono vê o lixo dele, nem o kernel lista)."
@@ -177,6 +188,21 @@ defmodule Taina.Ybira do
         )
 
       {:ok, page(query, opts)}
+    end)
+  end
+
+  @doc "As pastas na lixeira do próprio morador (mesma regra dos arquivos)."
+  def list_trash_folders(%Scope{} = scope) do
+    within_tekoa(scope, fn ->
+      folders =
+        Repo.all(
+          from(p in Folder,
+            where: p.tekoa_id == ^scope.tekoa.id and p.dono_id == ^scope.ava.id and not is_nil(p.apagado_em),
+            order_by: [desc: p.rkey]
+          )
+        )
+
+      {:ok, folders}
     end)
   end
 
@@ -269,6 +295,21 @@ defmodule Taina.Ybira do
 
   def tirar_folder_da_praca(%Scope{} = scope, rkey) when is_binary(rkey) do
     within_tekoa(scope, fn -> Kernel.tirar_da_praca(Repo, Keys.new(), scope, @tipo_folder, rkey) end)
+  end
+
+  @doc """
+  Restaura a pasta como unidade: ela e tudo o que foi apagado junto com ela
+  (a subárvore com o mesmo `apagado_em`) volta. Se a pasta-pai dela também
+  estiver na lixeira, a pasta volta solta na raiz. Só a dona restaura;
+  `{:error, :invalid_status}` para pasta fora da lixeira. Sem entrada na
+  cadeia (mesmo gap do `move_folder/3`).
+  """
+  def restore_folder(%Scope{} = scope, rkey) when is_binary(rkey) do
+    within_tekoa(scope, fn ->
+      with {:ok, folder} <- fetch_trashed_owned_folder(scope, rkey) do
+        {:ok, restore_folder_subtree(folder)}
+      end
+    end)
   end
 
   @doc """
@@ -591,7 +632,12 @@ defmodule Taina.Ybira do
 
   # Blob endereçado por conteudo: mais de uma linha pode apontar para o mesmo
   # CID (os mesmos bytes enviados duas vezes). O disco so limpa o caminho
-  # quando a linha expurgada e a ultima que apontava para ele.
+  # quando nenhuma linha viva referencia o CID: com dedup, um upload
+  # concorrente pode compartilhar o blob de um arquivo expurgado, e apagar
+  # sem conferir deixaria o arquivo dele sem bytes. A conferencia roda depois
+  # do commit, numa query propria: a janela entre ela e o `Disk.delete` ainda
+  # deixa passar um upload que commita nesse intervalo; fechar de vez pediria
+  # expurga adiada de blob ou coordenacao no kernel (ypy), fora do escopo.
   defp remove_disk_copy(file) do
     if blob_referenced?(file.blob_cid, file.id) do
       :ok
@@ -797,6 +843,111 @@ defmodule Taina.Ybira do
       )
 
     List.flatten(rows)
+  end
+
+  # A pasta NA lixeira, dona por quem restaura: a loja só devolve pasta da
+  # lixeira com opt-in (`lixeira?`), e o guard de dono fica aqui, com o mesmo
+  # silêncio de `fetch_owned_folder/2` para pasta alheia (`:not_found`, sem
+  # vazar que existe).
+  defp fetch_trashed_owned_folder(%Scope{} = scope, rkey) do
+    case KernelStore.get_folder(Repo, scope.tekoa.id, rkey, true) do
+      nil ->
+        {:error, :not_found}
+
+      folder ->
+        cond do
+          folder.dono_id != scope.ava.id -> {:error, :not_found}
+          is_nil(folder.apagado_em) -> {:error, :invalid_status}
+          true -> {:ok, folder}
+        end
+    end
+  end
+
+  # Restaura a subárvore apagada JUNTO com a pasta: arquivos e pastas com o
+  # MESMO `apagado_em` dela (o `soft_delete_tree/2` marca a subárvore toda de
+  # uma vez, com um só horário). Um item apagado antes, por conta própria,
+  # fica na lixeira.
+  defp restore_folder_subtree(folder) do
+    folder_ids = subtree_folder_ids(folder.id)
+
+    Repo.update_all(
+      from(p in Folder, where: p.id in ^folder_ids and p.apagado_em == ^folder.apagado_em),
+      set: [apagado_em: nil]
+    )
+
+    Repo.update_all(
+      from(f in File, where: f.folder_id in ^folder_ids and f.apagado_em == ^folder.apagado_em),
+      set: [apagado_em: nil]
+    )
+
+    folder = Repo.one!(from(p in Folder, where: p.id == ^folder.id))
+    restore_to_root_if_orphaned(folder)
+  end
+
+  # Mesma CTE de `descendant_folder_ids/1`, sem o filtro de lixeira: para
+  # restaurar, os descendentes estão (normalmente) apagados.
+  defp subtree_folder_ids(root_id) do
+    {:ok, %{rows: rows}} =
+      Repo.query(
+        """
+        WITH RECURSIVE subtree AS (
+          SELECT id FROM ybira_folders WHERE id = $1
+          UNION ALL
+          SELECT f.id FROM ybira_folders f
+          JOIN subtree s ON f.parent_id = s.id
+        )
+        SELECT id FROM subtree
+        """,
+        [root_id]
+      )
+
+    List.flatten(rows)
+  end
+
+  # Restaurar só limpa `apagado_em`: se a pasta-pai também estiver na lixeira,
+  # o item restaurado não apareceria em lugar nenhum: nem na raiz (o pai
+  # preenchido o tira da listagem de soltos) nem em pasta listável (a de
+  # origem está fora). Nesse caso ele volta solto na raiz, que é onde
+  # "restaurar" o torna visível de novo.
+  defp restore_to_root_if_orphaned(%File{folder_id: nil} = file), do: file
+
+  defp restore_to_root_if_orphaned(%File{} = file) do
+    if folder_orphaned?(file.folder_id) do
+      Logger.info("Ybira: arquivo restaurado solto na raiz, a pasta dele está na lixeira",
+        file_id: file.id,
+        reason: "folder_id=#{file.folder_id}"
+      )
+
+      {:ok, file} = Repo.update(File.changeset(file, %{folder_id: nil}))
+      file
+    else
+      file
+    end
+  end
+
+  defp restore_to_root_if_orphaned(%Folder{parent_id: nil} = folder), do: folder
+
+  defp restore_to_root_if_orphaned(%Folder{} = folder) do
+    if folder_orphaned?(folder.parent_id) do
+      Logger.info("Ybira: pasta restaurada solta na raiz, a pasta-pai está na lixeira",
+        reason: "folder_id=#{folder.id} parent_id=#{folder.parent_id}"
+      )
+
+      {:ok, folder} = Repo.update(Folder.changeset(folder, %{parent_id: nil}))
+      folder
+    else
+      folder
+    end
+  end
+
+  # A pasta-pai sumiu do registro (expurgada; com FK ativa, caso defensivo)
+  # ou está na lixeira: sem ela, o item não tem listagem em tela nenhuma.
+  defp folder_orphaned?(folder_id) do
+    case Repo.one(from(p in Folder, where: p.id == ^folder_id)) do
+      nil -> true
+      %Folder{apagado_em: nil} -> false
+      %Folder{} -> true
+    end
   end
 
   # Ordenação dinâmica (nome/data/tamanho x asc/desc), com `rkey` como desempate
