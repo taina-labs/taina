@@ -51,7 +51,7 @@ defmodule TainaWeb.API.FolderController do
         conn,
         Wire.folder_page(
           Enum.map(folders, &folder_json(&1, params["folder"])),
-          Enum.map(files, &Serializer.file(scope, &1)),
+          Serializer.files(scope, files),
           Query.encode_offset(next)
         )
       )

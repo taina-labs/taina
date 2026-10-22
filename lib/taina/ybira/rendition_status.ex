@@ -45,6 +45,21 @@ defmodule Taina.Ybira.RenditionStatus do
     end
   end
 
+  @doc """
+  O estado da rendition a partir dos metadados que JÁ vieram do banco (a
+  versão pura de `status/2`, sem consulta nenhuma): é o que o lote do
+  serializer usa, uma linha de foto por página em vez de uma por arquivo.
+  Metadados que não vieram (`nil`) são a foto sem linha: pendente.
+  """
+  @spec from_metadata(String.t() | nil, map() | nil) :: status()
+  def from_metadata(mime, metadata) do
+    if image?(mime) do
+      status_from_metadata(metadata || %{})
+    else
+      :none
+    end
+  end
+
   defp image?(mime) when is_binary(mime), do: String.starts_with?(mime, "image/")
   defp image?(_mime), do: false
 

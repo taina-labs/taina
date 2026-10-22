@@ -13,9 +13,10 @@ defmodule Mix.Tasks.Taina.Senha do
       mix taina.senha maria
       mix taina.senha maria --password nova-senha-123
 
-  Um link de redefinicao pendente, se havia, e queimado junto. A troca NAO
-  entra no mural: nenhuma pessoa logada fez o ato, o ato foi no shell. Se a
-  conta estiver desativada, a senha muda mesmo assim e a tarefa avisa que o
+  Um link de redefinicao pendente, se havia, e queimado junto, e os aparelhos
+  da pessoa perdem o token (trocou a senha, derrubou os aparelhos). A troca
+  NAO entra no mural: nenhuma pessoa logada fez o ato, o ato foi no shell. Se
+  a conta estiver desativada, a senha muda mesmo assim e a tarefa avisa que o
   login continua bloqueado ate alguem reativar em Moradores.
 
   Nao sobe a app inteira (endpoint e fila nao sao precisos aqui): so o Repo.
@@ -100,9 +101,13 @@ defmodule Mix.Tasks.Taina.Senha do
            Repo.update(Ava.reset_changeset(ava, %{password: password}))
          end) do
       {:ok, _ava} ->
+        # Trocou a senha no shell, derruba os aparelhos: o shell nao tem
+        # aparelho de chamada, entao todos os tokens `tnd_` caem.
+        :ok = Maraca.revoke_other_devices(Taina.Scope.new(ava, tekoa), except: nil)
+
         Mix.shell().info([
           :green,
-          "Senha de #{display_name(ava)} definida. Um link de redefinicao pendente, se havia, foi queimado.",
+          "Senha de #{display_name(ava)} definida. Um link de redefinicao pendente, se havia, foi queimado. Os aparelhos da pessoa foram desconectados (os tokens de dispositivo caem).",
           :reset
         ])
 

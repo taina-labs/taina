@@ -15,10 +15,13 @@ defmodule TainaWeb.API.Etag do
   import Ecto.Query
   import Plug.Conn
 
+  alias Taina.Jaci.Photo
   alias Taina.Repo
   alias Taina.Ybira
+  alias Taina.Ybira.Manifest
   alias Ypy.Scope
   alias Ypy.Ybira.File
+  alias Ypy.Ybira.Folder
   alias Ypy.Ybira.Queries, as: KernelQueries
 
   @doc "O token do ETag: a contagem e o maior `updated_at` em unix (0 quando o conjunto e vazio)."
@@ -35,7 +38,7 @@ defmodule TainaWeb.API.Etag do
   def handle(conn, etag) when is_binary(etag) do
     conn = put_resp_header(conn, "etag", etag)
 
-    if etag in if_none_match(conn) do
+    if matches?(if_none_match(conn), etag) do
       {:not_modified, send_resp(conn, 304, "")}
     else
       {:fresh, conn}
@@ -68,11 +71,17 @@ defmodule TainaWeb.API.Etag do
     etag
   end
 
-  @doc "Os arquivos legiveis de uma pasta (os soltos, quando nao ha)."
+  @doc """
+  O conteudo de uma pasta: os arquivos legiveis dela, as subpastas e os
+  metadados de foto, porque os tres entram na resposta do `/contents` (o
+  ETag que mente sobre o conjunto deixa o cliente com a lista velha).
+  """
   @spec folder_files(Scope.t(), nil | String.t()) :: {:ok, String.t()} | {:error, :not_found | :forbidden}
   def folder_files(%Scope{} = scope, nil) do
     Repo.with_tekoa(scope.tekoa.public_id, fn ->
-      {:ok, scope |> readable_query() |> where([f], is_nil(f.folder_id)) |> tag()}
+      files = scope |> readable_query() |> where([f], is_nil(f.folder_id))
+      folders = scope |> readable_folders() |> where([p], is_nil(p.parent_id))
+      {:ok, contents_tag(files, folders)}
     end)
   end
 
@@ -80,7 +89,9 @@ defmodule TainaWeb.API.Etag do
     case Ybira.get_folder(scope, folder_rkey) do
       {:ok, folder} ->
         Repo.with_tekoa(scope.tekoa.public_id, fn ->
-          {:ok, scope |> readable_query() |> where([f], f.folder_id == ^folder.id) |> tag()}
+          files = scope |> readable_query() |> where([f], f.folder_id == ^folder.id)
+          folders = scope |> readable_folders() |> where([p], p.parent_id == ^folder.id)
+          {:ok, contents_tag(files, folders)}
         end)
 
       {:error, reason} ->
@@ -100,10 +111,14 @@ defmodule TainaWeb.API.Etag do
   end
 
   # A base e a regra de leitura do kernel no SQL, a mesma das listagens de
-  # arquivo (`Ybira.list_recent`, `Jaci.list_photos`, manifesto).
-  defp readable_query(%Scope{} = scope) do
-    KernelQueries.readable(
-      from(f in File, where: f.tekoa_id == ^scope.tekoa.id and is_nil(f.apagado_em)),
+  # arquivo (`Ybira.list_recent`, `Jaci.list_photos`, manifesto): a publica
+  # do manifesto, para as duas bases nao divergirem (e o 304 nao mentir).
+  defp readable_query(%Scope{} = scope), do: Manifest.readable_query(scope)
+
+  # A mesma regra para pastas (o `/contents` lista as subpastas).
+  defp readable_folders(%Scope{} = scope) do
+    KernelQueries.readable_folder(
+      from(p in Folder, where: p.tekoa_id == ^scope.tekoa.id and is_nil(p.apagado_em)),
       scope
     )
   end
@@ -114,16 +129,59 @@ defmodule TainaWeb.API.Etag do
     )
   end
 
-  # A medida do conjunto: uma contagem e o maior updated_at dele.
+  # A medida do conjunto: uma contagem e o maior `updated_at` dele. O join
+  # com a foto do produto entra na mesma medida porque a rendicao muda
+  # `jaci_photos.updated_at` (e nao o do arquivo): sem ela, um 304 depois do
+  # worker mantinha o cliente em `"rendition": "pending"`.
   defp tag(query) do
-    %{count: count, last: last} =
-      Repo.one(from(f in query, select: %{count: count(f.id), last: max(f.updated_at)}))
+    %{
+      count: count,
+      file_last: file_last,
+      photo_last: photo_last
+    } =
+      Repo.one(
+        from(f in query,
+          left_join: p in Photo,
+          on: p.file_id == f.id,
+          select: %{count: count(f.id), file_last: max(f.updated_at), photo_last: max(p.updated_at)}
+        )
+      )
 
-    token(count, last)
+    token(count, latest([file_last, photo_last]))
   end
 
-  # O header pode vir repetido e com varios ETags num valor so; compara
-  # exato, que e o que o cliente ecoa de volta.
+  # O `/contents` mede os dois lados da resposta: os arquivos (com os
+  # metadados de foto, como acima) e as subpastas -- criar uma pasta dentro
+  # nao mexe em arquivo nenhum, e o cliente teria que ver a pasta nova.
+  defp contents_tag(files_query, folders_query) do
+    files =
+      Repo.one(
+        from(f in files_query,
+          left_join: p in Photo,
+          on: p.file_id == f.id,
+          select: %{count: count(f.id), file_last: max(f.updated_at), photo_last: max(p.updated_at)}
+        )
+      )
+
+    folders = Repo.one(from(p in folders_query, select: %{count: count(p.id), last: max(p.updated_at)}))
+
+    token(files.count + folders.count, latest([files.file_last, files.photo_last, folders.last]))
+  end
+
+  defp latest(dates) do
+    case Enum.reject(dates, &is_nil/1) do
+      [] -> nil
+      dates -> Enum.max(dates, DateTime)
+    end
+  end
+
+  # O header pode vir repetido e com varios ETags num valor so. `*` casa com
+  # qualquer representacao existente (RFC 9110, secao 13.1.2) e a comparacao
+  # e fraca: um proxy pode ecoar o token sem o `W/` da frente.
+  defp matches?(tokens, etag) do
+    "*" in tokens or Enum.any?(tokens, &(String.trim_leading(&1, "W/") == String.trim_leading(etag, "W/")))
+  end
+
   defp if_none_match(conn) do
     conn
     |> get_req_header("if-none-match")

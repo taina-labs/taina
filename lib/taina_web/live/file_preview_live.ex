@@ -299,7 +299,7 @@ defmodule TainaWeb.FilePreviewLive do
           title={gettext("Esta casa é particular")}
           hint={
             gettext(
-              "Só %{name} vê este arquivo. Para abrir, peça acesso e a pessoa decide. O Tainá ainda não criptografa: é promessa de software, não cadeado.",
+              "O arquivo é de %{name}. Para abrir, peça acesso e a pessoa decide. O Tainá ainda não criptografa: é promessa de software, não cadeado.",
               name: owner_name(@access_target)
             )
           }

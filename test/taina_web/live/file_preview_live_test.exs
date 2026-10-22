@@ -55,8 +55,10 @@ defmodule TainaWeb.FilePreviewLiveTest do
 
     {:ok, lv, html} = conn |> log_in(other) |> live(~p"/arquivos/#{file.rkey}")
 
-    # o nome do dono (display ou username) na tela, não um "quem mora aqui"
-    assert html =~ "Só #{name} vê este arquivo."
+    # o nome do dono (display ou username) na tela, não um "quem mora aqui",
+    # e sem promessa de exclusividade: a dona pode ter aberto para outra pessoa
+    assert html =~ "O arquivo é de #{name}."
+    refute html =~ "Só #{name} vê este arquivo."
 
     lv |> element(~s(button[phx-click="ask-access"])) |> render_click()
 

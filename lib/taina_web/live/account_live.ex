@@ -49,7 +49,8 @@ defmodule TainaWeb.AccountLive do
 
   # A confirmacao de senha e rito do formulario: o contexto ve so a senha
   # nova (mesma escolha do aceite de convite, `Maraca.reset_password/3` do
-  # outro lado). O erro vira dica no campo que o causou, nao flash solto.
+  # outro lado). O erro vira dica no campo que o causou, nao flash solto. A
+  # web nao tem aparelho de chamada: a troca derruba os aparelhos todos.
   def handle_event("change-password", %{"account" => params}, socket) do
     with :ok <- confirmation_ok?(params),
          {:ok, _ava} <-
@@ -57,7 +58,8 @@ defmodule TainaWeb.AccountLive do
              socket.assigns.current_scope,
              params["current_password"],
              params["new_password"]
-           ) do
+           ),
+         :ok <- Maraca.revoke_other_devices(socket.assigns.current_scope, except: nil) do
       {:noreply,
        socket
        |> Phoenix.LiveView.put_flash(:info, gettext("Senha trocada. Da próxima vez, entre com a senha nova."))
@@ -80,10 +82,15 @@ defmodule TainaWeb.AccountLive do
 
   defp confirmation_ok?(_params), do: {:error, :password_mismatch}
 
-  # Credencial ruim aponta o campo "atual"; changeset (a regra do kernel) aponta
-  # o campo "nova"; desigual aponta a confirmacao.
+  # Credencial ruim aponta o campo "atual"; rate limit estourado tambem e da
+  # hora de tentar (a dica diz para esperar); changeset (a regra do kernel)
+  # aponta o campo "nova"; desigual aponta a confirmacao.
   defp password_errors(:invalid_credentials) do
     %{"current_password" => [gettext("Não é a sua senha atual. Confira e tente de novo.")]}
+  end
+
+  defp password_errors(:rate_limited) do
+    %{"current_password" => [gettext("Muitas tentativas seguidas. Espere um pouco e tente de novo.")]}
   end
 
   defp password_errors(%Ecto.Changeset{} = changeset) do

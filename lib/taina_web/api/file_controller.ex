@@ -56,21 +56,23 @@ defmodule TainaWeb.API.FileController do
 
     with {:fresh, conn} <- Etag.handle(conn, Etag.readable_files(scope)),
          {:ok, %{items: files, next_cursor: next}} <- Manifest.page(scope, opts) do
-      json(conn, Wire.page(Enum.map(files, &Serializer.file(scope, &1)), next))
+      json(conn, Wire.page(Serializer.files(scope, files), next))
     else
       {:not_modified, conn} -> conn
     end
   end
 
   # O lote corre item a item pelo mesmo contexto do endpoint unitario; a
-  # falha de um nao para os outros (200 com o resultado de cada um).
+  # falha de um nao para os outros (200 com o resultado de cada um). Os
+  # arquivos que voltam saem em serie pelo lote do serializer: uma leitura
+  # de metadados e de pastas para a resposta inteira.
   def batch(conn, params) do
     scope = conn.assigns[:current_scope]
 
     case batch_params(params) do
       {:ok, op, ids, folder} ->
         results = Enum.map(ids, &run(scope, op, &1, folder))
-        json(conn, %{"results" => results})
+        json(conn, %{"results" => wire_batch(scope, results)})
 
       # O vocabulario do fio nao tem o atomo (changeset e que vira
       # validation_failed); a borda do lote responde ele direto, 422.
@@ -107,7 +109,7 @@ defmodule TainaWeb.API.FileController do
 
     with {:fresh, conn} <- Etag.handle(conn, Etag.readable_files(scope)),
          {:ok, files} <- Ybira.list_recent(scope, limit: Query.limit(params)) do
-      json(conn, Wire.page(Enum.map(files, &Serializer.file(scope, &1)), nil))
+      json(conn, Wire.page(Serializer.files(scope, files), nil))
     else
       {:not_modified, conn} -> conn
       {:error, reason} -> Error.reply(conn, reason)
@@ -186,9 +188,28 @@ defmodule TainaWeb.API.FileController do
 
   defp run(scope, op, rkey, folder) do
     case apply_op(scope, op, rkey, folder) do
-      {:ok, file} -> %{"rkey" => rkey, "ok" => true, "file" => Serializer.file(scope, file)}
-      {:error, reason} -> %{"rkey" => rkey, "ok" => false, "error" => code(reason)}
+      {:ok, file} -> {:ok, rkey, file}
+      {:error, reason} -> {:error, rkey, reason}
     end
+  end
+
+  # Os itens que voltaram `:ok` saem em serie pelo lote do serializer (a
+  # ordem segue a entrada); os que falharam ficam com o motivo no mesmo
+  # lugar, e a falha de um segue sem parar os outros.
+  defp wire_batch(scope, results) do
+    ok_files = for {:ok, _rkey, file} <- results, do: file
+    serialized = Serializer.files(scope, ok_files)
+
+    {items, _rest} =
+      Enum.map_reduce(results, serialized, fn
+        {:ok, rkey, _file}, [file_json | rest] ->
+          {%{"rkey" => rkey, "ok" => true, "file" => file_json}, rest}
+
+        {:error, rkey, reason}, acc ->
+          {%{"rkey" => rkey, "ok" => false, "error" => code(reason)}, acc}
+      end)
+
+    items
   end
 
   # O destino do `move` e o rkey da pasta (ou nil, para a raiz); nos outros

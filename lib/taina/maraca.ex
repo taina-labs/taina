@@ -283,6 +283,15 @@ defmodule Taina.Maraca do
     {:error, :invalid_credentials}
   end
 
+  # Falha de credencial e um erro so: quem troca a propria senha nao distingue
+  # "senha errada" de conta desativada (conta desativada nem chega logada).
+  # Valor que nao e texto (JSON sem tipo) nao chega ao bcrypt, que levantaria:
+  # o contrato e o de senha errada, com o no-op do bcrypt pelo meio.
+  defp verify_credentials(%Ava{}, password) when not is_binary(password) do
+    Bcrypt.no_user_verify()
+    {:error, :invalid_credentials}
+  end
+
   defp verify_credentials(%Ava{} = ava, password) do
     if Bcrypt.verify_pass(password, ava.password_hash) do
       {:ok, ava}
@@ -528,13 +537,34 @@ defmodule Taina.Maraca do
     with %Ava{} = ava <- find_by_token(:reset_token_hash, reset_token),
          false <- token_expired?(ava.reset_sent_at, @reset_max_age_seconds),
          :ok <-
-           confirmation_ok?(%{password: new_password, password_confirmation: password_confirmation}) do
-      Repo.with_tekoa(tekoa_public_id(ava), fn ->
-        Repo.update(Ava.reset_changeset(ava, %{password: new_password}))
-      end)
+           confirmation_ok?(%{password: new_password, password_confirmation: password_confirmation}),
+         {:ok, _ava} = result <-
+           Repo.with_tekoa(tekoa_public_id(ava), fn ->
+             Repo.update(Ava.reset_changeset(ava, %{password: new_password}))
+           end) do
+      # Trocou a senha no caminho do reset, derruba os aparelhos: quem pediu
+      # o reset nao tem aparelho de chamada (o link veio do zelador ou do
+      # shell), entao todos caem.
+      revoke_other_devices(reset_scope(ava), except: nil)
+      result
     else
-      _ -> {:error, :invalid_token}
+      # O changeset da senha nova segue do jeito que era: a tela do reset
+      # aponta o campo (aqui nao existe "senha curta vira link invalido").
+      {:error, %Ecto.Changeset{}} = changeset ->
+        changeset
+
+      _ ->
+        {:error, :invalid_token}
     end
+  end
+
+  # O scope da conta que resetou: a Tekoa vem do id, fora do contexto (a
+  # revogacao abre o proprio `with_tekoa/2`).
+  defp reset_scope(%Ava{} = ava) do
+    {:ok, tekoa} =
+      Repo.with_system(fn -> {:ok, Repo.get!(Tekoa, ava.tekoa_id, skip_tekoa_id: true)} end)
+
+    Scope.new(ava, tekoa)
   end
 
   @doc """
@@ -554,29 +584,71 @@ defmodule Taina.Maraca do
 
   @doc """
   A troca da propria senha (self-service): confere a senha atual pelo mesmo
-  caminho do login (bcrypt) e grava a nova pelo changeset do kernel, que
-  valida, hashea e queima qualquer link de reset pendente. Nao revoga tokens
-  de dispositivo: quem sabe qual aparelho fez a chamada (o endpoint da API)
-  que cuide dos outros.
+  caminho do login (bcrypt, com o MESMO rate limit de forca bruta) e grava a
+  nova pelo changeset do kernel, que valida, hashea e queima qualquer link de
+  reset pendente. Nao revoga aparelhos: quem sabe qual aparelho fez a chamada
+  (o endpoint da API) que cuide dos outros, com `revoke_other_devices/2`.
   """
   @spec update_password(Ypy.Scope.t(), String.t(), String.t()) ::
-          {:ok, Ava.t()} | {:error, :invalid_credentials | Ecto.Changeset.t()}
+          {:ok, Ava.t()}
+          | {:error, :invalid_credentials | :rate_limited | Ecto.Changeset.t()}
   def update_password(%Ypy.Scope{} = scope, current_password, new_password) do
+    key = login_rate_key(scope.tekoa, scope.ava.username)
+
+    if login_rate_exceeded?(key) do
+      {:error, :rate_limited}
+    else
+      change_password(scope, current_password, new_password, key)
+    end
+  end
+
+  defp change_password(%Ypy.Scope{} = scope, current_password, new_password, key) do
     within_tekoa(scope, fn ->
       with {:ok, ava} <- fetch_member(scope, scope.ava.public_id),
-           :ok <- current_password_ok?(ava, current_password) do
-        Repo.update(Ava.reset_changeset(ava, %{password: new_password}))
+           :ok <- current_password_ok?(ava, current_password, key) do
+        new_password_changeset(ava, new_password)
       end
     end)
   end
 
   # Falha de credencial e um erro so: quem troca a propria senha nao distingue
-  # "senha errada" de conta desativada (conta desativada nem chega logada).
-  defp current_password_ok?(ava, current_password) do
+  # "senha errada" de conta desativada (conta desativada nem chega logada). A
+  # conferencia errada queima a janela do login, como um login errado.
+  defp current_password_ok?(ava, current_password, key) do
     case verify_credentials(ava, current_password) do
       {:ok, _ava} -> :ok
-      {:error, _reason} -> {:error, :invalid_credentials}
+      {:error, _reason} -> record_login_failure(key, {:error, :invalid_credentials})
     end
+  end
+
+  # A senha nova segue pelo changeset do kernel. Cliente baguncado (JSON sem
+  # tipo) nao chega ao Ecto com valor que nao e texto: volta no mesmo
+  # contrato de uma senha que viola a regra (changeset com erro no campo).
+  defp new_password_changeset(%Ava{} = ava, password) when is_binary(password) do
+    Repo.update(Ava.reset_changeset(ava, %{password: password}))
+  end
+
+  defp new_password_changeset(%Ava{} = ava, _password) do
+    {:error, ava |> Ava.reset_changeset(%{}) |> Ecto.Changeset.add_error(:password, "is invalid")}
+  end
+
+  @doc """
+  Trocou a senha, derrubou os aparelhos: revoga os tokens de dispositivo de
+  quem esta agindo, menos o da chamada (`except:`) -- web e shell nao tem
+  aparelho de chamada, entao chamam com `except: nil`, que derruba todos.
+  Best-effort, como o logout: um aparelho que sumiu da mesa (expurgo, corrida
+  concorrente) nao derruba a troca de senha, o token dele ja nao vale nada.
+  """
+  @spec revoke_other_devices(Ypy.Scope.t(), keyword()) :: :ok
+  def revoke_other_devices(%Ypy.Scope{} = scope, opts \\ []) do
+    except = Keyword.get(opts, :except)
+    {:ok, devices} = list_devices(scope)
+
+    devices
+    |> Enum.reject(&(&1.public_id == except))
+    |> Enum.each(fn device -> _ = revoke_device(scope, device.public_id) end)
+
+    :ok
   end
 
   @doc """

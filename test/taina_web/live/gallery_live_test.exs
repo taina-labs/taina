@@ -4,6 +4,7 @@ defmodule TainaWeb.GalleryLiveTest do
   import Phoenix.LiveViewTest
   import Taina.Fixtures
 
+  alias Taina.Maraca
   alias Taina.Scope
   alias Taina.Ybira
 
@@ -125,6 +126,32 @@ defmodule TainaWeb.GalleryLiveTest do
       html = render(lv)
       assert html =~ "Quem vê"
       assert html =~ "Na sua casa: só você, e quem você deixar."
+    end
+
+    test "a casa de OUTRA pessoa nao vira 'sua casa': badge e detalhes dizem de quem é", %{
+      conn: conn,
+      ava: ava,
+      scope: scope
+    } do
+      outra = active_ava_fixture(scope.tekoa, %{username: "outra"})
+      outra_scope = Scope.new(outra, scope.tekoa)
+      {:ok, alheia} = Ybira.upload(outra_scope, tmp_image_fixture(filename: "alheia.jpg"))
+
+      # a dona abriu a casa para quem vê: a foto entra no conjunto legivel,
+      # mas a casa NAO é a de quem vê
+      {:ok, _} = Maraca.conceder(outra_scope, "ypy.file.v0", alheia.rkey, ava)
+
+      {:ok, lv, html} = conn |> log_in(ava) |> live(~p"/fotos")
+
+      assert html =~ "Casa de quem enviou"
+      refute html =~ "Na sua casa"
+
+      lv |> element(~s(a[href="/fotos/#{alheia.rkey}"])) |> render_click()
+      lv |> element("button[phx-click=toggle-details]") |> render_click()
+
+      details = render(lv)
+      assert details =~ "Na casa de quem enviou: só a pessoa, e quem ela deixar."
+      refute details =~ "Na sua casa"
     end
 
     test "publicar da tela do visualizador: ask -> confirm manda para a praca", %{

@@ -26,6 +26,9 @@ defmodule TainaWeb.API.Serializer do
   (`taken_at`, dimensoes) e o estado da rendition vem do Jaci -- e valem para
   TODO endpoint que devolve arquivo, inclusive recentes, fotos e lixeira,
   onde o `folder` do kernel chegava sempre nulo.
+
+  Um arquivo sozinho: tres leituras curtas (metadados, estado, pasta). Para
+  lista, use `files/2`, que carrega tudo em lote.
   """
   @spec file(Scope.t(), File.t()) :: map()
   def file(%Scope{} = scope, %File{} = file) do
@@ -40,6 +43,34 @@ defmodule TainaWeb.API.Serializer do
       "rendition" => rendition(scope, file),
       "folder" => folder_rkey(scope, file)
     })
+  end
+
+  @doc """
+  A pagina de arquivos no fio do produto: os mesmos mapas de `file/2`, com
+  as leituras em lote. Uma consulta para os metadados de foto da pagina
+  (`where file_id in ...`), uma para as pastas pai distintas; o estado da
+  rendition sai dos metadados que ja vieram, sem reconsulta. Quem lista
+  muitos arquivos (manifesto, lote, recentes, conteudo, fotos, linha do
+  tempo, lixeira) paga tres consultas, nao tres por arquivo.
+  """
+  @spec files(Scope.t(), [File.t()]) :: [map()]
+  def files(%Scope{} = scope, files) when is_list(files) do
+    {:ok, metadata_by_file_id} = Ybira.photos_metadata(scope, Enum.map(files, & &1.id))
+    {:ok, folder_rkeys} = Ybira.files_folder_rkeys(scope, files)
+
+    Enum.map(files, fn file ->
+      metadata = Map.get(metadata_by_file_id, file.id, %{})
+
+      file
+      |> Wire.File.json()
+      |> Map.merge(%{
+        "taken_at" => taken_at(metadata["taken_at"]),
+        "width" => dimension(metadata["width"]),
+        "height" => dimension(metadata["height"]),
+        "rendition" => file.mime |> RenditionStatus.from_metadata(metadata) |> to_string(),
+        "folder" => Map.get(folder_rkeys, file.id)
+      })
+    end)
   end
 
   @doc "A Tekoa no fio."

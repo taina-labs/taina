@@ -11,17 +11,19 @@ defmodule TainaWeb.API.GrantController do
   alias Taina.Maraca.Grants
   alias TainaWeb.API.Error
   alias TainaWeb.API.Etag
+  alias TainaWeb.API.Query
   alias TainaWeb.API.Serializer
   alias Ypy.Wire
 
   def index(conn, params) do
     scope = conn.assigns[:current_scope]
     role = parse_role(params["role"])
+    opts = [limit: Query.limit(params), after_cursor: Query.after_cursor(params)]
 
     with {:ok, %{count: count, max_updated_at: last}} <- Grants.stats(scope, role),
          {:fresh, conn} <- Etag.handle(conn, Etag.token(count, last)),
-         {:ok, concessoes} <- concessions(scope, role) do
-      json(conn, Wire.page(Enum.map(concessoes, &Serializer.concessao/1), nil))
+         {:ok, %{items: concessoes, next_cursor: next}} <- concessions(scope, role, opts) do
+      json(conn, Wire.page(Enum.map(concessoes, &Serializer.concessao/1), next))
     else
       {:not_modified, conn} -> conn
     end
@@ -38,8 +40,8 @@ defmodule TainaWeb.API.GrantController do
     end
   end
 
-  defp concessions(scope, :owner), do: Grants.concedidas(scope)
-  defp concessions(scope, :reader), do: Grants.recebidas(scope)
+  defp concessions(scope, :owner, opts), do: Grants.concedidas(scope, opts)
+  defp concessions(scope, :reader, opts), do: Grants.recebidas(scope, opts)
 
   # A ponta do espelho: reader e a casa que abriram para quem chama; qualquer
   # outro valor (ou nenhum) e a casa que quem chama abriu, como todo

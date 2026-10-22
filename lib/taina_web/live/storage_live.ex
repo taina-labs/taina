@@ -182,7 +182,7 @@ defmodule TainaWeb.StorageLive do
         </.card>
 
         <p class="type-caption text-muted">
-          {gettext("O número grande é o espaço de toda a Tekoa: a praça, a casa de cada morador e a lixeira. Apagar não libera espaço na hora: o que está na lixeira segue ocupando espaço por até 30 dias, até a limpeza automática.")}
+          {gettext("O número grande é o espaço de toda a Tekoa: a praça, a casa de cada morador e a lixeira. Apagar não libera espaço na hora: o que está na lixeira segue ocupando espaço por pelo menos 30 dias, até a limpeza automática.")}
         </p>
 
         <p class="type-caption text-muted">

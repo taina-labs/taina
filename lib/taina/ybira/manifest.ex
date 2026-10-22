@@ -32,6 +32,7 @@ defmodule Taina.Ybira.Manifest do
       rows =
         scope
         |> readable_query()
+        |> order_by([f], asc: f.rkey)
         |> apply_cursor(Keyword.get(opts, :after))
         |> limit(^(limit + 1))
         |> Repo.all()

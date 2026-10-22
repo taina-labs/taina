@@ -79,19 +79,17 @@ defmodule TainaWeb.GalleryLive do
   defp ensure_grid(socket) do
     socket = assign(socket, :timeline_stale, true)
 
-    case Jaci.list_photos(socket.assigns.current_scope) do
+    case Jaci.list_photos(socket.assigns.current_scope, zona: zona_filter(socket.assigns.zona)) do
       {:ok, %{items: photos, next_cursor: cursor}} ->
-        zona_photos = for_zona(photos, socket.assigns.zona)
-
         socket
         |> assign(:loaded, true)
         |> assign(:current, nil)
         |> assign(:next_cursor, cursor)
-        |> assign(:photo_ids, Enum.map(zona_photos, & &1.rkey))
+        |> assign(:photo_ids, Enum.map(photos, & &1.rkey))
         |> assign(:grid_error, false)
         |> assign(:grid_stale, false)
         |> assign(:grid_zona, socket.assigns.zona)
-        |> stream(:photos, zona_photos, reset: true)
+        |> stream(:photos, photos, reset: true)
 
       {:error, _reason} ->
         socket
@@ -110,20 +108,18 @@ defmodule TainaWeb.GalleryLive do
   defp ensure_timeline(socket) do
     socket = assign(socket, :grid_stale, true)
 
-    case Jaci.timeline(socket.assigns.current_scope) do
+    case Jaci.timeline(socket.assigns.current_scope, zona: zona_filter(socket.assigns.zona)) do
       {:ok, %{groups: groups, next_cursor: cursor}} ->
-        zona_groups = for_zona_groups(groups, socket.assigns.zona)
-
         socket
         |> assign(:current, nil)
-        |> assign(:last_group, List.last(zona_groups))
+        |> assign(:last_group, List.last(groups))
         |> assign(:timeline_cursor, cursor)
-        |> assign(:timeline_empty, zona_groups == [])
-        |> assign(:photo_ids, timeline_photo_ids(zona_groups))
+        |> assign(:timeline_empty, groups == [])
+        |> assign(:photo_ids, timeline_photo_ids(groups))
         |> assign(:timeline_error, false)
         |> assign(:timeline_stale, false)
         |> assign(:timeline_zona, socket.assigns.zona)
-        |> stream(:timeline_groups, zona_groups, reset: true, dom_id: &timeline_dom_id/1)
+        |> stream(:timeline_groups, groups, reset: true, dom_id: &timeline_dom_id/1)
 
       {:error, _reason} ->
         socket
@@ -164,33 +160,32 @@ defmodule TainaWeb.GalleryLive do
 
   @impl true
   def handle_event("load-more", _params, socket) do
+    zona = zona_filter(socket.assigns.zona)
+
     case {socket.assigns.live_action, socket.assigns.next_cursor, socket.assigns.timeline_cursor} do
       {:grid, cursor, _t} when is_binary(cursor) ->
-        case Jaci.list_photos(socket.assigns.current_scope, after_cursor: cursor) do
+        case Jaci.list_photos(socket.assigns.current_scope, after_cursor: cursor, zona: zona) do
           {:ok, %{items: photos, next_cursor: next_cursor}} ->
-            zona_photos = for_zona(photos, socket.assigns.zona)
-
             {:noreply,
              socket
              |> assign(:next_cursor, next_cursor)
-             |> assign(:photo_ids, socket.assigns.photo_ids ++ Enum.map(zona_photos, & &1.rkey))
-             |> stream(:photos, zona_photos)}
+             |> assign(:photo_ids, socket.assigns.photo_ids ++ Enum.map(photos, & &1.rkey))
+             |> stream(:photos, photos)}
 
           {:error, _reason} ->
             {:noreply, Phoenix.LiveView.put_flash(socket, :error, gettext("Não foi possível carregar mais fotos agora."))}
         end
 
       {:timeline, _g, cursor} when is_binary(cursor) ->
-        case Jaci.timeline(socket.assigns.current_scope, after_cursor: cursor) do
+        case Jaci.timeline(socket.assigns.current_scope, after_cursor: cursor, zona: zona) do
           {:ok, %{groups: groups, next_cursor: next_cursor}} ->
-            zona_groups = for_zona_groups(groups, socket.assigns.zona)
-            {last_group, stream_page} = extend_timeline(socket.assigns.last_group, zona_groups)
+            {last_group, stream_page} = extend_timeline(socket.assigns.last_group, groups)
 
             {:noreply,
              socket
              |> assign(:last_group, last_group)
              |> assign(:timeline_cursor, next_cursor)
-             |> assign(:photo_ids, socket.assigns.photo_ids ++ timeline_photo_ids(zona_groups))
+             |> assign(:photo_ids, socket.assigns.photo_ids ++ timeline_photo_ids(groups))
              |> stream(:timeline_groups, stream_page, dom_id: &timeline_dom_id/1)}
 
           {:error, _reason} ->
@@ -263,13 +258,16 @@ defmodule TainaWeb.GalleryLive do
     {:noreply, assign(socket, :show_zona, false)}
   end
 
-  def handle_event("confirm-zona", _params, %{assigns: %{current: current}} = socket) do
+  # O padrao e o estrito do `confirm-delete`: `current` nil (evento atrasado
+  # depois do patch que fechou o visualizador) cai na clausula de baixo, nao
+  # levanta no meio do handler.
+  def handle_event("confirm-zona", _params, %{assigns: %{current: %{rkey: rkey, zona: zona}}} = socket) do
     scope = socket.assigns.current_scope
 
     result =
-      case current.zona do
-        :casa -> Ybira.publicar_file(scope, current.rkey)
-        :praca -> Ybira.tirar_file_da_praca(scope, current.rkey)
+      case zona do
+        :casa -> Ybira.publicar_file(scope, rkey)
+        :praca -> Ybira.tirar_file_da_praca(scope, rkey)
       end
 
     case result do
@@ -279,13 +277,13 @@ defmodule TainaWeb.GalleryLive do
          |> assign(:current, updated)
          |> assign(:show_zona, false)
          |> mark_zone_changed()
-         |> Phoenix.LiveView.put_flash(:info, zona_flash_ok(current.zona))}
+         |> Phoenix.LiveView.put_flash(:info, zona_flash_ok(zona))}
 
       {:error, _reason} ->
         {:noreply,
          socket
          |> assign(:show_zona, false)
-         |> Phoenix.LiveView.put_flash(:error, zona_flash_error(current.zona))}
+         |> Phoenix.LiveView.put_flash(:error, zona_flash_error(zona))}
     end
   end
 
@@ -416,22 +414,10 @@ defmodule TainaWeb.GalleryLive do
   defp parse_zona("casa"), do: :casa
   defp parse_zona(_tudo_default), do: :tudo
 
-  # Particao client-side, como em Arquivos: a leitura trouxe o conjunto
-  # legivel, aqui so escolhemos o que a aba mostra.
-  defp for_zona(photos, :tudo), do: photos
-  defp for_zona(photos, zona), do: Enum.filter(photos, &(&1.zona == zona))
-
-  # A linha do tempo chega agrupada por dia; o filtro pode esvaziar um dia
-  # que so tinha foto da outra zona, e o dia vazio sai da lista.
-  defp for_zona_groups(groups, :tudo), do: groups
-
-  defp for_zona_groups(groups, zona) do
-    for %{photos: photos} = group <- groups,
-        zona_photos = Enum.filter(photos, &(&1.zona == zona)),
-        zona_photos != [] do
-      %{group | photos: zona_photos}
-    end
-  end
+  # A zona na consulta (Jaci filtra no SQL): o cursor caminha no conjunto
+  # filtrado, e a aba de zona recebe paginas completas.
+  defp zona_filter(:tudo), do: nil
+  defp zona_filter(zona), do: zona
 
   defp gallery_path(:grid, :tudo), do: ~p"/fotos"
   defp gallery_path(:grid, :praca), do: ~p"/fotos?#{[zona: "praca"]}"
@@ -444,13 +430,19 @@ defmodule TainaWeb.GalleryLive do
   defp view_action(:timeline), do: :timeline
   defp view_action(_grade_default), do: :grid
 
-  # Badge do tile: as mesmas palavras das abas, sem metáfora nova.
-  defp zona_short(:praca), do: gettext("Praça")
-  defp zona_short(:casa), do: gettext("Casa")
+  # Badge do tile e aba compartilham as palavras. A casa propria e a
+  # compartilhada nao podem se misturar (a tela e sobre consentimento): a
+  # sua diz "Casa"; a de outra pessoa diz de quem e.
+  defp zona_short(:praca, _own), do: gettext("Praça")
+  defp zona_short(:casa, true), do: gettext("Casa")
+  defp zona_short(:casa, false), do: gettext("Casa de quem enviou")
 
-  # A zona nomeada no Detalhes: a palavra da aba e a leitura de quem vê.
-  defp zona_long(:praca), do: gettext("Na praça: todos os moradores veem.")
-  defp zona_long(:casa), do: gettext("Na sua casa: só você, e quem você deixar.")
+  # A zona nomeada no Detalhes: a palavra da aba e a leitura de quem ve. O
+  # conjunto legivel inclui a casa de OUTRA pessoa (o que te deixarem ver),
+  # entao o texto diz de quem e a casa em vez de fingir que e a sua.
+  defp zona_long(:praca, _own), do: gettext("Na praça: todos os moradores veem.")
+  defp zona_long(:casa, true), do: gettext("Na sua casa: só você, e quem você deixar.")
+  defp zona_long(:casa, false), do: gettext("Na casa de quem enviou: só a pessoa, e quem ela deixar.")
 
   # A acao oferecida e sempre a oposta da zona atual.
   defp zona_action_label(:casa), do: gettext("Publicar na praça")
@@ -558,7 +550,7 @@ defmodule TainaWeb.GalleryLive do
             class="photo-grid__item"
             aria-label={photo.nome}
           >
-            <span class="photo-grid__tag">{zona_short(photo.zona)}</span>
+            <span class="photo-grid__tag">{zona_short(photo.zona, own?(@current_scope, photo))}</span>
             <div :if={video?(photo)} class="photo-grid__video">
               <.icon name="play" size={28} />
             </div>
@@ -611,7 +603,7 @@ defmodule TainaWeb.GalleryLive do
                 class="photo-grid__item"
                 aria-label={photo.nome}
               >
-                <span class="photo-grid__tag">{zona_short(photo.zona)}</span>
+                <span class="photo-grid__tag">{zona_short(photo.zona, own?(@current_scope, photo))}</span>
                 <div :if={video?(photo)} class="photo-grid__video">
                   <.icon name="play" size={28} />
                 </div>
@@ -781,7 +773,7 @@ defmodule TainaWeb.GalleryLive do
         <div class="col gap-3">
           <div>
             <p class="type-caption text-faint">{gettext("Quem vê")}</p>
-            <p class="type-body">{zona_long(@current.zona)}</p>
+            <p class="type-body">{zona_long(@current.zona, own?(@current_scope, @current))}</p>
           </div>
           <div>
             <p class="type-caption text-faint">{gettext("Nome original")}</p>

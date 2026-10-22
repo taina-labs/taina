@@ -46,6 +46,29 @@ defmodule Taina.JaciTest do
       {:ok, %{items: rest, next_cursor: nil}} = Jaci.list_photos(scope, limit: 2, after_cursor: cursor)
       assert length(rest) == 1
     end
+
+    test "zona filters IN the query, and the cursor walks the filtered set" do
+      scope = scope_fixture()
+      {:ok, casa1} = Ybira.upload(scope, tmp_image_fixture(filename: "c1.jpg"))
+      {:ok, publicada} = Ybira.upload(scope, tmp_image_fixture(filename: "p.jpg"))
+      {:ok, _} = Ybira.publicar_file(scope, publicada.rkey)
+      {:ok, casa2} = Ybira.upload(scope, tmp_image_fixture(filename: "c2.jpg"))
+
+      # a pagina anda sobre o conjunto FILTRADO: pagina de 1 da casa nao
+      # traz a da praca no meio, e o cursor leva a segunda da casa
+      {:ok, %{items: first, next_cursor: cursor}} = Jaci.list_photos(scope, zona: :casa, limit: 1)
+      assert Enum.map(first, & &1.rkey) == [casa2.rkey]
+      assert is_binary(cursor)
+
+      {:ok, %{items: rest, next_cursor: nil}} =
+        Jaci.list_photos(scope, zona: :casa, limit: 1, after_cursor: cursor)
+
+      assert Enum.map(rest, & &1.rkey) == [casa1.rkey]
+
+      # sem zona, o conjunto inteiro volta
+      {:ok, %{items: tudo}} = Jaci.list_photos(scope, limit: 3)
+      assert length(tudo) == 3
+    end
   end
 
   describe "timeline/2" do
@@ -147,6 +170,23 @@ defmodule Taina.JaciTest do
       {:ok, _} = Ybira.publicar_file(a, photo.rkey)
 
       assert photo.rkey in timeline_ids(Jaci.timeline(b))
+    end
+
+    test "timeline with zona filters in the query and the cursor walks the filtered set" do
+      scope = scope_fixture()
+      {:ok, casa1} = Ybira.upload(scope, tmp_image_fixture(filename: "c1.jpg"))
+      {:ok, publicada} = Ybira.upload(scope, tmp_image_fixture(filename: "p.jpg"))
+      {:ok, _} = Ybira.publicar_file(scope, publicada.rkey)
+      {:ok, casa2} = Ybira.upload(scope, tmp_image_fixture(filename: "c2.jpg"))
+
+      {:ok, %{groups: first, next_cursor: cursor}} = Jaci.timeline(scope, zona: :casa, limit: 1)
+      assert first |> Enum.flat_map(& &1.photos) |> Enum.map(& &1.rkey) == [casa2.rkey]
+      assert is_binary(cursor)
+
+      {:ok, %{groups: rest, next_cursor: nil}} =
+        Jaci.timeline(scope, zona: :casa, limit: 1, after_cursor: cursor)
+
+      assert rest |> Enum.flat_map(& &1.photos) |> Enum.map(& &1.rkey) == [casa1.rkey]
     end
   end
 

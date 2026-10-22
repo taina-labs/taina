@@ -19,7 +19,7 @@ defmodule TainaWeb.API.TrashController do
 
     with {:fresh, conn} <- Etag.handle(conn, Etag.trash(scope)),
          {:ok, %{items: items, next_cursor: next}} <- Ybira.list_trash(scope, opts) do
-      json(conn, Wire.page(Enum.map(items, &Serializer.file(scope, &1)), next))
+      json(conn, Wire.page(Serializer.files(scope, items), next))
     else
       {:not_modified, conn} -> conn
       {:error, reason} -> Error.reply(conn, reason)

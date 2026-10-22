@@ -41,7 +41,8 @@ defmodule TainaWeb.API.SessionController do
   @doc """
   A troca da propria senha (contrato review 0.1.0, C5): a senha atual confere,
   a nova entra, e os OUTROS aparelhos da pessoa perdem o token -- o da chamada
-  fica, para nao derrubar quem acabou de trocar.
+  fica, para nao derrubar quem acabou de trocar. A regra mora no contexto
+  (`Maraca.revoke_other_devices/2`), compartilhada com a web e o shell.
   """
   def update_password(conn, params) do
     scope = conn.assigns[:current_scope]
@@ -49,7 +50,7 @@ defmodule TainaWeb.API.SessionController do
 
     case Maraca.update_password(scope, params["current_password"], params["new_password"]) do
       {:ok, _ava} ->
-        revoke_other_devices(scope, device.public_id)
+        :ok = Maraca.revoke_other_devices(scope, except: device.public_id)
         json(conn, %{"ok" => true})
 
       # A senha atual errada e 403, nao 401: quem chama ja esta autenticado,
@@ -60,15 +61,5 @@ defmodule TainaWeb.API.SessionController do
       {:error, reason} ->
         Error.reply(conn, reason)
     end
-  end
-
-  # Best-effort, como o logout: um aparelho que sumiu da mesa (expurgo,
-  # corrida) nao devolve erro ao cliente, o token dele ja nao vale nada.
-  defp revoke_other_devices(scope, current_public_id) do
-    {:ok, devices} = Maraca.list_devices(scope)
-
-    devices
-    |> Enum.reject(&(&1.public_id == current_public_id))
-    |> Enum.each(fn device -> _ = Maraca.revoke_device(scope, device.public_id) end)
   end
 end

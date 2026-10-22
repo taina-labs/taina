@@ -247,6 +247,7 @@ defmodule Taina.YbiraTest do
       assert trashed.id == parent.id
     end
 
+    @tag capture_log: true
     test "a file deleted on its own before the folder delete stays in the trash" do
       scope = scope_fixture()
       {:ok, folder} = Ybira.create_folder(scope, %{name: "ferias"})
@@ -260,6 +261,31 @@ defmodule Taina.YbiraTest do
       assert {:ok, _} = Ybira.restore_folder(scope, folder.rkey)
 
       # O "apagado_antes" tinha outro `apagado_em`: não volta com a pasta.
+      assert {:ok, %{items: [trashed]}} = Ybira.list_trash(scope)
+      assert trashed.id == gone.id
+      assert {:ok, restored_kept} = Ybira.get_file(scope, kept.rkey)
+      assert restored_kept.folder_id == folder.id
+    end
+
+    @tag capture_log: true
+    test "a file deleted on its own in the SAME second as the folder delete stays in the trash" do
+      scope = scope_fixture()
+      {:ok, folder} = Ybira.create_folder(scope, %{name: "ferias"})
+      {:ok, gone} = Ybira.upload(scope, tmp_upload_fixture("a", "apagado_junto.txt"), folder_rkey: folder.rkey)
+      {:ok, kept} = Ybira.upload(scope, tmp_upload_fixture("b", "foto.txt"), folder_rkey: folder.rkey)
+
+      # `agora/0` trunca ao segundo: os dois deletes caem no MESMO segundo
+      # (o backdate fixa o do arquivo no segundo corrente, sem depender do
+      # relogio entre as duas chamadas).
+      {:ok, _} = Ybira.delete_file(scope, gone.rkey)
+      backdate(YbiraFile, gone.id, DateTime.truncate(DateTime.utc_now(), :second))
+      {:ok, :deleted} = Ybira.delete_folder(scope, folder.rkey)
+
+      assert {:ok, _} = Ybira.restore_folder(scope, folder.rkey)
+
+      # O carimbo do lote da pasta é ESTRITAMENTE maior que o do arquivo: o
+      # restauro casa pelo `apagado_em` exato da pasta e o arquivo apagado
+      # por conta própria fica na lixeira.
       assert {:ok, %{items: [trashed]}} = Ybira.list_trash(scope)
       assert trashed.id == gone.id
       assert {:ok, restored_kept} = Ybira.get_file(scope, kept.rkey)

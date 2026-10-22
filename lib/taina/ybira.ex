@@ -28,9 +28,13 @@ defmodule Taina.Ybira do
   import Ecto.Query
 
   alias Taina.Blobs
+  alias Taina.Jaci.Photo
   alias Taina.Keys
   alias Taina.Repo
   alias Taina.Ybira.MimeDetector
+
+  ## Upload
+
   alias Taina.Ybira.Workers.Rendition
   alias Ypy.BlobStore.Disk
   alias Ypy.Maraca.Policy
@@ -38,9 +42,6 @@ defmodule Taina.Ybira do
   alias Ypy.Maraca.Tekoa
   alias Ypy.Scope
   alias Ypy.Ybira, as: Kernel
-
-  ## Upload
-
   alias Ypy.Ybira.File
   alias Ypy.Ybira.Folder
   alias Ypy.Ybira.Queries, as: KernelQueries
@@ -173,7 +174,7 @@ defmodule Taina.Ybira do
   def restore_file(%Scope{} = scope, rkey) when is_binary(rkey) do
     within_tekoa(scope, fn ->
       with {:ok, file} <- Kernel.restaurar(Repo, Keys.new(), scope, @tipo_file, rkey) do
-        {:ok, restore_to_root_if_orphaned(file)}
+        {:ok, restore_to_root_if_orphaned(scope, file)}
       end
     end)
   end
@@ -307,7 +308,7 @@ defmodule Taina.Ybira do
   def restore_folder(%Scope{} = scope, rkey) when is_binary(rkey) do
     within_tekoa(scope, fn ->
       with {:ok, folder} <- fetch_trashed_owned_folder(scope, rkey) do
-        {:ok, restore_folder_subtree(folder)}
+        {:ok, restore_folder_subtree(scope, folder)}
       end
     end)
   end
@@ -690,8 +691,65 @@ defmodule Taina.Ybira do
     end)
   end
 
+  @doc """
+  Os metadados de vários arquivos, em UMA consulta (o lote do serializer da
+  API): mapa `file_id => metadata`, sem entrada para quem ainda não tem linha
+  de foto (o worker não rodou).
+  """
+  @spec photos_metadata(Scope.t(), [integer()]) :: {:ok, %{integer() => map()}}
+  def photos_metadata(%Scope{} = scope, file_ids) when is_list(file_ids) do
+    within_tekoa(scope, fn ->
+      photos = Repo.all(from(p in Photo, where: p.file_id in ^file_ids))
+      {:ok, Map.new(photos, fn p -> {p.file_id, p.metadata || %{}} end)}
+    end)
+  end
+
+  @doc """
+  A pasta pai de vários arquivos, resolvida pela regra de leitura em lote (o
+  `file_folder_rkey/2` de página): mapa `file_id => rkey` da pasta, e `nil`
+  para arquivo solto, pasta na lixeira ou casa não-legível -- os mesmos
+  nulos do unitário. As pastas distintas da página saem em uma consulta; a
+  regra de leitura (as concessões) carrega uma vez só.
+  """
+  @spec files_folder_rkeys(Scope.t(), [File.t()]) :: {:ok, %{integer() => nil | String.t()}}
+  def files_folder_rkeys(%Scope{} = scope, files) when is_list(files) do
+    within_tekoa(scope, fn ->
+      folder_ids = files |> Enum.map(& &1.folder_id) |> Enum.reject(&is_nil/1) |> Enum.uniq()
+
+      # As concessões do leitor: uma consulta para a página inteira.
+      concessoes = Store.concessoes_ativas(Repo, scope.tekoa.id, scope.ava.id)
+
+      readable_rkeys = readable_folder_rkeys(scope, folder_ids, concessoes)
+
+      {:ok,
+       Map.new(files, fn %File{id: id, folder_id: folder_id} ->
+         {id, Map.get(readable_rkeys, folder_id, nil)}
+       end)}
+    end)
+  end
+
+  # A regra de leitura sobre cada pasta pai distinta da página: fora do mapa
+  # (nil, como no `file_folder_rkey/2`) pasta expurgada ou casa não-legível.
+  defp readable_folder_rkeys(_scope, [], _concessoes), do: %{}
+
+  defp readable_folder_rkeys(%Scope{} = scope, folder_ids, concessoes) do
+    folders =
+      Map.new(Repo.all(from(p in Folder, where: p.id in ^folder_ids)), fn p -> {p.id, p} end)
+
+    Map.new(folder_ids, fn folder_id ->
+      case Map.get(folders, folder_id) do
+        nil ->
+          {folder_id, nil}
+
+        %Folder{} = folder ->
+          readable? = Policy.can_read?(folder.zona, scope.ava.id, folder.dono_id, folder.rkey, concessoes)
+          {folder_id, if(readable?, do: folder.rkey)}
+      end
+    end)
+  end
+
   defp photo_metadata!(file_id) do
-    case Repo.one(from(p in Taina.Jaci.Photo, where: p.file_id == ^file_id)) do
+    case Repo.one(from(p in Photo, where: p.file_id == ^file_id)) do
       nil -> %{}
       photo -> photo.metadata || %{}
     end
@@ -805,9 +863,15 @@ defmodule Taina.Ybira do
 
   # Soft delete em cascata sem recursão Elixir: uma CTE coleta a subárvore (raiz
   # + descendentes não-deletados) e dois `update_all` marcam arquivos e pastas.
+  # O carimbo é do LOTE (um só horário para a subárvore toda) e precisa ser
+  # estritamente maior que qualquer `apagado_em` já presente na subárvore
+  # INTEIRA: `agora/0` trunca ao segundo, e um item apagado por conta própria
+  # no mesmo segundo da pasta herdaria o carimbo e voltaria junto na
+  # restauração (que casa pelo `apagado_em` exato dela).
   defp soft_delete_tree(tekoa_id, root_id) do
-    now = agora()
     folder_ids = descendant_folder_ids(root_id)
+    subtree_ids = subtree_folder_ids(root_id)
+    now = batch_timestamp(tekoa_id, subtree_ids)
 
     Repo.update_all(
       from(f in File,
@@ -845,6 +909,45 @@ defmodule Taina.Ybira do
     List.flatten(rows)
   end
 
+  # O maior `apagado_em` da subárvore inteira (pastas e arquivos, inclusive o
+  # que já estava na lixeira por conta própria). Nada ainda: o carimbo é o
+  # agora truncado, como sempre foi.
+  defp batch_timestamp(_tekoa_id, []), do: agora()
+
+  defp batch_timestamp(tekoa_id, subtree_ids) do
+    file_last =
+      Repo.one(
+        from(f in File,
+          where: f.tekoa_id == ^tekoa_id and f.folder_id in ^subtree_ids and not is_nil(f.apagado_em),
+          select: max(f.apagado_em)
+        )
+      )
+
+    folder_last =
+      Repo.one(
+        from(p in Folder,
+          where: p.tekoa_id == ^tekoa_id and p.id in ^subtree_ids and not is_nil(p.apagado_em),
+          select: max(p.apagado_em)
+        )
+      )
+
+    case Enum.reject([file_last, folder_last], &is_nil/1) do
+      [] -> agora()
+      taken -> bump_until_after(agora(), Enum.max(taken, DateTime))
+    end
+  end
+
+  # Sobe de um segundo enquanto o carimbo não for estritamente maior que o
+  # maior `apagado_em` da subárvore: dois lotes no mesmo segundo não podem
+  # compartilhar a chave que a restauração usa.
+  defp bump_until_after(%DateTime{} = candidate, %DateTime{} = taken) do
+    if DateTime.after?(candidate, taken) do
+      candidate
+    else
+      candidate |> DateTime.shift(second: 1) |> bump_until_after(taken)
+    end
+  end
+
   # A pasta NA lixeira, dona por quem restaura: a loja só devolve pasta da
   # lixeira com opt-in (`lixeira?`), e o guard de dono fica aqui, com o mesmo
   # silêncio de `fetch_owned_folder/2` para pasta alheia (`:not_found`, sem
@@ -867,7 +970,7 @@ defmodule Taina.Ybira do
   # MESMO `apagado_em` dela (o `soft_delete_tree/2` marca a subárvore toda de
   # uma vez, com um só horário). Um item apagado antes, por conta própria,
   # fica na lixeira.
-  defp restore_folder_subtree(folder) do
+  defp restore_folder_subtree(%Scope{} = scope, folder) do
     folder_ids = subtree_folder_ids(folder.id)
 
     Repo.update_all(
@@ -881,7 +984,7 @@ defmodule Taina.Ybira do
     )
 
     folder = Repo.one!(from(p in Folder, where: p.id == ^folder.id))
-    restore_to_root_if_orphaned(folder)
+    restore_to_root_if_orphaned(scope, folder)
   end
 
   # Mesma CTE de `descendant_folder_ids/1`, sem o filtro de lixeira: para
@@ -909,25 +1012,31 @@ defmodule Taina.Ybira do
   # preenchido o tira da listagem de soltos) nem em pasta listável (a de
   # origem está fora). Nesse caso ele volta solto na raiz, que é onde
   # "restaurar" o torna visível de novo.
-  defp restore_to_root_if_orphaned(%File{folder_id: nil} = file), do: file
+  defp restore_to_root_if_orphaned(_scope, %File{folder_id: nil} = file), do: file
 
-  defp restore_to_root_if_orphaned(%File{} = file) do
+  defp restore_to_root_if_orphaned(%Scope{} = scope, %File{} = file) do
     if folder_orphaned?(file.folder_id) do
       Logger.info("Ybira: arquivo restaurado solto na raiz, a pasta dele está na lixeira",
         file_id: file.id,
         reason: "folder_id=#{file.folder_id}"
       )
 
-      {:ok, file} = Repo.update(File.changeset(file, %{folder_id: nil}))
+      # O verbo do kernel (`mover/5`, nil = solto na raiz): a troca de pasta
+      # vira uma versão nova do arquivo na cadeia assinada, não um update
+      # calado no banco.
+      {:ok, file} = Kernel.mover(Repo, Keys.new(), scope, file.rkey, nil)
       file
     else
       file
     end
   end
 
-  defp restore_to_root_if_orphaned(%Folder{parent_id: nil} = folder), do: folder
+  # O kernel não tem mover-pasta (o verbo é do produto, `move_folder/3`): a
+  # troca de pai da pasta restaurada segue sem entrada na cadeia (mesmo gap
+  # documentado no `move_folder/3`).
+  defp restore_to_root_if_orphaned(_scope, %Folder{parent_id: nil} = folder), do: folder
 
-  defp restore_to_root_if_orphaned(%Folder{} = folder) do
+  defp restore_to_root_if_orphaned(_scope, %Folder{} = folder) do
     if folder_orphaned?(folder.parent_id) do
       Logger.info("Ybira: pasta restaurada solta na raiz, a pasta-pai está na lixeira",
         reason: "folder_id=#{folder.id} parent_id=#{folder.parent_id}"

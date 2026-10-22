@@ -32,6 +32,7 @@ defmodule Taina.Jaci do
       query =
         scope
         |> readable_photos()
+        |> apply_zona(Keyword.get(opts, :zona))
         |> apply_grid_cursor(Keyword.get(opts, :after_cursor))
 
       {items, next_cursor} = fetch_grid_page(query, opts)
@@ -61,6 +62,13 @@ defmodule Taina.Jaci do
       scope
     )
   end
+
+  # A zona entra NA consulta, nao depois da pagina: se o filtro mora na tela,
+  # o cursor caminha no conjunto inteiro e a aba de zona recebe paginas
+  # curtas (e fotos que so aparecem depois de varios carregamentos). Sem
+  # zona (`:tudo` da tela), nenhum filtro a mais.
+  defp apply_zona(query, nil), do: query
+  defp apply_zona(query, zona) when is_atom(zona), do: where(query, [f], f.zona == ^zona)
 
   # --- Grade: keyset por id (alinhado ao upload) ---
 
@@ -121,6 +129,7 @@ defmodule Taina.Jaci do
     base =
       scope
       |> readable_photos()
+      |> apply_zona(Keyword.get(opts, :zona))
       |> join(:left, [f], p in Photo, on: p.file_id == f.id)
       |> order_by([f, p], desc: effective_ts(f, p), desc: f.id)
       |> select([f, p], %{file: f, ts: effective_ts(f, p)})

@@ -60,6 +60,38 @@ defmodule TainaWeb.API.GrantsTest do
       assert length(body["items"]) == 1
     end
 
+    test "paginada: limit e o cursor `after` andam sobre o conjunto, com next_cursor real", %{
+      conn: conn,
+      dono: dono,
+      leitor: leitor,
+      tekoa: tekoa
+    } do
+      dono_scope = Scope.new(dono, tekoa)
+
+      for i <- 1..2 do
+        {:ok, extra} = Ybira.upload(dono_scope, tmp_upload_fixture("x", "extra#{i}.txt"))
+        {:ok, _} = Maraca.conceder(dono_scope, "ypy.file.v0", extra.rkey, leitor)
+      end
+
+      primeira = conn |> get(~p"/api/v1/grants", limit: "2") |> json_response(200)
+      assert length(primeira["items"]) == 2
+      assert is_binary(primeira["next_cursor"])
+
+      segunda =
+        conn
+        |> get(~p"/api/v1/grants", limit: "2", after: primeira["next_cursor"])
+        |> json_response(200)
+
+      assert length(segunda["items"]) == 1
+      assert segunda["next_cursor"] == nil
+
+      # as paginas nao se repetem nem se sobrepõem
+      ids_primeira = Enum.map(primeira["items"], & &1["public_id"])
+      ids_segunda = Enum.map(segunda["items"], & &1["public_id"])
+      refute ids_primeira == ids_segunda
+      assert length(Enum.uniq(ids_primeira ++ ids_segunda)) == 3
+    end
+
     test "o ETag bate de novo: 304 sem corpo", %{conn: conn} do
       first = get(conn, ~p"/api/v1/grants")
 

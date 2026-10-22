@@ -31,17 +31,15 @@ defmodule TainaWeb.PasswordController do
   end
 
   # Tradução do changeset para a frase do campo com problema (o LiveView não
-  # recebe o changeset, então a mensagem viaja no flash).
+  # recebe o changeset, então a mensagem viaja no flash). O `reset_password/3`
+  # só devolve changeset quando a senha nova viola uma regra: o link invalido
+  # já sai com o próprio motivo.
   defp reset_error_message(%Changeset{} = changeset) do
     if confirmation_mismatch?(changeset) do
       gettext("As duas senhas não são iguais.")
     else
       gettext("Não foi possível redefinir a senha. Revise os dados e tente de novo.")
     end
-  end
-
-  defp reset_error_message(_other) do
-    gettext("Não foi possível redefinir a senha. Revise os dados e tente de novo.")
   end
 
   defp confirmation_mismatch?(%Changeset{} = changeset) do
