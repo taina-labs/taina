@@ -3,7 +3,9 @@ defmodule TainaWeb.UploadLive do
   Envio de arquivos (tela "Ybira - Upload"): dropzone tracejada, progresso por
   arquivo (ENVIANDO/CONCLUÍDO), cancelamento individual e total. LiveView
   uploads com `auto_upload`; cada arquivo concluído vai direto para
-  `Ybira.upload/3` (validação por magic bytes e cota acontecem lá).
+  `Ybira.upload/3` (validação por magic bytes e cota acontecem lá). A linha
+  concluída oferece o "Publicar na praça": o arquivo nasce na casa, e o
+  consentimento fica a um toque dali (RFC_003).
 
   `?pasta=<rkey>` define a pasta de destino.
   """
@@ -128,6 +130,32 @@ defmodule TainaWeb.UploadLive do
     {:noreply, socket}
   end
 
+  # Publicar na linha concluída: o reverso do destino casa, a um toque do
+  # momento em que a pessoa decide. O contexto valida dono e zona; a linha
+  # só espelha o estado que voltou.
+  def handle_event("publish", %{"rkey" => rkey}, socket) do
+    case Ybira.publicar_file(socket.assigns.current_scope, rkey) do
+      {:ok, _file} ->
+        {:noreply,
+         socket
+         |> mark_published(rkey)
+         |> Phoenix.LiveView.put_flash(:info, gettext("Publicado na praça."))}
+
+      {:error, _reason} ->
+        {:noreply, Phoenix.LiveView.put_flash(socket, :error, gettext("Não foi possível publicar na praça."))}
+    end
+  end
+
+  # Core puro: a linha do arquivo publicado passa a mostrar o estado novo.
+  defp mark_published(socket, rkey) do
+    update(socket, :done, fn done ->
+      Enum.map(done, fn
+        %{rkey: ^rkey} = file -> %{file | zona: :praca}
+        file -> file
+      end)
+    end)
+  end
+
   # Onde os arquivos caíram: na pasta alvo, ou no início já na aba casa (o
   # default da listagem). Cair na praça faria o recém-chegado "sumir" da tela.
   defp back_path(nil), do: ~p"/arquivos?#{[zona: "casa"]}"
@@ -248,7 +276,14 @@ defmodule TainaWeb.UploadLive do
                 <.service_square service={service} icon={icon} />
               </:leading>
               <:actions>
-                <.icon name="check" size={20} class="text-success" />
+                <%= if file.zona == :casa do %>
+                  <.button variant="secondary" size="sm" phx-click="publish" phx-value-rkey={file.rkey}>
+                    {gettext("Publicar na praça")}
+                  </.button>
+                <% else %>
+                  <span class="type-caption text-success">{gettext("Na praça")}</span>
+                  <.icon name="check" size={20} class="text-success" />
+                <% end %>
               </:actions>
             </.list_row>
           </ul>

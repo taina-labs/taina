@@ -41,6 +41,26 @@ defmodule TainaWeb.FilePreviewLiveTest do
     assert request.pedinte_id == other.id
     assert request.dono_id == owner.id
     assert request.recurso == file.rkey
+    # sem campo na tela, o pedido vai sem motivo: o servidor nao fabrica frase
+    assert request.motivo == nil
+  end
+
+  test "a tela de pedir acesso nomeia a pessoa, não um genérico", %{
+    conn: conn,
+    owner: owner,
+    other: other,
+    target_file: file
+  } do
+    name = owner.display_name || owner.username
+
+    {:ok, lv, html} = conn |> log_in(other) |> live(~p"/arquivos/#{file.rkey}")
+
+    # o nome do dono (display ou username) na tela, não um "quem mora aqui"
+    assert html =~ "Só #{name} vê este arquivo."
+
+    lv |> element(~s(button[phx-click="ask-access"])) |> render_click()
+
+    assert render(lv) =~ "Pedir acesso a #{name}?"
   end
 
   test "a readable file renders the preview, not the ask-access state", %{
