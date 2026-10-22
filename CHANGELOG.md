@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/taina-labs/taina/compare/v0.4.0...v0.5.0) (2026-10-22)
+
+
+### Features
+
+* close the 0.1.0 review on identity, vault, photos and api ([#174](https://github.com/taina-labs/taina/issues/174)) ([388a341](https://github.com/taina-labs/taina/commit/388a341fe7a0704376f6b1dbb267589d9739f2d8))
+
 ## [0.4.0](https://github.com/taina-labs/taina/compare/v0.3.0...v0.4.0) (2026-10-16)
 
 
