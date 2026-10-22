@@ -19,7 +19,7 @@ defmodule TainaWeb.API.EtagTest do
   end
 
   test "If-None-Match igual responde 304 sem corpo, com o ETag na resposta" do
-    conn = build_conn() |> put_req_header("if-none-match", ~s(W/"3-10"))
+    conn = put_req_header(build_conn(), "if-none-match", ~s(W/"3-10"))
 
     {:not_modified, conn} = Etag.handle(conn, ~s(W/"3-10"))
 
@@ -29,7 +29,7 @@ defmodule TainaWeb.API.EtagTest do
   end
 
   test "ETag diferente nao bate: a listagem segue" do
-    conn = build_conn() |> put_req_header("if-none-match", ~s(W/"9-99"))
+    conn = put_req_header(build_conn(), "if-none-match", ~s(W/"9-99"))
 
     assert {:fresh, _conn} = Etag.handle(conn, ~s(W/"3-10"))
   end

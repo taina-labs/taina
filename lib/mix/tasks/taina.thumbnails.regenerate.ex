@@ -35,7 +35,10 @@ defmodule Mix.Tasks.Taina.Thumbnails.Regenerate do
 
     # A app inteira não sobe aqui (endpoint e fila não são precisos), só o
     # Repo, que já está de pé quando a tarefa roda por cima de uma app viva.
+    # No shell frio o adaptador ainda não subiu: sobe o `:ecto_sqlite3` antes,
+    # senão `Repo.start_link/0` falha por falta do registry do Ecto.
     if is_nil(Process.whereis(Repo)) do
+      {:ok, _} = Application.ensure_all_started(:ecto_sqlite3)
       {:ok, _} = Repo.start_link()
     end
 

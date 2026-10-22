@@ -33,20 +33,7 @@ defmodule TainaWeb.API.BatchTest do
     b = upload(conn)
     folder = conn |> post(~p"/api/v1/folders", %{"name" => "Destino"}) |> json_response(201)
 
-    body =
-      conn
-      |> post(~p"/api/v1/files/batch", %{"op" => "trash", "ids" => [a["rkey"], b["rkey"]]})
-      |> json_response(200)
-
-    assert [%{"rkey" => primeiro_rkey, "ok" => true}, %{"rkey" => segundo_rkey, "ok" => true}] =
-             body["results"]
-
-    assert primeiro_rkey == a["rkey"]
-    assert segundo_rkey == b["rkey"]
-
-    assert %{"file" => file} = hd(body["results"])
-    assert file["deleted_at"] != nil
-
+    # Mover so vale para arquivo vivo; a lixeira e um ato a parte.
     body =
       conn
       |> post(~p"/api/v1/files/batch", %{
@@ -62,6 +49,20 @@ defmodule TainaWeb.API.BatchTest do
 
     body =
       conn
+      |> post(~p"/api/v1/files/batch", %{"op" => "trash", "ids" => [a["rkey"], b["rkey"]]})
+      |> json_response(200)
+
+    assert [%{"rkey" => primeiro_rkey, "ok" => true}, %{"rkey" => segundo_rkey, "ok" => true}] =
+             body["results"]
+
+    assert primeiro_rkey == a["rkey"]
+    assert segundo_rkey == b["rkey"]
+
+    assert %{"file" => file} = hd(body["results"])
+    assert file["deleted_at"]
+
+    body =
+      conn
       |> post(~p"/api/v1/files/batch", %{"op" => "restore", "ids" => [a["rkey"]]})
       |> json_response(200)
 
@@ -69,7 +70,7 @@ defmodule TainaWeb.API.BatchTest do
     assert rkey_restaurado == a["rkey"]
     assert file["deleted_at"] == nil
 
-    assert Ybira.get_file(scope, a["rkey"]) |> elem(0) == :ok
+    assert scope |> Ybira.get_file(a["rkey"]) |> elem(0) == :ok
   end
 
   test "a falha de um id nao para o lote", %{conn: conn} do

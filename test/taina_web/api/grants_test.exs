@@ -61,11 +61,10 @@ defmodule TainaWeb.API.GrantsTest do
     end
 
     test "o ETag bate de novo: 304 sem corpo", %{conn: conn} do
-      first = conn |> get(~p"/api/v1/grants")
+      first = get(conn, ~p"/api/v1/grants")
 
       etag =
-        first.resp_headers
-        |> Enum.find_value(fn {k, v} -> k == "etag" && v end)
+        Enum.find_value(first.resp_headers, fn {k, v} -> k == "etag" && v end)
 
       assert is_binary(etag)
 
