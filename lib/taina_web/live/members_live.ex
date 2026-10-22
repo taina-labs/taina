@@ -213,6 +213,9 @@ defmodule TainaWeb.MembersLive do
   defp role_label(:zelador), do: gettext("Zelador(a)")
   defp role_label(:morador), do: gettext("Morador(a)")
 
+  # O link de reset fica escondido na propria linha: a pessoa troca a senha
+  # sozinha em Conta ("Trocar minha senha"). O link mediado e para quem NAO
+  # consegue entrar, entao nunca se ofereceu a si mesmo aqui.
   defp can_reset?(member, scope) do
     Maraca.zelador?(scope.ava) and member.id != scope.ava.id and not is_nil(member.activated_at)
   end
@@ -403,22 +406,33 @@ defmodule TainaWeb.MembersLive do
         on_cancel={JS.push("close-confirm")}
       />
 
-      <.confirm_dialog
-        id="confirm-role"
-        show={@confirm_role != nil}
-        title={gettext("Tornar zelador(a)?")}
-        message={
-          gettext(
+      <%!-- Promocao nao pode ler como destrutiva: o confirm_dialog acende o
+      botao vermelho de perigo, entao a confirmacao daqui e propria, com botao
+      neutro de confirmacao (dao poder, nao tiram) --%>
+      <.modal id="confirm-role" show={@confirm_role != nil} on_cancel={JS.push("close-confirm")}>
+        <h2 id="confirm-role-title" class="type-h3 mb-2">{gettext("Tornar zelador(a)?")}</h2>
+        <p class="type-body text-secondary mb-6">
+          {gettext(
             "%{name} vai poder gerar convites e links de redefinição de senha. Não ganha acesso à casa de ninguém. A mudança fica registrada no mural.",
             name: @confirm_role && display_name(@confirm_role.member)
-          )
-        }
-        confirm_label={gettext("Tornar zelador(a)")}
-        on_confirm={
-          JS.push("set-role", value: %{id: @confirm_role && @confirm_role.member.public_id, role: "zelador"})
-        }
-        on_cancel={JS.push("close-confirm")}
-      />
+          )}
+        </p>
+        <div class="row gap-3">
+          <.button variant="secondary" size="md" class="flex-1" phx-click={JS.push("close-confirm")}>
+            {gettext("Cancelar")}
+          </.button>
+          <.button
+            variant="primary"
+            size="md"
+            class="flex-1"
+            phx-click={
+              JS.push("set-role", value: %{id: @confirm_role && @confirm_role.member.public_id, role: "zelador"})
+            }
+          >
+            {gettext("Tornar zelador(a)")}
+          </.button>
+        </div>
+      </.modal>
 
       <.confirm_dialog
         id="confirm-revoke"
