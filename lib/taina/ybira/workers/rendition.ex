@@ -6,6 +6,12 @@ defmodule Taina.Ybira.Workers.Rendition do
   nao tem coluna de metadata). Enfileirado por `Taina.Ybira.upload/2` quando o
   arquivo é uma imagem (ver RFC 002, Fase 3 / D8).
 
+  A data de captura também entra como dica de ordem no kernel: o
+  `effective_at` de `ybira_files` (kernel 0.2) recebe o EXIF ANTES da geração
+  de thumbnails, então a linha do tempo do Jaci ordena pela captura mesmo
+  quando a miniatura falha em seguida. Sem EXIF, `effective_at` fica nulo e
+  o fallback é o instante do upload.
+
   As renditions são uma feature da caixa sobre os bytes do kernel; o Jaci só
   **lê** o resultado para montar a galeria, composição, não herança.
 
@@ -80,6 +86,10 @@ defmodule Taina.Ybira.Workers.Rendition do
   defp render(%YbiraFile{} = file, tekoa_public_id) do
     with {:ok, blob_path} <- Disk.open(Blobs.new(), Cid.parse(file.blob_cid)),
          {:ok, info} <- Media.analyze(blob_path),
+         # A dica de ordem do kernel entra ANTES das thumbnails: mesmo quando
+         # a geração de miniatura falha em seguida, a linha do tempo já
+         # ordena pela data de captura.
+         :ok <- set_effective_at(file, info.taken_at),
          {:ok, thumbnails} <- generate_thumbnails(file, tekoa_public_id, blob_path) do
       metadata = %{
         "width" => info.width,
@@ -102,6 +112,33 @@ defmodule Taina.Ybira.Workers.Rendition do
       Logger.warning("Rendition: exceção ao processar", file_id: file.id, reason: inspect(e))
       record_failure(file, e)
       {:error, e}
+  end
+
+  @doc false
+  # Publica para o teste (o mesmo padrão de `Media.extract_taken_at/1`: uma
+  # imagem com EXIF real não é reproduzível em fixture, a libvips re-encoda
+  # o EXIF e o perde). Grava a dica de ordem do kernel (`effective_at`) com a
+  # data de captura, que o EXIF traz sem fuso (o cast do Ecto a trata como
+  # UTC, a mesma convenção do SQLite na linha do tempo). Best-effort: sem
+  # EXIF não há update, e falha de gravação fica no log sem derrubar o job.
+  def set_effective_at(_file, nil), do: :ok
+
+  def set_effective_at(%YbiraFile{} = file, %NaiveDateTime{} = taken_at) do
+    file
+    |> YbiraFile.changeset(%{effective_at: taken_at})
+    |> Repo.update()
+    |> case do
+      {:ok, _file} ->
+        :ok
+
+      {:error, changeset} ->
+        Logger.warning("Rendition: falha ao gravar a data de captura (effective_at)",
+          file_id: file.id,
+          errors: inspect(changeset.errors)
+        )
+
+        :ok
+    end
   end
 
   # O log nomeia a causa: "a libvips desta caixa não abre esse formato" (ex.:
