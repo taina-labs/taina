@@ -47,9 +47,9 @@ defmodule TainaWeb.FilesLiveTest do
       assert html =~ "Meio"
       assert html =~ "Folha"
 
-      # cada ancestral é um link para a pasta dele
-      assert has_element?(lv, ~s(a[href="/arquivos/pasta/#{raiz.rkey}"]), "Raiz")
-      assert has_element?(lv, ~s(a[href="/arquivos/pasta/#{meio.rkey}"]), "Meio")
+      # cada ancestral é um link para a pasta dele, com a query da aba
+      assert has_element?(lv, ~s(a[href="/arquivos/pasta/#{raiz.rkey}?sort=date-desc"]), "Raiz")
+      assert has_element?(lv, ~s(a[href="/arquivos/pasta/#{meio.rkey}?sort=date-desc"]), "Meio")
       # com meio na cadeia, o marcador de truncamento entra (visível no mobile)
       assert has_element?(lv, ~s(.breadcrumb .hide-desktop), "...")
       # a pasta atual fica sem link
@@ -64,7 +64,7 @@ defmodule TainaWeb.FilesLiveTest do
 
       assert html =~ "Raiz"
       assert html =~ "Folha"
-      assert has_element?(lv, ~s(a[href="/arquivos/pasta/#{raiz.rkey}"]), "Raiz")
+      assert has_element?(lv, ~s(a[href="/arquivos/pasta/#{raiz.rkey}?sort=date-desc"]), "Raiz")
       # sem meio, o marcador de truncamento não entra
       refute has_element?(lv, ~s(.breadcrumb .hide-desktop), "...")
     end
@@ -215,6 +215,49 @@ defmodule TainaWeb.FilesLiveTest do
       {:ok, _lv, html} = conn |> log_in(ava) |> live(~p"/arquivos?zona=praca")
 
       assert html =~ "A praça está vazia"
+    end
+
+    test "entrar numa pasta pela aba praca mantem a zona: nada cai na casa vazia", %{
+      conn: conn,
+      scope: scope,
+      ava: ava
+    } do
+      {:ok, folder} = Ybira.create_folder(scope, %{name: "Comunitarias"})
+      {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("oi", "cartaz.txt"), folder_rkey: folder.rkey)
+      {:ok, _} = Ybira.publicar_folder(scope, folder.rkey)
+      {:ok, _} = Ybira.publicar_file(scope, file.rkey)
+
+      {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/arquivos?zona=praca")
+
+      # o link da pasta carrega a query (sort + zona); sem ela, a navegacao
+      # caia na aba casa e a pasta aparecia vazia
+      assert {:error, {:live_redirect, %{to: to}}} =
+               lv
+               |> element(~s(a[href*="/arquivos/pasta/#{folder.rkey}"]))
+               |> render_click()
+
+      assert to == "/arquivos/pasta/#{folder.rkey}?sort=date-desc&zona=praca"
+
+      # e o destino abre na praca, com o conteudo dela
+      {:ok, _lv, html} = conn |> log_in(ava) |> live(to)
+
+      assert html =~ "cartaz.txt"
+      assert html =~ "Todos veem"
+      refute html =~ "A pasta nasce na praça"
+    end
+
+    test "a pasta nasce na casa mesmo na aba praca, e a copia diz isso", %{conn: conn, scope: scope, ava: ava} do
+      {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/arquivos?zona=praca")
+
+      lv |> element("button[phx-value-modal=new-folder]") |> render_click()
+
+      assert render(lv) =~ "A pasta nasce na sua casa. Para todos verem, publique na praça depois."
+
+      lv |> form("#new-folder-modal form") |> render_submit(%{"folder" => %{"name" => "Atas"}})
+
+      # o comportamento nao mudou: nasce na casa; so a copia mudou
+      {:ok, [folder]} = Ybira.list_folders(scope)
+      assert folder.zona == :casa
     end
 
     test "pasta na casa de outro morador volta ao início com o aviso", %{conn: conn, scope: scope, ava: ava} do
