@@ -11,13 +11,13 @@ defmodule Taina.Jaci do
   Como todo context, recebe um scope (`Ypy.Scope`) e roda dentro de
   `Repo.with_tekoa/2`. A paginação da grade segue a ordem de upload (rkey
   decrescente, o TID é ordenável por tempo); a linha do tempo ordena pela data
-  efetiva da foto (EXIF ou upload, dos metadados de rendicao do produto),
-  exigindo um cursor composto `(data, id)`.
+  efetiva da foto (`effective_at` de `ybira_files`, que o worker de renditions
+  preenche com o EXIF, ou o instante do upload como fallback), exigindo um
+  cursor composto `(data, id)`.
   """
 
   import Ecto.Query
 
-  alias Taina.Jaci.Photo
   alias Taina.Jaci.Timeline
   alias Taina.Repo
   alias Ypy.Scope
@@ -102,22 +102,22 @@ defmodule Taina.Jaci do
 
   # --- Linha do tempo: keyset composto (data efetiva, id) ---
   #
-  # A data efetiva mora nos metadados de rendicao do produto (`jaci_photos`),
-  # com o `inserted_at` do upload como fallback. As duas fontes chegavam em
-  # codificações diferentes de texto ISO8601 (o `taken_at` gravado sem `Z`,
-  # o `inserted_at` do Ecto com `Z`), então a virada de página podia pular
-  # fotos de uma rajada no mesmo segundo: o cursor decodificava a data e a
-  # regravava na outra codificação, partindo o mesmo instante em duas chaves.
-  # A consulta normaliza as duas para UMA representação canônica e
-  # ordenável: epoch de segundos. O SQLite lê texto sem zona como UTC, o
-  # máximo que um EXIF sem timezone permite de qualquer forma (e o
-  # `inserted_at` já é UTC). `taken_at` inválido no JSON cai no NULL do
-  # `strftime` e volta ao fallback do upload. O desempate é o id do arquivo.
-  defmacrop effective_ts(f, p) do
+  # A data efetiva agora é a coluna `effective_at` do próprio `ybira_files`
+  # (kernel 0.2): o worker de renditions a preenche com a captura do EXIF,
+  # e o `inserted_at` do upload fica como fallback (arquivo sem EXIF, vídeo,
+  # worker que não rodou). As duas fontes são colunas do MESMO encoder Ecto
+  # (`:utc_datetime`), mas a consulta segue normalizando as duas para UMA
+  # representação canônica e ordenável: epoch de segundos. É a mesma chave
+  # que o cursor carrega (`epoch|id`), então a virada de página compara
+  # inteiro com inteiro, sem depender da codificação do texto no banco.
+  # `strftime` do SQLite lê texto sem zona como UTC, o máximo que um EXIF
+  # sem timezone permite de qualquer forma (e o `inserted_at` já é UTC).
+  # O desempate é o id do arquivo.
+  defmacrop effective_ts(f) do
     quote do
       fragment(
-        "COALESCE(CAST(strftime('%s', json_extract(?, '$.taken_at')) AS INTEGER), CAST(strftime('%s', ?) AS INTEGER))",
-        unquote(p).metadata,
+        "COALESCE(CAST(strftime('%s', ?) AS INTEGER), CAST(strftime('%s', ?) AS INTEGER))",
+        unquote(f).effective_at,
         unquote(f).inserted_at
       )
     end
@@ -130,9 +130,8 @@ defmodule Taina.Jaci do
       scope
       |> readable_photos()
       |> apply_zona(Keyword.get(opts, :zona))
-      |> join(:left, [f], p in Photo, on: p.file_id == f.id)
-      |> order_by([f, p], desc: effective_ts(f, p), desc: f.id)
-      |> select([f, p], %{file: f, ts: effective_ts(f, p)})
+      |> order_by([f], desc: effective_ts(f), desc: f.id)
+      |> select([f], %{file: f, ts: effective_ts(f)})
 
     rows =
       base
@@ -153,8 +152,8 @@ defmodule Taina.Jaci do
   defp apply_timeline_cursor(query, {ts, id}) do
     where(
       query,
-      [f, p],
-      effective_ts(f, p) < ^ts or (effective_ts(f, p) == ^ts and f.id < ^id)
+      [f],
+      effective_ts(f) < ^ts or (effective_ts(f) == ^ts and f.id < ^id)
     )
   end
 

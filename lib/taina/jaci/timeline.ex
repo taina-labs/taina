@@ -3,13 +3,14 @@ defmodule Taina.Jaci.Timeline do
   Núcleo puro da linha do tempo do Jaci. Sem banco, sem efeito colateral: só
   agrupa uma lista já ordenada em baldes por dia.
 
-  A data efetiva de uma foto é a captura do EXIF (`metadata["taken_at"]` das
-  rendições do produto) quando existe; senão, o instante do upload
-  (`inserted_at`), o "mtime" da RFC 002, Fase 3. A resolução acontece na
-  consulta (`Taina.Jaci`), que normaliza as duas fontes para o mesmo inteiro
-  canônico: epoch de segundos (UTC). O SQLite lê texto sem zona como UTC,
-  que é o máximo que um EXIF sem timezone permite; o instante do upload já é
-  UTC. Daqui em diante a data já vem na linha, decodificada do epoch.
+  A data efetiva de uma foto é a coluna `effective_at` de `ybira_files`
+  (kernel 0.2: o worker de renditions a preenche com a captura do EXIF);
+  senão, o instante do upload (`inserted_at`), o "mtime" da RFC 002,
+  Fase 3. A resolução acontece na consulta (`Taina.Jaci`), que normaliza as
+  duas fontes para o mesmo inteiro canônico: epoch de segundos (UTC). O
+  SQLite lê texto sem zona como UTC, que é o máximo que um EXIF sem
+  timezone permite; o instante do upload já é UTC. Daqui em diante a data
+  já vem na linha, decodificada do epoch.
   """
 
   alias Ypy.Ybira.File
