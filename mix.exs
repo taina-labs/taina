@@ -44,35 +44,33 @@ defmodule Taina.MixProject do
   # Type `mix help deps` for examples and options.
   defp deps do
     [
-      {:phoenix, "~> 1.8.1"},
-      {:phoenix_live_view, "~> 1.1"},
-      {:phoenix_live_dashboard, "~> 0.9"},
-      {:gettext, "~> 0.26"},
+      {:phoenix, "~> 1.8"},
+      {:phoenix_live_view, "~> 1.2"},
+      {:gettext, "~> 1.0"},
       {:eqrcode, "~> 0.2"},
-      {:phoenix_ecto, "~> 4.5"},
-      {:ecto_sql, "~> 3.13"},
-      {:ecto_sqlite3, "~> 0.25"},
-      {:telemetry_metrics, "~> 1.0"},
-      {:telemetry_poller, "~> 1.0"},
-      {:dns_cluster, "~> 0.2.0"},
-      {:bandit, "~> 1.5"},
+      {:phoenix_ecto, "~> 4.7"},
+      {:ecto_sql, "~> 3.14"},
+      {:ecto_sqlite3, "~> 0.26"},
+      {:telemetry_metrics, "~> 1.2"},
+      {:telemetry_poller, "~> 1.3"},
+      {:bandit, "~> 1.13"},
       {:nanoid, "~> 2.1"},
-      {:mime, "~> 2.0"},
-      {:image, "~> 0.68"},
+      {:image, "~> 0.72"},
       {:bcrypt_elixir, "~> 3.3"},
-      {:oban, "~> 2.23"},
-      {:hammer, "~> 7.0"},
+      {:oban, "~> 2.24"},
+      {:hammer, "~> 7.5"},
       # Cliente HTTP do AGENTS.md (verificação opt-in de atualização do Nhaman);
       # era declarado como "já incluído", mas não estava no grafo de deps.
       {:req, "~> 0.6"},
-      {:lazy_html, "~> 0.1.11", only: :test, override: true},
       # dev
       {:tidewave, "~> 0.9", only: :dev},
       {:phoenix_live_reload, "~> 1.6", only: :dev},
       {:esbuild, "~> 0.10", runtime: Mix.env() == :dev},
+      # test
+      {:lazy_html, "~> 0.1", only: :test, override: true},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
-      {:styler, "~> 1.5", only: [:dev, :test], runtime: false},
+      {:styler, "~> 1.12", only: [:dev, :test], runtime: false},
       {:stream_data, "~> 1.4", only: [:dev, :test]}
     ]
   end

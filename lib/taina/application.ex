@@ -15,7 +15,6 @@ defmodule Taina.Application do
       TainaWeb.Telemetry,
       Taina.Repo,
       Taina.Ybira.BlobLock,
-      {DNSCluster, query: Application.get_env(:taina, :dns_cluster_query) || :ignore},
       {Taina.RateLimit, clean_period: to_timeout(minute: 10)},
       {Oban, Application.fetch_env!(:taina, Oban)},
       {Phoenix.PubSub, name: Taina.PubSub},

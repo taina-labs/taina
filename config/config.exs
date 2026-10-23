@@ -11,6 +11,8 @@ config :esbuild,
     env: %{"NODE_PATH" => Path.expand("../deps", __DIR__)}
   ]
 
+config :taina, Taina.Repo, default_transaction_mode: :immediate
+
 # A Nix build points esbuild at a binary already in the store instead of
 # letting the hex package download one at build time (the sandbox has no
 # network). esbuild 0.10 reads this from the app env, not from the env var

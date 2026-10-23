@@ -416,19 +416,6 @@ defmodule TainaWeb.SaudeLive do
             </.button>
           </.card>
         </div>
-
-        <.card :if={Maraca.zelador?(@current_scope.ava)}>
-          <.link navigate={~p"/painel-do-zelador"} class="row between w-full py-3">
-            <span class="row gap-3 type-label">
-              <.icon name="disk" size={20} class="text-muted" />
-              {gettext("Painel da máquina")}
-            </span>
-            <.icon name="chevron-right" size={18} class="text-faint" />
-          </.link>
-          <p class="type-body-sm text-muted mt-2">
-            {gettext("Gráficos e trabalhos técnicos da caixa, para quem cuida da máquina.")}
-          </p>
-        </.card>
       </div>
     </Layouts.app>
     """

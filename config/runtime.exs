@@ -89,8 +89,6 @@ if config_env() == :prod do
     enabled: System.get_env("BACKUP_ENABLED") in ~w(true 1),
     dir: System.get_env("BACKUP_DIR") || "/app/backups"
 
-  config :taina, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
-
   # File storage root for Ybira. The Dockerfile creates /app/storage (and the
   # /app/data holding the SQLite file) owned by the runtime user; docker-compose
   # mounts the storage_data and data_data volumes there.
