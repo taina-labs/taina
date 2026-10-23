@@ -59,9 +59,6 @@ defmodule Taina.MixProject do
       {:bcrypt_elixir, "~> 3.3"},
       {:oban, "~> 2.24"},
       {:hammer, "~> 7.5"},
-      # Cliente HTTP do AGENTS.md (verificação opt-in de atualização do Nhaman);
-      # era declarado como "já incluído", mas não estava no grafo de deps.
-      {:req, "~> 0.6"},
       # dev
       {:tidewave, "~> 0.9", only: :dev},
       {:phoenix_live_reload, "~> 1.6", only: :dev},

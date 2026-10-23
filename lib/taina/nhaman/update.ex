@@ -97,16 +97,16 @@ defmodule Taina.Nhaman.Update do
   # pergunta opcional.
   defp latest_release(opts) do
     url = Keyword.get(opts, :releases_url) || releases_url()
+    headers = [{~c"accept", ~c"application/json"}, {~c"user-agent", ~c"Taina Cloud/#{running_version()}"}]
+    opts = [body_format: :binary]
+    http_opts = [timeout: @receive_timeout]
 
-    case Req.get(url, receive_timeout: @receive_timeout) do
-      {:ok, %Req.Response{status: 200, body: %{"tag_name" => tag}}} when is_binary(tag) ->
-        {:ok, normalize_version(tag)}
-
-      _other ->
-        :error
+    with {:ok, {{_, 200, _}, _headers, body}} <- :httpc.request(:get, {url, headers}, http_opts, opts),
+         {:ok, %{"tag_name" => tag}} when is_binary(tag) <- JSON.decode(body) do
+      {:ok, normalize_version(tag)}
+    else
+      _ -> :error
     end
-  rescue
-    _exception -> :error
   end
 
   defp releases_url, do: Keyword.get(config(), :url, @releases_url)
