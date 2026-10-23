@@ -17,19 +17,9 @@ defmodule TainaWeb do
   those modules here.
   """
 
-  # sw.js is intentionally absent: it is served by a dedicated plug in the
-  # Endpoint with a no-cache header so service-worker updates are always picked
-  # up (see TainaWeb.Endpoint).
-  def static_paths,
-    do:
-      ~w(assets fonts icons splash robots.txt favicon.ico apple-touch-icon.png manifest.webmanifest offline.html openapi.yaml)
-
-  # Raiz que o `mix phx.digest` (dentro de `assets.deploy`) fingerprinta. O `~p`
-  # do layout emite o nome com hash (`manifest-<hash>.webmanifest`), e o `only`
-  # do Plug.Static casa o nome exato: sem `only_matching` esses arquivos dariam
-  # 404 no build publicado, deixando a caixa sem manifest nem ícone (o iOS, sem
-  # manifest, abre a PWA com a moldura do Safari em vez de em tela cheia).
-  def static_path_prefixes, do: ~w(favicon apple-touch-icon manifest robots offline)
+  def static_paths do
+    ~w(assets fonts icons robots.txt favicon.ico openapi.yaml)
+  end
 
   def router do
     quote do

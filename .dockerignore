@@ -12,7 +12,7 @@ assets/node_modules/
 
 # esbuild output and the digest manifest are regenerated in-image by
 # `mix assets.deploy`, so they are not part of the build context. Source static
-# files (fonts, icons, manifest.webmanifest, sw.js, robots.txt) ARE kept: they
+# files (fonts, icons, robots.txt) ARE kept: they
 # are committed and `COPY priv priv` must include them.
 priv/static/assets/
 priv/static/cache_manifest.json
