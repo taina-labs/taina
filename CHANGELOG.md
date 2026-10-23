@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/taina-labs/taina/compare/v0.5.0...v0.5.1) (2026-10-23)
+
+
+### Miscellaneous Chores
+
+* update taina sha256 nix module ([a8d187f](https://github.com/taina-labs/taina/commit/a8d187f48593c735da3c5f54d7a50067f6e21492))
+
 ## [0.5.0](https://github.com/taina-labs/taina/compare/v0.4.0...v0.5.0) (2026-10-22)
 
 
