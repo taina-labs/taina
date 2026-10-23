@@ -23,9 +23,7 @@
   vips,
   esbuild,
   pkg-config,
-}:
-
-let
+}: let
   packages = beamPackages.extend (_final: _prev: {
     erlang = erlang_28;
     elixir = (elixir-with-otp erlang_28)."1.20.0";
@@ -33,23 +31,22 @@ let
 
   # Read the version from mix.exs so the release bump is the only place it
   # lives. A miss falls back to 0.0.0 rather than failing the eval.
-  version =
-    let
-      line = lib.findFirst (l: lib.hasInfix "version:" l) "" (lib.splitString "\n" (builtins.readFile ../mix.exs));
-      matched = builtins.match ".*\"([^\"]+)\".*" line;
-    in
-    if matched == null then "0.0.0" else builtins.head matched;
+  version = let
+    line = lib.findFirst (l: lib.hasInfix "version:" l) "" (lib.splitString "\n" (builtins.readFile ../mix.exs));
+    matched = builtins.match ".*\"([^\"]+)\".*" line;
+  in
+    if matched == null
+    then "0.0.0"
+    else builtins.head matched;
 
   # Only what mix needs to build: the flake's own source, minus the state and
   # build directories a working checkout carries, and minus the assets that
   # `mix assets.deploy` regenerates inside the sandbox.
   src = lib.cleanSourceWith {
     src = ../.;
-    filter =
-      path: _type:
-      let
-        base = baseNameOf (toString path);
-      in
+    filter = path: _type: let
+      base = baseNameOf (toString path);
+    in
       !(builtins.elem base [
         "_build"
         "deps"
@@ -65,64 +62,64 @@ let
       && base != "cache_manifest.json";
   };
 in
-packages.mixRelease {
-  pname = "taina";
-  inherit version src;
-
-  # One fixed-output derivation for the hex deps, pinned by hash. Bumping
-  # mix.lock changes the hash; the first build prints the one to paste here.
-  mixFodDeps = packages.fetchMixDeps {
-    pname = "taina-deps";
+  packages.mixRelease {
+    pname = "taina";
     inherit version src;
-    hash = "sha256-/dyxM6kC4GUmHCyCB7rOaYALRfTzLde6RJQu43kdJoM=";
-  };
 
-  nativeBuildInputs = [ pkg-config ];
-  buildInputs = [
-    openssl
-    vips
-  ];
+    # One fixed-output derivation for the hex deps, pinned by hash. Bumping
+    # mix.lock changes the hash; the first build prints the one to paste here.
+    mixFodDeps = packages.fetchMixDeps {
+      pname = "taina-deps";
+      inherit version src;
+      hash = "sha256-M4SYxC4VleFBcVNGD0QVtFIS0SPxYptA4EYivs2KIT0=";
+    };
 
-  # Point the esbuild hex package at nixpkgs' binary so neither the dep's
-  # install step nor `mix assets.deploy` reaches for the network.
-  ESBUILD_BINARY_PATH = "${esbuild}/bin/esbuild";
-  # `vix` compiles a NIF against the libvips in buildInputs.
-  VIX_COMPILATION_MODE = "PLATFORM_PROVIDED_LIBVIPS";
+    nativeBuildInputs = [pkg-config];
+    buildInputs = [
+      openssl
+      vips
+    ];
 
-  # Deps compile in mixRelease's configurePhase, so the force_build switch has
-  # to be in place before then (preBuild would be too late). exqlite's
-  # elixir_make would otherwise try to download a precompiled NIF, which the
-  # sandbox forbids (and its read-only HOME aborts before the source fallback).
-  preConfigure = ''
-    cat >> config/config.exs <<EOF
+    # Point the esbuild hex package at nixpkgs' binary so neither the dep's
+    # install step nor `mix assets.deploy` reaches for the network.
+    ESBUILD_BINARY_PATH = "${esbuild}/bin/esbuild";
+    # `vix` compiles a NIF against the libvips in buildInputs.
+    VIX_COMPILATION_MODE = "PLATFORM_PROVIDED_LIBVIPS";
 
-config :elixir_make, :force_build, exqlite: true
-EOF
-  '';
+    # Deps compile in mixRelease's configurePhase, so the force_build switch has
+    # to be in place before then (preBuild would be too late). exqlite's
+    # elixir_make would otherwise try to download a precompiled NIF, which the
+    # sandbox forbids (and its read-only HOME aborts before the source fallback).
+    preConfigure = ''
+          cat >> config/config.exs <<EOF
 
-  # Build and digest the assets before installPhase's `mix release` copies
-  # priv/ into the release. postBuild runs after `mix compile`.
-  postBuild = "mix assets.deploy";
+      config :elixir_make, :force_build, exqlite: true
+      EOF
+    '';
 
-  # nixpkgs strips releases/COOKIE from the store, which the release script
-  # reads unconditionally. taina is a single node and never joins a cluster, so
-  # distribution is off and the cookie is inert: it only satisfies the script.
-  postInstall = ''
-    for env in "$out"/releases/*/env.sh; do
-      cat >> "$env" <<'EOF'
+    # Build and digest the assets before installPhase's `mix release` copies
+    # priv/ into the release. postBuild runs after `mix compile`.
+    postBuild = "mix assets.deploy";
 
-# Set by the Nix build. taina is a single node, so distribution is off and the
-# cookie exists only because the release script reads it unconditionally.
-export RELEASE_DISTRIBUTION="none"
-export RELEASE_COOKIE="taina"
-EOF
-    done
-  '';
+    # nixpkgs strips releases/COOKIE from the store, which the release script
+    # reads unconditionally. taina is a single node and never joins a cluster, so
+    # distribution is off and the cookie is inert: it only satisfies the script.
+    postInstall = ''
+          for env in "$out"/releases/*/env.sh; do
+            cat >> "$env" <<'EOF'
 
-  meta = {
-    description = "The community private-cloud server";
-    homepage = "https://github.com/taina-labs/taina";
-    license = lib.licenses.agpl3Only;
-    platforms = lib.platforms.unix;
-  };
-}
+      # Set by the Nix build. taina is a single node, so distribution is off and the
+      # cookie exists only because the release script reads it unconditionally.
+      export RELEASE_DISTRIBUTION="none"
+      export RELEASE_COOKIE="taina"
+      EOF
+          done
+    '';
+
+    meta = {
+      description = "The community private-cloud server";
+      homepage = "https://github.com/taina-labs/taina";
+      license = lib.licenses.agpl3Only;
+      platforms = lib.platforms.unix;
+    };
+  }
