@@ -1,0 +1,2161 @@
+# Contrato da API JSON v1 do Tainá (RFC_005).
+#
+# A fonte única é este arquivo, no repositório do box. Ele junta os paths
+# (RFC_005 seção 9) e os components: as formas de record, zona, papel, erro e
+# paginação. O box o serve em `GET /api/v1/openapi.yaml`; o app (Okena) e
+# qualquer outro cliente o consomem de lá. Um box serve uma comunidade.
+openapi: 3.0.3
+
+info:
+  title: Tainá API
+  version: v1
+  description: |
+    A API JSON v1 do Tainá: um canal fino sobre os contextos da comunidade
+    (Maracá, Ybira, Jaci). A autenticação é por token de dispositivo (Bearer),
+    nunca por sessão de cookie.
+
+    Regras sociais herdadas sem exceção (RFC_003): a zona **casa** é privada
+    por padrão e cada pessoa concede acesso explicitamente; a zona **praça** é
+    partilhada por norma; a zeladora cuida da máquina e **não** tem atalho para
+    a casa de ninguém. Colocar algo na praça é o ato de consentimento.
+
+    O envelope de erro é único: `{"error": {"code", "message", "details?"}}`.
+    O `code` é o vocabulário estável do cliente; a `message` é pt-BR, curta,
+    com saída e sem culpa.
+  license:
+    name: AGPL-3.0-or-later
+
+servers:
+  - url: "https://{host}"
+    variables:
+      host:
+        default: taina.local
+        description: O endereço da comunidade (por exemplo, via tailnet).
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Instância e sessão
+  - name: Pessoas
+  - name: Pastas e arquivos
+  - name: Lixeira e fotos
+  - name: Pedidos de acesso, mural, armazenamento, saúde
+
+paths:
+  /api/v1/instance:
+    get:
+      tags: [Instância e sessão]
+      summary: A instância
+      description: |
+        Quem é a comunidade e se a caixa já foi criada. Público, sem auth: é o
+        que a tela de setup usa para saber se o endereço informado é um Tainá.
+      security: []
+      responses:
+        "200":
+          description: A instância.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Instance"
+
+  /api/v1/session:
+    post:
+      tags: [Instância e sessão]
+      summary: Entrar
+      description: |
+        Login por usuário e senha. Devolve o segredo cru do dispositivo
+        (`tnd_...`) **uma única vez**; no banco fica só o hash. Reusa o rate
+        limit de força bruta da web.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+                device_name:
+                  type: string
+                  description: Rótulo do aparelho (ex. "iPhone da Ana"). Sem ele, "Dispositivo".
+      responses:
+        "201":
+          description: Sessão criada; o token volta uma única vez.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          description: Muitas tentativas seguidas.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      tags: [Instância e sessão]
+      summary: Sair
+      description: Revoga o dispositivo da própria chamada. O token deixa de valer na hora.
+      responses:
+        "204":
+          description: Dispositivo revogado.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/session/password:
+    post:
+      tags: [Instância e sessão]
+      summary: Trocar a própria senha
+      description: |
+        A troca de senha com a pessoa já dentro: ela diz a senha atual e a
+        nova. A atual errada volta 403 `invalid_credentials`; a nova fraca
+        volta 422 `validation_failed`. Todos os OUTROS dispositivos da
+        pessoa são revogados; o dispositivo desta chamada continua
+        conectado. As senhas não são confirmadas no fio: quem confere as
+        duas é o app.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [current_password, new_password]
+              properties:
+                current_password:
+                  type: string
+                new_password:
+                  type: string
+      responses:
+        "200":
+          description: A senha mudou.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: A senha atual não confere (`invalid_credentials`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+
+  /api/v1/invites/{token}:
+    get:
+      tags: [Instância e sessão]
+      summary: Estado do convite
+      description: |
+        A leitura leve que o app faz ao abrir o deep link
+        (`taina://convite/:token`): o convite ainda vale? A validação de
+        verdade continua no POST.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/Token"
+      responses:
+        "200":
+          description: O convite vale.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/invites/{token}/accept:
+    post:
+      tags: [Instância e sessão]
+      summary: Aceitar convite
+      description: |
+        Cria a conta e a sessão na mesma requisição. Sem
+        `password_confirmation` de propósito: quem confere as duas senhas é
+        o app; a divergência viajando no fio trataria um erro de digitação
+        como token inválido (o 401 errado).
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/Token"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+                display_name:
+                  type: string
+                  description: Como o nome aparece para a comunidade. Sem ele, o convite segue pendente de nome.
+                device_name:
+                  type: string
+                  description: Rótulo do aparelho (ex. "iPhone da Ana"). Sem ele, "Dispositivo".
+      responses:
+        "201":
+          description: Conta criada; a sessão nasce aqui.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+
+  /api/v1/password-resets/{token}:
+    get:
+      tags: [Instância e sessão]
+      summary: Estado do link de senha
+      description: |
+        A leitura leve que o app faz ao abrir o deep link
+        (`taina://redefinir/:token`); a validação de verdade fica no POST.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/Token"
+      responses:
+        "200":
+          description: O link vale.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags: [Instância e sessão]
+      summary: Redefinir senha
+      description: |
+        Define a senha nova e cria a sessão na mesma requisição. Sem
+        `password_confirmation` de propósito, igual ao aceite do convite.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/Token"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password:
+                  type: string
+                device_name:
+                  type: string
+                  description: Rótulo do aparelho (ex. "iPhone da Ana"). Sem ele, "Dispositivo".
+      responses:
+        "201":
+          description: Senha redefinida; a sessão nasce aqui.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+
+  /api/v1/me:
+    get:
+      tags: [Instância e sessão]
+      summary: Quem está agindo
+      responses:
+        "200":
+          description: A pessoa, a Tekoa e o dispositivo da chamada.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Me"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v1/devices:
+    get:
+      tags: [Instância e sessão]
+      summary: Listar dispositivos
+      description: Os dispositivos da própria pessoa, do mais recente para o mais antigo.
+      responses:
+        "200":
+          $ref: "#/components/responses/DevicePage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/devices/{id}:
+    delete:
+      tags: [Instância e sessão]
+      summary: Revogar dispositivo
+      description: Revoga um dispositivo pela dona ou pela zeladora. Idempotente.
+      parameters:
+        - $ref: "#/components/parameters/DeviceId"
+      responses:
+        "204":
+          description: Dispositivo revogado.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/members:
+    get:
+      tags: [Pessoas]
+      summary: Listar pessoas
+      description: As pessoas da comunidade, zeladoras primeiro.
+      responses:
+        "200":
+          $ref: "#/components/responses/AvaPage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags: [Pessoas]
+      summary: Convidar
+      description: |
+        Cria um convite pendente e devolve o token uma única vez. A pessoa
+        aceita por deep link (`taina://convite/:token`) e escolhe o próprio
+        nome de usuário. Só a zeladora convida.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                papel:
+                  $ref: "#/components/schemas/Papel"
+      responses:
+        "201":
+          description: Convite criado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemberInvite"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+
+  /api/v1/members/{id}:
+    patch:
+      tags: [Pessoas]
+      summary: Mudar o papel
+      description: Só a zeladora. Não deixa a comunidade sem zeladora.
+      parameters:
+        - $ref: "#/components/parameters/AvaId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [papel]
+              properties:
+                papel:
+                  $ref: "#/components/schemas/Papel"
+      responses:
+        "200":
+          description: O morador atualizado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ava"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+    delete:
+      tags: [Pessoas]
+      summary: Desativar
+      description: Desativa a conta (os tokens deixam de resolver). Só a zeladora.
+      parameters:
+        - $ref: "#/components/parameters/AvaId"
+      responses:
+        "204":
+          description: Conta desativada.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/v1/members/{id}/reactivate:
+    post:
+      tags: [Pessoas]
+      summary: Reativar
+      description: Reativa a conta; os tokens antigos voltam a valer. Só a zeladora.
+      parameters:
+        - $ref: "#/components/parameters/AvaId"
+      responses:
+        "200":
+          description: O morador reativado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ava"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/members/{id}/invite:
+    delete:
+      tags: [Pessoas]
+      summary: Revogar convite
+      description: Apaga um convite ainda pendente. Só a zeladora.
+      parameters:
+        - $ref: "#/components/parameters/AvaId"
+      responses:
+        "204":
+          description: Convite revogado.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/v1/members/{id}/reset-link:
+    post:
+      tags: [Pessoas]
+      summary: Link de senha
+      description: |
+        Gera o link de redefinição de um morador e devolve o token uma única
+        vez. A entrega é humana; o app monta `taina://redefinir/:token`. Só a
+        zeladora.
+      parameters:
+        - $ref: "#/components/parameters/AvaId"
+      responses:
+        "201":
+          description: Link gerado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResetLink"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/folders:
+    get:
+      tags: [Pastas e arquivos]
+      summary: Listar pastas
+      description: As pastas legíveis (navegação, escolha de destino). Vêm completas, sem paginar.
+      responses:
+        "200":
+          $ref: "#/components/responses/FolderPage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags: [Pastas e arquivos]
+      summary: Criar pasta
+      description: Nasce sempre na casa; publicar na praça é um ato próprio.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                parent_rkey:
+                  $ref: "#/components/schemas/Rkey"
+      responses:
+        "201":
+          description: Pasta criada.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Folder"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+
+  /api/v1/folders/{id}:
+    get:
+      tags: [Pastas e arquivos]
+      summary: Ver pasta
+      parameters:
+        - $ref: "#/components/parameters/FolderId"
+      responses:
+        "200":
+          description: A pasta.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Folder"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [Pastas e arquivos]
+      summary: Renomear ou trocar de zona
+      description: |
+        `name` renomeia; `zona` publica na praça (`praca`) ou volta para a casa
+        (`casa`). Só a dona.
+      parameters:
+        - $ref: "#/components/parameters/FolderId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                zona:
+                  $ref: "#/components/schemas/Zona"
+      responses:
+        "200":
+          description: A pasta atualizada.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Folder"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+    delete:
+      tags: [Pastas e arquivos]
+      summary: Apagar pasta
+      description: Apaga suave a subárvore inteira. Só a dona.
+      parameters:
+        - $ref: "#/components/parameters/FolderId"
+      responses:
+        "204":
+          description: Pasta apagada.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/folders/{id}/move:
+    post:
+      tags: [Pastas e arquivos]
+      summary: Mover pasta
+      description: Move para outra pasta (ou para a raiz, sem `parent_rkey`). Só a dona; o grafo não pode ciclar.
+      parameters:
+        - $ref: "#/components/parameters/FolderId"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                parent_rkey:
+                  $ref: "#/components/schemas/Rkey"
+      responses:
+        "200":
+          description: A pasta movida.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Folder"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/v1/contents:
+    get:
+      tags: [Pastas e arquivos]
+      summary: Conteúdo de uma pasta
+      description: As pastas vêm completas, só os arquivos paginam. A resposta traz `ETag` fraco.
+      parameters:
+        - name: folder
+          in: query
+          description: O rkey da pasta; sem ele, a raiz.
+          schema:
+            $ref: "#/components/schemas/Rkey"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Sort"
+        - $ref: "#/components/parameters/IfNoneMatch"
+      responses:
+        "200":
+          description: O conteúdo.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FolderContents"
+        "304":
+          $ref: "#/components/responses/NotModified"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/files:
+    post:
+      tags: [Pastas e arquivos]
+      summary: Subir arquivo
+      description: |
+        Multipart, um arquivo por requisição. O MIME é decidido pelos magic
+        bytes e conferido contra a allowlist; a cota da comunidade é conferida
+        antes de gravar. O `sha256` volta no JSON para o cliente de backup
+        pular o que já subiu.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                folder:
+                  $ref: "#/components/schemas/Rkey"
+      responses:
+        "201":
+          description: Arquivo criado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/File"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+
+  /api/v1/files/{id}:
+    get:
+      tags: [Pastas e arquivos]
+      summary: Ver arquivo
+      parameters:
+        - $ref: "#/components/parameters/FileId"
+      responses:
+        "200":
+          description: O metadado do arquivo.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/File"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [Pastas e arquivos]
+      summary: Renomear ou trocar de zona
+      description: |
+        `name` renomeia; `zona` publica na praça (`praca`) ou volta para a casa
+        (`casa`). Só a dona.
+      parameters:
+        - $ref: "#/components/parameters/FileId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                zona:
+                  $ref: "#/components/schemas/Zona"
+      responses:
+        "200":
+          description: O arquivo atualizado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/File"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+    delete:
+      tags: [Pastas e arquivos]
+      summary: Apagar arquivo
+      description: Manda para a lixeira (a dona só; a zeladora não tem atalho). Só a dona.
+      parameters:
+        - $ref: "#/components/parameters/FileId"
+      responses:
+        "204":
+          description: Arquivo na lixeira.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/files/{id}/move:
+    post:
+      tags: [Pastas e arquivos]
+      summary: Mover arquivo
+      description: Move para uma pasta (ou para a raiz, sem `folder`). Só a dona.
+      parameters:
+        - $ref: "#/components/parameters/FileId"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                folder:
+                  $ref: "#/components/schemas/Rkey"
+      responses:
+        "200":
+          description: O arquivo movido.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/File"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/files/{id}/download:
+    get:
+      tags: [Pastas e arquivos]
+      summary: Baixar
+      description: |
+        Os bytes do arquivo, sob a regra de leitura das duas zonas. Aceita
+        `Range` (RFC 7233) e responde `206 Partial Content` (ou `416` fora do
+        arquivo). O `Content-Disposition` carrega o nome nas duas formas:
+        `filename=` e `filename*=UTF-8''` (RFC 5987); o cliente que respeita
+        a estendida recebe o nome acentuado sem corromper.
+      parameters:
+        - $ref: "#/components/parameters/FileId"
+        - name: Range
+          in: header
+          description: Faixa de bytes, por exemplo `bytes=0-1023`.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: O arquivo inteiro.
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "206":
+          description: Uma faixa do arquivo.
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "416":
+          description: A faixa pedida está fora do arquivo.
+
+  /api/v1/files/{id}/thumbnail/{size}:
+    get:
+      tags: [Pastas e arquivos]
+      summary: Miniatura
+      description: |
+        Miniatura webp gerada pela rendition. Só `sm` e `md`. O 404 fala o
+        estado no `code`: `rendition_pending` (imagem ainda sem miniatura,
+        pode aparecer depois), `rendition_unavailable` (a geração falhou,
+        não vem) e `not_found` (arquivo ausente ou ilegível, como antes).
+      parameters:
+        - $ref: "#/components/parameters/FileId"
+        - name: size
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [sm, md]
+      responses:
+        "200":
+          description: A miniatura.
+          content:
+            image/webp:
+              schema:
+                type: string
+                format: binary
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: |
+            Sem miniatura, com o estado no `code`: `rendition_pending`,
+            `rendition_unavailable` ou `not_found`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/v1/files/manifest:
+    get:
+      tags: [Pastas e arquivos]
+      summary: Manifesto de backup
+      description: |
+        O manifesto: cada arquivo legível da pessoa com o hash, do mais
+        antigo para o mais novo (ordem de `rkey` ascendente). É o que um
+        cliente de backup consulta para saber o que já subiu sem listar
+        tudo. Página por `after` (o rkey da última) e `limit` (200 por
+        padrão, 1000 no máximo). A resposta traz `ETag` fraco.
+      parameters:
+        - name: after
+          in: query
+          description: O rkey do último arquivo da página anterior.
+          schema:
+            $ref: "#/components/schemas/Rkey"
+        - name: limit
+          in: query
+          description: Quantos itens por página.
+          schema:
+            type: integer
+            default: 200
+            minimum: 1
+            maximum: 1000
+        - $ref: "#/components/parameters/IfNoneMatch"
+      responses:
+        "200":
+          $ref: "#/components/responses/FilePage"
+        "304":
+          $ref: "#/components/responses/NotModified"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v1/files/batch:
+    post:
+      tags: [Pastas e arquivos]
+      summary: Operação em lote
+      description: |
+        Um ato sobre muitos arquivos de uma vez: `trash`, `restore`,
+        `move`, `publish` ou `unpublish`. O `folder` só quer dizer algo no
+        `move`. Cada id passa pela mesma regra do endpoint individual
+        (dona e zona), e a resposta é 200 mesmo com falhas parciais: a
+        lista de resultados diz, item a item, o que aconteceu.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [op, ids]
+              properties:
+                op:
+                  $ref: "#/components/schemas/BatchOp"
+                ids:
+                  type: array
+                  description: Os rkeys dos arquivos, no máximo 200 por vez.
+                  items:
+                    $ref: "#/components/schemas/Rkey"
+                  maxItems: 200
+                folder:
+                  description: A pasta de destino, só para `move`.
+                  nullable: true
+                  allOf:
+                    - $ref: "#/components/schemas/Rkey"
+      responses:
+        "200":
+          description: |
+            O resultado de cada item, na ordem do pedido. Um item falho
+            não interrompe os outros.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BatchResults"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+
+  /api/v1/recent:
+    get:
+      tags: [Pastas e arquivos]
+      summary: Recentes
+      description: Os arquivos legíveis mais recentes. A resposta traz `ETag` fraco.
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/IfNoneMatch"
+      responses:
+        "200":
+          $ref: "#/components/responses/FilePage"
+        "304":
+          $ref: "#/components/responses/NotModified"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v1/trash:
+    get:
+      tags: [Lixeira e fotos]
+      summary: Lixeira
+      description: O lixo da própria pessoa; ninguém vê o dos outros. A resposta traz `ETag` fraco.
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/IfNoneMatch"
+      responses:
+        "200":
+          $ref: "#/components/responses/FilePage"
+        "304":
+          $ref: "#/components/responses/NotModified"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v1/trash/{file_id}/restore:
+    post:
+      tags: [Lixeira e fotos]
+      summary: Restaurar
+      description: Tira da lixeira. Só a dona.
+      parameters:
+        - $ref: "#/components/parameters/FileIdPath"
+      responses:
+        "200":
+          description: O arquivo restaurado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/File"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/photos:
+    get:
+      tags: [Lixeira e fotos]
+      summary: Grade de fotos
+      description: Fotos e vídeos legíveis, do mais recente para o mais antigo. A resposta traz `ETag` fraco.
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/IfNoneMatch"
+      responses:
+        "200":
+          $ref: "#/components/responses/FilePage"
+        "304":
+          $ref: "#/components/responses/NotModified"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v1/photos/timeline:
+    get:
+      tags: [Lixeira e fotos]
+      summary: Linha do tempo
+      description: |
+        As mesmas fotos, agrupadas pela data efetiva (EXIF quando houver, senão
+        o upload). Cada item é um dia com as fotos dentro. A resposta traz
+        `ETag` fraco.
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/IfNoneMatch"
+      responses:
+        "200":
+          description: Os dias, do mais recente para o mais antigo.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimelinePage"
+        "304":
+          $ref: "#/components/responses/NotModified"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v1/files/{id}/access-target:
+    get:
+      tags: [Pedidos de acesso, mural, armazenamento, saúde]
+      summary: Alvo do pedido
+      description: |
+        O dono resolvido, para quem ainda não lê o arquivo montar o pedido.
+        Quem já lê recebe 409 `already_readable`.
+      parameters:
+        - $ref: "#/components/parameters/FileId"
+      responses:
+        "200":
+          description: O dono do arquivo.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccessTarget"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/v1/files/{id}/access-request:
+    post:
+      tags: [Pedidos de acesso, mural, armazenamento, saúde]
+      summary: Pedir acesso
+      description: O pedido não dá acesso; registra a pergunta. A dona decide.
+      parameters:
+        - $ref: "#/components/parameters/FileId"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                motivo:
+                  type: string
+      responses:
+        "201":
+          description: Pedido criado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pedido"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+
+  /api/v1/access-requests:
+    get:
+      tags: [Pedidos de acesso, mural, armazenamento, saúde]
+      summary: Pedidos recebidos
+      description: Os pedidos pendentes em que eu sou a dona.
+      responses:
+        "200":
+          $ref: "#/components/responses/PedidoPage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v1/my-requests:
+    get:
+      tags: [Pedidos de acesso, mural, armazenamento, saúde]
+      summary: Pedidos enviados
+      description: Os pedidos pendentes que eu fiz.
+      responses:
+        "200":
+          $ref: "#/components/responses/PedidoPage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v1/access-requests/{id}/approve:
+    post:
+      tags: [Pedidos de acesso, mural, armazenamento, saúde]
+      summary: Aprovar
+      description: Gera a concessão de leitura. Só a dona do recurso.
+      parameters:
+        - $ref: "#/components/parameters/PedidoId"
+      responses:
+        "200":
+          description: A concessão criada.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Concessao"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/v1/access-requests/{id}/deny:
+    post:
+      tags: [Pedidos de acesso, mural, armazenamento, saúde]
+      summary: Negar
+      description: Fecha o pedido sem dar acesso. Só a dona do recurso.
+      parameters:
+        - $ref: "#/components/parameters/PedidoId"
+      responses:
+        "200":
+          description: O pedido decidido.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pedido"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/v1/grants/{public_id}:
+    delete:
+      tags: [Pedidos de acesso, mural, armazenamento, saúde]
+      summary: Revogar acesso
+      description: |
+        Toma de volta a leitura que uma concessão deu. Só a dona do
+        recurso. Revogar não apaga o fato: a concessão fica com a data da
+        revogação e continua listada.
+      parameters:
+        - $ref: "#/components/parameters/ConcessaoId"
+      responses:
+        "204":
+          description: Acesso revogado.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Autenticado, mas não é a dona do recurso (`not_owner`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: A concessão já estava revogada (`invalid_status`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/v1/grants:
+    get:
+      tags: [Pedidos de acesso, mural, armazenamento, saúde]
+      summary: Concessões
+      description: |
+        As concessões de leitura no espelho: as que eu concedi (`role=owner`,
+        o padrão) ou as que recebi (`role=reader`), revogadas incluídas.
+        Paginada como as outras listas: `limit` e `after` (o cursor opaco da
+        página anterior), com `next_cursor` real na resposta.
+      parameters:
+        - name: role
+          in: query
+          description: A ponta do espelho. Qualquer outro valor cai em `owner`.
+          schema:
+            type: string
+            enum: [owner, reader]
+            default: owner
+        - $ref: "#/components/parameters/Limit"
+        - name: after
+          in: query
+          description: O `next_cursor` da página anterior (opaco).
+          schema:
+            type: string
+        - $ref: "#/components/parameters/IfNoneMatch"
+      responses:
+        "200":
+          $ref: "#/components/responses/ConcessaoPage"
+        "304":
+          $ref: "#/components/responses/NotModified"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v1/mural:
+    get:
+      tags: [Pedidos de acesso, mural, armazenamento, saúde]
+      summary: Mural
+      description: A projeção legível da cadeia, da entrada mais recente para a mais antiga.
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: As entradas.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MuralEntryPage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v1/storage:
+    get:
+      tags: [Pedidos de acesso, mural, armazenamento, saúde]
+      summary: Armazenamento
+      responses:
+        "200":
+          description: O retrato do armazenamento.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StorageStats"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v1/storage/quota:
+    patch:
+      tags: [Pedidos de acesso, mural, armazenamento, saúde]
+      summary: Mudar a cota
+      description: Só a zeladora; cota em bytes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [quota_bytes]
+              properties:
+                quota_bytes:
+                  type: integer
+                  format: int64
+                  minimum: 1
+      responses:
+        "200":
+          description: A Tekoa com a cota nova.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tekoa"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+
+  /api/v1/saude:
+    get:
+      tags: [Pedidos de acesso, mural, armazenamento, saúde]
+      summary: Saúde da comunidade
+      description: Armazenamento, jobs em espera e o último backup, em pt-BR simples.
+      responses:
+        "200":
+          description: O painel.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Saude"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v1/saude/backup:
+    post:
+      tags: [Pedidos de acesso, mural, armazenamento, saúde]
+      summary: Disparar backup
+      description: Enfileira um backup agora. Só a zeladora.
+      responses:
+        "202":
+          description: Backup agendado.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  scheduled:
+                    type: boolean
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: |
+        Token de dispositivo (`tnd_...`), devolvido uma única vez por
+        `POST /api/v1/session`. A revogação vale na requisição seguinte.
+
+  parameters:
+    Limit:
+      name: limit
+      in: query
+      description: Quantos itens por página.
+      schema:
+        type: integer
+        default: 50
+        minimum: 1
+        maximum: 100
+    Cursor:
+      name: cursor
+      in: query
+      description: O `next_cursor` da página anterior (opaco nas listas por keyset, offset decimal nas listas por offset).
+      schema:
+        type: string
+    Sort:
+      name: sort
+      in: query
+      description: "`name`, `date` ou `size`, com `asc`/`desc` opcional (ex. `date_desc`). Sem direção, sobe."
+      schema:
+        type: string
+    FileId:
+      name: id
+      in: path
+      required: true
+      description: O rkey (TID) do arquivo.
+      schema:
+        $ref: "#/components/schemas/Rkey"
+    FileIdPath:
+      name: file_id
+      in: path
+      required: true
+      description: O rkey (TID) do arquivo.
+      schema:
+        $ref: "#/components/schemas/Rkey"
+    FolderId:
+      name: id
+      in: path
+      required: true
+      description: O rkey (TID) da pasta.
+      schema:
+        $ref: "#/components/schemas/Rkey"
+    AvaId:
+      name: id
+      in: path
+      required: true
+      description: O id público da pessoa.
+      schema:
+        type: string
+    DeviceId:
+      name: id
+      in: path
+      required: true
+      description: O id público do dispositivo.
+      schema:
+        type: string
+    PedidoId:
+      name: id
+      in: path
+      required: true
+      description: O id público do pedido de acesso.
+      schema:
+        type: string
+    Token:
+      name: token
+      in: path
+      required: true
+      description: O token cru do convite ou do link de senha, que o deep link carrega.
+      schema:
+        type: string
+    ConcessaoId:
+      name: public_id
+      in: path
+      required: true
+      description: O id público da concessão de leitura.
+      schema:
+        type: string
+    IfNoneMatch:
+      name: If-None-Match
+      in: header
+      description: |
+        O `ETag` fraco que a resposta anterior trouxe. Igual ao do momento,
+        o box responde 304 sem corpo: a coleção não mudou. O etag é local
+        do escopo de leitura de quem pede.
+      schema:
+        type: string
+
+  responses:
+    Unauthorized:
+      description: Sem token de dispositivo válido.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Forbidden:
+      description: Autenticado, mas sem permissão (inclui conta desativada).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: Não existe (ou não é visível) aqui.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Conflict:
+      description: Conflito de estado (papel, cota, ciclo, pedido já decidido).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    ValidationFailed:
+      description: Entrada malformada, com os campos em `details`.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotModified:
+      description: |
+        A coleção não mudou desde a resposta marcada pelo `If-None-Match`:
+        304, corpo vazio. O cliente usa o que já tem.
+    AvaPage:
+      description: Página de pessoas.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/AvaPage"
+    DevicePage:
+      description: Página de dispositivos.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/DevicePage"
+    FolderPage:
+      description: Página de pastas.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/FolderPage"
+    FilePage:
+      description: Página de arquivos.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/FilePage"
+    PedidoPage:
+      description: Página de pedidos.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/PedidoPage"
+    ConcessaoPage:
+      description: Página de concessões.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ConcessaoPage"
+
+  schemas:
+    # --- Components do kernel (espelho de ypy/api/openapi.components.yaml) ---
+
+    Cid:
+      type: string
+      description: CIDv1 em multibase base32 minúscula, com o prefixo b.
+      pattern: "^b[234567abcdefghijklmnopqrstuvwxyz]+$"
+    Rkey:
+      type: string
+      description: TID de 13 caracteres, o id público de arquivo e pasta, ordenável por tempo.
+      pattern: "^[234567abcdefghijklmnopqrstuvwxyz]{13}$"
+    Zona:
+      type: string
+      description: As duas zonas do modelo social.
+      enum: [casa, praca]
+    Papel:
+      type: string
+      description: O papel social na Tekoa.
+      enum: [zelador, morador]
+    Error:
+      type: object
+      description: O envelope único de erro.
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: O motivo do contexto em string, o vocabulário estável do cliente.
+            message:
+              type: string
+              description: A mensagem pt-BR, curta, com saída e sem culpa.
+            details:
+              type: object
+              description: Os detalhes, campo a campo, quando há.
+    Page:
+      type: object
+      description: O envelope uniforme de paginação.
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: {}
+        next_cursor:
+          type: string
+          nullable: true
+          description: O cursor opaco (keyset) ou o offset decimal em string; null no fim.
+    FolderContents:
+      type: object
+      description: O conteúdo de uma pasta, com as pastas completas.
+      required: [folders, items, next_cursor]
+      properties:
+        folders:
+          type: array
+          items:
+            $ref: "#/components/schemas/Folder"
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/File"
+        next_cursor:
+          type: string
+          nullable: true
+
+    Ava:
+      type: object
+      description: A pessoa dentro de uma Tekoa.
+      properties:
+        public_id:
+          type: string
+          description: O id público de pessoa, 12 caracteres URL-safe.
+        username:
+          type: string
+          nullable: true
+          description: O nome de usuario; nulo num convite ainda nao aceito.
+        display_name:
+          type: string
+          nullable: true
+        papel:
+          $ref: "#/components/schemas/Papel"
+        activated_at:
+          type: string
+          format: date-time
+          nullable: true
+        deactivated_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    File:
+      type: object
+      description: |
+        O arquivo da comunidade, com os endereços do mundo CBOR e os campos
+        do produto que o box acrescenta por cima da forma do kernel: a data
+        efetiva da foto, as dimensões e o estado da miniatura.
+      properties:
+        rkey:
+          $ref: "#/components/schemas/Rkey"
+        cid:
+          $ref: "#/components/schemas/Cid"
+        blob_cid:
+          $ref: "#/components/schemas/Cid"
+        sha256:
+          type: string
+          description: O hash sha256 dos bytes, em hex minúsculo.
+        name:
+          type: string
+        mime:
+          type: string
+        size:
+          type: integer
+          format: int64
+          description: O tamanho dos bytes, em octetos.
+        zona:
+          $ref: "#/components/schemas/Zona"
+        folder:
+          description: |
+            O rkey da pasta pai, resolvido em TODA rota que devolve arquivo
+            (incluindo `/recent`, `/photos`, `/photos/timeline` e `/trash`).
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/Rkey"
+        dono:
+          type: string
+          description: |
+            O public_id da pessoa dona, resolvido em TODA rota que devolve
+            arquivo. Nulo quando o dono nao existe mais.
+          nullable: true
+        taken_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: |
+            A data efetiva da foto (`metadata["taken_at"]` do Jaci),
+            normalizada para UTC com `Z`. Nula fora de fotos.
+        width:
+          type: integer
+          nullable: true
+          description: A largura em pixels, quando o box leu do metadata.
+        height:
+          type: integer
+          nullable: true
+          description: A altura em pixels, quando o box leu do metadata.
+        rendition:
+          type: string
+          description: |
+            O estado das miniaturas do arquivo: `ready` (tem miniaturas),
+            `pending` (imagem sem registro de miniatura ainda),
+            `unavailable` (a geração falhou; o erro fica no registro),
+            `none` (o mime não é `image/*`).
+          enum: [ready, pending, unavailable, none]
+        deleted_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    Folder:
+      type: object
+      description: A pasta que organiza arquivos, também ela um record.
+      properties:
+        rkey:
+          $ref: "#/components/schemas/Rkey"
+        cid:
+          $ref: "#/components/schemas/Cid"
+        name:
+          type: string
+        zona:
+          $ref: "#/components/schemas/Zona"
+        folder:
+          description: O rkey da pasta de cima, quando há.
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/Rkey"
+        dono:
+          type: string
+          description: |
+            O public_id da pessoa dona, resolvido em TODA rota que devolve
+            pasta. Nulo quando o dono nao existe mais.
+          nullable: true
+        deleted_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    MuralEntry:
+      type: object
+      description: A entrada do mural, projeção da cadeia única.
+      properties:
+        seq:
+          type: integer
+          format: int64
+        tipo:
+          type: string
+          description: O tipo de entrada na cadeia, a palavra do domínio.
+        payload:
+          type: object
+          description: O payload da entrada, tal como a cadeia o guarda.
+        cid:
+          $ref: "#/components/schemas/Cid"
+        prev:
+          description: O cid da entrada completa anterior; null na primeira.
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/Cid"
+        created_at:
+          type: string
+          format: date-time
+
+    # --- Components do produto (só o box conhece) ---
+
+    Tekoa:
+      type: object
+      description: A comunidade. Uma por caixa.
+      properties:
+        public_id:
+          type: string
+        name:
+          type: string
+        domain:
+          type: string
+        storage_quota_bytes:
+          type: integer
+          format: int64
+          nullable: true
+        storage_used_bytes:
+          type: integer
+          format: int64
+        created_at:
+          type: string
+          format: date-time
+
+    Instance:
+      type: object
+      description: "A instância: se a caixa já foi criada e qual é a comunidade."
+      required: [bootstrapped, version]
+      properties:
+        bootstrapped:
+          type: boolean
+        tekoa:
+          allOf:
+            - $ref: "#/components/schemas/Tekoa"
+          nullable: true
+        version:
+          type: string
+          description: A versão do box.
+          nullable: true
+
+    DeviceToken:
+      type: object
+      description: Um dispositivo autorizado. Sem o hash do segredo, jamais.
+      properties:
+        public_id:
+          type: string
+        name:
+          type: string
+        last_used_at:
+          type: string
+          format: date-time
+          nullable: true
+        revoked_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    Session:
+      type: object
+      description: A sessão criada. O `token` volta uma única vez.
+      required: [token, device, me, tekoa]
+      properties:
+        token:
+          type: string
+          description: O segredo cru (`tnd_...`). Guarde no Keychain; não volta mais.
+        device:
+          $ref: "#/components/schemas/DeviceToken"
+        me:
+          $ref: "#/components/schemas/Ava"
+        tekoa:
+          $ref: "#/components/schemas/Tekoa"
+
+    Me:
+      type: object
+      required: [ava, tekoa]
+      properties:
+        ava:
+          $ref: "#/components/schemas/Ava"
+        tekoa:
+          $ref: "#/components/schemas/Tekoa"
+        device:
+          allOf:
+            - $ref: "#/components/schemas/DeviceToken"
+          nullable: true
+
+    StorageStats:
+      type: object
+      required: [used_bytes, by_kind, files, photos, trash]
+      properties:
+        used_bytes:
+          type: integer
+          format: int64
+        quota_bytes:
+          type: integer
+          format: int64
+          nullable: true
+        by_kind:
+          type: object
+          properties:
+            photos:
+              type: integer
+              format: int64
+            videos:
+              type: integer
+              format: int64
+            documents:
+              type: integer
+              format: int64
+            others:
+              type: integer
+              format: int64
+        files:
+          type: integer
+          format: int64
+        photos:
+          type: integer
+          format: int64
+        trash:
+          type: object
+          properties:
+            count:
+              type: integer
+              format: int64
+            bytes:
+              type: integer
+              format: int64
+
+    Saude:
+      type: object
+      required: [storage, jobs, backup]
+      properties:
+        storage:
+          $ref: "#/components/schemas/StorageStats"
+        jobs:
+          type: object
+          description: Trabalho em espera ou em execução, por fila.
+          additionalProperties:
+            type: integer
+            format: int64
+        backup:
+          type: object
+          properties:
+            at:
+              type: string
+              format: date-time
+              nullable: true
+            bytes:
+              type: integer
+              format: int64
+              nullable: true
+
+    Pedido:
+      type: object
+      description: "O pedido de acesso. É mero intermediário: não dá acesso."
+      properties:
+        public_id:
+          type: string
+        tipo:
+          type: string
+        recurso:
+          type: string
+        motivo:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [pendente, aprovado, negado]
+        decidido_em:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        pedinte:
+          allOf:
+            - $ref: "#/components/schemas/Ava"
+          nullable: true
+        dono:
+          allOf:
+            - $ref: "#/components/schemas/Ava"
+          nullable: true
+
+    Concessao:
+      type: object
+      description: A permissão de leitura explícita. Revogar não apaga o fato.
+      properties:
+        public_id:
+          type: string
+        tipo:
+          type: string
+        recurso:
+          type: string
+        concedida_em:
+          type: string
+          format: date-time
+          nullable: true
+        revogada_em:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        leitor:
+          allOf:
+            - $ref: "#/components/schemas/Ava"
+          nullable: true
+        dono:
+          allOf:
+            - $ref: "#/components/schemas/Ava"
+          nullable: true
+
+    AccessTarget:
+      type: object
+      description: O dono de um recurso de casa, para quem ainda não lê.
+      required: [owner, rkey, name]
+      properties:
+        owner:
+          $ref: "#/components/schemas/Ava"
+        rkey:
+          $ref: "#/components/schemas/Rkey"
+        name:
+          type: string
+
+    TokenStatus:
+      type: object
+      description: A resposta da leitura leve de um token, o que a tela do deep link abre com.
+      required: [valid]
+      properties:
+        valid:
+          type: boolean
+
+    MemberInvite:
+      type: object
+      description: O convite criado. O `token` volta uma única vez.
+      required: [ava, token, invite_url]
+      properties:
+        ava:
+          $ref: "#/components/schemas/Ava"
+        token:
+          type: string
+        invite_url:
+          type: string
+          description: O deep link do app, `taina://convite/:token`.
+
+    ResetLink:
+      type: object
+      description: O link de senha de um morador. O `token` volta uma única vez.
+      required: [ava, token, reset_url]
+      properties:
+        ava:
+          $ref: "#/components/schemas/Ava"
+        token:
+          type: string
+        reset_url:
+          type: string
+          description: O deep link do app, `taina://redefinir/:token`.
+
+    TimelineGroup:
+      type: object
+      description: Um dia da linha do tempo.
+      required: [date, photos]
+      properties:
+        date:
+          type: string
+          format: date
+        photos:
+          type: array
+          items:
+            $ref: "#/components/schemas/File"
+
+    AvaPage:
+      allOf:
+        - $ref: "#/components/schemas/Page"
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/Ava"
+    DevicePage:
+      allOf:
+        - $ref: "#/components/schemas/Page"
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/DeviceToken"
+    FolderPage:
+      allOf:
+        - $ref: "#/components/schemas/Page"
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/Folder"
+    FilePage:
+      allOf:
+        - $ref: "#/components/schemas/Page"
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/File"
+    PedidoPage:
+      allOf:
+        - $ref: "#/components/schemas/Page"
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/Pedido"
+    ConcessaoPage:
+      allOf:
+        - $ref: "#/components/schemas/Page"
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/Concessao"
+    MuralEntryPage:
+      allOf:
+        - $ref: "#/components/schemas/Page"
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/MuralEntry"
+    TimelinePage:
+      allOf:
+        - $ref: "#/components/schemas/Page"
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/TimelineGroup"
+    BatchOp:
+      type: string
+      description: O ato que a lote executa sobre cada id.
+      enum: [trash, restore, move, publish, unpublish]
+    GrantRole:
+      type: string
+      description: O lado da concessão que a pessoa olha.
+      enum: [owner, reader]
+    BatchResults:
+      type: object
+      description: O resultado de cada item, na ordem do pedido.
+      required: [results]
+      properties:
+        results:
+          type: array
+          items:
+            type: object
+            required: [rkey, ok]
+            properties:
+              rkey:
+                $ref: "#/components/schemas/Rkey"
+              ok:
+                type: boolean
+              file:
+                description: O arquivo depois do ato, quando o item deu certo.
+                allOf:
+                  - $ref: "#/components/schemas/File"
+              error:
+                type: string
+                description: O código do motivo, quando o item falhou.
+    PropostaStatus:
+      type: string
+      description: O ciclo da proposta na assembleia.
+      enum: [aberta, aprovada, rejeitada, expirada]
+    PropostaTipo:
+      type: string
+      description: O ato sensivel que a proposta autoriza.
+      enum: [remover_morador, nomear_zelador, destituir_zelador, mudar_cota]
+    Escolha:
+      type: string
+      description: O voto do morador na proposta.
+      enum: [sim, nao]
+    FileRecord:
+      type: object
+      description: O payload do record ypy.file.v0 (priv/ypy/lexicons/ypy.file.v0.json), auto-descritivo (RFC_006 secao 6).
+      required: [name, mime_type, size_bytes, blob]
+      properties:
+        name:
+          type: string
+          maxLength: 100
+        folder:
+          type: string
+          description: O rkey da pasta pai, quando ha.
+        mime_type:
+          type: string
+          description: O tipo MIME dos bytes, da allowlist do upload.
+        size_bytes:
+          type: integer
+          format: int64
+          description: O tamanho dos bytes, em octetos.
+        blob:
+          type: string
+          format: cid
+          description: O CID dos bytes no armazenamento.
+    FolderRecord:
+      type: object
+      description: O payload do record ypy.folder.v0 (priv/ypy/lexicons/ypy.folder.v0.json).
+      required: [name]
+      properties:
+        name:
+          type: string
+          maxLength: 100

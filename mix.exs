@@ -67,7 +67,7 @@ defmodule Taina.MixProject do
       {:req, "~> 0.6"},
       {:lazy_html, "~> 0.1.11", only: :test, override: true},
       # dev
-      {:tidewave, "~> 0.5", only: :dev},
+      {:tidewave, "~> 0.9", only: :dev},
       {:phoenix_live_reload, "~> 1.6", only: :dev},
       {:esbuild, "~> 0.10", runtime: Mix.env() == :dev},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},

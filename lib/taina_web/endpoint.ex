@@ -34,7 +34,8 @@ defmodule TainaWeb.Endpoint do
     from: :taina,
     gzip: not code_reloading?,
     only: TainaWeb.static_paths(),
-    only_matching: TainaWeb.static_path_prefixes()
+    only_matching: TainaWeb.static_path_prefixes(),
+    content_types: %{"openapi.yaml" => "application/yaml"}
 
   # Code reloading can be explicitly enabled under the
   # :code_reloader configuration of your endpoint.
