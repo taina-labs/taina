@@ -1,0 +1,28 @@
+NOTICE
+
+Taina, the self-hosted private cloud of a community. AGPL-3.0; copyright the
+Taina contributors.
+
+The kernel (the `Ypy` namespace) lived in its own repository and library under
+MPL-2.0 while a hosted product was expected to depend on it. That product was
+dropped, so the kernel is folded back into this repository under the project's
+AGPL-3.0. The kernel keeps its name and its namespace: `lib/ypy/`,
+`test/ypy/`, `priv/ypy/lexicons`, `priv/ypy/migrations` and
+`api/openapi.components.yaml`.
+
+The files below are adapted from the Pesque project (zeetech/pesque, by the same
+author, licensed under the WTFPL), by a namespace change (Pesque.* to Ypy.*)
+plus small doc adjustments; the algorithmic content is Pesque's. The WTFPL
+permits relicensing, and they are AGPL-3.0 here like the rest of Taina.
+
+  lib/ypy/base32.ex      (from lib/pesque/base32.ex)
+  lib/ypy/base58.ex      (from lib/pesque/base58.ex)
+  lib/ypy/cbor.ex        (from lib/pesque/cbor.ex)
+  lib/ypy/cbor/bytes.ex  (from the nested Pesque.CBOR.Bytes)
+  lib/ypy/cid.ex         (from lib/pesque/cid.ex)
+  lib/ypy/secp256k1.ex   (from lib/pesque/secp256k1.ex)
+  lib/ypy/tid.ex         (from lib/pesque/tid.ex)
+  lib/ypy/varint.ex      (from lib/pesque/varint.ex)
+
+The matching tests were ported from test/pesque/ into test/ypy/ under the same
+terms.

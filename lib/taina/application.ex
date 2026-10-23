@@ -41,8 +41,8 @@ defmodule Taina.Application do
   defp load_lexicons do
     {_entries, problems} =
       Ypy.Lexicon.Registry.load([
-        Application.app_dir(:ypy, "priv/lexicons"),
-        Path.expand("../priv/lexicons", __DIR__)
+        Application.app_dir(:taina, "priv/ypy/lexicons"),
+        Application.app_dir(:taina, "priv/lexicons")
       ])
 
     Enum.each(problems, fn {path, reason} ->

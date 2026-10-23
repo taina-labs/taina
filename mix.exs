@@ -58,7 +58,6 @@ defmodule Taina.MixProject do
       {:bandit, "~> 1.5"},
       {:nanoid, "~> 2.1"},
       {:mime, "~> 2.0"},
-      {:ypy, "~> 0.2"},
       {:image, "~> 0.68"},
       {:bcrypt_elixir, "~> 3.3"},
       {:oban, "~> 2.23"},
@@ -73,7 +72,8 @@ defmodule Taina.MixProject do
       {:esbuild, "~> 0.10", runtime: Mix.env() == :dev},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
-      {:styler, "~> 1.5", only: [:dev, :test], runtime: false}
+      {:styler, "~> 1.5", only: [:dev, :test], runtime: false},
+      {:stream_data, "~> 1.4", only: [:dev, :test]}
     ]
   end
 

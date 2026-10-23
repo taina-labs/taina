@@ -1,0 +1,239 @@
+# Components OpenAPI do kernel (RFC_006 secao 6): so components, sem paths.
+# Os paths sao do box (RFC_005 secao 9) e montam o documento raiz em volta
+# deste arquivo, que alveja OpenAPI 3.0.
+#
+# O teste de conformidade (test/ypy/wire_conformance_test.exs) afirma que
+# todo campo dos lexicons do kernel (priv/lexicons) aparece como propriedade
+# do component <Nome>Record da colecao, com o tipo mapeado: o nome do
+# component e o nome da colecao em CamelCase mais "Record" (ypy.file.v0
+# vira FileRecord).
+
+components:
+  schemas:
+    Cid:
+      type: string
+      description: CIDv1 em multibase base32 minuscula, com o prefixo b.
+      pattern: "^b[234567abcdefghijklmnopqrstuvwxyz]+$"
+    Rkey:
+      type: string
+      description: TID de 13 caracteres, o id publico de arquivo e pasta, ordenavel por tempo.
+      pattern: "^[234567abcdefghijklmnopqrstuvwxyz]{13}$"
+    Zona:
+      type: string
+      description: As duas zonas do modelo social (RFC_003 D1).
+      enum: [casa, praca]
+    Papel:
+      type: string
+      description: O papel social na Tekoa.
+      enum: [zelador, morador]
+    PropostaStatus:
+      type: string
+      description: O ciclo da proposta na assembleia.
+      enum: [aberta, aprovada, rejeitada, expirada]
+    PropostaTipo:
+      type: string
+      description: O ato sensivel que a proposta autoriza.
+      enum: [remover_morador, nomear_zelador, destituir_zelador, mudar_cota]
+    Escolha:
+      type: string
+      description: O voto do morador na proposta.
+      enum: [sim, nao]
+    Error:
+      type: object
+      description: O envelope unico de erro (RFC_005 D6).
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: O motivo do contexto em string, o vocabulario estavel do cliente (RFC_005 secao 6).
+            message:
+              type: string
+              description: A mensagem pt-BR, no tom dos erros da web.
+            details:
+              type: object
+              description: Os detalhes do deslize, campo por campo, quando ha.
+    Page:
+      type: object
+      description: O envelope uniforme de paginacao (RFC_005 secao 7).
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: {}
+        next_cursor:
+          type: string
+          nullable: true
+          description: O cursor opaco (keyset) ou o offset decimal em string, e null no fim.
+    FolderContents:
+      type: object
+      description: O conteudo de uma pasta, com as pastas completas (RFC_005 secao 7).
+      required: [folders, items, next_cursor]
+      properties:
+        folders:
+          type: array
+          items:
+            $ref: "#/components/schemas/Folder"
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/File"
+        next_cursor:
+          type: string
+          nullable: true
+    Ava:
+      type: object
+      description: A pessoa dentro de uma Tekoa (RFC_005 secao 9, pessoas).
+      properties:
+        public_id:
+          type: string
+          description: O id publico de pessoa, 12 caracteres URL-safe.
+        username:
+          type: string
+          nullable: true
+          description: O nome de usuario; nulo num convite ainda nao aceito.
+        display_name:
+          type: string
+          nullable: true
+        papel:
+          $ref: "#/components/schemas/Papel"
+        activated_at:
+          type: string
+          format: date-time
+          nullable: true
+        deactivated_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+    File:
+      type: object
+      description: O arquivo da comunidade, com os enderecos do mundo CBOR.
+      properties:
+        rkey:
+          $ref: "#/components/schemas/Rkey"
+        cid:
+          $ref: "#/components/schemas/Cid"
+        blob_cid:
+          $ref: "#/components/schemas/Cid"
+        sha256:
+          type: string
+          description: O hash sha256 dos bytes, em hex minusculo.
+        name:
+          type: string
+        mime:
+          type: string
+        size:
+          type: integer
+          format: int64
+          description: O tamanho dos bytes, em octetos.
+        zona:
+          $ref: "#/components/schemas/Zona"
+        folder:
+          description: O rkey da pasta pai, quando ha e veio preload.
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/Rkey"
+        dono:
+          type: string
+          description: O public_id do dono, quando veio preload.
+          nullable: true
+        deleted_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    Folder:
+      type: object
+      description: A pasta que organiza arquivos, tambem ela um record.
+      properties:
+        rkey:
+          $ref: "#/components/schemas/Rkey"
+        cid:
+          $ref: "#/components/schemas/Cid"
+        name:
+          type: string
+        zona:
+          $ref: "#/components/schemas/Zona"
+        folder:
+          description: O rkey da pasta de cima, quando ha e veio preload.
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/Rkey"
+        dono:
+          type: string
+          description: O public_id do dono, quando veio preload.
+          nullable: true
+        deleted_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    MuralEntry:
+      type: object
+      description: A entrada do mural, projecao da cadeia unica (RFC_006 secao 8).
+      properties:
+        seq:
+          type: integer
+          format: int64
+        tipo:
+          type: string
+          description: O tipo de entrada na cadeia, a palavra do dominio.
+        payload:
+          type: object
+          description: O payload da entrada, tal como a cadeia o guarda.
+        cid:
+          $ref: "#/components/schemas/Cid"
+        prev:
+          description: O cid da entrada completa anterior, e null na primeira.
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/Cid"
+        created_at:
+          type: string
+          format: date-time
+    FileRecord:
+      type: object
+      description: O payload do record ypy.file.v0 (priv/lexicons/ypy.file.v0.json), auto-descritivo (RFC_006 secao 6).
+      required: [name, mime_type, size_bytes, blob]
+      properties:
+        name:
+          type: string
+          maxLength: 100
+        folder:
+          type: string
+          description: O rkey da pasta pai, quando ha.
+        mime_type:
+          type: string
+          description: O tipo MIME dos bytes, da allowlist do upload.
+        size_bytes:
+          type: integer
+          format: int64
+          description: O tamanho dos bytes, em octetos.
+        blob:
+          type: string
+          format: cid
+          description: O CID dos bytes no armazenamento.
+    FolderRecord:
+      type: object
+      description: O payload do record ypy.folder.v0 (priv/lexicons/ypy.folder.v0.json).
+      required: [name]
+      properties:
+        name:
+          type: string
+          maxLength: 100
