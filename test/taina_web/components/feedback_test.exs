@@ -129,8 +129,8 @@ defmodule TainaWeb.UI.FeedbackTest do
     assert html =~ "Tentar de novo"
     assert html =~ "button--secondary"
     assert html =~ ~s(phx-click="retry")
-    # ícone de alerta: nunca só cor
-    assert html =~ ~s(y1="8" y2="12")
+    # ícone de alerta (triângulo do Penpot): nunca só cor
+    assert html =~ ~s(d="M12,2L22,22L2,22Z")
   end
 
   test "error_card sem body: só título e ação" do

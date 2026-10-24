@@ -73,7 +73,7 @@ defmodule TainaWeb.UI.Feedback do
     ~H"""
     <div class="error-card">
       <div class="error-card__head">
-        <.icon name="alert" size={20} class="error-card__icon" />
+        <.icon name="warning" size={20} class="error-card__icon" />
         <p class="error-card__title">{@title}</p>
       </div>
       <p :if={@body} class="error-card__body">{@body}</p>

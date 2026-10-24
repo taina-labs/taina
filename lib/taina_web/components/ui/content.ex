@@ -498,8 +498,8 @@ defmodule TainaWeb.UI.Content do
 
   # Estado -> ícone, mapa puro (a cor nunca é a única informação).
   defp status_line_icon("ok"), do: "check"
-  defp status_line_icon("attention"), do: "alert"
-  defp status_line_icon("problem"), do: "alert"
+  defp status_line_icon("attention"), do: "warning"
+  defp status_line_icon("problem"), do: "warning"
   defp status_line_icon("unknown"), do: "dots"
 
   @doc """

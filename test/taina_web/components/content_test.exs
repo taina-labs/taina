@@ -397,8 +397,8 @@ defmodule TainaWeb.UI.ContentTest do
 
   @status_line_icons %{
     "ok" => "M20 6 9 17l-5-5",
-    "attention" => ~s(y1="8" y2="12"),
-    "problem" => ~s(y1="8" y2="12"),
+    "attention" => ~s(d="M12,2L22,22L2,22Z"),
+    "problem" => ~s(d="M12,2L22,22L2,22Z"),
     "unknown" => ~s(cx="19" cy="12")
   }
 
