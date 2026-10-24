@@ -19,19 +19,23 @@ defmodule TainaWeb.UploadLive do
 
   @impl true
   def mount(params, _session, socket) do
-    {folder, folder_note} = resolve_folder(socket.assigns.current_scope, params["pasta"])
+    scope = socket.assigns.current_scope
+    {folder, folder_note} = resolve_folder(scope, params["pasta"])
 
+    # A linha "Espaço livre da comunidade" é da tela: ela carrega os próprios
+    # números (a casca não entrega estatística que a tela não renderiza).
     socket =
       socket
       |> assign(:page_title, gettext("Enviar arquivos"))
       |> assign(:folder, folder)
-      |> assign(:free_space, free_space_text(socket.assigns.storage_stats))
-      |> assign(:done, [])
-      |> assign(:failed, [])
-      |> maybe_flash_folder_note(folder_note)
+      |> assign_new(:storage_stats, fn -> local_storage_stats(scope) end)
 
     {:ok,
      socket
+     |> assign(:free_space, free_space_text(socket.assigns.storage_stats))
+     |> assign(:done, [])
+     |> assign(:failed, [])
+     |> maybe_flash_folder_note(folder_note)
      |> allow_upload(:files,
        accept: :any,
        max_entries: 10,
@@ -50,6 +54,13 @@ defmodule TainaWeb.UploadLive do
        auto_upload: true,
        progress: &handle_progress/3
      )}
+  end
+
+  defp local_storage_stats(scope) do
+    case Ybira.storage_stats(scope) do
+      {:ok, stats} -> stats
+      _error -> nil
+    end
   end
 
   defp resolve_folder(_scope, nil), do: {nil, nil}
@@ -156,6 +167,11 @@ defmodule TainaWeb.UploadLive do
     end)
   end
 
+  # A palavra do voltar: o nome da pasta de destino quando há uma, senão o
+  # padrão da casca (spec 1.5, limite de 12 caracteres em back_label/1).
+  defp folder_back_label(nil), do: nil
+  defp folder_back_label(folder), do: back_label(folder.nome)
+
   # Onde os arquivos caíram: na pasta alvo, ou no início já na aba casa (o
   # default da listagem). Cair na praça faria o recém-chegado "sumir" da tela.
   defp back_path(nil), do: ~p"/documentos/casa"
@@ -191,15 +207,12 @@ defmodule TainaWeb.UploadLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app
+    <Layouts.page
       flash={@flash}
-      current_scope={@current_scope}
-      active_tab={:files}
-      storage_stats={assigns[:storage_stats]}
-      account_alert={assigns[:account_alert] || false}
+      title={@page_title}
+      back={back_path(@folder)}
+      back_label={folder_back_label(@folder)}
     >
-      <Layouts.app_bar title={gettext("Enviar arquivos")} back={back_path(@folder)} />
-
       <div class="col gap-6 mx-auto w-full measure-md">
         <form id="upload-form" phx-change="validate" phx-submit="validate">
           <.dropzone id="dropzone" upload={@uploads.files} state={dropzone_state(@uploads.files)} class="w-full" />
@@ -297,7 +310,7 @@ defmodule TainaWeb.UploadLive do
           <% end %>
         </div>
       </div>
-    </Layouts.app>
+    </Layouts.page>
     """
   end
 

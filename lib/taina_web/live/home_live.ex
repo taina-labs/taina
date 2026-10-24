@@ -20,22 +20,25 @@ defmodule TainaWeb.HomeLive do
     # com erro, o flash explica e o vazio não mente. O card de espaço segue o
     # mesmo caminho (storage_stats_ok): sem resposta, um aviso calmo com
     # "Tentar de novo" ocupa o lugar dele, nunca um card que some em silêncio.
+    # A tela carrega os próprios dados: nenhuma casca entrega estatística que
+    # a tela não renderiza (o `assign_new` preserva o resultado na passagem
+    # HTTP -> WebSocket, sem reconsulta no connected mount).
     {recent, ok?} = unwrap(Ybira.list_recent(scope, limit: 4), [])
 
     socket =
       socket
       |> assign(:page_title, gettext("Início"))
+      |> assign_new(:storage_stats, fn -> local_storage_stats(scope) end)
       |> assign(:recent, recent)
       |> assign(:recent_ok, ok?)
-      |> assign(:storage_stats_ok, socket.assigns[:storage_stats] != nil)
 
-    {:ok, maybe_warn(socket, ok?)}
+    {:ok, socket |> assign(:storage_stats_ok, socket.assigns.storage_stats != nil) |> maybe_warn(ok?)}
   end
 
   @impl true
   def handle_event("retry-storage", _params, socket) do
-    # O assign de stats nasce no shell (`TainaWeb.Hooks`), só no mount: o
-    # retry refaz a consulta aqui e remarca o estado do card.
+    # O assign de stats nasce no mount (dado da própria tela): o retry refaz a
+    # consulta aqui e remarca o estado do card.
     case Ybira.storage_stats(socket.assigns.current_scope) do
       {:ok, stats} ->
         {:noreply, socket |> assign(:storage_stats, stats) |> assign(:storage_stats_ok, true)}
@@ -48,6 +51,13 @@ defmodule TainaWeb.HomeLive do
   defp unwrap(result, default, ok? \\ true)
   defp unwrap({:ok, value}, _default, ok?), do: {value, ok?}
   defp unwrap(_error, default, _ok?), do: {default, false}
+
+  defp local_storage_stats(scope) do
+    case Ybira.storage_stats(scope) do
+      {:ok, stats} -> stats
+      _error -> nil
+    end
+  end
 
   defp maybe_warn(socket, true), do: socket
 
@@ -71,7 +81,7 @@ defmodule TainaWeb.HomeLive do
     end
   end
 
-  # Serviços na ordem da navegação (sidebar). Moradores e Mural são Maracá e
+  # Serviços na ordem de leitura do hub. Moradores e Mural são Maracá e
   # usam o acento próprio do Maracá (identidade/acesso), como Ybira e Jaci usam
   # os seus: nenhum quadradinho de serviço fica sem cor ao lado dos outros.
   defp services do
@@ -131,13 +141,7 @@ defmodule TainaWeb.HomeLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app
-      flash={@flash}
-      current_scope={@current_scope}
-      active_tab={:home}
-      storage_stats={assigns[:storage_stats]}
-      account_alert={assigns[:account_alert] || false}
-    >
+    <Layouts.hub flash={@flash}>
       <div class="row between mb-6">
         <div>
           <p class="type-body text-secondary">{greeting()}</p>
@@ -216,7 +220,7 @@ defmodule TainaWeb.HomeLive do
           {gettext("Enviar arquivos")}
         </.button>
       </.empty_state>
-    </Layouts.app>
+    </Layouts.hub>
     """
   end
 end

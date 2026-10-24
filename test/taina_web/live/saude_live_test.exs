@@ -122,11 +122,13 @@ defmodule TainaWeb.SaudeLiveTest do
     refute html =~ "arquivo_da_casa"
   end
 
-  test "Saúde aparece na navegação de baixo e na lateral", %{conn: conn, morador: morador} do
+  test "Saúde renderiza a casca page com o título no cabeçalho (a casca é quem possui o título)", %{
+    conn: conn,
+    morador: morador
+  } do
     {:ok, lv, _html} = conn |> log_in(morador) |> live(~p"/saude")
 
-    assert has_element?(lv, ".bottom-nav a[href='/saude']")
-    assert has_element?(lv, ".sidebar__nav a[href='/saude']")
+    assert has_element?(lv, ".page-header__title", "Saúde da comunidade")
   end
 
   defp backup_dir do

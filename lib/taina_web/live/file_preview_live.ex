@@ -284,14 +284,7 @@ defmodule TainaWeb.FilePreviewLive do
   @impl true
   def render(%{access_target: _target} = assigns) do
     ~H"""
-    <Layouts.app
-      flash={@flash}
-      current_scope={@current_scope}
-      active_tab={:files}
-      storage_stats={assigns[:storage_stats]}
-      account_alert={assigns[:account_alert] || false}
-    >
-      <Layouts.app_bar title={gettext("Pedir acesso")} back={~p"/documentos/casa"} />
+    <Layouts.page flash={@flash} title={gettext("Pedir acesso")} back={~p"/documentos/casa"}>
 
       <div class="col gap-4 mx-auto w-full measure">
         <.empty_state
@@ -327,24 +320,16 @@ defmodule TainaWeb.FilePreviewLive do
           </.button>
         </div>
       </.modal>
-    </Layouts.app>
+    </Layouts.page>
     """
   end
 
   def render(assigns) do
     ~H"""
-    <Layouts.app
-      flash={@flash}
-      current_scope={@current_scope}
-      active_tab={:files}
-      storage_stats={assigns[:storage_stats]}
-      account_alert={assigns[:account_alert] || false}
-    >
-      <Layouts.app_bar title={@file.nome} back={@back}>
-        <:action>
-          <.icon_button name="download" label={gettext("Baixar")} href={~p"/files/#{@file.rkey}"} download />
-        </:action>
-      </Layouts.app_bar>
+    <Layouts.page flash={@flash} title={@page_title} back={@back}>
+      <:action>
+        <.icon_button name="download" label={gettext("Baixar")} href={~p"/files/#{@file.rkey}"} download />
+      </:action>
 
       <div class="col gap-4 mx-auto w-full measure-wide">
         <div class="surface-raised radius-lg center media-frame">
@@ -493,7 +478,7 @@ defmodule TainaWeb.FilePreviewLive do
           </.button>
         </div>
       </.modal>
-    </Layouts.app>
+    </Layouts.page>
     """
   end
 end

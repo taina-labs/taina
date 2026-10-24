@@ -17,7 +17,7 @@ defmodule TainaWeb.TrashLive do
 
   @impl true
   def mount(_params, _session, socket) do
-    {:ok, socket |> assign(:page_title, gettext("Lixeira")) |> load_trash()}
+    {:ok, socket |> assign(:page_title, gettext("Documentos")) |> load_trash()}
   end
 
   defp load_trash(socket) do
@@ -137,15 +137,7 @@ defmodule TainaWeb.TrashLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app
-      flash={@flash}
-      current_scope={@current_scope}
-      active_tab={:files}
-      storage_stats={assigns[:storage_stats]}
-      account_alert={assigns[:account_alert] || false}
-    >
-      <Layouts.app_bar title={gettext("Lixeira")} back={~p"/documentos/casa"} />
-
+    <Layouts.service flash={@flash} service="ybira" current="lixeira" title={@page_title} back={~p"/documentos/casa"}>
       <div class="col gap-4 mx-auto w-full measure">
         <.card class="row gap-3">
           <.icon name="clock" size={20} class="text-warning" />
@@ -226,7 +218,7 @@ defmodule TainaWeb.TrashLive do
           hint={gettext("Nada esperando para ser apagado.")}
         />
       </div>
-    </Layouts.app>
+    </Layouts.service>
     """
   end
 end

@@ -370,17 +370,10 @@ defmodule TainaWeb.SaudeLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app
-      flash={@flash}
-      current_scope={@current_scope}
-      active_tab={:saude}
-      storage_stats={assigns[:storage_stats]}
-      account_alert={assigns[:account_alert] || false}
-    >
+    <Layouts.page flash={@flash} title={@page_title} back={~p"/"}>
       <div class="col gap-6">
         <div class="row gap-3">
           <.service_square service="nhaman" icon="saude" />
-          <h1 class="type-h1">{gettext("Saúde da comunidade")}</h1>
         </div>
 
         <.empty_state
@@ -414,7 +407,7 @@ defmodule TainaWeb.SaudeLive do
           </.card>
         </div>
       </div>
-    </Layouts.app>
+    </Layouts.page>
     """
   end
 end

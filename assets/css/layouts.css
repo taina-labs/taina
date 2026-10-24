@@ -1,9 +1,10 @@
-/* Cascas de página: shell autenticado (bottom-nav mobile / sidebar desktop)
-   e layout de auth (céu noturno com horizonte). Breakpoints: 768 (sidebar),
-   1024 (desktop: mais respiro, multi-painel das telas de trabalho) e 1440
-   (desktop largo: conteúdo mais largo, com teto). */
-
-/* ---------- shell autenticado ---------- */
+/* Cascas de página (docs/web-revamp-spec.md, seção 5): a base `.shell` e o
+   conteúdo (safe-area, `page-in`) valem para todas as cinco cascas; teto e
+   centrado por contexto (hub `--measure-wide`, service/page `--measure-shell`,
+   auth `--measure-card`) ficam nos blocos das cascas embaixo. Sem navegação
+   global: sidebar, bottom-nav, topbar de navegação e appbar não existem mais.
+   Breakpoints: 768, 1024 (mais respiro no conteúdo) e 1440 (desktop largo:
+   conteúdo mais largo, com teto). */
 
 .shell {
   min-height: 100dvh;
@@ -15,23 +16,26 @@
   flex: 1;
   width: 100%;
   padding: var(--space-4);
-  /* safe-area: notch/status bar em cima, bottom-nav + home indicator embaixo,
-     borda do aparelho nas laterais (paisagem). No desktop o shorthand de
-     padding das media queries redefine tudo, então estes longhands são mobile. */
+  /* safe-area: notch/status bar em cima, borda do aparelho nas laterais
+     (paisagem). No desktop o shorthand de padding das media queries redefine
+     tudo, então estes longhands são mobile. No mobile o pé reserva o espaço
+     da service_tab_bar fixa nas cascas de serviço (as demais ganham respiro
+     a mais, sem custo). */
   padding-top: calc(var(--space-4) + env(safe-area-inset-top));
   padding-inline: calc(var(--space-4) + env(safe-area-inset-left))
     calc(var(--space-4) + env(safe-area-inset-right));
   padding-bottom: calc(var(--size-nav-mobile) + var(--space-6) + env(safe-area-inset-bottom));
   /* `backwards` (não `both`): aplica o estado inicial antes de começar, mas
      NÃO persiste o `transform` ao terminar, um transform permanente criaria
-     um stacking context que prenderia modais (position: fixed) atrás da
-     bottom-nav. */
+     um stacking context que prenderia modais (position: fixed) atrás das
+     camadas fixas. */
   animation: page-in 220ms ease backwards;
 }
 
 /* Transição suave de página: cada navegação (live_redirect) remonta o
-   conteúdo, então a animação toca de novo (shell e card de auth). Respeita
-   quem pediu menos movimento. */
+   conteúdo, então a animação toca de novo. É o único momento de movimento do
+   app (spec 5: headers sticky não animam). Respeita quem pediu menos
+   movimento. */
 @keyframes page-in {
   from {
     opacity: 0;
@@ -45,90 +49,9 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .shell__content,
-  .auth-layout__card {
+  .shell__content {
     animation: none;
   }
-}
-
-/* appbar mobile (telas internas com voltar + título) */
-.appbar {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  height: var(--size-appbar);
-}
-
-.appbar__title {
-  flex: 1;
-  /* nome de arquivo longo encolhe com reticências, não empurra as ações */
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-align: center;
-  font-family: var(--font-family-display);
-  font-size: var(--font-size-lg);
-  font-weight: var(--font-weight-semibold);
-}
-
-/* a appbar centraliza o título entre ações; espaçador mantém o equilíbrio */
-.appbar__spacer {
-  width: var(--size-touch);
-  flex-shrink: 0;
-}
-
-/* a appbar é mobile-only: no desktop a sidebar assume a navegação */
-@media (min-width: 768px) {
-  .appbar {
-    display: none;
-  }
-}
-
-/* navegação inferior (mobile) */
-.bottom-nav {
-  position: fixed;
-  inset-inline: 0;
-  bottom: 0;
-  z-index: 30;
-  display: flex;
-  height: calc(var(--size-nav-mobile) + env(safe-area-inset-bottom));
-  padding-bottom: env(safe-area-inset-bottom);
-  /* paisagem: os itens não ficam sob a borda/notch lateral do aparelho */
-  padding-inline: env(safe-area-inset-left) env(safe-area-inset-right);
-  background: var(--bg-deep);
-  border-top: var(--border-hairline) solid var(--border-subtle);
-}
-
-.bottom-nav__item {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-1);
-  color: var(--text-muted);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-medium);
-}
-
-/* 6 destinos em telas de 320px: o rótulo encolhe com reticências, nunca
-   empurra a navegação */
-.bottom-nav__label {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.bottom-nav__item[aria-current="page"] {
-  color: var(--brand-primary);
-}
-
-/* sidebar (desktop) */
-.sidebar {
-  display: none;
 }
 
 /* barra de progresso das navegações (canvas do topbar.js, app.js): desce
@@ -139,81 +62,6 @@
 }
 
 @media (min-width: 768px) {
-  .shell {
-    flex-direction: row;
-  }
-
-  .bottom-nav {
-    display: none;
-  }
-
-  .sidebar {
-    display: flex;
-    flex-direction: column;
-    width: var(--size-sidebar);
-    flex-shrink: 0;
-    position: sticky;
-    top: 0;
-    height: 100dvh;
-    padding: var(--space-4);
-    padding-top: calc(var(--space-4) + env(safe-area-inset-top));
-    background: var(--bg-deep);
-    border-right: var(--border-hairline) solid var(--border-subtle);
-  }
-
-  .sidebar__logo {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    padding: var(--space-2) var(--space-3) var(--space-6);
-    font-family: var(--font-family-display);
-    font-size: var(--font-size-xl);
-    font-weight: var(--font-weight-bold);
-  }
-
-  .sidebar__logo .icon {
-    color: var(--brand-primary);
-  }
-
-  .sidebar__nav {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-    flex: 1;
-  }
-
-  .sidebar__item {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-    height: var(--size-control-md);
-    padding-inline: var(--space-3);
-    border-radius: var(--radius-md);
-    color: var(--text-secondary);
-    font-weight: var(--font-weight-medium);
-  }
-
-  .sidebar__item:hover {
-    background: var(--surface-default);
-    color: var(--text-primary);
-  }
-
-  .sidebar__item[aria-current="page"] {
-    background: var(--surface-raised);
-    color: var(--text-primary);
-  }
-
-  .sidebar__item[aria-current="page"] .icon {
-    color: var(--brand-primary);
-  }
-
-  .shell__main {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-  }
-
   .shell__content {
     max-width: var(--measure-shell);
     padding: var(--space-6);
@@ -243,119 +91,15 @@
   }
 }
 
-@media (max-width: 767.98px) {
-  .shell__main {
-    display: flex;
-    flex-direction: column;
-    flex: 1;
-  }
-
-  /* teclado virtual aberto (visualViewport, app.js): a nav fixa some, senão
-     fica flutuando sobre as teclas. */
-  body.keyboard-open .bottom-nav {
-    display: none;
-  }
-}
-
-/* ---------- layout de auth (setup, login, convite) ---------- */
-
-.auth-layout {
-  min-height: 100dvh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: calc(var(--space-6) + env(safe-area-inset-top)) var(--space-4)
-    calc(var(--space-6) + env(safe-area-inset-bottom));
-  background:
-    radial-gradient(
-      120% 55% at 50% 118%,
-      rgb(226 103 74 / 0.35) 0%,
-      rgb(185 109 44 / 0.18) 38%,
-      transparent 70%
-    ),
-    var(--bg-deep);
-  background-attachment: scroll;
-  position: relative;
-  overflow: hidden;
-}
-
-/* estrelas: dois layers de pontinhos via radial-gradients repetidos */
-.auth-layout::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background-image:
-    radial-gradient(
-      1px 1px at 12% 18%,
-      rgb(250 247 240 / 0.7) 50%,
-      transparent 50%
-    ),
-    radial-gradient(
-      1px 1px at 78% 9%,
-      rgb(250 247 240 / 0.5) 50%,
-      transparent 50%
-    ),
-    radial-gradient(
-      1.5px 1.5px at 55% 24%,
-      rgb(250 247 240 / 0.6) 50%,
-      transparent 50%
-    ),
-    radial-gradient(
-      1px 1px at 31% 38%,
-      rgb(250 247 240 / 0.4) 50%,
-      transparent 50%
-    ),
-    radial-gradient(
-      1px 1px at 89% 33%,
-      rgb(250 247 240 / 0.55) 50%,
-      transparent 50%
-    ),
-    radial-gradient(
-      1.5px 1.5px at 8% 52%,
-      rgb(250 247 240 / 0.35) 50%,
-      transparent 50%
-    ),
-    radial-gradient(
-      1px 1px at 67% 44%,
-      rgb(250 247 240 / 0.45) 50%,
-      transparent 50%
-    ),
-    radial-gradient(
-      1px 1px at 42% 7%,
-      rgb(250 247 240 / 0.5) 50%,
-      transparent 50%
-    );
-}
-
-.auth-layout__card {
-  width: 100%;
-  max-width: var(--measure-card);
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  position: relative;
-  z-index: 1;
-  /* mesma entrada do shell; `backwards` (não `both`) evita persistir o
-     transform, que criaria containing block para `position: fixed` interno */
-  animation: page-in 220ms ease backwards;
-}
-
-/* a "estrela da manhã" do logo */
+/* a "estrela da manhã" do logo (telas de auth, conteúdo delas) */
 .spark {
   color: var(--brand-primary);
 }
 
-/* ---------- cascas novas do revamp (W2a; docs/web-revamp-spec.md, secao 5).
-   As quatro novas se aplicam nas telas na proxima onda, que também troca
-   `app`/`app_bar` e apaga as regras velhas acima (inclusive auth-layout*).
-   Exceção: a casca `--auth` já atende as telas públicas (mesmo nome do
-   def que ela substitui; nada as re-entrelaça). O `page-in` do
-   `.shell__content` acima continua sendo o único momento de movimento;
-   sticky headers não animam. */
+/* ---------- cascas do revamp (docs/web-revamp-spec.md, seção 5) ---------- */
 
-/* todas as cascas novas empilham em coluna em qualquer viewport: a regra de
-   fileira em 768 pertence ao shell velho com sidebar e morre com ele. */
+/* todas as cascas empilham em coluna em qualquer viewport: não há fileira
+   de sidebar (a regra morreu com o shell velho da navegação global). */
 .shell--hub,
 .shell--service,
 .shell--page,
@@ -365,8 +109,7 @@
 }
 
 /* teto e centrado do conteúdo por contexto (1.4): hub --measure-wide;
-   serviço e página --measure-shell; auth --measure-card. Especificidade
-   acima do `.shell__content` herdado das regras velhas assegura o teto. */
+   serviço e página --measure-shell; auth --measure-card. */
 .shell--hub .shell__content {
   max-width: var(--measure-wide);
   margin-inline: auto;
@@ -401,4 +144,3 @@
 .shell--viewer {
   background: var(--bg-deep);
 }
-

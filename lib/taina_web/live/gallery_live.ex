@@ -29,7 +29,7 @@ defmodule TainaWeb.GalleryLive do
   def mount(_params, _session, socket) do
     {:ok,
      socket
-     |> assign(:page_title, gettext("Fotos"))
+     |> assign(:page_title, gettext("Galeria"))
      |> assign(:zona, :tudo)
      |> assign(:grid_zona, nil)
      |> assign(:timeline_zona, nil)
@@ -468,219 +468,266 @@ defmodule TainaWeb.GalleryLive do
 
   @impl true
   def render(assigns) do
+    assigns = assign(assigns, :gallery, gallery_content_attrs(assigns))
+
     ~H"""
-    <Layouts.app
+    <Layouts.service
+      :if={@live_action != :viewer}
       flash={@flash}
-      current_scope={@current_scope}
-      active_tab={:photos}
-      storage_stats={assigns[:storage_stats]}
-      account_alert={assigns[:account_alert] || false}
+      service="jaci"
+      current={service_tab(@live_action)}
+      title={@page_title}
+      back={~p"/"}
     >
-      <h1 class="type-h1 mb-4">{gettext("Fotos")}</h1>
+      <.gallery_content g={@gallery} />
+    </Layouts.service>
 
-      <div class="row between wrap gap-3">
-        <.segmented>
-          <:option patch={gallery_path(:grid, @zona)} current={@live_action == :grid}>
-            {gettext("Grade")}
-          </:option>
-          <:option patch={gallery_path(:timeline, @zona)} current={@live_action == :timeline}>
-            {gettext("Linha do tempo")}
-          </:option>
-        </.segmented>
+    <Layouts.viewer :if={@live_action == :viewer} flash={@flash}>
+      <.gallery_content g={@gallery} />
+    </Layouts.viewer>
+    """
+  end
 
-        <.segmented>
-          <:option patch={gallery_path(view_action(@live_action), :tudo)} current={@zona == :tudo}>
-            {gettext("Tudo")}
-          </:option>
-          <:option patch={gallery_path(view_action(@live_action), :praca)} current={@zona == :praca}>
-            {gettext("Praça")}
-          </:option>
-          <:option patch={gallery_path(view_action(@live_action), :casa)} current={@zona == :casa}>
-            {gettext("Casa")}
-          </:option>
-        </.segmented>
+  # Grade/timeline e visualizador usam cascas diferentes (spec 6): a casca
+  # `service` só fora do `:viewer` (título e abas na casca, sem `<h1>` na tela;
+  # spec 1.5) e a `viewer` fullscreen no `:viewer`. Toda a tela é uma função
+  # componente pura, os mesmos assigns que o socket fornece (spec 1.3).
+  defp service_tab(:grid), do: "grid"
+  defp service_tab(:timeline), do: "timeline"
+
+  # O conteúdo do `<.gallery_content>` entra no attr `g` (spread HEEx não
+  # existe para assigns): extrair daqui o que a tela usa (nem todo assign do
+  # socket entra).
+  defp gallery_content_attrs(assigns) do
+    Map.take(assigns, [
+      :current_scope,
+      :live_action,
+      :zona,
+      :next_cursor,
+      :photo_ids,
+      :loaded,
+      :grid_error,
+      :timeline_cursor,
+      :timeline_empty,
+      :timeline_error,
+      :current,
+      :show_confirm,
+      :show_details,
+      :show_zona,
+      :streams
+    ])
+  end
+
+  attr :g, :map,
+    required: true,
+    doc: "assigns de que a tela precisa (ver gallery_content_attrs/1); quanto o socket passa"
+
+  defp gallery_content(assigns) do
+    assigns = assign(assigns, assigns.g)
+
+    ~H"""
+    <div class="row between wrap gap-3">
+      <.segmented>
+        <:option patch={gallery_path(:grid, @zona)} current={@live_action == :grid}>
+          {gettext("Grade")}
+        </:option>
+        <:option patch={gallery_path(:timeline, @zona)} current={@live_action == :timeline}>
+          {gettext("Linha do tempo")}
+        </:option>
+      </.segmented>
+
+      <.segmented>
+        <:option patch={gallery_path(view_action(@live_action), :tudo)} current={@zona == :tudo}>
+          {gettext("Tudo")}
+        </:option>
+        <:option patch={gallery_path(view_action(@live_action), :praca)} current={@zona == :praca}>
+          {gettext("Praça")}
+        </:option>
+        <:option patch={gallery_path(view_action(@live_action), :casa)} current={@zona == :casa}>
+          {gettext("Casa")}
+        </:option>
+      </.segmented>
+    </div>
+
+    <div :if={@live_action in [:grid, :viewer]} class="mt-4">
+      <div id="photo-grid" class="photo-grid" phx-update="stream">
+        <.link
+          :for={{dom_id, photo} <- @streams.photos}
+          id={dom_id}
+          patch={~p"/galeria/#{photo.rkey}"}
+          class="photo-grid__item"
+          aria-label={photo.nome}
+        >
+          <span class="photo-grid__tag">{zona_short(photo.zona, own?(@current_scope, photo))}</span>
+          <div :if={video?(photo)} class="photo-grid__video">
+            <.icon name="play" size={28} />
+          </div>
+          <img
+            :if={!video?(photo)}
+            src={~p"/files/#{photo.rkey}/thumbnail/sm"}
+            alt={photo.nome}
+            loading="lazy"
+          />
+        </.link>
       </div>
 
-      <div :if={@live_action in [:grid, :viewer]} class="mt-4">
-        <div id="photo-grid" class="photo-grid" phx-update="stream">
-          <.link
-            :for={{dom_id, photo} <- @streams.photos}
-            id={dom_id}
-            patch={~p"/galeria/#{photo.rkey}"}
-            class="photo-grid__item"
-            aria-label={photo.nome}
-          >
-            <span class="photo-grid__tag">{zona_short(photo.zona, own?(@current_scope, photo))}</span>
-            <div :if={video?(photo)} class="photo-grid__video">
-              <.icon name="play" size={28} />
-            </div>
-            <img
-              :if={!video?(photo)}
-              src={~p"/files/#{photo.rkey}/thumbnail/sm"}
-              alt={photo.nome}
-              loading="lazy"
-            />
-          </.link>
-        </div>
-
-        <div :if={@next_cursor} id="grid-load-more" phx-viewport-bottom="load-more" class="center py-4">
-          <p class="type-caption text-muted">{gettext("Carregando mais...")}</p>
-        </div>
-
-        <% {empty_title, empty_hint} = photo_empty_copy(@zona) %>
-
-        <.empty_state
-          :if={@loaded && @photo_ids == [] and not @grid_error}
-          icon="image"
-          title={empty_title}
-          hint={empty_hint}
-        >
-          <.button variant="primary" size="md" navigate={~p"/documentos/enviar"}>
-            {gettext("Enviar fotos")}
-          </.button>
-        </.empty_state>
-
-        <.empty_state
-          :if={@grid_error}
-          icon="alert"
-          title={gettext("Não foi possível carregar")}
-          hint={gettext("As fotos não responderam agora.")}
-        >
-          <.button variant="secondary" phx-click="retry">{gettext("Tentar de novo")}</.button>
-        </.empty_state>
+      <div :if={@next_cursor} id="grid-load-more" phx-viewport-bottom="load-more" class="center py-4">
+        <p class="type-caption text-muted">{gettext("Carregando mais...")}</p>
       </div>
 
-      <div :if={@live_action in [:timeline, :viewer]} class="mt-4 col gap-5">
-        <div id="timeline-groups" phx-update="stream" class="col gap-5">
-          <section :for={{dom_id, group} <- @streams.timeline_groups} id={dom_id}>
-            <h2 class="type-h3 mb-2">
-              {group_title(group.date)}, {ngettext("%{count} foto", "%{count} fotos", length(group.photos))}
-            </h2>
-            <div class="photo-grid">
-              <.link
-                :for={photo <- group.photos}
-                patch={~p"/galeria/#{photo.rkey}"}
-                class="photo-grid__item"
-                aria-label={photo.nome}
-              >
-                <span class="photo-grid__tag">{zona_short(photo.zona, own?(@current_scope, photo))}</span>
-                <div :if={video?(photo)} class="photo-grid__video">
-                  <.icon name="play" size={28} />
-                </div>
-                <img
-                  :if={!video?(photo)}
-                  src={~p"/files/#{photo.rkey}/thumbnail/sm"}
-                  alt={photo.nome}
-                  loading="lazy"
-                />
-              </.link>
-            </div>
-          </section>
-        </div>
+      <% {empty_title, empty_hint} = photo_empty_copy(@zona) %>
 
-        <div :if={@timeline_cursor} id="timeline-load-more" phx-viewport-bottom="load-more" class="center py-4">
-          <p class="type-caption text-muted">{gettext("Carregando mais...")}</p>
-        </div>
-
-        <% {empty_title, empty_hint} = photo_empty_copy(@zona) %>
-
-        <.empty_state
-          :if={@live_action == :timeline and @timeline_empty and not @timeline_error}
-          icon="image"
-          title={empty_title}
-          hint={empty_hint}
-        >
-          <.button variant="primary" size="md" navigate={~p"/documentos/enviar"}>
-            {gettext("Enviar fotos")}
-          </.button>
-        </.empty_state>
-
-        <.empty_state
-          :if={@live_action == :timeline and @timeline_error}
-          icon="alert"
-          title={gettext("Não foi possível carregar")}
-          hint={gettext("As fotos não responderam agora.")}
-        >
-          <.button variant="secondary" phx-click="retry">{gettext("Tentar de novo")}</.button>
-        </.empty_state>
-      </div>
-
-      <.viewer
-        :if={@current}
-        file={@current}
-        photo_ids={@photo_ids}
-        own={own?(@current_scope, @current)}
-        zona={@current.zona}
-        link={url(~p"/files/#{@current.rkey}")}
-        src={~p"/files/#{@current.rkey}"}
-        src_md={~p"/files/#{@current.rkey}/thumbnail/md"}
-        rail={viewer_rail(@photo_ids, @current.rkey)}
-      />
-
-      <.confirm_dialog
-        :if={@current}
-        id="confirm-delete-photo"
-        show={@show_confirm}
-        title={gettext("Excluir \"%{name}\"?", name: @current.nome)}
-        message={gettext("Vai para a lixeira. Dá para restaurar em até 30 dias.")}
-        on_confirm="confirm-delete"
-        on_cancel={JS.push("close-confirm")}
-      />
-
-      <.modal :if={@current} id="photo-details" show={@show_details} on_cancel={JS.push("toggle-details")}>
-        <h2 class="type-h3 mb-4">{gettext("Detalhes")}</h2>
-        <div class="col gap-3">
-          <div>
-            <p class="type-caption text-faint">{gettext("Quem vê")}</p>
-            <p class="type-body">{zona_long(@current.zona, own?(@current_scope, @current))}</p>
-          </div>
-          <div>
-            <p class="type-caption text-faint">{gettext("Nome original")}</p>
-            <p class="type-body">{@current.nome}</p>
-          </div>
-          <% file_url = url(~p"/files/#{@current.rkey}") %>
-          <div>
-            <p class="type-caption text-faint">{gettext("Link")}</p>
-            <p class="viewer__link type-mono-sm">{file_url}</p>
-          </div>
-          <div>
-            <p class="type-caption text-faint">{gettext("Tipo")}</p>
-            <p class="type-mono-sm">{human_type(@current)}</p>
-          </div>
-          <div>
-            <p class="type-caption text-faint">{gettext("Tamanho")}</p>
-            <p class="type-body">{format_bytes(@current.tamanho)}</p>
-          </div>
-          <div>
-            <p class="type-caption text-faint">{gettext("Assinatura do arquivo")}</p>
-            <p class="type-mono-sm truncate">{@current.hash}</p>
-            <p class="type-caption text-faint">{gettext("É como o Tainá confere que o arquivo está intacto.")}</p>
-          </div>
-          <div>
-            <p class="type-caption text-faint">{gettext("Enviado em")}</p>
-            <p class="type-body">{Calendar.strftime(@current.inserted_at, "%d/%m/%Y %H:%M")}</p>
-          </div>
-        </div>
-        <.button variant="secondary" class="w-full mt-6" phx-click="toggle-details">
-          {gettext("Fechar")}
+      <.empty_state
+        :if={@loaded && @photo_ids == [] and not @grid_error}
+        icon="image"
+        title={empty_title}
+        hint={empty_hint}
+      >
+        <.button variant="primary" size="md" navigate={~p"/documentos/enviar"}>
+          {gettext("Enviar fotos")}
         </.button>
-      </.modal>
+      </.empty_state>
 
-      <.modal id="confirm-zona" show={@show_zona} on_cancel={JS.push("close-zona")}>
-        <div :if={@current}>
-          <h2 class="type-h3 mb-2">{zona_confirm_title(@current.zona, @current.nome)}</h2>
-          <p class="type-body text-secondary mb-6">{zona_confirm_body(@current.zona)}</p>
-          <div class="row gap-3">
-            <.button variant="secondary" size="md" class="flex-1" phx-click="close-zona">
-              {gettext("Cancelar")}
-            </.button>
-            <.button variant="primary" size="md" class="flex-1" phx-click="confirm-zona">
-              {zona_confirm_primary(@current.zona)}
-            </.button>
+      <.empty_state
+        :if={@grid_error}
+        icon="alert"
+        title={gettext("Não foi possível carregar")}
+        hint={gettext("As fotos não responderam agora.")}
+      >
+        <.button variant="secondary" phx-click="retry">{gettext("Tentar de novo")}</.button>
+      </.empty_state>
+    </div>
+
+    <div :if={@live_action in [:timeline, :viewer]} class="mt-4 col gap-5">
+      <div id="timeline-groups" phx-update="stream" class="col gap-5">
+        <section :for={{dom_id, group} <- @streams.timeline_groups} id={dom_id}>
+          <h2 class="type-h3 mb-2">
+            {group_title(group.date)}, {ngettext("%{count} foto", "%{count} fotos", length(group.photos))}
+          </h2>
+          <div class="photo-grid">
+            <.link
+              :for={photo <- group.photos}
+              patch={~p"/galeria/#{photo.rkey}"}
+              class="photo-grid__item"
+              aria-label={photo.nome}
+            >
+              <span class="photo-grid__tag">{zona_short(photo.zona, own?(@current_scope, photo))}</span>
+              <div :if={video?(photo)} class="photo-grid__video">
+                <.icon name="play" size={28} />
+              </div>
+              <img
+                :if={!video?(photo)}
+                src={~p"/files/#{photo.rkey}/thumbnail/sm"}
+                alt={photo.nome}
+                loading="lazy"
+              />
+            </.link>
           </div>
+        </section>
+      </div>
+
+      <div :if={@timeline_cursor} id="timeline-load-more" phx-viewport-bottom="load-more" class="center py-4">
+        <p class="type-caption text-muted">{gettext("Carregando mais...")}</p>
+      </div>
+
+      <% {empty_title, empty_hint} = photo_empty_copy(@zona) %>
+
+      <.empty_state
+        :if={@live_action == :timeline and @timeline_empty and not @timeline_error}
+        icon="image"
+        title={empty_title}
+        hint={empty_hint}
+      >
+        <.button variant="primary" size="md" navigate={~p"/documentos/enviar"}>
+          {gettext("Enviar fotos")}
+        </.button>
+      </.empty_state>
+
+      <.empty_state
+        :if={@live_action == :timeline and @timeline_error}
+        icon="alert"
+        title={gettext("Não foi possível carregar")}
+        hint={gettext("As fotos não responderam agora.")}
+      >
+        <.button variant="secondary" phx-click="retry">{gettext("Tentar de novo")}</.button>
+      </.empty_state>
+    </div>
+
+    <.viewer
+      :if={@current}
+      file={@current}
+      photo_ids={@photo_ids}
+      own={own?(@current_scope, @current)}
+      zona={@current.zona}
+      link={url(~p"/files/#{@current.rkey}")}
+      src={~p"/files/#{@current.rkey}"}
+      src_md={~p"/files/#{@current.rkey}/thumbnail/md"}
+      rail={viewer_rail(@photo_ids, @current.rkey)}
+    />
+
+    <.confirm_dialog
+      :if={@current}
+      id="confirm-delete-photo"
+      show={@show_confirm}
+      title={gettext("Excluir \"%{name}\"?", name: @current.nome)}
+      message={gettext("Vai para a lixeira. Dá para restaurar em até 30 dias.")}
+      on_confirm="confirm-delete"
+      on_cancel={JS.push("close-confirm")}
+    />
+
+    <.modal :if={@current} id="photo-details" show={@show_details} on_cancel={JS.push("toggle-details")}>
+      <h2 class="type-h3 mb-4">{gettext("Detalhes")}</h2>
+      <div class="col gap-3">
+        <div>
+          <p class="type-caption text-faint">{gettext("Quem vê")}</p>
+          <p class="type-body">{zona_long(@current.zona, own?(@current_scope, @current))}</p>
         </div>
-      </.modal>
-    </Layouts.app>
+        <div>
+          <p class="type-caption text-faint">{gettext("Nome original")}</p>
+          <p class="type-body">{@current.nome}</p>
+        </div>
+        <% file_url = url(~p"/files/#{@current.rkey}") %>
+        <div>
+          <p class="type-caption text-faint">{gettext("Link")}</p>
+          <p class="viewer__link type-mono-sm">{file_url}</p>
+        </div>
+        <div>
+          <p class="type-caption text-faint">{gettext("Tipo")}</p>
+          <p class="type-mono-sm">{human_type(@current)}</p>
+        </div>
+        <div>
+          <p class="type-caption text-faint">{gettext("Tamanho")}</p>
+          <p class="type-body">{format_bytes(@current.tamanho)}</p>
+        </div>
+        <div>
+          <p class="type-caption text-faint">{gettext("Assinatura do arquivo")}</p>
+          <p class="type-mono-sm truncate">{@current.hash}</p>
+          <p class="type-caption text-faint">{gettext("É como o Tainá confere que o arquivo está intacto.")}</p>
+        </div>
+        <div>
+          <p class="type-caption text-faint">{gettext("Enviado em")}</p>
+          <p class="type-body">{Calendar.strftime(@current.inserted_at, "%d/%m/%Y %H:%M")}</p>
+        </div>
+      </div>
+      <.button variant="secondary" class="w-full mt-6" phx-click="toggle-details">
+        {gettext("Fechar")}
+      </.button>
+    </.modal>
+
+    <.modal id="confirm-zona" show={@show_zona} on_cancel={JS.push("close-zona")}>
+      <div :if={@current}>
+        <h2 class="type-h3 mb-2">{zona_confirm_title(@current.zona, @current.nome)}</h2>
+        <p class="type-body text-secondary mb-6">{zona_confirm_body(@current.zona)}</p>
+        <div class="row gap-3">
+          <.button variant="secondary" size="md" class="flex-1" phx-click="close-zona">
+            {gettext("Cancelar")}
+          </.button>
+          <.button variant="primary" size="md" class="flex-1" phx-click="confirm-zona">
+            {zona_confirm_primary(@current.zona)}
+          </.button>
+        </div>
+      </div>
+    </.modal>
     """
   end
 end

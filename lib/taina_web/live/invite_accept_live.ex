@@ -34,7 +34,7 @@ defmodule TainaWeb.InviteAcceptLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.auth flash={@flash}>
+    <Layouts.auth flash={@flash} secure_connection?={@secure_connection?}>
       <.empty_state
         :if={@token_status == :invalid}
         icon="clock"

@@ -287,20 +287,11 @@ defmodule TainaWeb.MuralLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app
-      flash={@flash}
-      current_scope={@current_scope}
-      active_tab={:mural}
-      storage_stats={assigns[:storage_stats]}
-      account_alert={assigns[:account_alert] || false}
-    >
+    <Layouts.page flash={@flash} title={@page_title} back={~p"/"}>
       <div class="col gap-6 mx-auto w-full measure-wide">
-        <div>
-          <h1 class="type-h1 mb-2">{gettext("Mural")}</h1>
-          <p class="type-body-sm text-muted">
-            {gettext("O que aconteceu na comunidade. Cada linha registra um ato: ninguém edita, ninguém apaga.")}
-          </p>
-        </div>
+        <p class="type-body-sm text-muted">
+          {gettext("O que aconteceu na comunidade. Cada linha registra um ato: ninguém edita, ninguém apaga.")}
+        </p>
 
         <div id="mural-events" phx-update="stream" class="col gap-5">
           <div :for={{dom_id, entry} <- @streams.events} id={dom_id} class="col gap-1">
@@ -340,7 +331,7 @@ defmodule TainaWeb.MuralLive do
           <.button variant="secondary" phx-click="retry">{gettext("Tentar de novo")}</.button>
         </.empty_state>
       </div>
-    </Layouts.app>
+    </Layouts.page>
     """
   end
 end

@@ -157,10 +157,12 @@ defmodule TainaWeb.MuralLiveTest do
     assert html =~ "mudou o limite de armazenamento para"
   end
 
-  test "Mural aparece na navegação de baixo e na lateral", %{conn: conn, morador: morador} do
+  test "Mural renderiza a casca page com o título no cabeçalho (a casca é quem possui o título)", %{
+    conn: conn,
+    morador: morador
+  } do
     {:ok, lv, _html} = conn |> log_in(morador) |> live(~p"/mural")
 
-    assert has_element?(lv, ".bottom-nav a[href='/mural']")
-    assert has_element?(lv, ".sidebar__nav a[href='/mural']")
+    assert has_element?(lv, ".page-header__title", "Mural")
   end
 end

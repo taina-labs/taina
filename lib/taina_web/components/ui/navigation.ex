@@ -82,7 +82,7 @@ defmodule TainaWeb.UI.Navigation do
   mobile/desktop, 3fd18cd2-90f8-80f3-8008-d5c3b0440126): 64 de altura, título
   sempre centrado no meio (spec 1.5), voltar (ícone + palavra) à esquerda,
   ação à direita; zonas de mesma largura mantêm o centro em qualquer rótulo.
-  Substitui o `Layouts.app_bar` (que fica até a W2.1).
+  Substitui o antigo `Layouts.app_bar` (apagado na W2, junto com a sidebar).
 
       <.page_header title={gettext("Convidar")} back={~p"/moradores"} back_label={back_label(nil)}>
         <:action><.button kind="primary" navigate={...}>{gettext("Convidar")}</.button></:action>

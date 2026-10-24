@@ -60,7 +60,7 @@ defmodule TainaWeb.LoginLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.auth flash={@flash}>
+    <Layouts.auth flash={@flash} secure_connection?={@secure_connection?}>
       <div class="col gap-3 text-center mt-10 mb-8 items-center">
         <.icon name="spark" size={40} class="spark" />
         <h1 class="type-h1">Tainá</h1>

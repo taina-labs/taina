@@ -97,16 +97,7 @@ defmodule TainaWeb.InviteLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app
-      flash={@flash}
-      current_scope={@current_scope}
-      active_tab={:members}
-      mobile_active_tab={:account}
-      storage_stats={assigns[:storage_stats]}
-      account_alert={assigns[:account_alert] || false}
-    >
-      <Layouts.app_bar title={gettext("Convidar pessoas")} back={~p"/moradores"} />
-
+    <Layouts.page flash={@flash} title={@page_title} back={~p"/moradores"}>
       <div class="col gap-6 mx-auto w-full measure-sm">
         <%= if @invite_url do %>
           <div>
@@ -212,7 +203,7 @@ defmodule TainaWeb.InviteLive do
           </form>
         <% end %>
       </div>
-    </Layouts.app>
+    </Layouts.page>
     """
   end
 end

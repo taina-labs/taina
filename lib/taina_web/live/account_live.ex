@@ -1,9 +1,9 @@
 defmodule TainaWeb.AccountLive do
   @moduledoc """
-  Hub "Conta" (aba do bottom-nav mobile): cartão da pessoa logada e atalhos
-  para pedidos (recebidos e enviados), membros, convites, armazenamento,
-  lixeira, troca da própria senha e sair. Não tem board próprio no Penpot,
-  composto com os componentes de linha do design system.
+  Hub "Conta": cartão da pessoa logada e atalhos para pedidos (recebidos e
+  enviados), membros, convites, armazenamento, lixeira, troca da própria senha
+  e sair. Não tem board próprio no Penpot, composto com os componentes de
+  linha do design system.
   """
 
   use TainaWeb, :live_view
@@ -23,9 +23,9 @@ defmodule TainaWeb.AccountLive do
     {:ok, socket}
   end
 
-  # O ponto da nav (a aba Conta) e o da linha "Pedidos" vem do hook
-  # compartilhado; a tela so acende a linha quando ha algo esperando, recebido
-  # ou enviado. Eventos do Ava (PubSub, ja inscritos no shell) recomputam.
+  # O ponto da linha "Pedidos" acende quando há algo esperando, recebido ou
+  # enviado. Nenhuma navegação acende nada por cima (spec 1.5); eventos do Ava
+  # (PubSub) recomputam.
   defp assign_alerts(socket, scope) do
     {:ok, recebidos} = Maraca.pedidos_recebidos(scope)
     {:ok, enviados} = Maraca.pedidos_enviados(scope)
@@ -104,15 +104,7 @@ defmodule TainaWeb.AccountLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app
-      flash={@flash}
-      current_scope={@current_scope}
-      active_tab={:account}
-      storage_stats={assigns[:storage_stats]}
-      account_alert={assigns[:account_alert] || false}
-    >
-      <h1 class="type-h1 mb-6">{gettext("Conta")}</h1>
-
+    <Layouts.page flash={@flash} title={@page_title} back={~p"/"}>
       <div class="col gap-6 mx-auto w-full measure">
         <.card class="row gap-4">
           <.avatar name={@current_scope.ava.display_name || @current_scope.ava.username} />
@@ -241,7 +233,7 @@ defmodule TainaWeb.AccountLive do
           </div>
         </form>
       </.modal>
-    </Layouts.app>
+    </Layouts.page>
     """
   end
 end

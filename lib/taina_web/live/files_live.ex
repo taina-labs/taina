@@ -23,6 +23,21 @@ defmodule TainaWeb.FilesLive do
   alias Taina.Ybira
   alias TainaWeb.Layouts
 
+  # O mini-modal "Espaço da comunidade" é dado da tela: ele carrega os próprios
+  # números (a casca não entrega estatística que a tela não renderiza; com
+  # `assign_new`, o resultado da render HTTP segue para o connected mount).
+  @impl true
+  def mount(_params, _session, socket) do
+    {:ok, assign_new(socket, :storage_stats, fn -> load_storage_stats(socket.assigns.current_scope) end)}
+  end
+
+  defp load_storage_stats(scope) do
+    case Ybira.storage_stats(scope) do
+      {:ok, stats} -> stats
+      _error -> nil
+    end
+  end
+
   @impl true
   def handle_params(params, _uri, socket) do
     folder_rkey = params["folder_id"]
@@ -40,7 +55,7 @@ defmodule TainaWeb.FilesLive do
 
             {:noreply,
              socket
-             |> assign(:page_title, (folder && folder.nome) || gettext("Arquivos"))
+             |> assign(:page_title, (folder && folder.nome) || gettext("Documentos"))
              |> assign(:folder, folder)
              |> assign(:breadcrumb, breadcrumb(scope, folder))
              |> assign(:folder_rkey, folder_rkey)
@@ -414,6 +429,44 @@ defmodule TainaWeb.FilesLive do
 
   defp for_zona(items, zona), do: Enum.filter(items, &(&1.zona == zona))
 
+  # --- casca `service` (a casca possui o cabeçalho, W2b) ---
+
+  # Aba corrente do service_tab_bar: nas rotas raiz a live_action é a aba
+  # (:praca e :casa); dentro de pasta, a zona da pasta aponta a aba de origem
+  # (spec 6: "zone from folder"). Sem pasta carregada, a zona da listagem.
+  defp service_tab(:praca, _zona, _folder), do: "praca"
+  defp service_tab(:casa, _zona, _folder), do: "casa"
+
+  defp service_tab(:folder, _zona, %{zona: zona}), do: zona_key(zona)
+
+  defp service_tab(:folder, zona, _folder), do: zona_key(zona)
+
+  # Nenhuma tela indica a Lixeira aqui: ela é a própria rota (TrashLive).
+  defp zona_key(:praca), do: "praca"
+  defp zona_key(_casa_default), do: "casa"
+
+  # Voltar da casca: nas rotas raiz, o hub; dentro de pasta, o parente imediato
+  # (a penúltima elo da mesma cadeia que a breadcrumb hoje navega, com a ordem
+  # e a zona da vista atual) ou, no fundo do topo, a raiz da própria zona.
+  defp shell_back(:folder, breadcrumb, sort, view, zona) do
+    back_to = parent_of(breadcrumb) || %{rkey: nil}
+    browse_path(back_to.rkey, sort, view, zona)
+  end
+
+  defp shell_back(_live_action, _breadcrumb, _sort, _view, _zona), do: ~p"/"
+
+  # A palavra do voltar é o nome do parente (a regra de 12 caracteres vive em
+  # back_label/1, do UI.Navigation); raiz de zona, a saída é o padrão ("Início").
+  defp shell_back_label(breadcrumb) do
+    case parent_of(breadcrumb) do
+      %{nome: nome} -> back_label(nome)
+      _no_parent -> nil
+    end
+  end
+
+  defp parent_of([_current]), do: nil
+  defp parent_of(path), do: Enum.at(path, -2)
+
   defp own?(scope, item), do: scope.ava.id == item.dono_id
 
   # Só pasta SUA é alvo de soltar: o servidor recusa mover para pasta
@@ -487,15 +540,15 @@ defmodule TainaWeb.FilesLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app
+    <Layouts.service
       flash={@flash}
-      current_scope={@current_scope}
-      active_tab={:files}
-      storage_stats={assigns[:storage_stats]}
-      account_alert={assigns[:account_alert] || false}
+      service="ybira"
+      current={service_tab(@live_action, @zona, @folder)}
+      title={@page_title}
+      back={shell_back(@live_action, @breadcrumb, @sort, @view, @zona)}
+      back_label={shell_back_label(@breadcrumb)}
     >
-      <div class="row between wrap gap-3 mb-4">
-        <h1 class="type-h1">{gettext("Arquivos")}</h1>
+      <:actions>
         <div class="row gap-2">
           <.icon_button
             name="info"
@@ -515,7 +568,10 @@ defmodule TainaWeb.FilesLive do
             <.icon name="upload" size={18} /> {gettext("Enviar")}
           </.button>
         </div>
-      </div>
+      </:actions>
+      <:fab>
+        <.fab label={gettext("Enviar")} navigate={upload_path(@folder_rkey)} />
+      </:fab>
 
       <div class="row between wrap gap-3 mb-4">
         <.segmented>
@@ -732,10 +788,6 @@ defmodule TainaWeb.FilesLive do
         </div>
       </.empty_state>
 
-      <.button variant="fab" navigate={upload_path(@folder_rkey)} aria-label={gettext("Enviar arquivos")}>
-        <.icon name="plus" />
-      </.button>
-
       <.modal id="new-folder-modal" show={@modal == "new-folder"} on_cancel={JS.push("close-modal")}>
         <h2 class="type-h3 mb-4">{gettext("Nova pasta")}</h2>
         <form id="create-folder-form" phx-submit="create-folder" class="col gap-4">
@@ -866,7 +918,7 @@ defmodule TainaWeb.FilesLive do
           </div>
         </div>
       </.modal>
-    </Layouts.app>
+    </Layouts.service>
     """
   end
 

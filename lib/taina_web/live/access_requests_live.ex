@@ -420,18 +420,8 @@ defmodule TainaWeb.AccessRequestsLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app
-      flash={@flash}
-      current_scope={@current_scope}
-      active_tab={:account}
-      storage_stats={assigns[:storage_stats]}
-      account_alert={assigns[:account_alert] || false}
-    >
-      <Layouts.app_bar title={gettext("Pedidos")} back={~p"/conta"} />
-
+    <Layouts.page flash={@flash} title={@page_title} back={~p"/conta"}>
       <div class="col gap-6 mx-auto w-full measure">
-        <h1 class="desktop-only type-h1">{gettext("Pedidos")}</h1>
-
         <.empty_state
           :if={empty?(assigns)}
           icon="shield"
@@ -549,7 +539,7 @@ defmodule TainaWeb.AccessRequestsLive do
         on_confirm={JS.push("revoke")}
         on_cancel={JS.push("close-confirm")}
       />
-    </Layouts.app>
+    </Layouts.page>
     """
   end
 end

@@ -232,7 +232,7 @@ defmodule TainaWeb.SetupLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.auth flash={@flash}>
+    <Layouts.auth flash={@flash} secure_connection?={@secure_connection?}>
       <div :if={@step == 1} class="col flex-1">
         <div class="col gap-4 text-center mt-10 mb-8 items-center">
           <.icon name="spark" size={48} class="spark" />

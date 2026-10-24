@@ -112,7 +112,7 @@ defmodule TainaWeb.AccessRequestsLiveTest do
     assert render(lv) =~ "Maria"
   end
 
-  test "the Conta nav shows the pending dot when there is an open request", %{
+  test "a linha Pedidos em Conta acende o ponto quando há pedido esperando", %{
     conn: conn,
     tekoa: tekoa,
     owner: owner,
@@ -120,13 +120,13 @@ defmodule TainaWeb.AccessRequestsLiveTest do
     target_file: file
   } do
     _req = request(requester, tekoa, file)
-    {:ok, lv, _html} = conn |> log_in(owner) |> live(~p"/conta/pedidos")
+    {:ok, lv, _html} = conn |> log_in(owner) |> live(~p"/conta")
 
-    assert has_element?(lv, "a[aria-label*='há pedidos esperando'] .nav-dot")
+    assert has_element?(lv, ".nav-dot")
   end
 
-  test "the Conta nav has no dot when nothing is waiting", %{conn: conn, owner: owner} do
-    {:ok, lv, _html} = conn |> log_in(owner) |> live(~p"/conta/pedidos")
+  test "a linha Pedidos em Conta não acende ponto quando nada espera", %{conn: conn, owner: owner} do
+    {:ok, lv, _html} = conn |> log_in(owner) |> live(~p"/conta")
 
     refute has_element?(lv, ".nav-dot")
   end

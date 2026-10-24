@@ -139,17 +139,7 @@ defmodule TainaWeb.StorageLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app
-      flash={@flash}
-      current_scope={@current_scope}
-      active_tab={:account}
-      storage_stats={assigns[:storage_stats]}
-      account_alert={assigns[:account_alert] || false}
-    >
-      <Layouts.app_bar title={gettext("Armazenamento")} back={~p"/conta"} />
-
-      <h1 class="desktop-only type-h1 mb-4 mx-auto w-full measure">{gettext("Armazenamento")}</h1>
-
+    <Layouts.page flash={@flash} title={@page_title} back={~p"/conta"}>
       <.empty_state
         :if={@load_error}
         icon="alert"
@@ -234,7 +224,7 @@ defmodule TainaWeb.StorageLive do
           </div>
         </form>
       </.modal>
-    </Layouts.app>
+    </Layouts.page>
     """
   end
 end

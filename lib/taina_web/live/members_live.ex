@@ -231,25 +231,14 @@ defmodule TainaWeb.MembersLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app
-      flash={@flash}
-      current_scope={@current_scope}
-      active_tab={:members}
-      mobile_active_tab={:account}
-      storage_stats={assigns[:storage_stats]}
-      account_alert={assigns[:account_alert] || false}
-    >
-      <Layouts.app_bar title={gettext("Moradores")} back={~p"/conta"}>
-        <:action :if={Maraca.zelador?(@current_scope.ava)}>
-          <.button variant="secondary" size="sm" navigate={~p"/moradores/convidar"}>
-            {gettext("Convidar")}
-          </.button>
-        </:action>
-      </Layouts.app_bar>
+    <Layouts.page flash={@flash} title={@page_title} back={~p"/conta"}>
+      <:action :if={Maraca.zelador?(@current_scope.ava)}>
+        <.button variant="secondary" size="sm" navigate={~p"/moradores/convidar"}>
+          {gettext("Convidar")}
+        </.button>
+      </:action>
 
       <div class="col gap-4 mx-auto w-full measure">
-        <h1 class="desktop-only type-h1 mb-4">{gettext("Moradores")}</h1>
-
         <% members = filtered(@members, @query) %>
         <% pendings = filtered(@pendings, @query) %>
 
@@ -447,7 +436,7 @@ defmodule TainaWeb.MembersLive do
         on_confirm={JS.push("revoke", value: %{id: @confirm_revoke && @confirm_revoke.public_id})}
         on_cancel={JS.push("close-confirm")}
       />
-    </Layouts.app>
+    </Layouts.page>
     """
   end
 end
