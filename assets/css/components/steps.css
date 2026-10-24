@@ -6,6 +6,18 @@
   gap: var(--space-2);
 }
 
+/* com legenda (label): wrapper coluna que junta os pontos e o nome do passo
+   atual do board */
+.steps--labeled {
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.steps__label {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
 .steps__dot {
   width: var(--space-4);
   height: var(--size-nav-dot);

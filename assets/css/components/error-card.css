@@ -1,2 +1,41 @@
-/* ErrorCard (Penpot: ErrorCard, "Tentar de novo" secundário). Componente
-   novo; regras chegam na Wave 1 (docs/web-revamp-spec.md, 4.1). */
+/* ErrorCard, erro recuperável (Penpot: ErrorCard). Espelho de
+   TainaWeb.UI.Feedback.error_card/1; mantenha os dois em sincronia. */
+
+.error-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  background: var(--surface-default);
+  border: var(--border-hairline) solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+}
+
+.error-card__head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.error-card__icon {
+  color: var(--feedback-warning);
+  flex-shrink: 0;
+}
+
+.error-card__title {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-primary);
+}
+
+.error-card__body {
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+}
+
+.error-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}

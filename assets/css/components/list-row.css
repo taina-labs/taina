@@ -54,6 +54,13 @@
   text-overflow: clip;
 }
 
+/* chevron à direita: render automático do trailing="chevron". O kebab/agenda
+   da direita vem como componente no slot :actions; cada bloco cuida do seu. */
+.list-row__chevron {
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
 .list-row__actions {
   display: flex;
   align-items: center;

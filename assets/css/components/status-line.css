@@ -1,3 +1,38 @@
-/* StatusLine (Penpot: StatusLine, Estado: ok, attention, problem, unknown).
-   Componente novo (linhas de "Saúde da comunidade"); regras chegam na
-   Wave 1 (docs/web-revamp-spec.md, 4.1). */
+/* Linha de status (Penpot: StatusLine; Estado ok/attention/problem/unknown,
+   Detail none/with). Espelho de TainaWeb.UI.Content.status_line/1; mantenha
+   os dois em sincronia. O ícone também muda por estado (nunca cor sozinha);
+   a cor da linha vem do state. */
+
+.status-line {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.status-line--ok {
+  color: var(--feedback-success);
+}
+
+.status-line--attention {
+  color: var(--feedback-warning);
+}
+
+.status-line--problem {
+  color: var(--feedback-error);
+}
+
+.status-line--unknown {
+  color: var(--text-muted);
+}
+
+.status-line__title {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+/* Detail: with. O detalhe explica o estado com a voz neutra da tela, não
+   repete a cor do nível. */
+.status-line__detail {
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+}

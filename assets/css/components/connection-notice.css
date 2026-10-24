@@ -1,2 +1,23 @@
-/* ConnectionNotice (Penpot: "ConnectionNotice", telas de auth). Componente
-   novo; regras chegam na Wave 1 (docs/web-revamp-spec.md, 4.1 e 6.6). */
+/* ConnectionNotice, aviso de rede nos screens de auth (Penpot:
+   ConnectionNotice). Espelho de TainaWeb.UI.Feedback.connection_notice/0;
+   mantenha os dois em sincronia. */
+
+.connection-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--surface-default);
+  border: var(--border-hairline) solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+}
+
+.connection-notice__icon {
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.connection-notice__text {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}

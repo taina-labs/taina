@@ -1,2 +1,62 @@
-/* StorageCard (Penpot: StorageCard, compact/full). Componente novo, regras
-   chegam na Wave 1 (docs/web-revamp-spec.md, 4.1). */
+/* Espaço da comunidade (Penpot: StorageCard). Espelho de
+   TainaWeb.UI.Content.storage_card/1; mantenha os dois em sincronia.
+   Modificadores: --compact / --full (Detail), --warning (o tom vem do uso,
+   TainaWeb.Saude.disk_attention?/1). */
+
+.storage-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--surface-default);
+  border: var(--border-hairline) solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+}
+
+.storage-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.storage-card__label {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+
+/* "Ver detalhes": pílula com borda, alvo de toque grande por paddings */
+.storage-card__link {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  border: var(--border-hairline) solid var(--border-default);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+
+.storage-card__link:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-raised);
+}
+
+/* a barra de progresso é o bloco .progress composto por dentro */
+
+.storage-card__meta {
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+}
+
+.storage-card__free {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+/* aviso: cor pela fruta certa, a frase sempre junto (cor nunca sozinha) */
+.storage-card__hint {
+  font-size: var(--font-size-sm);
+  color: var(--feedback-warning);
+}

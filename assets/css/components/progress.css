@@ -32,3 +32,6 @@
 .progress__fill--neutral {
   background: var(--text-muted);
 }
+.progress__fill--warning {
+  background: var(--feedback-warning);
+}

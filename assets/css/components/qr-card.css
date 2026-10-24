@@ -1,5 +1,7 @@
-/* QR (Penpot: QRCard). Espelho de TainaWeb.UI.Content.qr_card/1 (Wave 1);
-   mantenha em sincronia. */
+/* QR do convite (bloco do quadradinho branco de dentro do card, Penpot:
+   QRCard). O card externo do link de convite é composto por
+   TainaWeb.UI.Content.qr_card/1 de `.card--raised` + este bloco; as telas
+   legadas continuam usando o quadradinho direto. Mantenha em sincronia. */
 
 .qr-card {
   display: flex;

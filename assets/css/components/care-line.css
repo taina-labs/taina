@@ -1,3 +1,49 @@
-/* CareLine (Penpot: CareLine, raised card com ícone na cor
-   --service-maraca-soft). Componente novo, regras chegam na Wave 1
-   (docs/web-revamp-spec.md, 4.1). */
+/* CareLine, o único "precisa de você" do app (Penpot: CareLine). Espelho de
+   TainaWeb.UI.Content.care_line/1; mantenha os dois em sincronia. Card
+   elevado sem fundo tingido (a regra do componente vence o board, ver
+   docs/web-revamp-spec.md, 10): o acento mora só no quadradinho do ícone. */
+
+.care-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface-raised);
+  border: var(--border-hairline) solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+}
+
+/* quadradinho do ícone no acento do Maracá (pedidos) */
+.care-line__mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--size-control-md);
+  height: var(--size-control-md);
+  flex-shrink: 0;
+  background: var(--service-maraca-soft);
+  color: var(--service-maraca);
+  border-radius: var(--radius-md);
+}
+
+.care-line__text {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+}
+
+.care-line__action {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-shrink: 0;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+
+/* alvo de toque: o card inteiro é o link, então a linha já passa de --size-touch */
+.care-line:hover {
+  border-color: var(--border-strong);
+}

@@ -8,6 +8,85 @@
   border-radius: var(--radius-md);
 }
 
+/* formas: cada kind tem um container de unidades e peças de "osso branco".
+   O container herda o pulso do .skeleton; o fundo da peça é quem aparece. */
+.skeleton--list-row,
+.skeleton--photo-grid,
+.skeleton--card {
+  background: none;
+  border-radius: 0;
+  padding: 0;
+}
+
+.skeleton--list-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.skeleton__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* o quadradinho da esquerda tem o tamanho do service_square do bloco .list */
+.skeleton__mark {
+  width: var(--size-control-md);
+  height: var(--size-control-md);
+  flex-shrink: 0;
+  background: var(--surface-raised);
+  border-radius: var(--radius-md);
+}
+
+.skeleton__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* espelho do rítmo da .photo-grid (2 colunas no mobile, 6 do tablet em diante) */
+.skeleton--photo-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--gap-photo);
+}
+
+.skeleton__tile {
+  aspect-ratio: 1;
+  background: var(--surface-raised);
+}
+
+.skeleton--card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.skeleton__card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.skeleton__line {
+  position: relative;
+  height: var(--space-3);
+  background: var(--surface-raised);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+
+.skeleton__line--short {
+  width: 45%;
+}
+
+.skeleton__line--title {
+  height: var(--space-5);
+}
+
 @media (prefers-reduced-motion: no-preference) {
   .skeleton {
     animation: skeleton-pulse 1.6s ease-in-out infinite;
