@@ -43,7 +43,7 @@ defmodule TainaWeb.FileThumbnailTest do
     photo: photo
   } do
     conn = build_conn() |> log_in(other.ava) |> get(~p"/files/#{photo.rkey}/thumbnail/sm")
-    assert redirected_to(conn, 302) == "/arquivos/#{photo.rkey}"
+    assert redirected_to(conn, 302) == "/documentos/#{photo.rkey}"
 
     {:ok, _} = Ybira.publicar_file(owner, photo.rkey)
 

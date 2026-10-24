@@ -14,7 +14,7 @@ defmodule TainaWeb.MembersLiveTest do
   end
 
   test "lista moradores com papel e estado", %{conn: conn, zelador: zelador} do
-    {:ok, _lv, html} = conn |> log_in(zelador) |> live(~p"/membros")
+    {:ok, _lv, html} = conn |> log_in(zelador) |> live(~p"/moradores")
 
     assert html =~ "Ana Oliveira"
     assert html =~ "João Mendes"
@@ -23,7 +23,7 @@ defmodule TainaWeb.MembersLiveTest do
   end
 
   test "busca filtra a lista", %{conn: conn, zelador: zelador} do
-    {:ok, lv, _html} = conn |> log_in(zelador) |> live(~p"/membros")
+    {:ok, lv, _html} = conn |> log_in(zelador) |> live(~p"/moradores")
 
     html = lv |> element("form.search") |> render_change(%{"query" => "joão"})
 
@@ -32,7 +32,7 @@ defmodule TainaWeb.MembersLiveTest do
   end
 
   test "zelador gera link de redefinição para um morador", %{conn: conn, zelador: zelador} do
-    {:ok, lv, _html} = conn |> log_in(zelador) |> live(~p"/membros")
+    {:ok, lv, _html} = conn |> log_in(zelador) |> live(~p"/moradores")
 
     html = lv |> element(~s([phx-click="reset-link"][phx-value-id])) |> render_click()
 
@@ -41,13 +41,13 @@ defmodule TainaWeb.MembersLiveTest do
   end
 
   test "morador comum não vê atalho de convite", %{conn: conn, member: member} do
-    {:ok, _lv, html} = conn |> log_in(member) |> live(~p"/membros")
+    {:ok, _lv, html} = conn |> log_in(member) |> live(~p"/moradores")
 
-    refute html =~ "/membros/convidar"
+    refute html =~ "/moradores/convidar"
   end
 
   test "zelador muda o papel de um morador", %{conn: conn, zelador: zelador, member: member} do
-    {:ok, lv, _html} = conn |> log_in(zelador) |> live(~p"/membros")
+    {:ok, lv, _html} = conn |> log_in(zelador) |> live(~p"/moradores")
 
     html = render_click(lv, "set-role", %{"id" => member.public_id, "role" => "zelador"})
 
@@ -55,7 +55,7 @@ defmodule TainaWeb.MembersLiveTest do
   end
 
   test "zelador desativa e reativa um morador", %{conn: conn, zelador: zelador, member: member} do
-    {:ok, lv, _html} = conn |> log_in(zelador) |> live(~p"/membros")
+    {:ok, lv, _html} = conn |> log_in(zelador) |> live(~p"/moradores")
 
     html = render_click(lv, "deactivate", %{"id" => member.public_id})
     assert html =~ "Conta desativada"
@@ -65,7 +65,7 @@ defmodule TainaWeb.MembersLiveTest do
   end
 
   test "não deixa desativar o último zelador", %{conn: conn, zelador: zelador} do
-    {:ok, lv, _html} = conn |> log_in(zelador) |> live(~p"/membros")
+    {:ok, lv, _html} = conn |> log_in(zelador) |> live(~p"/moradores")
 
     html = render_click(lv, "deactivate", %{"id" => zelador.public_id})
 
@@ -73,7 +73,7 @@ defmodule TainaWeb.MembersLiveTest do
   end
 
   test "morador comum não vê ações de conta", %{conn: conn, member: member} do
-    {:ok, _lv, html} = conn |> log_in(member) |> live(~p"/membros")
+    {:ok, _lv, html} = conn |> log_in(member) |> live(~p"/moradores")
 
     refute html =~ "Ações da conta"
   end
@@ -85,7 +85,7 @@ defmodule TainaWeb.MembersLiveTest do
   } do
     {:ok, _invited} = Maraca.invite_user(zelador, tekoa)
 
-    {:ok, _lv, html} = conn |> log_in(zelador) |> live(~p"/membros")
+    {:ok, _lv, html} = conn |> log_in(zelador) |> live(~p"/moradores")
 
     assert html =~ "Convites pendentes"
     assert html =~ "Revogar convite"
@@ -97,7 +97,7 @@ defmodule TainaWeb.MembersLiveTest do
   test "zelador revoga um convite pendente", %{conn: conn, zelador: zelador, tekoa: tekoa} do
     {:ok, %{ava: invited}} = Maraca.invite_user(zelador, tekoa)
 
-    {:ok, lv, _html} = conn |> log_in(zelador) |> live(~p"/membros")
+    {:ok, lv, _html} = conn |> log_in(zelador) |> live(~p"/moradores")
 
     html = render_click(lv, "revoke", %{"id" => invited.public_id})
 

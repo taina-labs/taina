@@ -105,7 +105,7 @@ defmodule TainaWeb.InviteLive do
       storage_stats={assigns[:storage_stats]}
       account_alert={assigns[:account_alert] || false}
     >
-      <Layouts.app_bar title={gettext("Convidar pessoas")} back={~p"/membros"} />
+      <Layouts.app_bar title={gettext("Convidar pessoas")} back={~p"/moradores"} />
 
       <div class="col gap-6 mx-auto w-full measure-sm">
         <%= if @invite_url do %>

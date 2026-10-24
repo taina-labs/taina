@@ -10,7 +10,7 @@ defmodule TainaWeb.InviteDeepLinkTest do
     tekoa = tekoa_fixture()
     zelador = zelador_fixture(tekoa)
 
-    {:ok, lv, _html} = conn |> log_in(zelador) |> live(~p"/membros/convidar")
+    {:ok, lv, _html} = conn |> log_in(zelador) |> live(~p"/moradores/convidar")
 
     html = lv |> element("form") |> render_submit(%{})
 

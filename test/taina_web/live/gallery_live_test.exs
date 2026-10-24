@@ -20,43 +20,43 @@ defmodule TainaWeb.GalleryLiveTest do
   end
 
   test "grade lista thumbnails das fotos", %{conn: conn, ava: ava, first: first, second: second} do
-    {:ok, _lv, html} = conn |> log_in(ava) |> live(~p"/fotos")
+    {:ok, _lv, html} = conn |> log_in(ava) |> live(~p"/galeria")
 
     assert html =~ "/files/#{first.rkey}/thumbnail/sm"
     assert html =~ "/files/#{second.rkey}/thumbnail/sm"
   end
 
   test "linha do tempo agrupa por dia", %{conn: conn, ava: ava} do
-    {:ok, _lv, html} = conn |> log_in(ava) |> live(~p"/fotos/linha-do-tempo")
+    {:ok, _lv, html} = conn |> log_in(ava) |> live(~p"/galeria/linha-do-tempo")
 
     assert html =~ "Hoje"
     assert html =~ "2 fotos"
   end
 
   test "visualizador navega entre fotos", %{conn: conn, ava: ava, first: first, second: second} do
-    {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/fotos")
+    {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/galeria")
 
     # abre a mais recente (segunda) a partir da grade
-    html = lv |> element(~s(a[href="/fotos/#{second.rkey}"])) |> render_click()
+    html = lv |> element(~s(a[href="/galeria/#{second.rkey}"])) |> render_click()
     assert html =~ "1 de 2"
     assert html =~ "segunda.jpg"
 
     # próxima = mais antiga
     lv |> element("button.viewer__nav--next") |> render_click()
-    assert_patch(lv, ~p"/fotos/#{first.rkey}")
+    assert_patch(lv, ~p"/galeria/#{first.rkey}")
     assert render(lv) =~ "primeira.jpg"
 
     # fechar volta para a grade
     lv |> element("button[phx-click=close]") |> render_click()
-    assert_patch(lv, ~p"/fotos")
+    assert_patch(lv, ~p"/galeria")
   end
 
   test "excluir manda a foto para a lixeira e volta para a grade", %{conn: conn, ava: ava, scope: scope, second: second} do
-    {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/fotos/#{second.rkey}")
+    {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/galeria/#{second.rkey}")
 
     lv |> element("button[phx-click=ask-delete]") |> render_click()
     lv |> element("button[phx-click=confirm-delete]") |> render_click()
-    assert_patch(lv, ~p"/fotos")
+    assert_patch(lv, ~p"/galeria")
 
     assert {:error, :not_found} = Ybira.get_file(scope, second.rkey)
   end
@@ -65,8 +65,8 @@ defmodule TainaWeb.GalleryLiveTest do
     outra = active_ava_fixture(scope.tekoa, %{username: "outra"})
     {:ok, file} = Ybira.upload(Scope.new(outra, scope.tekoa), tmp_image_fixture(filename: "particular.jpg"))
 
-    assert {:error, {_kind, %{to: to}}} = conn |> log_in(ava) |> live(~p"/fotos/#{file.rkey}")
-    assert to == "/arquivos/#{file.rkey}"
+    assert {:error, {_kind, %{to: to}}} = conn |> log_in(ava) |> live(~p"/galeria/#{file.rkey}")
+    assert to == "/documentos/#{file.rkey}"
   end
 
   # --- zonas casa/praca (RFC_003 D1/D2) ---
@@ -80,7 +80,7 @@ defmodule TainaWeb.GalleryLiveTest do
     } do
       {:ok, _} = Ybira.publicar_file(scope, first.rkey)
 
-      {:ok, lv, html} = conn |> log_in(ava) |> live(~p"/fotos")
+      {:ok, lv, html} = conn |> log_in(ava) |> live(~p"/galeria")
 
       # a publicada e a da casa, cada uma com a sua zona no tile
       assert html =~ "primeira.jpg"
@@ -98,12 +98,12 @@ defmodule TainaWeb.GalleryLiveTest do
     } do
       {:ok, _} = Ybira.publicar_file(scope, first.rkey)
 
-      {:ok, _lv, casa_html} = conn |> log_in(ava) |> live(~p"/fotos?zona=casa")
+      {:ok, _lv, casa_html} = conn |> log_in(ava) |> live(~p"/galeria?zona=casa")
 
       refute casa_html =~ "primeira.jpg"
       assert casa_html =~ "segunda.jpg"
 
-      {:ok, _lv, praca_html} = conn |> log_in(ava) |> live(~p"/fotos?zona=praca")
+      {:ok, _lv, praca_html} = conn |> log_in(ava) |> live(~p"/galeria?zona=praca")
 
       assert praca_html =~ "primeira.jpg"
       refute praca_html =~ "segunda.jpg"
@@ -112,14 +112,14 @@ defmodule TainaWeb.GalleryLiveTest do
     test "a linha do tempo acompanha o filtro da zona", %{conn: conn, ava: ava, scope: scope, first: first} do
       {:ok, _} = Ybira.publicar_file(scope, first.rkey)
 
-      {:ok, _lv, html} = conn |> log_in(ava) |> live(~p"/fotos/linha-do-tempo?zona=praca")
+      {:ok, _lv, html} = conn |> log_in(ava) |> live(~p"/galeria/linha-do-tempo?zona=praca")
 
       assert html =~ "primeira.jpg"
       refute html =~ "segunda.jpg"
     end
 
     test "os detalhes dizem a zona da foto", %{conn: conn, ava: ava, second: second} do
-      {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/fotos/#{second.rkey}")
+      {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/galeria/#{second.rkey}")
 
       lv |> element("button[phx-click=toggle-details]") |> render_click()
 
@@ -141,12 +141,12 @@ defmodule TainaWeb.GalleryLiveTest do
       # mas a casa NAO é a de quem vê
       {:ok, _} = Maraca.conceder(outra_scope, "ypy.file.v0", alheia.rkey, ava)
 
-      {:ok, lv, html} = conn |> log_in(ava) |> live(~p"/fotos")
+      {:ok, lv, html} = conn |> log_in(ava) |> live(~p"/galeria")
 
       assert html =~ "Casa de quem enviou"
       refute html =~ "Na sua casa"
 
-      lv |> element(~s(a[href="/fotos/#{alheia.rkey}"])) |> render_click()
+      lv |> element(~s(a[href="/galeria/#{alheia.rkey}"])) |> render_click()
       lv |> element("button[phx-click=toggle-details]") |> render_click()
 
       details = render(lv)
@@ -160,7 +160,7 @@ defmodule TainaWeb.GalleryLiveTest do
       scope: scope,
       second: second
     } do
-      {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/fotos/#{second.rkey}")
+      {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/galeria/#{second.rkey}")
 
       html = render(lv)
       assert html =~ "Publicar na praça"
@@ -182,7 +182,7 @@ defmodule TainaWeb.GalleryLiveTest do
       {:ok, file} = Ybira.upload(outro_scope, tmp_image_fixture(filename: "alheia.jpg"))
       {:ok, _} = Ybira.publicar_file(outro_scope, file.rkey)
 
-      {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/fotos/#{file.rkey}")
+      {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/galeria/#{file.rkey}")
 
       refute has_element?(lv, "button[phx-click=ask-zona]")
     end

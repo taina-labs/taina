@@ -151,6 +151,9 @@ defmodule TainaWeb.Router do
       on_mount: [{TainaWeb.Auth, :mount_current_scope}, {TainaWeb.Hooks, :connection}] do
       live "/setup", SetupLive
       live "/login", LoginLive
+      # Curto antes de /convite/:token: o caminho sem token não pode ser
+      # engolido pelo segmento variável.
+      live "/convite", InviteCodeLive
       live "/convite/:token", InviteAcceptLive
       live "/redefinir/:token", ResetPasswordLive
     end
@@ -169,23 +172,27 @@ defmodule TainaWeb.Router do
       on_mount: [{TainaWeb.Auth, :require_authenticated}, {TainaWeb.Hooks, :shell}] do
       live "/", HomeLive
 
-      live "/arquivos", FilesLive, :index
-      live "/arquivos/pasta/:folder_id", FilesLive, :folder
-      live "/arquivos/enviar", UploadLive
-      live "/arquivos/lixeira", TrashLive
-      live "/arquivos/:id", FilePreviewLive
+      # Os caminhos especificos (/casa, /lixeira, /enviar, /pasta/:id) vem
+      # antes de /:id, que e o pegatudo do preview de arquivo.
+      live "/documentos", FilesLive, :praca
+      live "/documentos/casa", FilesLive, :casa
+      live "/documentos/pasta/:folder_id", FilesLive, :folder
+      live "/documentos/lixeira", TrashLive
+      live "/documentos/enviar", UploadLive
+      live "/documentos/:id", FilePreviewLive
 
-      live "/fotos", GalleryLive, :grid
-      live "/fotos/linha-do-tempo", GalleryLive, :timeline
-      live "/fotos/:id", GalleryLive, :viewer
+      live "/galeria", GalleryLive, :grid
+      live "/galeria/linha-do-tempo", GalleryLive, :timeline
+      live "/galeria/:id", GalleryLive, :viewer
 
-      live "/membros", MembersLive
-      live "/membros/convidar", InviteLive
+      live "/moradores", MembersLive
+      live "/moradores/convidar", InviteLive
       live "/armazenamento", StorageLive
       live "/mural", MuralLive
       live "/saude", SaudeLive
       live "/conta", AccountLive
       live "/conta/pedidos", AccessRequestsLive
+      live "/conta/privacidade", PrivacyLive
     end
   end
 end

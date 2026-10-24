@@ -71,7 +71,7 @@ defmodule TainaWeb.FileControllerTest do
   test "redirects another resident's casa file to its screen", %{conn: conn, other: other, ybira_file: ybira_file} do
     conn = conn |> authed(other.ava) |> get(~p"/files/#{ybira_file.rkey}")
 
-    assert redirected_to(conn, 302) == "/arquivos/#{ybira_file.rkey}"
+    assert redirected_to(conn, 302) == "/documentos/#{ybira_file.rkey}"
   end
 
   test "200 once the file is published to the praca", %{

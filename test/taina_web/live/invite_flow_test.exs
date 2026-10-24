@@ -16,11 +16,11 @@ defmodule TainaWeb.InviteFlowTest do
   test "morador comum não acessa a tela de convite", %{conn: conn, tekoa: tekoa} do
     morador = active_ava_fixture(tekoa)
 
-    assert {:error, {:redirect, %{to: "/"}}} = conn |> log_in(morador) |> live(~p"/membros/convidar")
+    assert {:error, {:redirect, %{to: "/"}}} = conn |> log_in(morador) |> live(~p"/moradores/convidar")
   end
 
   test "zelador gera convite com link + QR, sem e-mail", %{conn: conn, zelador: zelador} do
-    {:ok, lv, _html} = conn |> log_in(zelador) |> live(~p"/membros/convidar")
+    {:ok, lv, _html} = conn |> log_in(zelador) |> live(~p"/moradores/convidar")
 
     html = lv |> element("form") |> render_submit(%{})
 
@@ -30,7 +30,7 @@ defmodule TainaWeb.InviteFlowTest do
   end
 
   test "aviso honesto quando o navegador não consegue copiar o link", %{conn: conn, zelador: zelador} do
-    {:ok, lv, _html} = conn |> log_in(zelador) |> live(~p"/membros/convidar")
+    {:ok, lv, _html} = conn |> log_in(zelador) |> live(~p"/moradores/convidar")
 
     lv |> element("form") |> render_submit(%{})
 

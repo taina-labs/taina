@@ -37,13 +37,13 @@ defmodule TainaWeb.FilePreviewLive do
         {:ok,
          socket
          |> Phoenix.LiveView.put_flash(:error, gettext("Arquivo não encontrado."))
-         |> Phoenix.LiveView.redirect(to: ~p"/arquivos")}
+         |> Phoenix.LiveView.redirect(to: ~p"/documentos/casa")}
 
       {:error, _reason} ->
         {:ok,
          socket
          |> Phoenix.LiveView.put_flash(:error, gettext("Não foi possível abrir o arquivo agora."))
-         |> Phoenix.LiveView.redirect(to: ~p"/arquivos")}
+         |> Phoenix.LiveView.redirect(to: ~p"/documentos/casa")}
     end
   end
 
@@ -57,12 +57,12 @@ defmodule TainaWeb.FilePreviewLive do
         |> assign(:show_request_modal, false)
 
       {:error, :already_readable} ->
-        Phoenix.LiveView.push_navigate(socket, to: ~p"/arquivos/#{rkey}")
+        Phoenix.LiveView.push_navigate(socket, to: ~p"/documentos/#{rkey}")
 
       {:error, :not_found} ->
         socket
         |> Phoenix.LiveView.put_flash(:error, gettext("Arquivo não encontrado."))
-        |> Phoenix.LiveView.redirect(to: ~p"/arquivos")
+        |> Phoenix.LiveView.redirect(to: ~p"/documentos/casa")
     end
   end
 
@@ -75,8 +75,8 @@ defmodule TainaWeb.FilePreviewLive do
 
   # Resultado do `Ybira.file_folder_rkey/2` vira caminho do voltar: pasta
   # visível, volta para ela; qualquer outro caso, volta para o início.
-  defp back_path({:ok, folder_rkey}), do: ~p"/arquivos/pasta/#{folder_rkey}"
-  defp back_path(_other), do: ~p"/arquivos"
+  defp back_path({:ok, folder_rkey}), do: ~p"/documentos/pasta/#{folder_rkey}"
+  defp back_path(_other), do: ~p"/documentos/casa"
 
   @impl true
   def handle_event("copied", _params, socket) do
@@ -113,7 +113,7 @@ defmodule TainaWeb.FilePreviewLive do
         {:noreply,
          socket
          |> Phoenix.LiveView.put_flash(:info, gettext("Arquivo movido para a lixeira."))
-         |> Phoenix.LiveView.push_navigate(to: ~p"/arquivos")}
+         |> Phoenix.LiveView.push_navigate(to: ~p"/documentos/casa")}
 
       {:error, _reason} ->
         {:noreply, Phoenix.LiveView.put_flash(socket, :error, gettext("Não foi possível excluir o arquivo."))}
@@ -176,10 +176,10 @@ defmodule TainaWeb.FilePreviewLive do
          |> Phoenix.LiveView.push_navigate(to: ~p"/conta/pedidos")}
 
       {:error, :already_has_access} ->
-        {:noreply, Phoenix.LiveView.push_navigate(socket, to: ~p"/arquivos/#{target.rkey}")}
+        {:noreply, Phoenix.LiveView.push_navigate(socket, to: ~p"/documentos/#{target.rkey}")}
 
       {:error, :cannot_request_own} ->
-        {:noreply, Phoenix.LiveView.push_navigate(socket, to: ~p"/arquivos/#{target.rkey}")}
+        {:noreply, Phoenix.LiveView.push_navigate(socket, to: ~p"/documentos/#{target.rkey}")}
 
       {:error, _reason} ->
         {:noreply,
@@ -291,7 +291,7 @@ defmodule TainaWeb.FilePreviewLive do
       storage_stats={assigns[:storage_stats]}
       account_alert={assigns[:account_alert] || false}
     >
-      <Layouts.app_bar title={gettext("Pedir acesso")} back={~p"/arquivos"} />
+      <Layouts.app_bar title={gettext("Pedir acesso")} back={~p"/documentos/casa"} />
 
       <div class="col gap-4 mx-auto w-full measure">
         <.empty_state
@@ -396,7 +396,7 @@ defmodule TainaWeb.FilePreviewLive do
           <h2 class="type-h3 mb-1">{@file.nome}</h2>
           <p class="type-body-sm text-muted">{file_meta(@file, @photo_metadata)}</p>
           <p class="type-body-sm text-muted">{readability_line(@file.zona)}</p>
-          <% file_url = url(~p"/arquivos/#{@file.rkey}") %>
+          <% file_url = url(~p"/documentos/#{@file.rkey}") %>
           <div class="field mt-4">
             <label for="file-page-link">{gettext("Link do arquivo")}</label>
             <div class="field__control">

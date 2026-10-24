@@ -76,9 +76,9 @@ defmodule TainaWeb.HomeLive do
   # os seus: nenhum quadradinho de serviço fica sem cor ao lado dos outros.
   defp services do
     [
-      {gettext("Arquivos"), gettext("Documentos e pastas"), "ybira", "folder", ~p"/arquivos"},
-      {gettext("Fotos"), gettext("Fotos e vídeos"), "jaci", "image", ~p"/fotos"},
-      {gettext("Moradores"), gettext("Quem faz parte"), "maraca", "user", ~p"/membros"},
+      {gettext("Arquivos"), gettext("Documentos e pastas"), "ybira", "folder", ~p"/documentos"},
+      {gettext("Fotos"), gettext("Fotos e vídeos"), "jaci", "image", ~p"/galeria"},
+      {gettext("Moradores"), gettext("Quem faz parte"), "maraca", "user", ~p"/moradores"},
       {gettext("Mural"), gettext("O que aconteceu"), "maraca", "mural", ~p"/mural"},
       {gettext("Saúde"), gettext("Estado da máquina"), "nhaman", "saude", ~p"/saude"}
     ]
@@ -194,7 +194,7 @@ defmodule TainaWeb.HomeLive do
           :for={file <- @recent}
           title={file.nome}
           meta={recent_meta(file)}
-          navigate={~p"/arquivos/#{file.rkey}"}
+          navigate={~p"/documentos/#{file.rkey}"}
         >
           <:leading>
             <% {service, icon} = file_visual(file.mime) %>
@@ -212,7 +212,7 @@ defmodule TainaWeb.HomeLive do
         title={gettext("Nada por aqui ainda")}
         hint={gettext("Envie o primeiro arquivo da comunidade.")}
       >
-        <.button variant="primary" size="md" navigate={~p"/arquivos/enviar"}>
+        <.button variant="primary" size="md" navigate={~p"/documentos/enviar"}>
           {gettext("Enviar arquivos")}
         </.button>
       </.empty_state>

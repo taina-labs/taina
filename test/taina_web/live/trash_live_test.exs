@@ -18,7 +18,7 @@ defmodule TainaWeb.TrashLiveTest do
   end
 
   test "lista itens com prazo de purga", %{conn: conn, ava: ava, trashed_file: file} do
-    {:ok, _lv, html} = conn |> log_in(ava) |> live(~p"/arquivos/lixeira")
+    {:ok, _lv, html} = conn |> log_in(ava) |> live(~p"/documentos/lixeira")
 
     assert html =~ file.nome
     assert html =~ "Apagado hoje"
@@ -26,7 +26,7 @@ defmodule TainaWeb.TrashLiveTest do
   end
 
   test "restaura um arquivo", %{conn: conn, scope: scope, ava: ava, trashed_file: file} do
-    {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/arquivos/lixeira")
+    {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/lixeira")
 
     lv |> element(~s(button[phx-value-id="#{file.rkey}"])) |> render_click()
 
@@ -40,7 +40,7 @@ defmodule TainaWeb.TrashLiveTest do
     {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("x", "foto.txt"), folder_rkey: folder.rkey)
     {:ok, :deleted} = Ybira.delete_folder(scope, folder.rkey)
 
-    {:ok, lv, html} = conn |> log_in(ava) |> live(~p"/arquivos/lixeira")
+    {:ok, lv, html} = conn |> log_in(ava) |> live(~p"/documentos/lixeira")
 
     # Pasta e arquivo somam com o da configuração: três itens na lixeira.
     assert html =~ "ferias"

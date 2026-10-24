@@ -14,7 +14,7 @@ defmodule TainaWeb.UploadLiveTest do
   end
 
   test "envia arquivo e mostra no grupo concluído", %{conn: conn, scope: scope, ava: ava} do
-    {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/arquivos/enviar")
+    {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/enviar")
 
     input =
       file_input(lv, "#dropzone", :files, [
@@ -33,7 +33,7 @@ defmodule TainaWeb.UploadLiveTest do
 
   test "envia para a pasta indicada em ?pasta=", %{conn: conn, scope: scope, ava: ava} do
     {:ok, folder} = Ybira.create_folder(scope, %{name: "Atas"})
-    {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/arquivos/enviar?#{[pasta: folder.rkey]}")
+    {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/enviar?#{[pasta: folder.rkey]}")
 
     input =
       file_input(lv, "#dropzone", :files, [
@@ -47,7 +47,7 @@ defmodule TainaWeb.UploadLiveTest do
   end
 
   test "arquivo rejeitado pelo Ybira aparece como falha", %{conn: conn, scope: scope, ava: ava} do
-    {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/arquivos/enviar")
+    {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/enviar")
 
     # ELF magic bytes, executável, rejeitado pela allowlist de MIME
     input =
@@ -66,7 +66,7 @@ defmodule TainaWeb.UploadLiveTest do
   end
 
   test "entrada da câmera chega a CONCLUÍDO", %{conn: conn, scope: scope, ava: ava} do
-    {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/arquivos/enviar")
+    {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/enviar")
 
     # JPEG de verdade: o Ybira detecta MIME pelos magic bytes, não pela extensão
     content = File.read!(tmp_image_fixture(width: 8, height: 8))
@@ -87,7 +87,7 @@ defmodule TainaWeb.UploadLiveTest do
     scope: scope,
     ava: ava
   } do
-    {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/arquivos/enviar")
+    {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/enviar")
 
     input = file_input(lv, "#dropzone", :files, [%{name: "ata.txt", content: "ata da assembleia", type: "text/plain"}])
     render_upload(input, "ata.txt")

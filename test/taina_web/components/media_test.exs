@@ -202,7 +202,7 @@ defmodule TainaWeb.UI.MediaTest do
            ] = rail
 
     assert Enum.all?(rail, &String.starts_with?(&1.thumb, "/files/"))
-    assert Enum.all?(rail, &String.starts_with?(&1.patch, "/fotos/"))
+    assert Enum.all?(rail, &String.starts_with?(&1.patch, "/galeria/"))
   end
 
   # ---------- Dropzone ----------

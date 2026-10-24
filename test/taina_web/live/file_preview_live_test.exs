@@ -17,7 +17,7 @@ defmodule TainaWeb.FilePreviewLiveTest do
   end
 
   test "forbidden casa renders the ask-access state", %{conn: conn, other: other, target_file: file} do
-    {:ok, _lv, html} = conn |> log_in(other) |> live(~p"/arquivos/#{file.rkey}")
+    {:ok, _lv, html} = conn |> log_in(other) |> live(~p"/documentos/#{file.rkey}")
 
     assert html =~ "Esta casa é particular"
     assert html =~ "Pedir acesso"
@@ -30,7 +30,7 @@ defmodule TainaWeb.FilePreviewLiveTest do
     other: other,
     target_file: file
   } do
-    {:ok, lv, _html} = conn |> log_in(other) |> live(~p"/arquivos/#{file.rkey}")
+    {:ok, lv, _html} = conn |> log_in(other) |> live(~p"/documentos/#{file.rkey}")
 
     lv |> element(~s(button[phx-click="ask-access"])) |> render_click()
 
@@ -53,7 +53,7 @@ defmodule TainaWeb.FilePreviewLiveTest do
   } do
     name = owner.display_name || owner.username
 
-    {:ok, lv, html} = conn |> log_in(other) |> live(~p"/arquivos/#{file.rkey}")
+    {:ok, lv, html} = conn |> log_in(other) |> live(~p"/documentos/#{file.rkey}")
 
     # o nome do dono (display ou username) na tela, não um "quem mora aqui",
     # e sem promessa de exclusividade: a dona pode ter aberto para outra pessoa
@@ -74,20 +74,20 @@ defmodule TainaWeb.FilePreviewLiveTest do
   } do
     {:ok, _} = Ybira.publicar_file(Scope.new(owner, tekoa), file.rkey)
 
-    {:ok, _view, html} = conn |> log_in(other) |> live(~p"/arquivos/#{file.rkey}")
+    {:ok, _view, html} = conn |> log_in(other) |> live(~p"/documentos/#{file.rkey}")
 
     refute html =~ "Pedir acesso"
   end
 
   test "owner sees the publish control and readability line", %{conn: conn, owner: owner, target_file: file} do
-    {:ok, _lv, html} = conn |> log_in(owner) |> live(~p"/arquivos/#{file.rkey}")
+    {:ok, _lv, html} = conn |> log_in(owner) |> live(~p"/documentos/#{file.rkey}")
 
     assert html =~ "Só você, e quem você deixar."
     assert html =~ "Publicar"
   end
 
   test "owner publishes the file to the praca", %{conn: conn, tekoa: tekoa, owner: owner, target_file: file} do
-    {:ok, lv, _html} = conn |> log_in(owner) |> live(~p"/arquivos/#{file.rkey}")
+    {:ok, lv, _html} = conn |> log_in(owner) |> live(~p"/documentos/#{file.rkey}")
 
     lv |> element(~s(button[phx-click="ask-zona"])) |> render_click()
     html = lv |> element(~s(button[phx-click="confirm-zona"])) |> render_click()
@@ -106,7 +106,7 @@ defmodule TainaWeb.FilePreviewLiveTest do
   } do
     {:ok, _} = Ybira.publicar_file(Scope.new(owner, tekoa), file.rkey)
 
-    {:ok, lv, _html} = conn |> log_in(other) |> live(~p"/arquivos/#{file.rkey}")
+    {:ok, lv, _html} = conn |> log_in(other) |> live(~p"/documentos/#{file.rkey}")
 
     refute has_element?(lv, ~s(button[phx-click="ask-zona"]))
   end
@@ -121,16 +121,16 @@ defmodule TainaWeb.FilePreviewLiveTest do
       {:ok, folder} = Ybira.create_folder(scope, %{name: "Documentos"})
       {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("oi", "dentro.txt"), folder_rkey: folder.rkey)
 
-      {:ok, _lv, html} = conn |> log_in(owner) |> live(~p"/arquivos/#{file.rkey}")
+      {:ok, _lv, html} = conn |> log_in(owner) |> live(~p"/documentos/#{file.rkey}")
 
-      assert html =~ ~s(href="/arquivos/pasta/#{folder.rkey}")
+      assert html =~ ~s(href="/documentos/pasta/#{folder.rkey}")
     end
 
     test "arquivo solto na raiz volta para o início", %{conn: conn, owner: owner, target_file: file} do
-      {:ok, _lv, html} = conn |> log_in(owner) |> live(~p"/arquivos/#{file.rkey}")
+      {:ok, _lv, html} = conn |> log_in(owner) |> live(~p"/documentos/#{file.rkey}")
 
-      assert html =~ ~s(href="/arquivos")
-      refute html =~ "/arquivos/pasta/"
+      assert html =~ ~s(href="/documentos/casa")
+      refute html =~ "/documentos/pasta/"
     end
   end
 end

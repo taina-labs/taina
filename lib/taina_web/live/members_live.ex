@@ -241,7 +241,7 @@ defmodule TainaWeb.MembersLive do
     >
       <Layouts.app_bar title={gettext("Moradores")} back={~p"/conta"}>
         <:action :if={Maraca.zelador?(@current_scope.ava)}>
-          <.button variant="secondary" size="sm" navigate={~p"/membros/convidar"}>
+          <.button variant="secondary" size="sm" navigate={~p"/moradores/convidar"}>
             {gettext("Convidar")}
           </.button>
         </:action>

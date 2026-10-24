@@ -136,7 +136,7 @@ defmodule TainaWeb.AccountLive do
             </:actions>
           </.list_row>
 
-          <.list_row title={gettext("Moradores")} meta={gettext("quem faz parte da comunidade")} navigate={~p"/membros"}>
+          <.list_row title={gettext("Moradores")} meta={gettext("quem faz parte da comunidade")} navigate={~p"/moradores"}>
             <:leading><.service_square service="maraca" icon="user" /></:leading>
             <:actions><.icon name="chevron-right" size={18} class="text-faint" /></:actions>
           </.list_row>
@@ -145,7 +145,7 @@ defmodule TainaWeb.AccountLive do
             :if={Maraca.zelador?(@current_scope.ava)}
             title={gettext("Convidar pessoas")}
             meta={gettext("link + QR code")}
-            navigate={~p"/membros/convidar"}
+            navigate={~p"/moradores/convidar"}
           >
             <:leading><.service_square service="maraca" icon="qr" /></:leading>
             <:actions><.icon name="chevron-right" size={18} class="text-faint" /></:actions>
@@ -160,7 +160,7 @@ defmodule TainaWeb.AccountLive do
             <:actions><.icon name="chevron-right" size={18} class="text-faint" /></:actions>
           </.list_row>
 
-          <.list_row title={gettext("Lixeira")} meta={gettext("itens dos últimos 30 dias")} navigate={~p"/arquivos/lixeira"}>
+          <.list_row title={gettext("Lixeira")} meta={gettext("itens dos últimos 30 dias")} navigate={~p"/documentos/lixeira"}>
             <:leading><.service_square service="ybira" icon="trash" /></:leading>
             <:actions><.icon name="chevron-right" size={18} class="text-faint" /></:actions>
           </.list_row>

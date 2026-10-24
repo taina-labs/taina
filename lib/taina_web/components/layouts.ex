@@ -196,14 +196,14 @@ defmodule TainaWeb.Layouts do
         <nav class="sidebar__nav" aria-label={gettext("Navegação")}>
           <.sidebar_item navigate={~p"/"} icon="home" active={@active_tab == :home} label={gettext("Início")} />
           <.sidebar_item
-            navigate={~p"/arquivos"}
+            navigate={~p"/documentos"}
             icon="folder"
             active={@active_tab == :files}
             label={gettext("Arquivos")}
           />
-          <.sidebar_item navigate={~p"/fotos"} icon="image" active={@active_tab == :photos} label={gettext("Fotos")} />
+          <.sidebar_item navigate={~p"/galeria"} icon="image" active={@active_tab == :photos} label={gettext("Fotos")} />
           <.sidebar_item
-            navigate={~p"/membros"}
+            navigate={~p"/moradores"}
             icon="user"
             active={@active_tab == :members}
             label={gettext("Moradores")}
@@ -249,12 +249,12 @@ defmodule TainaWeb.Layouts do
       <nav class="bottom-nav" aria-label={gettext("Navegação")}>
         <.bottom_nav_item navigate={~p"/"} icon="home" active={@mobile_tab == :home} label={gettext("Início")} />
         <.bottom_nav_item
-          navigate={~p"/arquivos"}
+          navigate={~p"/documentos"}
           icon="folder"
           active={@mobile_tab == :files}
           label={gettext("Arquivos")}
         />
-        <.bottom_nav_item navigate={~p"/fotos"} icon="image" active={@mobile_tab == :photos} label={gettext("Fotos")} />
+        <.bottom_nav_item navigate={~p"/galeria"} icon="image" active={@mobile_tab == :photos} label={gettext("Fotos")} />
         <.bottom_nav_item
           navigate={~p"/mural"}
           icon="mural"

@@ -158,8 +158,8 @@ defmodule TainaWeb.UploadLive do
 
   # Onde os arquivos caíram: na pasta alvo, ou no início já na aba casa (o
   # default da listagem). Cair na praça faria o recém-chegado "sumir" da tela.
-  defp back_path(nil), do: ~p"/arquivos?#{[zona: "casa"]}"
-  defp back_path(folder), do: ~p"/arquivos/pasta/#{folder.rkey}"
+  defp back_path(nil), do: ~p"/documentos/casa"
+  defp back_path(folder), do: ~p"/documentos/pasta/#{folder.rkey}"
 
   # --- core puro: dados -> dados ---
 

@@ -144,7 +144,7 @@ defmodule TainaWeb.TrashLive do
       storage_stats={assigns[:storage_stats]}
       account_alert={assigns[:account_alert] || false}
     >
-      <Layouts.app_bar title={gettext("Lixeira")} back={~p"/arquivos"} />
+      <Layouts.app_bar title={gettext("Lixeira")} back={~p"/documentos/casa"} />
 
       <div class="col gap-4 mx-auto w-full measure">
         <.card class="row gap-3">

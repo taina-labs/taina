@@ -24,7 +24,7 @@ defmodule TainaWeb.FileController do
     else
       # Casa de outra pessoa: o navegador recebe uma pagina, nao um 403 vazio.
       # A tela do arquivo e que mostra o porque e o caminho (Pedir acesso).
-      {:error, :forbidden} -> redirect(conn, to: ~p"/arquivos/#{rkey}")
+      {:error, :forbidden} -> redirect(conn, to: ~p"/documentos/#{rkey}")
       {:error, :not_authenticated} -> redirect(conn, to: ~p"/login")
       {:error, :not_found} -> send_resp(conn, 404, "")
     end
@@ -39,7 +39,7 @@ defmodule TainaWeb.FileController do
     else
       # Mesma regra do download: sem pagina em branco; quem nao pode ler o
       # arquivo e levado a tela dele (Pedir acesso).
-      {:error, :forbidden} -> redirect(conn, to: ~p"/arquivos/#{rkey}")
+      {:error, :forbidden} -> redirect(conn, to: ~p"/documentos/#{rkey}")
       {:error, :not_authenticated} -> redirect(conn, to: ~p"/login")
       _ -> send_resp(conn, 404, "")
     end

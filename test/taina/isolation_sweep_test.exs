@@ -190,7 +190,7 @@ defmodule Taina.IsolationSweepTest do
   describe "web: download, thumbnail e telas" do
     test "download recusa o morador B e o zelador; a praca libera", ctx do
       rota = ~p"/files/#{ctx.casa_file.rkey}"
-      tela = "/arquivos/#{ctx.casa_file.rkey}"
+      tela = "/documentos/#{ctx.casa_file.rkey}"
 
       conn = build_conn() |> log_in(ctx.reader) |> get(rota)
       assert redirected_to(conn, 302) == tela
@@ -210,7 +210,7 @@ defmodule Taina.IsolationSweepTest do
       rota = ~p"/files/#{foto.rkey}/thumbnail/sm"
 
       conn = build_conn() |> log_in(ctx.reader) |> get(rota)
-      assert redirected_to(conn, 302) == "/arquivos/#{foto.rkey}"
+      assert redirected_to(conn, 302) == "/documentos/#{foto.rkey}"
 
       {:ok, _} = Ybira.publicar_file(ctx.owner_scope, foto.rkey)
 
@@ -222,15 +222,15 @@ defmodule Taina.IsolationSweepTest do
     test "a tela de arquivos nao mostra a casa alheia; a praca libera", ctx do
       conn = log_in(build_conn(), ctx.reader)
 
-      {:ok, _lv, html} = live(conn, ~p"/arquivos?zona=casa")
+      {:ok, _lv, html} = live(conn, ~p"/documentos/casa")
       refute html =~ @casa_filename
 
-      {:ok, _lv, html} = live(conn, ~p"/arquivos?zona=praca")
+      {:ok, _lv, html} = live(conn, ~p"/documentos")
       refute html =~ @casa_filename
 
       {:ok, _} = Ybira.publicar_file(ctx.owner_scope, ctx.casa_file.rkey)
 
-      {:ok, _lv, html} = live(conn, ~p"/arquivos?zona=praca")
+      {:ok, _lv, html} = live(conn, ~p"/documentos")
       assert html =~ @casa_filename
     end
 
@@ -250,18 +250,18 @@ defmodule Taina.IsolationSweepTest do
       {:ok, foto} = Ybira.upload(ctx.owner_scope, tmp_image_fixture(filename: "chacara.jpg"))
       conn = log_in(build_conn(), ctx.reader)
 
-      {:ok, _lv, html} = live(conn, ~p"/fotos")
+      {:ok, _lv, html} = live(conn, ~p"/galeria")
       refute html =~ foto.rkey
 
       {:ok, _} = Ybira.publicar_file(ctx.owner_scope, foto.rkey)
 
-      {:ok, _lv, html} = live(conn, ~p"/fotos")
+      {:ok, _lv, html} = live(conn, ~p"/galeria")
       assert html =~ foto.rkey
     end
 
     test "a tela do arquivo mostra o pedido de acesso, nunca o conteudo; a praca libera", ctx do
       conn = log_in(build_conn(), ctx.reader)
-      rota = ~p"/arquivos/#{ctx.casa_file.rkey}"
+      rota = ~p"/documentos/#{ctx.casa_file.rkey}"
 
       {:ok, _lv, html} = live(conn, rota)
       assert html =~ "Pedir acesso"
@@ -276,22 +276,22 @@ defmodule Taina.IsolationSweepTest do
     test "a lixeira na tela so mostra o proprio lixo", ctx do
       {:ok, _} = Ybira.delete_file(ctx.owner_scope, ctx.casa_file.rkey)
 
-      {:ok, _lv, html} = build_conn() |> log_in(ctx.reader) |> live(~p"/arquivos/lixeira")
+      {:ok, _lv, html} = build_conn() |> log_in(ctx.reader) |> live(~p"/documentos/lixeira")
       refute html =~ @casa_filename
 
-      {:ok, _lv, html} = build_conn() |> log_in(ctx.zelador) |> live(~p"/arquivos/lixeira")
+      {:ok, _lv, html} = build_conn() |> log_in(ctx.zelador) |> live(~p"/documentos/lixeira")
       refute html =~ @casa_filename
 
-      {:ok, _lv, html} = build_conn() |> log_in(ctx.owner) |> live(~p"/arquivos/lixeira")
+      {:ok, _lv, html} = build_conn() |> log_in(ctx.owner) |> live(~p"/documentos/lixeira")
       assert html =~ @casa_filename
     end
 
     test "o zelador nao tem atalho nas telas", ctx do
       conn = build_conn() |> log_in(ctx.zelador) |> get(~p"/files/#{ctx.casa_file.rkey}")
-      assert redirected_to(conn, 302) == "/arquivos/#{ctx.casa_file.rkey}"
+      assert redirected_to(conn, 302) == "/documentos/#{ctx.casa_file.rkey}"
 
       {:ok, _lv, html} =
-        build_conn() |> log_in(ctx.zelador) |> live(~p"/arquivos/#{ctx.casa_file.rkey}")
+        build_conn() |> log_in(ctx.zelador) |> live(~p"/documentos/#{ctx.casa_file.rkey}")
 
       assert html =~ "Pedir acesso"
       refute html =~ @casa_contents

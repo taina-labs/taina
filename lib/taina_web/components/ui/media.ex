@@ -201,7 +201,7 @@ defmodule TainaWeb.UI.Media do
             id: id,
             position: i + 1,
             thumb: ~p"/files/#{id}/thumbnail/sm",
-            patch: ~p"/fotos/#{id}"
+            patch: ~p"/galeria/#{id}"
           }
         end
     end

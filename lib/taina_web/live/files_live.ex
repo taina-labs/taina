@@ -11,9 +11,11 @@ defmodule TainaWeb.FilesLive do
   detalhes completos; não há painel lateral, o mesmo caminho no mobile e no
   desktop.
 
-  Ordenação, visão e zona moram na URL (`?sort=name-asc&view=grid&zona=praca`),
-  então sobrevivem a navegação, recarga e compartilhamento de link. Paginação
-  por offset (`list_folder_contents`), o que permite qualquer ordem.
+  Ordenação e visão moram na URL (`?sort=name-asc&view=grid`); a zona (praca
+  ou casa) e a própria rota nas abas raiz (`/documentos` e `/documentos/casa`,
+  o parâmetro `?zona=` é ignorado nelas) e continua na query dentro de pasta
+  (default casa). Então sobrevive a navegação, recarga e compartilhamento de
+  link. Paginação por offset (`list_folder_contents`), o que permite qualquer ordem.
   """
 
   use TainaWeb, :live_view
@@ -26,7 +28,7 @@ defmodule TainaWeb.FilesLive do
     folder_rkey = params["folder_id"]
     sort = parse_sort(params["sort"])
     view = if params["view"] == "grid", do: :grid, else: :list
-    zona = parse_zona(params["zona"])
+    zona = zona_de(params, socket.assigns.live_action)
     scope = socket.assigns.current_scope
 
     case load_folder(scope, folder_rkey) do
@@ -60,14 +62,14 @@ defmodule TainaWeb.FilesLive do
             {:noreply,
              socket
              |> Phoenix.LiveView.put_flash(:error, gettext("Não foi possível carregar a pasta."))
-             |> Phoenix.LiveView.push_navigate(to: ~p"/arquivos")}
+             |> Phoenix.LiveView.push_navigate(to: ~p"/documentos/casa")}
         end
 
       {:error, :not_found} ->
         {:noreply,
          socket
          |> Phoenix.LiveView.put_flash(:error, gettext("Pasta não encontrada."))
-         |> Phoenix.LiveView.push_navigate(to: ~p"/arquivos")}
+         |> Phoenix.LiveView.push_navigate(to: ~p"/documentos/casa")}
 
       # Casa de outra pessoa: a pasta em si não é para os nossos olhos, volta
       # ao início com o porquê.
@@ -78,7 +80,7 @@ defmodule TainaWeb.FilesLive do
            :error,
            gettext("Esta pasta é particular. Só quem a guardou, e quem essa pessoa deixar, vê.")
          )
-         |> Phoenix.LiveView.push_navigate(to: ~p"/arquivos")}
+         |> Phoenix.LiveView.push_navigate(to: ~p"/documentos/casa")}
     end
   end
 
@@ -378,23 +380,37 @@ defmodule TainaWeb.FilesLive do
   defp browse_path(folder_rkey, sort, view, zona) do
     params = %{sort: sort_param(sort)}
     params = if view == :grid, do: Map.put(params, :view, "grid"), else: params
-    # Com o default na casa, quem precisa de marca na URL e a praca.
-    params = if zona == :praca, do: Map.put(params, :zona, "praca"), else: params
+
+    # Nas abas raiz (praca/casa) a zona e a propria rota, não entra na query;
+    # dentro de pasta o filtro continua na query, default na casa.
+    params =
+      case folder_rkey do
+        nil -> if zona == :casa, do: params, else: Map.put(params, :zona, "praca")
+        _id -> if zona == :praca, do: Map.put(params, :zona, "praca"), else: params
+      end
 
     case folder_rkey do
-      nil -> ~p"/arquivos?#{params}"
-      id -> ~p"/arquivos/pasta/#{id}?#{params}"
+      nil -> zona_path(zona, params)
+      id -> ~p"/documentos/pasta/#{id}?#{params}"
     end
   end
 
   # --- zonas casa/praca (RFC_003 D1/D2) ---
 
-  # Particao client-side: a leitura ja trouxe as duas zonas, aqui so escolhemos
-  # qual aba mostrar. Conteudo novo nasce na casa, e a listagem acompanha:
-  # ausencia do parametro cai em casa, a praca e marcada explicitamente
-  # (?zona=praca). Se caisse na praca antes, o upload "sumia" da tela.
+  # Na rota, a zona e a aba: `/documentos` e a praca, `/documentos/casa` e a
+  # casa (a ação decide; o `?zona=` é ignorado nessas ações). Dentro de pasta
+  # (`:folder`) o filtro continua na query, com o default na casa. Conteudo
+  # novo nasce na casa, e a listagem acompanha: se caisse na praca antes, o
+  # upload "sumia" da tela.
+  defp zona_de(_params, live_action) when live_action in [:praca, :casa], do: live_action
+  defp zona_de(params, _live_action), do: parse_zona(params["zona"])
+
   defp parse_zona("praca"), do: :praca
   defp parse_zona(_casa_default), do: :casa
+
+  # A rota raiz é a zona: a praca é /documentos, a casa é /documentos/casa.
+  defp zona_path(:praca, params), do: ~p"/documentos?#{params}"
+  defp zona_path(:casa, params), do: ~p"/documentos/casa?#{params}"
 
   defp for_zona(items, zona), do: Enum.filter(items, &(&1.zona == zona))
 
@@ -452,8 +468,8 @@ defmodule TainaWeb.FilesLive do
   defp normalize_target(target) when target in [nil, ""], do: nil
   defp normalize_target(target), do: target
 
-  defp upload_path(nil), do: ~p"/arquivos/enviar"
-  defp upload_path(folder_id), do: ~p"/arquivos/enviar?#{[pasta: folder_id]}"
+  defp upload_path(nil), do: ~p"/documentos/enviar"
+  defp upload_path(folder_id), do: ~p"/documentos/enviar?#{[pasta: folder_id]}"
 
   defp file_meta(file) do
     "#{file_kind(file.mime)}, #{format_bytes(file.tamanho)}"
@@ -487,7 +503,7 @@ defmodule TainaWeb.FilesLive do
             phx-click="open-modal"
             phx-value-modal="storage-info"
           />
-          <.icon_button name="trash" label={gettext("Lixeira")} navigate={~p"/arquivos/lixeira"} />
+          <.icon_button name="trash" label={gettext("Lixeira")} navigate={~p"/documentos/lixeira"} />
           <.icon_button
             :if={can_create_here?(@current_scope, @folder)}
             name="folder-plus"
@@ -503,10 +519,10 @@ defmodule TainaWeb.FilesLive do
 
       <div class="row between wrap gap-3 mb-4">
         <.segmented>
-          <:option patch={browse_path(@folder_rkey, @sort, @view, :praca)} current={@zona == :praca}>
+          <:option patch={~p"/documentos"} current={@zona == :praca}>
             {gettext("Praça")}
           </:option>
-          <:option patch={browse_path(@folder_rkey, @sort, @view, :casa)} current={@zona == :casa}>
+          <:option patch={~p"/documentos/casa"} current={@zona == :casa}>
             {gettext("Casa")}
           </:option>
         </.segmented>
@@ -621,7 +637,7 @@ defmodule TainaWeb.FilesLive do
                 class="tile"
                 style="position: relative;"
               >
-                <.link navigate={~p"/arquivos/#{file.rkey}"} class="col gap-1">
+                <.link navigate={~p"/documentos/#{file.rkey}"} class="col gap-1">
                   <% {service, icon} = file_visual(file.mime) %>
                   <.service_square service={service} icon={icon} size="lg" />
                   <p class="tile__title">{file.nome}</p>
@@ -674,7 +690,7 @@ defmodule TainaWeb.FilesLive do
                 id={dom_id}
                 title={file.nome}
                 meta={"#{file_meta(file)} / #{readability_short(file.zona)}"}
-                navigate={~p"/arquivos/#{file.rkey}"}
+                navigate={~p"/documentos/#{file.rkey}"}
                 draggable="true"
                 data-drag-id={file.rkey}
                 data-drag-kind="file"

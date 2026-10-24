@@ -142,16 +142,16 @@ defmodule TainaWeb.GalleryLive do
       # Casa de outra pessoa: a tela de preview é quem explica o "Pedir
       # acesso"; aqui só levamos a pessoa até lá.
       {:error, :forbidden} ->
-        Phoenix.LiveView.push_navigate(socket, to: ~p"/arquivos/#{rkey}")
+        Phoenix.LiveView.push_navigate(socket, to: ~p"/documentos/#{rkey}")
 
       {:error, :not_found} ->
         socket
         |> Phoenix.LiveView.put_flash(:error, gettext("Foto não encontrada."))
-        |> Phoenix.LiveView.push_patch(to: ~p"/fotos")
+        |> Phoenix.LiveView.push_patch(to: ~p"/galeria")
     end
   end
 
-  # Link direto para /fotos/:id (sem grade carregada): navega só esta foto.
+  # Link direto para /galeria/:id (sem grade carregada): navega só esta foto.
   defp assign_new_ids(%{assigns: %{photo_ids: []}} = socket, rkey) do
     assign(socket, :photo_ids, [rkey])
   end
@@ -299,7 +299,7 @@ defmodule TainaWeb.GalleryLive do
          |> assign(:show_confirm, false)
          |> Phoenix.LiveView.put_flash(:info, gettext("Foto movida para a lixeira."))
          |> reset_gallery()
-         |> Phoenix.LiveView.push_patch(to: ~p"/fotos")}
+         |> Phoenix.LiveView.push_patch(to: ~p"/galeria")}
 
       {:error, _reason} ->
         {:noreply,
@@ -346,7 +346,7 @@ defmodule TainaWeb.GalleryLive do
     with index when is_integer(index) <- current_id && Enum.find_index(ids, &(&1 == current_id)),
          next_index = index + delta,
          true <- next_index >= 0 and next_index < length(ids) do
-      Phoenix.LiveView.push_patch(socket, to: ~p"/fotos/#{Enum.at(ids, next_index)}")
+      Phoenix.LiveView.push_patch(socket, to: ~p"/galeria/#{Enum.at(ids, next_index)}")
     else
       _out_of_range -> socket
     end
@@ -399,13 +399,13 @@ defmodule TainaWeb.GalleryLive do
   defp zona_filter(:tudo), do: nil
   defp zona_filter(zona), do: zona
 
-  defp gallery_path(:grid, :tudo), do: ~p"/fotos"
-  defp gallery_path(:grid, :praca), do: ~p"/fotos?#{[zona: "praca"]}"
-  defp gallery_path(:grid, :casa), do: ~p"/fotos?#{[zona: "casa"]}"
+  defp gallery_path(:grid, :tudo), do: ~p"/galeria"
+  defp gallery_path(:grid, :praca), do: ~p"/galeria?#{[zona: "praca"]}"
+  defp gallery_path(:grid, :casa), do: ~p"/galeria?#{[zona: "casa"]}"
 
-  defp gallery_path(:timeline, :tudo), do: ~p"/fotos/linha-do-tempo"
-  defp gallery_path(:timeline, :praca), do: ~p"/fotos/linha-do-tempo?#{[zona: "praca"]}"
-  defp gallery_path(:timeline, :casa), do: ~p"/fotos/linha-do-tempo?#{[zona: "casa"]}"
+  defp gallery_path(:timeline, :tudo), do: ~p"/galeria/linha-do-tempo"
+  defp gallery_path(:timeline, :praca), do: ~p"/galeria/linha-do-tempo?#{[zona: "praca"]}"
+  defp gallery_path(:timeline, :casa), do: ~p"/galeria/linha-do-tempo?#{[zona: "casa"]}"
 
   defp view_action(:timeline), do: :timeline
   defp view_action(_grade_default), do: :grid
@@ -506,7 +506,7 @@ defmodule TainaWeb.GalleryLive do
           <.link
             :for={{dom_id, photo} <- @streams.photos}
             id={dom_id}
-            patch={~p"/fotos/#{photo.rkey}"}
+            patch={~p"/galeria/#{photo.rkey}"}
             class="photo-grid__item"
             aria-label={photo.nome}
           >
@@ -535,7 +535,7 @@ defmodule TainaWeb.GalleryLive do
           title={empty_title}
           hint={empty_hint}
         >
-          <.button variant="primary" size="md" navigate={~p"/arquivos/enviar"}>
+          <.button variant="primary" size="md" navigate={~p"/documentos/enviar"}>
             {gettext("Enviar fotos")}
           </.button>
         </.empty_state>
@@ -559,7 +559,7 @@ defmodule TainaWeb.GalleryLive do
             <div class="photo-grid">
               <.link
                 :for={photo <- group.photos}
-                patch={~p"/fotos/#{photo.rkey}"}
+                patch={~p"/galeria/#{photo.rkey}"}
                 class="photo-grid__item"
                 aria-label={photo.nome}
               >
@@ -590,7 +590,7 @@ defmodule TainaWeb.GalleryLive do
           title={empty_title}
           hint={empty_hint}
         >
-          <.button variant="primary" size="md" navigate={~p"/arquivos/enviar"}>
+          <.button variant="primary" size="md" navigate={~p"/documentos/enviar"}>
             {gettext("Enviar fotos")}
           </.button>
         </.empty_state>
