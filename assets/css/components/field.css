@@ -1,0 +1,79 @@
+/* Campos (Penpot: Field). Espelho de TainaWeb.UI.Forms.input/1, select/1
+   e textarea/1; mantenha os dois em sincronia. */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.field > label {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.2;
+}
+
+.field__control {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+/* qualquer input de linha (text, email, tel, url, date, time...) entra na
+   estilização; os exóticos (checkbox/radio/range/file) ficam de fora porque
+   têm UI própria do navegador. */
+.field select,
+.field textarea,
+.field :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"])) {
+  width: 100%;
+  height: var(--size-control-md);
+  padding-inline: var(--space-4);
+  background: var(--field-bg);
+  border: var(--border-hairline) solid var(--border-default);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  transition: border-color 120ms ease;
+}
+
+.field textarea {
+  height: auto;
+  min-height: var(--size-control-lg);
+  padding-block: var(--space-3);
+}
+
+.field input:focus,
+.field select:focus,
+.field textarea:focus {
+  border-color: var(--brand-primary);
+}
+
+.field__control > .icon {
+  position: absolute;
+  right: var(--space-4);
+  color: var(--text-faint);
+  pointer-events: none;
+}
+
+.field__control:has(.icon) input {
+  padding-right: var(--space-12);
+}
+
+.field__help {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.3;
+  color: var(--text-muted);
+}
+
+.field__error {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.3;
+  color: var(--feedback-error);
+}
+
+.field--invalid input,
+.field--invalid select,
+.field--invalid textarea {
+  border-color: var(--feedback-error);
+}

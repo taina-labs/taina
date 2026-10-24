@@ -1,0 +1,66 @@
+/* Flash (Penpot: Flash). Espelho de TainaWeb.CoreComponents.flash_group/1;
+   mantenha os dois em sincronia. */
+
+.flash-group {
+  position: fixed;
+  top: calc(var(--space-4) + env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: min(calc(100% - var(--space-8)), var(--measure-card));
+}
+
+.flash {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  border: var(--border-hairline) solid var(--border-default);
+  box-shadow: var(--elevation-soft);
+  font-size: var(--font-size-sm);
+  width: 100%;
+  text-align: left;
+}
+
+.flash--info {
+  border-color: var(--feedback-info);
+}
+
+.flash--error {
+  border-color: var(--feedback-error);
+}
+
+.flash .icon {
+  flex-shrink: 0;
+}
+
+.flash--info .icon {
+  color: var(--feedback-info);
+}
+.flash--error .icon {
+  color: var(--feedback-error);
+}
+
+/* botão de fechar do flash: alvo de toque cheio (44px) que o margin negativo
+   compensa, para o aviso não crescer por causa dele. */
+.flash__dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--size-touch);
+  height: var(--size-touch);
+  margin-block: calc(var(--space-3) * -1);
+  margin-right: calc(var(--space-2) * -1);
+  flex-shrink: 0;
+  color: var(--text-muted);
+  border-radius: var(--radius-md);
+}
+
+.flash__dismiss:hover {
+  color: var(--text-primary);
+}

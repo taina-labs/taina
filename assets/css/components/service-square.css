@@ -1,0 +1,50 @@
+/* Quadradinho de ícone com cor do serviço (Penpot: ServiceSquare). Espelho
+   de TainaWeb.UI.Content.service_square/1; mantenha os dois em sincronia. */
+
+.service-square {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--space-10);
+  height: var(--space-10);
+  border-radius: var(--radius-md);
+  flex-shrink: 0;
+}
+
+.service-square--lg {
+  width: var(--space-12);
+  height: var(--space-12);
+}
+
+.service-square--ybira {
+  background: var(--service-ybira-soft);
+  color: var(--service-ybira-tint);
+}
+.service-square--jaci {
+  background: var(--service-jaci-soft);
+  color: var(--service-jaci-tint);
+}
+.service-square--nhaman {
+  background: var(--surface-raised);
+  color: var(--service-nhaman);
+}
+.service-square--guara {
+  background: var(--surface-raised);
+  color: var(--service-guara);
+}
+.service-square--maraca {
+  background: var(--service-maraca-soft);
+  color: var(--service-maraca-tint);
+}
+.service-square--doc {
+  background: var(--surface-raised);
+  color: var(--brand-ember);
+}
+.service-square--video {
+  background: var(--surface-raised);
+  color: var(--service-video);
+}
+.service-square--neutral {
+  background: var(--surface-raised);
+  color: var(--text-muted);
+}

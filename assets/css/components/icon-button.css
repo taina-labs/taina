@@ -1,0 +1,31 @@
+/* Botão de ícone (appbar, kebab, ações de linha). Espelho de
+   TainaWeb.UI.Actions.icon_button/1; mantenha os dois em sincronia. */
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--size-touch);
+  height: var(--size-touch);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+}
+
+.icon-btn:hover {
+  background: var(--surface-raised);
+  color: var(--text-primary);
+}
+
+.icon-btn--danger {
+  color: var(--feedback-error);
+}
+
+.icon-btn:disabled {
+  opacity: var(--opacity-disabled);
+  cursor: not-allowed;
+}
+
+/* press feedback: the control sinks 1px while active (DESIGN.md, motion) */
+.icon-btn:active {
+  transform: translateY(1px);
+}

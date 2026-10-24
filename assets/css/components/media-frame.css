@@ -1,0 +1,7 @@
+/* Moldura da mídia no preview (imagem/video). Espelho de Ybira - Preview;
+   mantenha em sincronia. */
+
+.media-frame {
+  min-height: 280px;
+  overflow: hidden;
+}

@@ -1,0 +1,19 @@
+/* QR (Penpot: QRCard). Espelho de TainaWeb.UI.Content.qr_card/1 (Wave 1);
+   mantenha em sincronia. */
+
+.qr-card {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--size-qr);
+  height: var(--size-qr);
+  margin-inline: auto;
+  padding: var(--space-3);
+  background: var(--bg-qr);
+  border-radius: var(--radius-lg);
+}
+
+.qr-card svg {
+  width: 100%;
+  height: 100%;
+}

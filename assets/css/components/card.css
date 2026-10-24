@@ -1,0 +1,13 @@
+/* Cartão base (Penpot: Card). Espelho de TainaWeb.UI.Content.card/1;
+   mantenha os dois em sincronia. */
+
+.card {
+  background: var(--surface-default);
+  border: var(--border-hairline) solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+}
+
+.card--raised {
+  background: var(--surface-raised);
+}

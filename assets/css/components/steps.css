@@ -1,0 +1,19 @@
+/* Passos do wizard (Penpot: Steps). Espelho de TainaWeb.UI.Content.steps/1;
+   mantenha os dois em sincronia. */
+
+.steps {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.steps__dot {
+  width: var(--space-4);
+  height: var(--size-nav-dot);
+  border-radius: var(--radius-pill);
+  background: var(--text-faint);
+}
+
+.steps__dot--current {
+  width: var(--space-8);
+  background: var(--brand-primary);
+}

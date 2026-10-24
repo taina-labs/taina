@@ -83,6 +83,14 @@ defmodule TainaWeb do
       import Phoenix.Controller, only: [get_csrf_token: 0]
       import Phoenix.HTML
       import TainaWeb.CoreComponents
+      import TainaWeb.Icons
+      import TainaWeb.UI.Actions
+      import TainaWeb.UI.Content
+      import TainaWeb.UI.Feedback
+      import TainaWeb.UI.Forms
+      import TainaWeb.UI.Media
+      import TainaWeb.UI.Navigation
+      import TainaWeb.UI.Overlays
 
       alias Phoenix.LiveView.JS
 

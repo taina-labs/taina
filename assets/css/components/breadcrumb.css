@@ -1,0 +1,26 @@
+/* Breadcrumb (Penpot: Breadcrumb, desktop only). Espelho do uso em tela;
+   mantenha em sincronia. */
+
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+}
+
+.breadcrumb a:hover {
+  color: var(--text-primary);
+}
+
+.breadcrumb__sep {
+  color: var(--text-faint);
+}
+
+/* nome da pasta atual encolhe com reticências no mobile, o "Início" fica */
+.breadcrumb__current {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

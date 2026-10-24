@@ -1,0 +1,34 @@
+/* Dropzone (upload). Espelho de TainaWeb.UI.Media.dropzone/1 (Wave 1);
+   mantenha em sincronia. */
+
+.dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-8) var(--space-4);
+  border: var(--border-thick) dashed var(--brand-primary-pressed);
+  border-radius: var(--radius-lg);
+  text-align: center;
+  color: var(--text-muted);
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+
+.dropzone.is-dragover {
+  border-color: var(--brand-primary);
+  background: var(--surface-tint-brand);
+}
+
+.dropzone .icon {
+  color: var(--brand-primary);
+}
+
+/* o input de arquivo é sr-only: quando o teclado o foca, o ring dele fica
+   fora da tela, então o contêiner assume o destaque. */
+.dropzone:focus-within {
+  outline: var(--border-thick) solid var(--brand-primary);
+  outline-offset: 2px;
+}

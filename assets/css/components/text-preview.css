@@ -1,0 +1,18 @@
+/* Pré-visualização de texto (Ybira - Preview). Espelho de
+   TainaWeb.UI.Media.text_preview/1 (Wave 1); mantenha em sincronia. */
+
+.text-preview {
+  align-self: stretch;
+  width: 100%;
+  max-height: 70dvh;
+  overflow: auto;
+  margin: 0;
+  padding: var(--space-4);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-mono-sm);
+  line-height: 1.5;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  text-align: left;
+}

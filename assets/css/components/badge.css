@@ -1,0 +1,40 @@
+/* Badges (Penpot: Badge). Espelho de TainaWeb.UI.Content.badge/1; mantenha
+   os dois em sincronia. */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  height: var(--size-badge);
+  padding-inline: var(--space-3);
+  border-radius: var(--radius-pill);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+}
+
+.badge--zelador {
+  background: var(--brand-primary);
+  color: var(--text-on-brand);
+}
+
+.badge--soon {
+  background: var(--surface-high);
+  color: var(--text-muted);
+}
+
+.badge--active {
+  border: var(--border-hairline) solid var(--feedback-success);
+  color: var(--feedback-success);
+}
+
+.badge--inactive {
+  color: var(--text-muted);
+}
+
+.badge--ybira {
+  background: var(--service-ybira-soft);
+  color: var(--service-ybira-tint);
+}
+.badge--jaci {
+  background: var(--service-jaci-soft);
+  color: var(--service-jaci-tint);
+}

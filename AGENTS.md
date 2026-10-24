@@ -152,7 +152,11 @@ This is the single most important rule and it applies to the frontend too.
 - **Every screen ships empty / error / permission states** — not just the happy
   path. `<.empty_state>` exists for this; use it.
 - All user-facing strings go through `gettext` / `ngettext`. **pt-BR first.**
-  Never anglicize the Tupi-Guarani names (Tekoa, Maracá, Ybira, Jaci, Guará).
+  **Tupi-Guarani names never appear in the end-user UI.** Ybira and Jaci are
+  internal subsystem names; the interface says "Documentos" and "Galeria". A
+  Tekoa is the community instance, carried by the community's own name, not
+  "Tekoa" on screen. Maracá (identity and access) surfaces as "Moradores". Keep
+  the Tupi names in code, tokens, board ids and the architecture.
 
 ### Motion & accessibility
 
@@ -232,15 +236,24 @@ Decided 2026-06-15 (canonical record: `tekoa/tecnico/RFC_003_GOVERNANCA_E_TRANSP
   the community's box; shipping community data to any SaaS (PostHog, etc.)
   betrays data sovereignty. Accessibility (WCAG contrast/labels/focus) is *part
   of* accessible transparency, not separate polish.
-- **Honest framing.** No encryption exists yet. UI must say casa privacy is a
-  *software + trust* promise ("promessa de software, não cadeado matemático"),
-  never a cryptographic guarantee. Only future Ybira **E2E** (not convergent)
-  would let us honestly say the zelador *cannot* read casa files.
+- **Honest framing, at the right altitude.** The UI must never overclaim (no
+  "encrypted", no "no one can see"). But the deep technical caveat and the
+  transparency narrative belong in the tekoa docs, the landing page and the
+  public code, not in product copy: do not put lines like "promessa de software,
+  não cadeado matemático" on a screen. UI copy stays plain, brief and
+  non-technical, and does not conflate or conflict with features still planned
+  in the RFCs. No encryption exists yet, and only future Ybira **E2E** (not
+  convergent) would let us say the zelador *cannot* read casa files; until then
+  the UI says what access means without technical justification.
 - **Governance is collective.** Sensitive acts (remove member, appoint/revoke
   zelador) are community-voted *proposals* (assembleia), never a god-button —
   but that track is beyond RFC_002 and ships only after its tekoa RFC lands.
-- **Naming is tiered — one source of truth.** **Tupi-Guarani** for
-  subsystem/brand proper nouns only (Tekoa, Maracá, Ybira, Jaci, Guará).
+- **Naming is tiered — one source of truth.** **Tupi-Guarani** for *internal*
+  subsystem/architecture proper nouns (Tekoa, Maracá, Ybira, Jaci, Guará):
+  code, tokens, board ids, federation, docs. They do **not** appear in the
+  end-user UI — Ybira is "Documentos", Jaci is "Galeria", Maracá is "Moradores",
+  and "Tekoa" is the community's own instance name, shown as the community's
+  name if at all.
   **Familiar pt-BR** for the everyday social vocabulary, where the *same word*
   is the DB atom, the context term, **and** the UI label — `:casa`, `:praca`,
   `:zelador`, `:morador`, mural, pedido, assembleia — no English-atom →

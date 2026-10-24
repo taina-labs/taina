@@ -22,7 +22,6 @@
   --color-dawn-500: #f2a65a;
   --color-dawn-600: #dd8a3e;
   --color-dawn-700: #b96d2c;
-  --color-dawn-800: #a35c1e;
 
   --color-ember-400: #f08a6c;
   --color-ember-500: #e2674a;
@@ -52,10 +51,10 @@
   --color-sky-600: #3f84d6;
   --color-sky-700: #2f66ac;
 
+  --color-red-300: #ff8080;
   --color-red-500: #e5484d;
   --color-red-600: #c03538;
   --color-amber-500: #efb54a;
-  --color-amber-700: #8a6114;
 
   /* ---------- primitives - scale ---------- */
   --space-1: 4px;
@@ -82,6 +81,8 @@
   --size-control-sm: 36px;
   --size-control-md: 48px;
   --size-control-lg: 56px;
+  --size-icon-md: 24px;
+  --size-icon-lg: 28px;
   --size-nav-mobile: 72px;
   --size-appbar: 64px;
   --size-nav-dot: 6px;
@@ -147,6 +148,9 @@
   --brand-primary-hover: var(--color-dawn-400);
   --brand-primary-pressed: var(--color-dawn-600);
   --brand-ember: var(--color-ember-500);
+  --nav-selected: var(--brand-primary);
+  --nav-idle: var(--text-secondary);
+  --action-danger: var(--color-red-300);
 
   --service-ybira: var(--color-forest-500);
   --service-ybira-soft: var(--color-forest-900);
@@ -156,6 +160,7 @@
   --service-jaci-soft: var(--color-moon-900);
   --service-jaci-tint: var(--color-moon-400);
   --service-nhaman: var(--color-sky-500);
+  --service-nhaman-soft: rgb(91 163 245 / 0.16);
   --service-video: var(--color-sky-300);
   --service-guara: var(--color-guara-500);
   /* Maraca (identidade, acesso: Moradores, Mural, Pedidos) nao empresta o
@@ -167,7 +172,16 @@
   --feedback-success: var(--color-forest-400);
   --feedback-warning: var(--color-amber-500);
   --feedback-error: var(--color-red-500);
+  --feedback-error-strong: #9a2422;
   --feedback-info: var(--color-sky-500);
+
+  /* cores das variantes do componente Badge (Kind do Penpot) */
+  --badge-zone-praca: var(--color-forest-300);
+  --badge-zone-casa: var(--color-night-100);
+  --badge-role-zelador: var(--color-ember-400);
+  --badge-role-morador: var(--color-sky-300);
+  --badge-state-active: var(--color-forest-300);
+  --badge-state-inactive: var(--color-night-200);
 
   /* translucent tints for the deterministic avatar colors (hash -> 0..3) */
   --avatar-tint-0: rgb(242 166 90 / 0.16);
@@ -183,6 +197,9 @@
   --measure-card: 420px;
   --measure-shell: 1160px;
   --measure-shell-wide: 1280px;
+  --measure-sheet: 390px;
+  --measure-dialog: 360px;
+  --measure-mobile: 390px;
 
   /* component sizes, shells and grid gaps (semantic) */
   --font-size-mono-sm: 0.8125rem;

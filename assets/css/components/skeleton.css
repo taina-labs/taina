@@ -1,0 +1,26 @@
+/* Skeleton (Penpot: Skeleton). Espelho de TainaWeb.UI.Feedback.skeleton/1;
+   mantenha os dois em sincronia. */
+
+/* Loading placeholder shaped like the final layout. The pulse is a loop, so
+   it only runs when motion is allowed (DESIGN.md, motion rules). */
+.skeleton {
+  background: var(--surface-raised);
+  border-radius: var(--radius-md);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .skeleton {
+    animation: skeleton-pulse 1.6s ease-in-out infinite;
+  }
+}
+
+@keyframes skeleton-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.5;
+  }
+}

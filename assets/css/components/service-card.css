@@ -1,0 +1,43 @@
+/* Card de serviço da home (Arquivos, Fotos, ..., Penpot: ServiceCard).
+   Espelho de TainaWeb.UI.Content.service_card/1 (Wave 1); mantenha os dois
+   em sincronia. */
+
+.service-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--surface-default);
+  border: var(--border-hairline) solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease;
+}
+
+.service-card:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-raised);
+}
+
+.service-card[aria-disabled="true"] {
+  pointer-events: none;
+}
+
+.service-card[aria-disabled="true"] .service-card__title,
+.service-card[aria-disabled="true"] .service-card__meta {
+  color: var(--text-muted);
+}
+
+.service-card__title {
+  font-family: var(--font-family-display);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.25;
+}
+
+.service-card__meta {
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+}

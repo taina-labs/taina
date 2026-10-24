@@ -1,0 +1,34 @@
+/* Barra de progresso (Penpot: Progress). Espelho de
+   TainaWeb.UI.Content.progress/1; mantenha os dois em sincronia. */
+
+.progress {
+  display: flex;
+  width: 100%;
+  height: var(--size-progress);
+  border-radius: var(--radius-pill);
+  background: var(--surface-high);
+  overflow: hidden;
+}
+
+.progress__fill {
+  border-radius: var(--radius-pill);
+  background: var(--brand-primary);
+  transform-origin: left;
+  transition: transform 200ms ease;
+}
+
+.progress__fill--success {
+  background: var(--feedback-success);
+}
+.progress__fill--jaci {
+  background: var(--service-jaci);
+}
+.progress__fill--sky {
+  background: var(--service-nhaman);
+}
+.progress__fill--ybira {
+  background: var(--service-ybira);
+}
+.progress__fill--neutral {
+  background: var(--text-muted);
+}

@@ -1,0 +1,150 @@
+/* Visualizador fullscreen (Penpot: Viewer). Espelho de Galeria Preview;
+   mantenha em sincronia. */
+
+.viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-viewer);
+  overscroll-behavior: contain;
+}
+
+/* header do visualizador: desce abaixo do notch/status bar do iOS */
+.viewer > header {
+  padding-top: calc(var(--space-4) + env(safe-area-inset-top));
+}
+
+.viewer__stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.viewer__stage img,
+.viewer__stage video {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.viewer__nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+}
+
+.viewer__nav--prev {
+  left: var(--space-2);
+}
+.viewer__nav--next {
+  right: var(--space-2);
+}
+
+/* barra de fotos vizinhas do visualizador (desktop 1024+): um trecho curto
+   em volta da atual, para não caçar foto só pelas setas */
+.viewer__rail {
+  display: none;
+}
+
+@media (min-width: 1024px) {
+  .viewer__rail {
+    display: flex;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-4);
+    overflow-x: auto;
+  }
+
+  .viewer__rail-item {
+    flex-shrink: 0;
+    width: var(--size-control-lg);
+    height: var(--size-control-lg);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    background: var(--surface-raised);
+  }
+
+  /* thumb como background (não <img>): vídeo sem thumbnail (D8) deixa o
+     quadradinho escuro, sem ícone de imagem quebrada */
+  .viewer__rail-thumb {
+    display: block;
+    width: 100%;
+    height: 100%;
+    background: var(--surface-raised) center / cover no-repeat;
+  }
+
+  .viewer__rail-item[aria-current="true"] {
+    outline: var(--border-thick) solid var(--brand-primary);
+    outline-offset: calc(var(--border-thick) * -1);
+  }
+}
+
+.viewer__caption {
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface-scrim-strong);
+  font-size: var(--font-size-sm);
+  /* nome de arquivo longo encolhe com reticências, não rouba a área da foto */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* link do arquivo no visualizador (a galeria renderiza com esta classe):
+   quebra em qualquer caractere (hash longo não estoura) e um clique seleciona
+   tudo, pronto para copiar. */
+.viewer__link {
+  word-break: break-all;
+  user-select: all;
+}
+
+.viewer__actions {
+  display: flex;
+  justify-content: space-around;
+  padding: var(--space-3) var(--space-4);
+  padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom));
+}
+
+.viewer__action {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  min-height: var(--size-touch);
+  padding: 0 var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+}
+
+.viewer__action--danger {
+  color: var(--feedback-error);
+}
+
+/* transições de abertura (visualizador) */
+.viewer {
+  animation: viewer-in 180ms ease backwards;
+}
+
+@keyframes viewer-in {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .viewer {
+    animation: none;
+  }
+}

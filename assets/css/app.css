@@ -1,9 +1,50 @@
 /* Entry point, empacotado pelo esbuild junto com js/app.js.
-   Ordem importa: tokens primeiro, utilitários por último (precedência). */
+   Ordem importa: tokens primeiro, utilitários por último (precedência).
+   A lista components/ segue a ordem da página "01 - Componentes" do Penpot
+   (docs/web-revamp-spec.md, 2.2); components.css fica por último no grupo
+   com as regras órfãs sem componente Penpot. */
 
 @import "./tokens.css";
 @import "./base.css";
 @import "./layouts.css";
+@import "./components/button.css";
+@import "./components/icon-button.css";
+@import "./components/fab.css";
+@import "./components/field.css";
+@import "./components/segmented.css";
+@import "./components/radio-card.css";
+@import "./components/badge.css";
+@import "./components/avatar.css";
+@import "./components/service-square.css";
+@import "./components/service-card.css";
+@import "./components/list-row.css";
+@import "./components/card.css";
+@import "./components/care-line.css";
+@import "./components/storage-card.css";
+@import "./components/progress.css";
+@import "./components/status-line.css";
+@import "./components/empty-state.css";
+@import "./components/error-card.css";
+@import "./components/skeleton.css";
+@import "./components/flash.css";
+@import "./components/connection-notice.css";
+@import "./components/sheet.css";
+@import "./components/dialog.css";
+@import "./components/menu.css";
+@import "./components/actions-menu.css";
+@import "./components/hub-header.css";
+@import "./components/page-header.css";
+@import "./components/service-header.css";
+@import "./components/service-tab-bar.css";
+@import "./components/breadcrumb.css";
+@import "./components/viewer.css";
+@import "./components/dropzone.css";
+@import "./components/qr-card.css";
+@import "./components/steps.css";
+@import "./components/photo-grid.css";
+@import "./components/media-frame.css";
+@import "./components/text-preview.css";
+@import "./components/painel-grid.css";
 @import "./components.css";
 @import "./utilities.css";
 

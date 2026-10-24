@@ -4,8 +4,11 @@ defmodule TainaWeb.Icons do
   inline, sem icon font, sem requisição extra. Os paths são o conjunto
   outline do Lucide (ISC), 24x24, stroke 2, pontas arredondadas.
 
-  Uso via `TainaWeb.CoreComponents.icon/1`; este módulo só guarda os paths.
+  O componente `icon/1` vive neste módulo e é importado pelas telas via
+  `html_helpers`; os paths ficam no mapa `@paths` abaixo.
   """
+
+  use Phoenix.Component
 
   @paths %{
     "home" => ~S(<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>),
@@ -76,4 +79,34 @@ defmodule TainaWeb.Icons do
 
   @doc "Markup interno (paths) do ícone. Levanta se o nome não existir."
   def path!(name), do: Map.fetch!(@paths, name)
+
+  @doc """
+  Ícone outline do design system, SVG inline (`TainaWeb.Icons`).
+
+      <.icon name="folder" />
+      <.icon name="trash" size={20} class="text-error" />
+  """
+  attr :name, :string, required: true, values: @names
+  attr :size, :integer, default: 24
+  attr :class, :string, default: nil
+
+  def icon(assigns) do
+    ~H"""
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      width={@size}
+      height={@size}
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      class={["icon", @class]}
+      aria-hidden="true"
+    >
+      {Phoenix.HTML.raw(path!(@name))}
+    </svg>
+    """
+  end
 end

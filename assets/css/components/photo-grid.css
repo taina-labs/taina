@@ -1,0 +1,72 @@
+/* Grade de fotos (Penpot: photo-grid). Espelho de Jaci - Galeria; mantenha
+   em sincronia. */
+
+/* 2 colunas no mobile (thumb grande sob o dedo), 6 no tablet, 8/10 quando a
+   tela sobe (1024/1440) */
+.photo-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--gap-photo);
+}
+
+@media (min-width: 768px) {
+  .photo-grid {
+    grid-template-columns: repeat(6, 1fr);
+    gap: var(--space-1);
+  }
+}
+
+@media (min-width: 1024px) {
+  .photo-grid {
+    grid-template-columns: repeat(8, 1fr);
+  }
+}
+
+@media (min-width: 1440px) {
+  .photo-grid {
+    grid-template-columns: repeat(10, 1fr);
+  }
+}
+
+.photo-grid__item {
+  position: relative;
+  aspect-ratio: 1;
+  background: var(--surface-raised);
+  overflow: hidden;
+}
+
+@media (min-width: 768px) {
+  .photo-grid__item {
+    border-radius: var(--radius-sm);
+  }
+}
+
+.photo-grid__item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* tile de vídeo (Jaci ainda não gera thumbnail de vídeo, D8): fundo escuro
+   com ícone de play centralizado. */
+.photo-grid__video {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  background: var(--surface-high);
+  color: var(--text-secondary);
+}
+
+.photo-grid__tag {
+  position: absolute;
+  right: var(--space-2);
+  bottom: var(--space-2);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--surface-scrim);
+  color: var(--text-primary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+}

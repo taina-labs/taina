@@ -1,0 +1,62 @@
+/* Linhas de lista (Penpot: ListRow). Espelho de TainaWeb.UI.Content.list_row/1;
+   mantenha os dois em sincronia. */
+
+/* O wrapper é um <ul> (as linhas do list_row são <li>): zera o margin, o
+   padding e o marcador que o navegador aplica a listas para o resultado
+   ficar igual ao da <div> de antes. */
+.list {
+  display: flex;
+  flex-direction: column;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.list > * + * {
+  border-top: var(--border-hairline) solid var(--border-subtle);
+}
+
+.list-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding-block: var(--space-3);
+  min-height: var(--size-control-lg);
+  text-align: left;
+  width: 100%;
+}
+
+.list-row__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.list-row__title {
+  font-weight: var(--font-weight-semibold);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.list-row__meta {
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Meta que é conteúdo de decisão (motivo do pedido), não legenda: precisa
+   quebrar a linha em vez de cortar com reticências. */
+.list-row__meta--wrap {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.list-row__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-shrink: 0;
+}

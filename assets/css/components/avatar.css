@@ -1,0 +1,41 @@
+/* Avatar (Penpot: Avatar). Espelho de TainaWeb.UI.Content.avatar/1;
+   mantenha os dois em sincronia. */
+
+.avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--space-10);
+  height: var(--space-10);
+  border-radius: var(--radius-pill);
+  font-weight: var(--font-weight-bold);
+  flex-shrink: 0;
+}
+
+.avatar--sm {
+  width: var(--space-8);
+  height: var(--space-8);
+  font-size: var(--font-size-sm);
+}
+
+/* variações de cor determinísticas (hash do nome -> 0..3) */
+.avatar--0 {
+  background: var(--avatar-tint-0);
+  color: var(--brand-primary);
+}
+.avatar--1 {
+  background: var(--avatar-tint-1);
+  color: var(--service-ybira-tint);
+}
+.avatar--2 {
+  background: var(--avatar-tint-2);
+  color: var(--service-jaci-tint);
+}
+.avatar--3 {
+  background: var(--avatar-tint-3);
+  color: var(--service-video);
+}
+.avatar--off {
+  background: var(--surface-raised);
+  color: var(--text-muted);
+}

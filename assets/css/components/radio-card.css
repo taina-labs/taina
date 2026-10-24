@@ -1,0 +1,46 @@
+/* Radio cards (setup - armazenamento). Regras chegam completas na Wave 1
+   (docs/web-revamp-spec.md, 4.1: "RadioCard: keep"). */
+
+.radio-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  text-align: left;
+  padding: var(--space-4);
+  background: var(--surface-default);
+  border: var(--border-hairline) solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+}
+
+.radio-card--selected {
+  border-color: var(--feedback-success);
+}
+
+.radio-card[aria-disabled="true"] {
+  opacity: var(--opacity-muted);
+  cursor: not-allowed;
+}
+
+.radio-card__ring {
+  width: var(--space-6);
+  height: var(--space-6);
+  border-radius: var(--radius-pill);
+  border: var(--border-thick) solid var(--border-strong);
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.radio-card--selected .radio-card__ring {
+  border-color: var(--feedback-success);
+}
+
+.radio-card--selected .radio-card__ring::after {
+  content: "";
+  width: var(--space-3);
+  height: var(--space-3);
+  border-radius: var(--radius-pill);
+  background: var(--feedback-success);
+}
