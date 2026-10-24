@@ -147,7 +147,8 @@ defmodule TainaWeb.Router do
   scope "/", TainaWeb do
     pipe_through :browser
 
-    live_session :public, on_mount: [{TainaWeb.Auth, :mount_current_scope}] do
+    live_session :public,
+      on_mount: [{TainaWeb.Auth, :mount_current_scope}, {TainaWeb.Hooks, :connection}] do
       live "/setup", SetupLive
       live "/login", LoginLive
       live "/convite/:token", InviteAcceptLive

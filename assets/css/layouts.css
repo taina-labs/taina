@@ -345,3 +345,60 @@
 .spark {
   color: var(--brand-primary);
 }
+
+/* ---------- cascas novas do revamp (W2a; docs/web-revamp-spec.md, secao 5).
+   As quatro novas se aplicam nas telas na proxima onda, que também troca
+   `app`/`app_bar` e apaga as regras velhas acima (inclusive auth-layout*).
+   Exceção: a casca `--auth` já atende as telas públicas (mesmo nome do
+   def que ela substitui; nada as re-entrelaça). O `page-in` do
+   `.shell__content` acima continua sendo o único momento de movimento;
+   sticky headers não animam. */
+
+/* todas as cascas novas empilham em coluna em qualquer viewport: a regra de
+   fileira em 768 pertence ao shell velho com sidebar e morre com ele. */
+.shell--hub,
+.shell--service,
+.shell--page,
+.shell--auth,
+.shell--viewer {
+  flex-direction: column;
+}
+
+/* teto e centrado do conteúdo por contexto (1.4): hub --measure-wide;
+   serviço e página --measure-shell; auth --measure-card. Especificidade
+   acima do `.shell__content` herdado das regras velhas assegura o teto. */
+.shell--hub .shell__content {
+  max-width: var(--measure-wide);
+  margin-inline: auto;
+}
+
+.shell--service .shell__content,
+.shell--page .shell__content {
+  max-width: var(--measure-shell);
+  margin-inline: auto;
+}
+
+/* auth: fundo sólido, sem céu noturno, sem estrelas, sem brilho (6.5). */
+.shell--auth {
+  background: var(--bg-deep);
+  align-items: center;
+  padding: calc(var(--space-6) + env(safe-area-inset-top)) var(--space-4)
+    calc(var(--space-6) + env(safe-area-inset-bottom));
+}
+
+.shell--auth .shell__content {
+  /* o card de auth e o conteúdo: a casca (acima) cuida do respiro e do
+     safe-area, o content herda do `.shell__content` só o `page-in`. */
+  padding: 0;
+  max-width: var(--measure-card);
+}
+
+/* o aviso acompanha o teto do card: mesma fileira, mesma largura */
+.shell--auth .connection-notice {
+  width: 100%;
+}
+
+.shell--viewer {
+  background: var(--bg-deep);
+}
+
