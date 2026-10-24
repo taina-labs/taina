@@ -6,6 +6,9 @@ defmodule TainaWeb.Icons do
 
   O componente `icon/1` vive neste módulo e é importado pelas telas via
   `html_helpers`; os paths ficam no mapa `@paths` abaixo.
+
+  O `size` continua numérico (docs/web-revamp-spec.md, 4.2); a escala padrão
+  espelha os tokens `--size-icon-md` (24) e `--size-icon-lg` (28).
   """
 
   use Phoenix.Component
@@ -69,7 +72,28 @@ defmodule TainaWeb.Icons do
       ~S(<line x1="22" x2="2" y1="12" y2="12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><line x1="6" x2="6.01" y1="16" y2="16"/><line x1="10" x2="10.01" y1="16" y2="16"/>),
     "info" => ~S(<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>),
     "alert" =>
-      ~S(<circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/>)
+      ~S(<circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/>),
+    # Penpot-only icons (docs/web-revamp-spec.md, 4.2): extraídos da board
+    # "Icon / *" e reduzidos ao markup interno.
+    "casa" =>
+      ~S(<path d="M4,11.2L12,4L20,11.2"/><path d="M6,10L6,20L18,20L18,10"/><path d="M10,20L10,14.5L14,14.5L14,20"/>),
+    "praca" =>
+      ~S(<path d="M4,19L20,19"/><path d="M6,15L10,15M7,15L7,19M9,15L9,19"/><path d="M16,12L16,19"/><ellipse cx="16" cy="9" rx="3" ry="3"/>),
+    "lixeira" =>
+      ~S(<path d="M4.5,7.5L19.5,7.5"/><path d="M9.5,7.5L9.5,5.2L14.5,5.2L14.5,7.5"/><path d="M6.5,7.5L7.5,20L16.5,20L17.5,7.5"/><path d="M8.1,13L15.9,13"/>),
+    "privacidade" =>
+      ~S(<path d="M8.5,10.5L8.5,8C8.5,6.07,10.07,4.5,12,4.5C13.93,4.5,15.5,6.07,15.5,8L15.5,10.5"/><rect x="5.5" y="10.5" width="13" height="9.5" rx="2"/>),
+    "moradores" =>
+      ~S(<path d="M3.6,19.5C3.6,16.2,6.1,14,9.2,14C12.3,14,14.8,16.2,14.8,19.5"/><path d="M16,14.6C18.6,14.8,20.4,16.8,20.4,19.5"/><ellipse cx="9.2" cy="8" rx="3.2" ry="3.2"/><ellipse cx="17" cy="9.2" rx="2.6" ry="2.6"/>),
+    "servidor" =>
+      ~S(<path d="M7,6.7L7.01,6.7"/><path d="M7,12L7.01,12"/><path d="M7,17.3L7.01,17.3"/><rect x="4" y="4.5" width="16" height="4.4" rx="1.4"/><rect x="4" y="9.8" width="16" height="4.4" rx="1.4"/><rect x="4" y="15.1" width="16" height="4.4" rx="1.4"/>),
+    "pedidos" =>
+      ~S(<path d="M4,5.5L20,5.5L20,18.5L4,18.5L4,5.5"/><path d="M4,13L8.2,13L9.6,15.4L14.4,15.4L15.8,13L20,13"/>),
+    "dispositivos" =>
+      ~S(<path d="M17.6,14.6L19.4,14.6"/><path d="M1,18.5L15,18.5"/><rect x="15.5" y="5" width="6" height="12" rx="1.6"/><rect x="2.5" y="9.5" width="11" height="8" rx="1.6"/>),
+    "senha" =>
+      ~S(<path d="M10.2,10.2L20,20"/><path d="M17.6,17.6L19.8,15.4"/><ellipse cx="7.8" cy="7.8" rx="3.4" ry="3.4"/>),
+    "sair" => ~S(<path d="M13,4.5L5.5,4.5L5.5,19.5L13,19.5"/><path d="M13,12L21,12"/><path d="M18,9L21,12L18,15"/>)
   }
 
   @names Map.keys(@paths)

@@ -18,6 +18,12 @@
   font-size: var(--font-size-sm);
 }
 
+.avatar--lg {
+  width: var(--space-12);
+  height: var(--space-12);
+  font-size: var(--font-size-lg);
+}
+
 /* variações de cor determinísticas (hash do nome -> 0..3) */
 .avatar--0 {
   background: var(--avatar-tint-0);

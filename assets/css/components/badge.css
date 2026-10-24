@@ -1,5 +1,6 @@
-/* Badges (Penpot: Badge). Espelho de TainaWeb.UI.Content.badge/1; mantenha
-   os dois em sincronia. */
+/* Badges (Penpot: Badge, Kind praca/casa/zelador/morador/active/inactive).
+   Espelho de TainaWeb.UI.Content.badge/1; mantenha os dois em sincronia.
+   As cores saem só dos tokens `--badge-*` (docs/web-revamp-spec.md, 4.1). */
 
 .badge {
   display: inline-flex;
@@ -7,34 +8,35 @@
   height: var(--size-badge);
   padding-inline: var(--space-3);
   border-radius: var(--radius-pill);
+  background: var(--surface-raised);
+  border: var(--border-hairline) solid var(--border-default);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-semibold);
 }
 
+/* zonas (docs / fotos) */
+.badge--praca {
+  color: var(--badge-zone-praca);
+}
+
+.badge--casa {
+  color: var(--badge-zone-casa);
+}
+
+/* papéis (moradores) */
 .badge--zelador {
-  background: var(--brand-primary);
-  color: var(--text-on-brand);
+  color: var(--badge-role-zelador);
 }
 
-.badge--soon {
-  background: var(--surface-high);
-  color: var(--text-muted);
+.badge--morador {
+  color: var(--badge-role-morador);
 }
 
+/* estados */
 .badge--active {
-  border: var(--border-hairline) solid var(--feedback-success);
-  color: var(--feedback-success);
+  color: var(--badge-state-active);
 }
 
 .badge--inactive {
-  color: var(--text-muted);
-}
-
-.badge--ybira {
-  background: var(--service-ybira-soft);
-  color: var(--service-ybira-tint);
-}
-.badge--jaci {
-  background: var(--service-jaci-soft);
-  color: var(--service-jaci-tint);
+  color: var(--badge-state-inactive);
 }

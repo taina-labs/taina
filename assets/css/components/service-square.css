@@ -1,5 +1,7 @@
-/* Quadradinho de ícone com cor do serviço (Penpot: ServiceSquare). Espelho
-   de TainaWeb.UI.Content.service_square/1; mantenha os dois em sincronia. */
+/* Quadradinho de ícone (Penpot: ServiceSquare). Espelho de
+   TainaWeb.UI.Content.service_square/1; mantenha os dois em sincronia.
+   Tone (service | neutral) escolhe o fundo; modifiers de mark carregam a cor
+   do documento visual. */
 
 .service-square {
   display: inline-flex;
@@ -9,6 +11,8 @@
   height: var(--space-10);
   border-radius: var(--radius-md);
   flex-shrink: 0;
+  background: var(--surface-raised);
+  color: var(--text-secondary);
 }
 
 .service-square--lg {
@@ -16,6 +20,21 @@
   height: var(--space-12);
 }
 
+/* Tone: neutral (padrão): superfície neutra com texto secundário */
+.service-square--neutral {
+  background: var(--surface-raised);
+  color: var(--text-muted);
+}
+
+/* Tone: service: a cor vem do mark (service markers abaixo) */
+.service-square--service {
+  background: var(--surface-raised);
+  color: var(--text-secondary);
+}
+
+/* marks de serviço (Ybira/Jaci/Maracá/Nhaman). Estes mesmos classificadores
+   eram a sintaxe antiga (`service-square--<service>`), o que mantém as telas
+   legadas estilizando (aliasing); W3 reescreverá as chamadas por mark. */
 .service-square--ybira {
   background: var(--service-ybira-soft);
   color: var(--service-ybira-tint);
@@ -28,10 +47,6 @@
   background: var(--surface-raised);
   color: var(--service-nhaman);
 }
-.service-square--guara {
-  background: var(--surface-raised);
-  color: var(--service-guara);
-}
 .service-square--maraca {
   background: var(--service-maraca-soft);
   color: var(--service-maraca-tint);
@@ -43,8 +58,4 @@
 .service-square--video {
   background: var(--surface-raised);
   color: var(--service-video);
-}
-.service-square--neutral {
-  background: var(--surface-raised);
-  color: var(--text-muted);
 }

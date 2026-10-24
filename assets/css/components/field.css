@@ -77,3 +77,44 @@
 .field--invalid textarea {
   border-color: var(--feedback-error);
 }
+
+/* Variantes do Field: address (ícone "servidor" à esquerda; sem uso na web,
+   só paridade com o Penpot) e search (reaproveita o bloco `.search` órfão em
+   components.css; não mova o bloco). */
+
+.field__control > .field__icon {
+  position: static;
+  color: var(--text-faint);
+  flex-shrink: 0;
+  pointer-events: none;
+}
+
+/* ícone na ponta esquerda da caixa; o input abre espaço no padding */
+.field__control > .field__icon--leading {
+  position: absolute;
+  right: auto;
+  left: var(--space-4);
+}
+
+.field--address .field__control input {
+  padding-left: var(--space-12);
+}
+
+/* o ícone decorativo (à direita) abre o padding; os kinds com ícone à
+   esquerda voltam ao padrão e colocam o ícone no fluxo da busca */
+.field--search .field__control input,
+.field--address .field__control input {
+  padding-right: var(--space-4);
+}
+
+/* o input vive num container `.search` (components.css): a caixa é do
+   container e o input enche o resto, sem borda própria */
+.field--search .field__control input {
+  flex: 1;
+  min-width: 0;
+  height: auto;
+  padding: 0;
+  background: none;
+  border: none;
+}
+

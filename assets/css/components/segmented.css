@@ -1,5 +1,5 @@
-/* Controle segmentado (Grade / Linha do tempo, Penpot: Segmented). Espelho
-   de TainaWeb.UI.Forms.segmented/1; mantenha os dois em sincronia. */
+/* Controle segmentado (Penpot: Segmented). Espelho de
+   TainaWeb.UI.Forms.segmented/1; mantenha os dois em sincronia. */
 
 .segmented {
   display: inline-flex;
@@ -18,10 +18,12 @@
   font-weight: var(--font-weight-semibold);
 }
 
+/* selecionado: superfície elevada + texto primário, nunca a cor da marca */
+.segmented__option--selected,
 .segmented__option[aria-current="page"] {
-  background: var(--brand-primary);
-  border-color: var(--brand-primary);
-  color: var(--text-on-brand);
+  background: var(--surface-raised);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
 }
 
 /* Controles compactos (36px, tamanho de desktop) sobem para 44px abaixo de

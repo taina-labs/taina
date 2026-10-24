@@ -1,3 +1,64 @@
-/* FAB Enviar arquivo (Penpot: "FAB Enviar arquivo"). Regras chegam na
-   Wave 1 (docs/web-revamp-spec.md, 4.1); em W0.2 o bloco `.btn--fab`
-   continua em button.css. */
+/* FAB "Enviar arquivo" (Penpot: FAB Enviar arquivo, 3fd18cd2-90f8-80f3-8008-
+   d597f9615561). Espelho de TainaWeb.UI.Actions.fab/1; mantenha os dois em
+   sincronia. Pílula estendida com rótulo sempre visível; some no desktop
+   (o service_header fornece o botão "Enviar"). Flutua acima da barra de
+   tabs + safe-area. */
+
+.fab {
+  position: fixed;
+  right: var(--space-4);
+  bottom: calc(var(--size-nav-mobile) + var(--space-4) + env(safe-area-inset-bottom));
+  z-index: 30;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--size-control-lg);
+  padding-inline: var(--space-5);
+  border-radius: var(--radius-pill);
+  background: var(--brand-primary);
+  color: var(--text-on-brand);
+  box-shadow: var(--elevation-lifted);
+}
+
+.fab__label {
+  font-weight: var(--font-weight-semibold);
+}
+
+/* Penpot State: uploading */
+.fab--uploading {
+  opacity: var(--opacity-disabled);
+  cursor: not-allowed;
+}
+
+.fab:active {
+  transform: translateY(1px);
+}
+
+/* Escondida no desktop: em 768+ o service_header fornece a mesma ação. */
+@media (min-width: 768px) {
+  .fab {
+    display: none;
+  }
+}
+
+/* deprecated: o quadrado FAB legado de `<.button variant="fab">` (a W3.2 troca
+   o call site pelo `<.fab>` e a W4.1 apaga este alias junto com a cláusula). */
+.btn--fab {
+  position: fixed;
+  right: var(--space-4);
+  bottom: calc(var(--size-nav-mobile) + var(--space-4));
+  z-index: 30;
+  width: var(--size-control-lg);
+  height: var(--size-control-lg);
+  padding: 0;
+  border-radius: var(--radius-pill);
+  background: var(--brand-primary);
+  color: var(--text-on-brand);
+  box-shadow: var(--elevation-lifted);
+}
+
+@media (min-width: 768px) {
+  .btn--fab {
+    display: none;
+  }
+}

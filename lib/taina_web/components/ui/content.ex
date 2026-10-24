@@ -41,22 +41,78 @@ defmodule TainaWeb.UI.Content do
   end
 
   @doc """
-  Quadradinho de ícone com a cor do serviço (Ybira verde, Jaci dourado...).
-  """
-  attr :service, :string,
-    default: "neutral",
-    values: ~w(ybira jaci nhaman guara maraca doc video neutral)
+  Quadradinho de ícone (Penpot: ServiceSquare). A marca `mark` define o
+  documento visual e deriva o ícone por mapa puro (`mark_icon/1`). `tone`
+  (service | neutral) escolhe o fundo; padrão neutral.
 
-  attr :icon, :string, required: true
+      <.service_square mark="doc" />
+      <.service_square mark="ybira" tone="service" size="lg" />
+  """
+  @marks ~w(ybira jaci maraca nhaman doc video neutral casa praca lixeira mural saude moradores pedidos privacidade senha dispositivos sair)
+
+  attr :mark, :string, values: @marks, doc: "marca do Penpot; o ícone sai do mapa puro mark_icon/1"
+  attr :service, :string, default: nil, doc: "deprecated: use mark; mapeia 1:1 e exige o `icon` legado"
+  attr :icon, :string, default: nil, doc: "deprecated: só com :service; o ícone novo é derivado do mark"
+  attr :tone, :string, default: "neutral", values: ~w(service neutral)
   attr :size, :string, default: "md", values: ~w(md lg)
 
-  def service_square(assigns) do
+  def service_square(%{mark: mark} = assigns) when is_binary(mark) do
+    assigns
+    |> assign(icon_name: mark_icon(mark))
+    |> render_service_square()
+  end
+
+  # deprecated: `<.service_square service="ybira" icon="folder" />` nas telas
+  # segue compilando (W3 reescreve as chamadas; W4.1 apaga a cláusula). O
+  # serviço legado entra como mark; o ícone continua sendo o passado.
+  def service_square(%{service: service, icon: icon} = assigns) when is_binary(service) and is_binary(icon) do
+    mark = service_mark(service)
+
+    assigns
+    |> assign(mark: mark, tone: service_tone(mark), icon_name: icon)
+    |> render_service_square()
+  end
+
+  def service_square(_assigns) do
+    raise ArgumentError, "service_square: informe :mark (ou o par legado :service + :icon)"
+  end
+
+  defp render_service_square(assigns) do
     ~H"""
-    <span class={["service-square service-square--#{@service}", @size == "lg" && "service-square--lg"]}>
-      <.icon name={@icon} size={if @size == "lg", do: 24, else: 20} />
+    <span class={["service-square", "service-square--#{@tone}", "service-square--#{@mark}", @size == "lg" && "service-square--lg"]}>
+      <.icon name={@icon_name} size={if @size == "lg", do: 24, else: 20} />
     </span>
     """
   end
+
+  # mapa puro mark -> ícone do design system (docs/web-revamp-spec.md, 4.1)
+  @mark_icons %{
+    "ybira" => "folder",
+    "jaci" => "image",
+    "maraca" => "shield",
+    "nhaman" => "disk",
+    "doc" => "file",
+    "video" => "play",
+    "neutral" => "info",
+    "casa" => "casa",
+    "praca" => "praca",
+    "lixeira" => "lixeira",
+    "mural" => "mural",
+    "saude" => "saude",
+    "moradores" => "moradores",
+    "pedidos" => "pedidos",
+    "privacidade" => "privacidade",
+    "senha" => "senha",
+    "dispositivos" => "dispositivos",
+    "sair" => "sair"
+  }
+
+  defp mark_icon(mark), do: Map.fetch!(@mark_icons, mark)
+
+  defp service_mark(service), do: if(service in @marks, do: service, else: "neutral")
+
+  defp service_tone(mark) when mark in ~w(ybira jaci maraca nhaman), do: "service"
+  defp service_tone(_mark), do: "neutral"
 
   # ---------- chips & badges ----------
 
@@ -74,16 +130,33 @@ defmodule TainaWeb.UI.Content do
     """
   end
 
-  @doc "Badge do design system (Penpot: Badge, 3fd18cd2-90f8-80f3-8008-d5982f6e1c0e)."
-
-  attr :variant, :string, required: true, values: ~w(zelador soon active inactive ybira jaci)
+  @doc """
+  Badge do design system (Penpot Badge: Kind praca/casa/zelador/morador/
+  active/inactive). Cores só dos tokens `--badge-*` (docs/web-revamp-spec.md,
+  4.1); `variant` continua aceito até a Wave 4.
+  """
+  attr :kind, :string, values: ~w(praca casa zelador morador active inactive)
+  attr :variant, :string, default: nil, doc: "deprecated: use kind (os mods ybira/jaci/soon mapeiam para kinds novos)"
   slot :inner_block, required: true
 
   def badge(assigns) do
+    assigns = assign(assigns, :kind, assigns[:kind] || badge_kind!(assigns[:variant]))
+
     ~H"""
-    <span class={"badge badge--#{@variant}"}>{render_slot(@inner_block)}</span>
+    <span class={"badge badge--#{@kind}"}>{render_slot(@inner_block)}</span>
     """
   end
+
+  # deprecated: variant -> kind. Os valores sem kind novo vão para o vizinho
+  # mais próximo até a W3 reescrever as chamadas.
+  defp badge_kind!(nil) do
+    raise ArgumentError, "badge: informe :kind (ou o :variant legado)"
+  end
+
+  defp badge_kind!("ybira"), do: "praca"
+  defp badge_kind!("jaci"), do: "casa"
+  defp badge_kind!("soon"), do: "inactive"
+  defp badge_kind!(variant), do: variant
 
   # ---------- listas ----------
 
@@ -132,15 +205,20 @@ defmodule TainaWeb.UI.Content do
   # ---------- avatar ----------
 
   @doc """
-  Avatar com inicial e cor determinística a partir do nome.
+  Avatar com inicial e cor determinística a partir do nome. Size: sm, md, lg.
+  `off` apaga a cor (Penpot Tint: off); o booleano `inactive` legado segue
+  aceito.
   """
   attr :name, :string, required: true
-  attr :size, :string, default: "md", values: ~w(sm md)
-  attr :inactive, :boolean, default: false
+  attr :size, :string, default: "md", values: ~w(sm md lg)
+  attr :off, :boolean, default: false
+  attr :inactive, :boolean, default: nil, doc: "deprecated: use off"
 
   def avatar(assigns) do
+    assigns = assign(assigns, :off, assigns[:off] == true or assigns[:inactive] == true)
+
     ~H"""
-    <span class={["avatar", @size == "sm" && "avatar--sm", avatar_color(@name, @inactive)]}>
+    <span class={["avatar", @size in ~w(sm lg) && "avatar--#{@size}", avatar_color(@name, @off)]}>
       {@name |> String.first() |> String.upcase()}
     </span>
     """
