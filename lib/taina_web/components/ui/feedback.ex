@@ -61,13 +61,21 @@ defmodule TainaWeb.UI.Feedback do
   @doc """
   Erro recuperável (Penpot: ErrorCard, 3fd18cd2-90f8-80f3-8008-d5aed9e21208):
   aviso com ícone e o "Tentar de novo" secundário repetindo o evento do
-  LiveView.
+  LiveView. O board traz ainda, ao lado, o "Falar com quem cuida" para quando
+  a saída é falar com a pessoa que cuida da nuvem; o evento é opcional.
 
       <.error_card title="Não conseguimos falar com a nuvem agora." retry_event="retry" />
+
+      <.error_card title="Este convite não é mais válido." retry_event="voltar"
+        contact_event="contato" />
   """
   attr :title, :string, required: true
   attr :body, :string, default: nil
   attr :retry_event, :string, required: true, doc: "evento phx-click do \"Tentar de novo\""
+
+  attr :contact_event, :string,
+    default: nil,
+    doc: "evento phx-click do \"Falar com quem cuida\" (opcional)"
 
   def error_card(assigns) do
     ~H"""
@@ -80,6 +88,9 @@ defmodule TainaWeb.UI.Feedback do
       <div class="error-card__actions">
         <.button kind="secondary" size="sm" icon="restore" phx-click={@retry_event}>
           {gettext("Tentar de novo")}
+        </.button>
+        <.button :if={@contact_event} kind="ghost" size="sm" phx-click={@contact_event}>
+          {gettext("Falar com quem cuida")}
         </.button>
       </div>
     </div>

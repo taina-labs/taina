@@ -50,12 +50,17 @@ defmodule TainaWeb.UI.FeedbackTest do
 
   defp error_card_component(assigns) do
     ~H"""
-    <.error_card title={@title} body={@body} retry_event={@retry_event} />
+    <.error_card
+      title={@title}
+      body={@body}
+      retry_event={@retry_event}
+      contact_event={@contact_event}
+    />
     """
   end
 
   defp error_card_html(opts) do
-    assigns = Enum.into(opts, %{title: nil, body: nil, retry_event: nil})
+    assigns = Enum.into(opts, %{title: nil, body: nil, retry_event: nil, contact_event: nil})
     render_component(&error_card_component/1, assigns)
   end
 
@@ -144,6 +149,20 @@ defmodule TainaWeb.UI.FeedbackTest do
 
     assert html =~ "error-card__body"
     assert html =~ "Pode ter sido um instante de rede."
+  end
+
+  test "error_card com contato: \"Falar com quem cuida\" discreto ao lado do retry" do
+    html = error_card_html(title: "Este convite não é mais válido.", retry_event: "voltar", contact_event: "contato")
+
+    assert html =~ "Falar com quem cuida"
+    assert html =~ ~s(phx-click="contato")
+    assert html =~ "button--ghost"
+  end
+
+  test "error_card sem contato: só o retry" do
+    html = error_card_html(title: "Erro", retry_event: "retry")
+
+    refute html =~ "Falar com quem cuida"
   end
 
   # ---------- Skeleton ----------
