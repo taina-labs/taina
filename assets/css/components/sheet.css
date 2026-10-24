@@ -1,3 +1,171 @@
-/* Sheet (Penpot: Sheet, bottom sheet mobile). Componente novo; regras chegam
-   na Wave 1 (docs/web-revamp-spec.md, 4.1). O dialog do modal atual permanece
-   em dialog.css até a fusão (Dialog "merge modal + confirm_dialog"). */
+/* Sheet (Penpot: Sheet, Kind actions/content). Espelho de
+   TainaWeb.UI.Overlays.sheet/1; mantenha os dois em sincronia. Mobile bottom
+   sheet sobre o conteúdo; no desktop (>= 768) vira cartão centrado (a
+   composição ActionsMenu a troca por popover lá, este componente segue
+   válido em telas que abrem sheet direto). Metadados do board: painel
+   surface-raised, radius-xl, largura --measure-sheet; linhas com padding
+   --space-4 e gap --space-3; Fechar = --size-control-md, --radius-md. */
+
+.sheet {
+  position: fixed;
+  inset: 0;
+  /* acima da bottom-nav (30) e do visualizador fullscreen (50); abaixo do
+     flash (60), que deve aparecer sobre tudo. */
+  z-index: 55;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: var(--surface-scrim);
+  animation: sheet-overlay-in 150ms ease backwards;
+}
+
+.sheet__panel {
+  width: 100%;
+  max-width: var(--measure-sheet);
+  max-height: 85dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--surface-raised);
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom));
+  box-shadow: var(--elevation-lifted);
+  animation: sheet-in 240ms cubic-bezier(0.2, 0.7, 0.3, 1) backwards;
+}
+
+.sheet__grabber {
+  display: block;
+  width: var(--space-8);
+  height: var(--space-1);
+  margin: var(--space-3) auto var(--space-1);
+  border-radius: var(--radius-pill);
+  background: var(--surface-high);
+}
+
+.sheet__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4) var(--space-3);
+  border-bottom: var(--border-hairline) solid var(--border-subtle);
+}
+
+.sheet__title {
+  font-family: var(--font-family-display);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  /* título longo encolhe com reticências, "Fechar" fica inteiro */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sheet__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--size-control-md);
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.sheet__close:hover {
+  background: var(--surface-high);
+}
+
+.sheet__items {
+  padding: var(--space-1) var(--space-4);
+}
+
+.sheet__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: var(--size-control-md);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-4);
+  color: var(--text-primary);
+  font-size: var(--font-size-md);
+  text-align: left;
+}
+
+.sheet__item:hover {
+  background: var(--surface-high);
+}
+
+.sheet__item .icon {
+  color: var(--text-secondary);
+}
+
+/* o texto fica legível (o ícone é quem carrega o vermelho) */
+.sheet__item--danger {
+  color: var(--text-secondary);
+}
+
+.sheet__item--danger .icon {
+  color: var(--feedback-error);
+}
+
+.sheet__body {
+  padding: var(--space-4);
+  color: var(--text-primary);
+}
+
+.sheet__foot {
+  padding: 0 var(--space-4) var(--space-2);
+}
+
+/* press feedback: o controle afunda 1px enquanto ativo (DESIGN.md, motion) */
+.sheet__item:active {
+  transform: translateY(1px);
+}
+
+/* no desktop vira cartão centrado (a composição ActionsMenu é quem troca
+   para popover lá; este formato serve às telas que abrem sheet em qualquer
+   largura) */
+@media (min-width: 768px) {
+  .sheet {
+    align-items: center;
+  }
+
+  .sheet__panel {
+    border-radius: var(--radius-xl);
+    padding-bottom: var(--space-2);
+    margin-bottom: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sheet,
+  .sheet__panel {
+    animation: none;
+  }
+}
+
+@keyframes sheet-overlay-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--space-4));
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}

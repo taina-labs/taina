@@ -1,3 +1,70 @@
-/* ServiceHeader (Penpot: ServiceHeader, cabeçalho de Documentos/Galeria).
-   Componente novo; regras chegam na Wave 1 (docs/web-revamp-spec.md, 4.1).
-   As abas mobile vivem em service-tab-bar.css. */
+/* ServiceHeader (Penpot: ServiceHeader, Service ybira/jaci, Surface
+   mobile/desktop). Espelho de TainaWeb.UI.Navigation.service_header/1;
+   mantenha em sincronia. Same régua do PageHeader (64, título centrado,
+   zonas de mesma largura); as abas do desktop ficam no slot `:tabs`
+   (o próprio <.service_tab_bar> esconde a barra fixa no mobile). Metadados
+   do board: fundo bg.app, gap --space-1. */
+
+.service-header {
+  position: sticky;
+  top: 0;
+  z-index: 25;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  background: var(--bg-app);
+}
+
+.service-header__top {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: var(--space-3);
+  height: var(--size-appbar);
+  padding: var(--space-2) var(--space-4);
+}
+
+.service-header__title {
+  font-family: var(--font-family-display);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+}
+
+.service-header__zone--start {
+  justify-self: start;
+}
+
+.service-header__zone--end {
+  justify-self: end;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.service-header__back {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--size-touch);
+  padding: 0 var(--space-1);
+  color: var(--text-secondary);
+}
+
+.service-header__back:hover {
+  color: var(--text-primary);
+}
+
+.service-header__back-label {
+  font-size: var(--font-size-sm);
+}
+
+@media (min-width: 768px) {
+  .service-header__top {
+    padding: var(--space-2) var(--space-6);
+  }
+}

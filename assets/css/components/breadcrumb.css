@@ -17,6 +17,14 @@
   color: var(--text-faint);
 }
 
+/* desktop only: no mobile o word do back carrega o parente (spec 1.5/4.3);
+   o bloco some por inteiro abaixo de 768, quem divide é a tela que chama */
+@media (max-width: 767.98px) {
+  .breadcrumb {
+    display: none;
+  }
+}
+
 /* nome da pasta atual encolhe com reticências no mobile, o "Início" fica */
 .breadcrumb__current {
   min-width: 0;

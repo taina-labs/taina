@@ -180,6 +180,11 @@ defmodule TainaWeb.UploadLive do
 
   defp uploading?(uploads), do: uploading_entries(uploads) != []
 
+  # State da Dropzone é decisão da tela: com o próprio envio em vôo o painel
+  # vira "Enviando"; os erros (cota) continuam saindo na lista Falharam por
+  # enquanto (o wiring dos estados de erro é da W3.2).
+  defp dropzone_state(upload), do: if(upload.entries == [], do: "idle", else: "uploading")
+
   # Erros de configuração (tamanho, quantidade) somados dos dois envios.
   defp config_errors(uploads), do: upload_errors(uploads.files) ++ upload_errors(uploads.camera)
 
@@ -197,23 +202,7 @@ defmodule TainaWeb.UploadLive do
 
       <div class="col gap-6 mx-auto w-full measure-md">
         <form id="upload-form" phx-change="validate" phx-submit="validate">
-          <label
-            id="dropzone"
-            class="dropzone w-full"
-            phx-drop-target={@uploads.files.ref}
-            phx-hook="DragClass"
-          >
-            <.icon name="upload" size={28} />
-            <span class="type-label text-primary">{gettext("Arraste arquivos aqui")}</span>
-            <span class="type-label text-brand">{gettext("ou toque para escolher")}</span>
-            <span class="type-caption text-muted">
-              {gettext("Os arquivos entram na sua casa. Publique na praça quando quiser.")}
-            </span>
-            <span class="type-caption text-muted">
-              {gettext("Imagens, PDFs, texto, áudio, vídeo e ZIP; até 2 GB por arquivo.")}
-            </span>
-            <.live_file_input upload={@uploads.files} class="sr-only" />
-          </label>
+          <.dropzone id="dropzone" upload={@uploads.files} state={dropzone_state(@uploads.files)} class="w-full" />
 
           <label id="camera-input" class="dropzone hide-desktop mt-3">
             <.icon name="image" size={28} />

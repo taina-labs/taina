@@ -1,5 +1,9 @@
-/* Dropzone (upload). Espelho de TainaWeb.UI.Media.dropzone/1 (Wave 1);
-   mantenha em sincronia. */
+/* Dropzone (Penpot: Dropzone, State idle/drag/uploading/error-cota/
+   error-rede). Espelho de TainaWeb.UI.Media.dropzone/1; mantenha em
+   sincronia. Idle = label tocável (borda tracejada da marca); drag é o
+   modificador `--drag` (troca de classe feita pelo hook `DragClass` - a
+   variante State do Penpot vira estado de CSS, ver spec 1.1); uploading e
+   os dois erros puro conteúdo. */
 
 .dropzone {
   display: flex;
@@ -17,18 +21,89 @@
     border-color 120ms ease;
 }
 
-.dropzone.is-dragover {
-  border-color: var(--brand-primary);
-  background: var(--surface-tint-brand);
-}
-
 .dropzone .icon {
   color: var(--brand-primary);
+}
+
+.dropzone__title {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-primary);
+}
+
+/* ícone do erro não é marca, é feedback */
+.dropzone--uploading .icon,
+.dropzone--error-cota .icon,
+.dropzone--error-rede .icon {
+  color: var(--text-secondary);
+}
+
+.dropzone--uploading .dropzone__title,
+.dropzone--error-cota .dropzone__title,
+.dropzone--error-rede .dropzone__title {
+  color: var(--text-muted);
+}
+
+/* percent + ajuda do board: título esquerda, porcentagem logo abaixo,
+   progresso e a linha "Guardando na casa. X de Y" */
+.dropzone__percent {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.dropzone__help {
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.dropzone__hint {
+  font-size: var(--font-size-sm);
+}
+
+/* o "Escolher arquivos" do board, dentro do label que acende o picker */
+.dropzone__cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--size-control-md);
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--surface-high);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-primary);
 }
 
 /* o input de arquivo é sr-only: quando o teclado o foca, o ring dele fica
    fora da tela, então o contêiner assume o destaque. */
 .dropzone:focus-within {
   outline: var(--border-thick) solid var(--brand-primary);
-  outline-offset: 2px;
+  outline-offset: var(--border-thick);
+}
+
+/* State drag (classe trocada pelo hook DragClass): o título vira o convite
+   "Solte para enviar", mesmo painel */
+.dropzone--drag {
+  border-color: var(--brand-primary);
+  background: var(--surface-tint-brand);
+}
+
+.dropzone__title--drag {
+  display: none;
+}
+
+.dropzone--drag .dropzone__title--idle {
+  display: none;
+}
+
+.dropzone--drag .dropzone__title--drag {
+  display: block;
+  color: var(--text-primary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dropzone {
+    transition: none;
+  }
 }

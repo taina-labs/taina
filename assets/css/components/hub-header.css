@@ -1,2 +1,50 @@
-/* HubHeader (Penpot: HubHeader). Componente novo; regras chegam na Wave 1
-   (docs/web-revamp-spec.md, 4.1 e 6.1). */
+/* HubHeader (Penpot: HubHeader, Care none/pending). Espelho de
+   TainaWeb.UI.Navigation.hub_header/1; mantenha em sincronia. Do board:
+   saudação pequena em cima, comunidade grande + avatar à direita, e a
+   CareLine pendurada como variante Care: pending. */
+
+.hub-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.hub-header__greeting {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.hub-header__brand {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.hub-header__community {
+  font-family: var(--font-family-display);
+  font-size: var(--font-size-3xl);
+  font-weight: var(--font-weight-semibold);
+  /* nome de comunidade longo encolhe, o avatar fica inteiro do lado */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* alvo de toque: o avatar visual é 32 (sm), o clique 44 */
+.hub-header__avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--size-touch);
+  min-height: var(--size-touch);
+  border-radius: var(--radius-pill);
+  flex-shrink: 0;
+}
+
+@media (min-width: 768px) {
+  .hub-header__community {
+    font-size: var(--font-size-display);
+  }
+}

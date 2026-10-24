@@ -382,26 +382,6 @@ defmodule TainaWeb.GalleryLive do
     end
   end
 
-  defp viewer_index(ids, %{rkey: id}), do: (Enum.find_index(ids, &(&1 == id)) || 0) + 1
-
-  # Janela de fotos vizinhas para a barra do visualizador (desktop): um trecho
-  # curto em volta da atual, não a lista inteira. `{id, posição}` para o rótulo
-  # acessível de cada miniatura.
-  @rail_window 10
-
-  defp rail_window(ids, current_id) do
-    case Enum.find_index(ids, &(&1 == current_id)) do
-      nil ->
-        []
-
-      index ->
-        first = max(index - @rail_window, 0)
-        last = min(index + @rail_window, length(ids) - 1)
-
-        for i <- first..last, do: {Enum.at(ids, i), i + 1}
-    end
-  end
-
   defp video?(%{mime: mime}), do: String.starts_with?(mime, "video/")
 
   # --- zonas casa/praca (RFC_003 D1/D2) ---
@@ -445,9 +425,6 @@ defmodule TainaWeb.GalleryLive do
   defp zona_long(:casa, false), do: gettext("Na casa de quem enviou: só a pessoa, e quem ela deixar.")
 
   # A acao oferecida e sempre a oposta da zona atual.
-  defp zona_action_label(:casa), do: gettext("Publicar na praça")
-  defp zona_action_label(:praca), do: gettext("Tirar da praça")
-
   defp zona_confirm_title(:casa, name), do: gettext("Publicar \"%{name}\" na praça?", name: name)
   defp zona_confirm_title(:praca, name), do: gettext("Tirar \"%{name}\" da praça?", name: name)
 
@@ -466,14 +443,6 @@ defmodule TainaWeb.GalleryLive do
 
   defp own?(scope, file), do: scope.ava.id == file.dono_id
 
-  # Troca progressiva do visualizador: o `md` carrega primeiro e o JS troca
-  # para o original depois. O original só entra no plano quando o tamanho
-  # cabe no orçamento do Pi; arquivo gigante demais trava a caixa por causa
-  # de um preview. O JS lê o `data-full` do `img`: sem atributo, sem troca.
-  @full_swap_cap_bytes 20 * 1024 * 1024
-
-  defp full_swap?(%{tamanho: bytes}), do: bytes <= @full_swap_cap_bytes
-
   # Tipo legível: "image/jpeg" vira "Imagem JPEG" (o kind do design system
   # traduzido, o subtipo em maiúsculas). "application/pdf" vira só "PDF",
   # sem repetir o subtipo quando ele já é o nome curto.
@@ -482,15 +451,6 @@ defmodule TainaWeb.GalleryLive do
     subtype = mime |> String.split("/") |> List.last() |> String.upcase()
 
     if kind == subtype, do: kind, else: "#{kind} #{subtype}"
-  end
-
-  # A data do visualizador vem do upload (o kernel nao carrega os metadados
-  # de rendicao); a linha do tempo agrupa pela data efetiva, resolvida na
-  # consulta do Jaci.
-  defp photo_date(file) do
-    file.inserted_at
-    |> NaiveDateTime.to_date()
-    |> Calendar.strftime("%d/%m/%Y")
   end
 
   # O estado vazio diz a verdade sobre a aba: em Tudo fala da comunidade; na
@@ -645,118 +605,17 @@ defmodule TainaWeb.GalleryLive do
         </.empty_state>
       </div>
 
-      <div
+      <.viewer
         :if={@current}
-        id="viewer"
-        class="viewer"
-        role="dialog"
-        aria-modal="true"
-        aria-label={gettext("Visualizador de fotos")}
-        phx-hook="ViewerNav"
-      >
-        <header class="row between p-4">
-          <.icon_button name="close" label={gettext("Fechar")} id="viewer-close" phx-click="close" />
-          <div class="text-center">
-            <p class="type-label">{photo_date(@current)}</p>
-            <p class="type-caption text-faint">
-              {gettext("%{index} de %{total}", index: viewer_index(@photo_ids, @current), total: length(@photo_ids))}
-            </p>
-          </div>
-          <.icon_button
-            name="link"
-            label={gettext("Copiar link")}
-            id="viewer-copy-link"
-            phx-hook="Clipboard"
-            data-copy={url(~p"/files/#{@current.rkey}")}
-          />
-        </header>
-
-        <div class="viewer__stage">
-          <video
-            :if={video?(@current)}
-            controls
-            preload="metadata"
-            playsinline
-            src={~p"/files/#{@current.rkey}"}
-          ></video>
-          <img
-            :if={!video?(@current)}
-            id="viewer-full-swap"
-            phx-hook="FullSwap"
-            src={~p"/files/#{@current.rkey}/thumbnail/md"}
-            data-full={full_swap?(@current) && url(~p"/files/#{@current.rkey}")}
-            alt={@current.nome}
-          />
-          <button
-            :if={length(@photo_ids) > 1}
-            type="button"
-            class="viewer__nav viewer__nav--prev icon-btn"
-            phx-click="prev"
-            aria-label={gettext("Foto anterior")}
-          >
-            <.icon name="chevron-left" size={28} />
-          </button>
-          <button
-            :if={length(@photo_ids) > 1}
-            type="button"
-            class="viewer__nav viewer__nav--next icon-btn"
-            phx-click="next"
-            aria-label={gettext("Próxima foto")}
-          >
-            <.icon name="chevron-right" size={28} />
-          </button>
-        </div>
-
-        <nav :if={length(@photo_ids) > 1} class="viewer__rail" aria-label={gettext("Fotos vizinhas")}>
-          <.link
-            :for={{id, position} <- rail_window(@photo_ids, @current.rkey)}
-            id={"rail-#{id}"}
-            patch={~p"/fotos/#{id}"}
-            class="viewer__rail-item"
-            aria-current={id == @current.rkey}
-            aria-label={gettext("Foto %{index} de %{total}", index: position, total: length(@photo_ids))}
-          >
-            <span class="viewer__rail-thumb" style={"background-image: url('#{~p"/files/#{id}/thumbnail/sm"}')"}></span>
-          </.link>
-        </nav>
-
-        <p class="viewer__caption">{@current.nome}</p>
-
-        <div class="viewer__actions">
-          <button
-            type="button"
-            class="viewer__action"
-            id="viewer-share"
-            phx-hook="Share"
-            data-url={url(~p"/files/#{@current.rkey}")}
-            data-title={@current.nome}
-          >
-            <.icon name="share" size={20} />
-            <span>{gettext("Compartilhar")}</span>
-          </button>
-          <a href={~p"/files/#{@current.rkey}"} download class="viewer__action">
-            <.icon name="download" size={20} />
-            <span>{gettext("Baixar")}</span>
-          </a>
-          <button
-            :if={own?(@current_scope, @current)}
-            type="button"
-            class="viewer__action"
-            phx-click="ask-zona"
-          >
-            <.icon name="eye" size={20} />
-            <span>{zona_action_label(@current.zona)}</span>
-          </button>
-          <button type="button" class="viewer__action" phx-click="toggle-details">
-            <.icon name="shield" size={20} />
-            <span>{gettext("Detalhes")}</span>
-          </button>
-          <button type="button" class="viewer__action viewer__action--danger" phx-click="ask-delete">
-            <.icon name="trash" size={20} />
-            <span>{gettext("Excluir")}</span>
-          </button>
-        </div>
-      </div>
+        file={@current}
+        photo_ids={@photo_ids}
+        own={own?(@current_scope, @current)}
+        zona={@current.zona}
+        link={url(~p"/files/#{@current.rkey}")}
+        src={~p"/files/#{@current.rkey}"}
+        src_md={~p"/files/#{@current.rkey}/thumbnail/md"}
+        rail={viewer_rail(@photo_ids, @current.rkey)}
+      />
 
       <.confirm_dialog
         :if={@current}

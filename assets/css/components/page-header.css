@@ -1,2 +1,64 @@
-/* PageHeader (Penpot: PageHeader, substitui o app bar). Componente novo;
-   regras chegam na Wave 1 (docs/web-revamp-spec.md, 4.1 e 5). */
+/* PageHeader (Penpot: PageHeader, Action none/one, Surface mobile/desktop).
+   Espelho de TainaWeb.UI.Navigation.page_header/1; mantenha em sincronia.
+   64 de altura (size-appbar), título sempre centrado na viewport, voltar
+   (ícone + palavra) à esquerda e ação à direita em zonas de MESMA largura
+   (spec 1.5). Metadados do board: fundo bg.app, padding --space-6/-2. */
+
+.page-header {
+  position: sticky;
+  top: 0;
+  z-index: 25;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: var(--space-3);
+  height: var(--size-appbar);
+  padding: var(--space-2) var(--space-4);
+  background: var(--bg-app);
+}
+
+.page-header__title {
+  font-family: var(--font-family-display);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  /* nome de arquivo longo encolhe com reticências, não empurra as zonas */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+}
+
+.page-header__zone--start {
+  justify-self: start;
+}
+
+.page-header__zone--end {
+  justify-self: end;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.page-header__back {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--size-touch);
+  padding: 0 var(--space-1);
+  color: var(--text-secondary);
+}
+
+.page-header__back:hover {
+  color: var(--text-primary);
+}
+
+.page-header__back-label {
+  font-size: var(--font-size-sm);
+}
+
+@media (min-width: 768px) {
+  .page-header {
+    padding: var(--space-2) var(--space-6);
+  }
+}

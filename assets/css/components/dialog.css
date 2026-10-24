@@ -1,8 +1,10 @@
-/* Dialog (Penpot: Dialog, funde modal + confirm_dialog na Wave 1). Espelho
-   de TainaWeb.UI.Overlays.modal/1 e confirm_dialog/1; mantenha os dois em
-   sincronia. */
+/* Dialog (Penpot: Dialog, Kind confirm/destructive. Fusão do modal +
+   confirm_dialog da Wave 0). Espelho de TainaWeb.UI.Overlays.dialog/1;
+   mantenha os dois em sincronia. Mobile: painel embaixo (como o modal era);
+   >= 768: cartão centrado. Metadados do board: painel surface-raised,
+   radius-lg, sombra elevation-lifted, largura --measure-dialog. */
 
-.modal-overlay {
+.dialog {
   position: fixed;
   inset: 0;
   /* acima da bottom-nav (30) e do visualizador fullscreen (50); abaixo do
@@ -12,45 +14,57 @@
   align-items: flex-end;
   justify-content: center;
   background: var(--surface-scrim);
+  animation: dialog-overlay-in 150ms ease backwards;
 }
 
-@media (min-width: 768px) {
-  .modal-overlay {
-    align-items: center;
-  }
-}
-
-.modal {
+.dialog__panel {
   width: 100%;
-  max-width: var(--measure-sm);
+  max-width: var(--measure-dialog);
   max-height: 85dvh;
   overflow-y: auto;
   overscroll-behavior: contain;
-  background: var(--surface-default);
-  border: var(--border-hairline) solid var(--border-default);
-  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  background: var(--surface-raised);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   padding: var(--space-6) var(--space-4);
   padding-bottom: calc(var(--space-6) + env(safe-area-inset-bottom));
   box-shadow: var(--elevation-lifted);
+  animation: dialog-in 240ms cubic-bezier(0.2, 0.7, 0.3, 1) backwards;
+}
+
+.dialog__title {
+  /* o nome do painel; tipografia vai pela classe systemica type-h3 no markup */
+  margin-bottom: var(--space-2);
+}
+
+.dialog__body {
+  margin-bottom: var(--space-6);
+  overflow-wrap: anywhere;
+}
+
+.dialog__actions {
+  display: flex;
+  gap: var(--space-3);
 }
 
 @media (min-width: 768px) {
-  .modal {
-    border-radius: var(--radius-xl);
+  .dialog {
+    align-items: center;
+  }
+
+  .dialog__panel {
+    border-radius: var(--radius-lg);
     padding: var(--space-6);
   }
 }
 
-/* transições de abertura (modal) */
-.modal-overlay {
-  animation: overlay-in 150ms ease backwards;
+@media (prefers-reduced-motion: reduce) {
+  .dialog,
+  .dialog__panel {
+    animation: none;
+  }
 }
 
-.modal {
-  animation: sheet-in 240ms cubic-bezier(0.2, 0.7, 0.3, 1) backwards;
-}
-
-@keyframes overlay-in {
+@keyframes dialog-overlay-in {
   from {
     opacity: 0;
   }
@@ -60,21 +74,14 @@
   }
 }
 
-@keyframes sheet-in {
+@keyframes dialog-in {
   from {
     opacity: 0;
-    transform: translateY(16px);
+    transform: translateY(var(--space-4));
   }
 
   to {
     opacity: 1;
     transform: none;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .modal,
-  .modal-overlay {
-    animation: none;
   }
 }

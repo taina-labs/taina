@@ -1,3 +1,168 @@
-/* ActionsMenu (composição Sheet + Menu: bottom sheet abaixo de 768, popover
-   de menu em 768+). Componente novo; regras chegam na Wave 1
-   (docs/web-revamp-spec.md, 4.1 e 4.3). */
+/* ActionsMenu (composição Sheet + Menu). Espelho de
+   TainaWeb.UI.Overlays.actions_menu/1; mantenha os dois em sincronia. Um
+   único markup: painel como bottom sheet abaixo de 768 (com título +
+   "Fechar") e popover ancorado no kebab em 768+ - a troca é toda CSS
+   (spec 4.3). */
+
+.actions-menu {
+  position: relative;
+}
+
+/* no mobile o botão-âncora carrega o tamanho de toque como os itens */
+.actions-menu__trigger {
+  position: relative;
+  z-index: 1;
+}
+
+.actions-menu__panel {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  /* acima da bottom-nav (30) e do visualizador fullscreen (50); abaixo do
+     flash (60). */
+  z-index: 55;
+  display: none;
+  flex-direction: column;
+  max-height: 85dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom));
+  background: var(--surface-raised);
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  box-shadow: var(--elevation-lifted);
+  animation: actions-menu-in 240ms cubic-bezier(0.2, 0.7, 0.3, 1) backwards;
+}
+
+/* cabeçalho do sheet (só no mobile o "Fechar" existe) */
+.actions-menu__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: var(--border-hairline) solid var(--border-subtle);
+}
+
+.actions-menu__title {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-secondary);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.actions-menu__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--size-control-md);
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.actions-menu__close:hover {
+  background: var(--surface-high);
+}
+
+.actions-menu__items {
+  padding: var(--space-1) var(--space-4);
+}
+
+.actions-menu__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: var(--size-control-md);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-4);
+  color: var(--text-primary);
+  font-size: var(--font-size-md);
+  text-align: left;
+}
+
+.actions-menu__item:hover {
+  background: var(--surface-high);
+}
+
+.actions-menu__item .icon {
+  color: var(--text-secondary);
+}
+
+/* o texto fica legível (o ícone é quem carrega o vermelho) */
+.actions-menu__item--danger {
+  color: var(--text-secondary);
+}
+
+.actions-menu__item--danger .icon {
+  color: var(--feedback-error);
+}
+
+/* press feedback: o controle afunda 1px enquanto ativo (DESIGN.md, motion) */
+.actions-menu__item:active {
+  transform: translateY(1px);
+}
+
+/* >= 768: sai do sheet e vira popover de menu, como o Menu (alinhado à
+   direita do kebab, nunca estourado de viewport) */
+@media (min-width: 768px) {
+  .actions-menu__head {
+    display: none;
+  }
+
+  .actions-menu__panel {
+    position: absolute;
+    top: calc(100% + var(--space-1));
+    right: 0;
+    bottom: auto;
+    min-width: var(--size-menu-min);
+    max-width: calc(100vw - var(--space-8));
+    /* nunca estoura a tela: em viewport estreita o menu encolhe */
+    padding: var(--space-2);
+    border-radius: var(--radius-md);
+    box-shadow: var(--elevation-lifted);
+    background: var(--surface-raised);
+    border: var(--border-hairline) solid var(--border-default);
+  }
+
+  /* o popover encolhe o trilho: sem a barra da casca do sheet, os itens
+     ficam colados no raio do painel (como no Menu) */
+  .actions-menu__items {
+    padding: 0;
+  }
+
+  .actions-menu__item {
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--font-size-sm);
+    min-height: var(--size-control-sm);
+  }
+
+  .actions-menu__panel,
+  .actions-menu__item {
+    animation: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .actions-menu__panel {
+    animation: none;
+  }
+}
+
+@keyframes actions-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--space-4));
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
