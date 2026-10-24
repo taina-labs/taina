@@ -598,6 +598,34 @@ defmodule Taina.Ybira do
     end)
   end
 
+  # Fato da máquina, tekoa inteiro (não o subconjunto legível): a cota cobre
+  # os bytes de todo mundo, incluída a casa de quem não leu (RFC_003 D2 é a
+  # regra de leitura, não a de ocupação). A lixeira ainda ocupa até o expurgo,
+  # então casa + praça + lixeira bate com `storage_stats/1` (`used_bytes`).
+  @doc "Armazenamento por zona (armazenamento): casas, praca e lixeira em bytes."
+  def storage_stats_by_zone(%Scope{} = scope) do
+    within_tekoa(scope, fn ->
+      live =
+        from(f in File,
+          where: f.tekoa_id == ^scope.tekoa.id and is_nil(f.apagado_em),
+          group_by: f.zona,
+          select: {f.zona, sum(f.tamanho)}
+        )
+        |> Repo.all()
+        |> Map.new(fn {zona, bytes} -> {zona, to_integer(bytes)} end)
+
+      lixeira =
+        from(f in File,
+          where: f.tekoa_id == ^scope.tekoa.id and not is_nil(f.apagado_em),
+          select: sum(f.tamanho)
+        )
+        |> Repo.one()
+        |> to_integer()
+
+      {:ok, %{casa: Map.get(live, :casa, 0), praca: Map.get(live, :praca, 0), lixeira: lixeira}}
+    end)
+  end
+
   # `sum/1` sobre inteiro volta como `Decimal` no SQLite; normalizamos para
   # inteiro (bytes são sempre inteiros) antes de somar no acumulador.
   defp to_integer(nil), do: 0

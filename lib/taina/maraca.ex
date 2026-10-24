@@ -338,7 +338,9 @@ defmodule Taina.Maraca do
 
   defp resolve_session_ava(_public_id), do: {:error, :not_authenticated}
 
-  def update_tekoa_quota(%Ypy.Scope{} = scope, quota_bytes) when is_integer(quota_bytes) do
+  # Cota `nil` = disco inteiro, sem limite (spec 11.3/6.4, "Usar o disco
+  # inteiro"): o changeset da Tekoa já aceita (validação pula nil).
+  def update_tekoa_quota(%Ypy.Scope{} = scope, quota_bytes) when is_integer(quota_bytes) or is_nil(quota_bytes) do
     if zelador?(scope.ava) do
       result = within_tekoa(scope, fn -> mudar_cota(scope, quota_bytes) end)
 

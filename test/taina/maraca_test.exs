@@ -176,6 +176,15 @@ defmodule Taina.MaracaTest do
       assert {:error, changeset} = Maraca.update_tekoa_quota(scope, 0)
       assert "must be greater than 0" in errors_on(changeset).storage_quota_bytes
     end
+
+    test "nil quota (disco inteiro, sem limite) persists as nil" do
+      tekoa = tekoa_fixture()
+      zelador = zelador_fixture(tekoa)
+      scope = Scope.new(zelador, tekoa)
+
+      assert {:ok, updated} = Maraca.update_tekoa_quota(scope, nil)
+      assert is_nil(updated.storage_quota_bytes)
+    end
   end
 
   describe "authenticate/3" do

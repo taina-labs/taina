@@ -53,6 +53,57 @@ defmodule Taina.YbiraStatsTest do
     end
   end
 
+  # Fato da máquina (uso/cota) é comunitário; o detalhe por zona é o mesmo
+  # fato, tekoa inteiro: a casa de outra pessoa ocupa bytes mesmo sem quem
+  # quer que possa lê-la (RFC_003 D2 é a regra de leitura, não a de ocupação).
+  describe "storage_stats_by_zone/1" do
+    test "separa casa, praça e lixeira; a soma bate com o uso da Tekoa", %{scope: scope} do
+      {:ok, _em_casa} = Ybira.upload(scope, tmp_upload_fixture("conteudo casa", "casa.txt"))
+      {:ok, na_praca} = Ybira.upload(scope, tmp_upload_fixture("conteudo praca", "praca.txt"))
+      {:ok, _} = Ybira.publicar_file(scope, na_praca.rkey)
+
+      {:ok, %{used_bytes: used}} = Ybira.storage_stats(scope)
+      assert {:ok, zona} = Ybira.storage_stats_by_zone(scope)
+
+      assert zona == %{
+               casa: byte_size("conteudo casa"),
+               praca: byte_size("conteudo praca"),
+               lixeira: 0
+             }
+
+      assert zona.casa + zona.praca + zona.lixeira == used
+    end
+
+    test "apagar conta na lixeira (os bytes ficam até o expurgo)", %{scope: scope} do
+      {:ok, _vivo} = Ybira.upload(scope, tmp_upload_fixture("conteudo vivo", "vivo.txt"))
+      {:ok, apagado} = Ybira.upload(scope, tmp_upload_fixture("conteudo morto", "morto.txt"))
+      {:ok, _} = Ybira.delete_file(scope, apagado.rkey)
+
+      assert {:ok, zona} = Ybira.storage_stats_by_zone(scope)
+      assert zona.lixeira == byte_size("conteudo morto")
+      assert zona.casa == byte_size("conteudo vivo")
+      assert zona.praca == 0
+
+      {:ok, %{used_bytes: used}} = Ybira.storage_stats(scope)
+      assert zona.casa + zona.praca + zona.lixeira == used
+    end
+
+    test "a casa de outro morador conta em bytes mesmo sem leitura", %{scope: scope} do
+      outra = active_ava_fixture(scope.tekoa)
+      outra_scope = Scope.new(outra, scope.tekoa)
+      {:ok, img} = Ybira.upload(outra_scope, tmp_image_fixture(filename: "casa.jpg"))
+
+      assert {:ok, zona} = Ybira.storage_stats_by_zone(scope)
+      assert zona.casa == img.tamanho
+      assert {:ok, %{used_bytes: used}} = Ybira.storage_stats(scope)
+      assert zona.casa + zona.praca + zona.lixeira == used
+    end
+
+    test "tudo zerado sem arquivos", %{scope: scope} do
+      assert {:ok, %{casa: 0, praca: 0, lixeira: 0}} = Ybira.storage_stats_by_zone(scope)
+    end
+  end
+
   # Fato da máquina (uso/cota) é comunitário; o detalhe por tipo segue a regra
   # de leitura das duas zonas (RFC_003 D2): a casa de outra pessoa não conta
   # para quem não pode ler, até a publicação na praça.

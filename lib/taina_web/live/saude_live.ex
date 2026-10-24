@@ -26,9 +26,6 @@ defmodule TainaWeb.SaudeLive do
   alias TainaWeb.Time
   alias Ypy.Maraca.Ava
 
-  # Limite "acabando" do disco: 90% da cota. Aviso ambiente, não alarme.
-  @disk_warning_percent 90
-
   @impl true
   def mount(_params, _session, socket) do
     scope = socket.assigns.current_scope
@@ -164,7 +161,7 @@ defmodule TainaWeb.SaudeLive do
       | trash_line(trash)
     ]
 
-    if quota > 0 and used / quota * 100 >= @disk_warning_percent do
+    if TainaWeb.Saude.disk_attention?(%{used_bytes: used, quota_bytes: quota}) do
       row(
         "disk",
         gettext("Disco"),
