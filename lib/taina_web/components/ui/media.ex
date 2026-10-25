@@ -31,35 +31,33 @@ defmodule TainaWeb.UI.Media do
 
   @doc """
   Visualizador fullscreen (Penpot: Viewer, 3fd18cd2-90f8-80f3-8008-d5c33aeff2fa):
-  markup movido da Galeria (comportamento idêntico, `ViewerNav` e `FullSwap`
-  preservados). Projetado coberta da tela com `role="dialog"`; navegação por
-  teclado/swipe fica no hook; o servidor decide (eventos `prev`/`next`/
-  `close`/`ask-zona`/`ask-details`/`toggle-details`/`ask-delete` da tela).
+  a foto ocupa a tela, com fechar, anterior/próxima e a legenda do board
+  ("Nome, data, na praça" + "3 de 24"). `ViewerNav` cuida de teclado/swipe;
+  o servidor decide (eventos `prev`/`next`/`close` da tela).
 
-  Os caminhos (arquivo, thumb `md`, link absoluto do Clipboard/Share, a
-  trilha de fotos vizinhas) são construídos pela tela com `~p`/`url` -
-  nada de URL mágica aqui.
+  O board não tem barra de ações no visualizador: baixar, publicar e remover
+  moram na tela do documento (`/documentos/:id`), que é o mesmo arquivo com
+  os controles por extenso.
+
+  Os caminhos (arquivo, thumb `md`, link do FullSwap) são construídos pela
+  tela com `~p`/`url` - nada de URL mágica aqui.
 
       <.viewer
         :if={@current}
         file={@current}
         photo_ids={@photo_ids}
-        own={own?(@current_scope, @current)}
         zona={@current.zona}
         link={url(~p"/files/\#{@current.rkey}")}
         src={~p"/files/\#{@current.rkey}"}
         src_md={~p"/files/\#{@current.rkey}/thumbnail/md"}
-        rail={viewer_rail(@photo_ids, @current.rkey)}
       />
   """
   attr :file, :any, required: true, doc: "arquivo Ybira da foto atual (nome, mime, tamanho, inserted_at)"
   attr :photo_ids, :list, default: [], doc: "rkeys da sequência atual (grade ou linha inteira)"
-  attr :own, :boolean, default: false, doc: "alavanca da zona só para quem é dono"
   attr :zona, :atom, required: true, values: [:casa, :praca]
-  attr :link, :string, required: true, doc: "URL absoluta do arquivo original (Clipboard/Share)"
-  attr :src, :string, required: true, doc: "URL do original (download/video)"
+  attr :link, :string, required: true, doc: "URL absoluta do arquivo original (FullSwap)"
+  attr :src, :string, required: true, doc: "URL do original (vídeo)"
   attr :src_md, :string, required: true, doc: "URL da rendição md (viewer carrega ela primeiro)"
-  attr :rail, :list, default: [], doc: "fotos vizinhas (viewer_rail/2): %{id:, position:, thumb:, patch:}"
   attr :rest, :global
 
   def viewer(assigns) do
@@ -73,21 +71,8 @@ defmodule TainaWeb.UI.Media do
       phx-hook="ViewerNav"
       {@rest}
     >
-      <header class="row between p-4">
+      <header class="row p-4">
         <.icon_button name="close" label={gettext("Fechar")} id="viewer-close" phx-click="close" />
-        <div class="text-center">
-          <p class="type-label">{photo_date(@file)}</p>
-          <p class="type-caption text-faint">
-            {gettext("%{index} de %{total}", index: viewer_index(@photo_ids, @file), total: length(@photo_ids))}
-          </p>
-        </div>
-        <.icon_button
-          name="link"
-          label={gettext("Copiar link")}
-          id="viewer-copy-link"
-          phx-hook="Clipboard"
-          data-copy={@link}
-        />
       </header>
 
       <div class="viewer__stage">
@@ -126,86 +111,23 @@ defmodule TainaWeb.UI.Media do
         </button>
       </div>
 
-      <nav :if={length(@photo_ids) > 1} class="viewer__rail" aria-label={gettext("Fotos vizinhas")}>
-        <.link
-          :for={photo <- @rail}
-          id={"rail-#{photo.id}"}
-          patch={photo.patch}
-          class="viewer__rail-item"
-          aria-current={photo.id == @file.rkey}
-          aria-label={gettext("Foto %{index} de %{total}", index: photo.position, total: length(@photo_ids))}
-        >
-          <span class="viewer__rail-thumb" style={"background-image: url('#{photo.thumb}')"}></span>
-        </.link>
-      </nav>
-
-      <p class="viewer__caption">{@file.nome}</p>
-
-      <div class="viewer__actions">
-        <button
-          type="button"
-          class="viewer__action"
-          id="viewer-share"
-          phx-hook="Share"
-          data-url={@link}
-          data-title={@file.nome}
-        >
-          <.icon name="share" size={20} />
-          <span>{gettext("Compartilhar")}</span>
-        </button>
-        <a href={@src} download class="viewer__action">
-          <.icon name="download" size={20} />
-          <span>{gettext("Baixar")}</span>
-        </a>
-        <button
-          :if={@own}
-          type="button"
-          class="viewer__action"
-          phx-click="ask-zona"
-        >
-          <.icon name="eye" size={20} />
-          <span>{zona_action_label(@zona)}</span>
-        </button>
-        <button type="button" class="viewer__action" phx-click="toggle-details">
-          <.icon name="shield" size={20} />
-          <span>{gettext("Detalhes")}</span>
-        </button>
-        <button type="button" class="viewer__action viewer__action--danger" phx-click="ask-delete">
-          <.icon name="trash" size={20} />
-          <span>{gettext("Excluir")}</span>
-        </button>
+      <div class="viewer__caption row between gap-3">
+        <span class="truncate">{viewer_caption(@file, @zona)}</span>
+        <span class="text-faint">
+          {gettext("%{index} de %{total}", index: viewer_index(@photo_ids, @file), total: length(@photo_ids))}
+        </span>
       </div>
     </div>
     """
   end
 
-  # Janela de fotos vizinhas da barra do viewer (desktop 1024+): um trecho
-  # curto em volta da atual (`@rail_window` de cada lado), mapas de
-  # `{id:, posição, thumb, patch}` com o caminho pronto, para o rótulo
-  # acessível de cada miniatura e o link de troca. Puro, testável sem socket.
-  @rail_window 10
-
-  def viewer_rail(ids, current_id) do
-    case Enum.find_index(ids, &(&1 == current_id)) do
-      nil ->
-        []
-
-      index ->
-        first = max(index - @rail_window, 0)
-        last = min(index + @rail_window, length(ids) - 1)
-
-        for i <- first..last do
-          id = Enum.at(ids, i)
-
-          %{
-            id: id,
-            position: i + 1,
-            thumb: ~p"/files/#{id}/thumbnail/sm",
-            patch: ~p"/galeria/#{id}"
-          }
-        end
-    end
+  # Legenda do board: "Nome, 12/06/2026, na praça".
+  defp viewer_caption(file, zona) do
+    "#{file.nome}, #{photo_date(file)}, #{viewer_zona(zona)}"
   end
+
+  defp viewer_zona(:praca), do: gettext("na praça")
+  defp viewer_zona(:casa), do: gettext("na casa")
 
   # A data do visualizador vem do upload (o kernel nao carrega os metadados
   # de rendicao); a linha do tempo agrupa pela data efetiva, resolvida na
@@ -228,11 +150,6 @@ defmodule TainaWeb.UI.Media do
   @full_swap_cap_bytes 20 * 1024 * 1024
 
   defp full_swap?(%{tamanho: bytes}), do: bytes <= @full_swap_cap_bytes
-
-  # A acao oferecida e sempre a oposta da zona atual (consentimento,
-  # RFC_003): a casa publica na praça; a praça volta para a casa.
-  defp zona_action_label(:casa), do: gettext("Publicar na praça")
-  defp zona_action_label(:praca), do: gettext("Tirar da praça")
 
   @doc """
   Caixa de envio (Penpot: Dropzone, State idle/drag/uploading/error-cota/

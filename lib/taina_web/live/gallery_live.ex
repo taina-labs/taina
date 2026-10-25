@@ -1,22 +1,38 @@
 defmodule TainaWeb.GalleryLive do
   @moduledoc """
-  Jaci-lite (telas "Jaci - Grade", "Jaci - Linha do tempo" e "Jaci -
-  Visualizador"): grade 2/6/8/10 colunas (mobile/tablet/desktop/largo) com
-  scroll infinito (`phx-viewport-bottom` + cursor keyset do Jaci), linha do
-  tempo agrupada por dia e visualizador fullscreen com navegação por
-  teclado/swipe (hook `ViewerNav`); no desktop (1024+) o visualizador ganha
-  uma barra de fotos vizinhas no lugar de só setas, e a foto troca do
-  thumbnail `md` para o original em segundo plano (hook `FullSwap`).
+  Galeria (docs/web-revamp-spec.md 6.3; boards "Servico / Jaci" do Penpot:
+  Grade padrão cc1037dc-e8ab-80cc-8008-d5e30853df7a, Grade vazio
+  cc1037dc-e8ab-80cc-8008-d5e30c38d7b4, Grade carregando
+  cc1037dc-e8ab-80cc-8008-d5e30ea0ed1f, Linha padrão
+  cc1037dc-e8ab-80cc-8008-d5e3116dc761, Visualizador padrão
+  cc1037dc-e8ab-80cc-8008-d5e315453160 e Visualizador erro
+  cc1037dc-e8ab-80cc-8008-d5e315f7b931).
+
+  As abas Grade e Linha do tempo são ROTAS (`/galeria` e
+  `/galeria/linha-do-tempo`): a barra de abas vem da casca `service` (fixa no
+  pé do celular, fileira sob o cabeçalho no desktop) e não há segmented. A
+  zona casa/praca (RFC_003) segue viva na URL (`?zona=casa` / `?zona=praca`;
+  sem parâmetro, o conjunto legível da comunidade), mas os boards não desenham
+  filtro de zona em tela nenhuma: quem chega por link antigo continua lendo o
+  conjunto certo, sem controle a mais na cara.
+
+  A grade rola em página infinita (`phx-viewport-bottom` + cursor keyset do
+  Jaci) com esqueleto `photo_grid` no lugar de spinner, e a linha do tempo
+  agrupa por dia com o dia escrito ("4 de outubro", board). O FAB "Enviar"
+  leva a `/documentos/enviar`: toda foto nasce na casa; no desktop o mesmo
+  "Enviar" mora no cabeçalho (a troca é do CSS, os dois ficam no DOM).
+
+  O visualizador é fullscreen (casco `viewer`) com navegação por teclado e
+  swipe (hook `ViewerNav`) e troca do thumbnail `md` para o original em
+  segundo plano (hook `FullSwap`). Quando a foto não abre, o casco vira o
+  estado de erro do board "Visualizador / erro": cartão calmo com "Tentar de
+  novo" e "Falar com quem cuida", e a frase honesta "Não conseguimos abrir
+  esta foto".
 
   Thumbnails: `/files/:id/thumbnail/sm` (grade) e `md` (visualizador), o
   worker `Rendition` gera depois do upload; enquanto não há thumbnail, o
   controller responde 404 e o quadradinho fica com o fundo de superfície.
-
-  Zonas casa/praca (RFC_003): o filtro mora na URL (`?zona=casa` /
-  `?zona=praca`; sem parametro a aba e Tudo, o conjunto legivel da
-  comunidade), cada tile carrega o badge da zona, o modal de Detalhes diz
-  quem ve, e o visualizador tem a alavanca "Publicar na praça" / "Tirar da
-  praça" para quem é dono.
+  Vídeo não tem thumbnail: o tile mostra o marcador de play.
   """
 
   use TainaWeb, :live_view
@@ -36,7 +52,10 @@ defmodule TainaWeb.GalleryLive do
      |> assign(:photo_ids, [])
      |> assign(:next_cursor, nil)
      |> assign(:timeline_cursor, nil)
+     |> assign(:counts, nil)
      |> assign(:current, nil)
+     |> assign(:viewer_error, false)
+     |> assign(:viewer_rkey, nil)
      |> assign(:loaded, false)
      |> assign(:grid_stale, true)
      |> assign(:timeline_stale, true)
@@ -44,9 +63,6 @@ defmodule TainaWeb.GalleryLive do
      |> assign(:timeline_error, false)
      |> assign(:timeline_empty, true)
      |> assign(:last_group, nil)
-     |> assign(:show_confirm, false)
-     |> assign(:show_details, false)
-     |> assign(:show_zona, false)
      |> stream(:photos, [])
      |> stream_configure(:timeline_groups, dom_id: &timeline_dom_id/1)
      |> stream(:timeline_groups, [])}
@@ -85,6 +101,7 @@ defmodule TainaWeb.GalleryLive do
         |> assign(:loaded, true)
         |> assign(:current, nil)
         |> assign(:next_cursor, cursor)
+        |> assign(:counts, count_summary(photos))
         |> assign(:photo_ids, Enum.map(photos, & &1.rkey))
         |> assign(:grid_error, false)
         |> assign(:grid_stale, false)
@@ -133,10 +150,13 @@ defmodule TainaWeb.GalleryLive do
   end
 
   defp open_viewer(socket, rkey) do
+    socket = assign(socket, :viewer_rkey, rkey)
+
     case Ybira.get_file(socket.assigns.current_scope, rkey) do
       {:ok, file} ->
         socket
         |> assign(:current, file)
+        |> assign(:viewer_error, false)
         |> assign_new_ids(rkey)
 
       # Casa de outra pessoa: a tela de preview é quem explica o "Pedir
@@ -144,10 +164,12 @@ defmodule TainaWeb.GalleryLive do
       {:error, :forbidden} ->
         Phoenix.LiveView.push_navigate(socket, to: ~p"/documentos/#{rkey}")
 
-      {:error, :not_found} ->
+      # O board "Visualizador / erro": o casco do visualizador fica de pé com
+      # o cartão calmo. O flash + volta automática antigos escondiam o erro.
+      {:error, _reason} ->
         socket
-        |> Phoenix.LiveView.put_flash(:error, gettext("Foto não encontrada."))
-        |> Phoenix.LiveView.push_patch(to: ~p"/galeria")
+        |> assign(:current, nil)
+        |> assign(:viewer_error, true)
     end
   end
 
@@ -169,6 +191,7 @@ defmodule TainaWeb.GalleryLive do
             {:noreply,
              socket
              |> assign(:next_cursor, next_cursor)
+             |> update(:counts, &merge_counts(&1, photos))
              |> assign(:photo_ids, socket.assigns.photo_ids ++ Enum.map(photos, & &1.rkey))
              |> stream(:photos, photos)}
 
@@ -197,146 +220,28 @@ defmodule TainaWeb.GalleryLive do
     end
   end
 
-  # Setas e Escape do visualizador: enquanto um modal está por cima (confirmar
-  # exclusão, detalhes), a navegação espera. Um Escape não pode fechar o modal
-  # e sair do visualizador junto.
-  def handle_event("prev", _params, socket), do: {:noreply, guarded_step(socket, -1)}
-  def handle_event("next", _params, socket), do: {:noreply, guarded_step(socket, +1)}
+  # Setas e Escape do visualizador: o board não tem barra de ações nem
+  # sobreposição, então a navegação é direta.
+  def handle_event("prev", _params, socket), do: {:noreply, step(socket, -1)}
+  def handle_event("next", _params, socket), do: {:noreply, step(socket, +1)}
 
   def handle_event("close", _params, socket) do
-    if modal_open?(socket.assigns) do
-      {:noreply, socket}
-    else
-      {:noreply, Phoenix.LiveView.push_patch(socket, to: gallery_path(:grid, socket.assigns.zona))}
-    end
-  end
-
-  def handle_event("copied", _params, socket) do
-    {:noreply, Phoenix.LiveView.put_flash(socket, :info, gettext("Link copiado!"))}
-  end
-
-  # A guarda de clipboard fica no hook (JS); quando ele não consegue copiar
-  # (origem insegura, sem permissão), a saída é o Detalhes: o link aparece
-  # lá em texto, pronto para copiar à mão.
-  def handle_event("copy-failed", _params, socket) do
-    {:noreply,
-     Phoenix.LiveView.put_flash(
-       socket,
-       :error,
-       gettext("Não deu para copiar agora. Toque em \"Detalhes\", toque no link e copie.")
-     )}
+    {:noreply, Phoenix.LiveView.push_patch(socket, to: gallery_path(:grid, socket.assigns.zona))}
   end
 
   def handle_event("retry", _params, socket) do
     case socket.assigns.live_action do
       :grid -> {:noreply, ensure_grid(socket)}
       :timeline -> {:noreply, ensure_timeline(socket)}
-      _other -> {:noreply, socket}
+      # No estado de erro do visualizador, "Tentar de novo" é reabrir a foto.
+      :viewer -> {:noreply, open_viewer(socket, socket.assigns.viewer_rkey)}
     end
   end
 
-  def handle_event("ask-delete", _params, socket) do
-    {:noreply, assign(socket, :show_confirm, true)}
-  end
-
-  def handle_event("close-confirm", _params, socket) do
-    {:noreply, assign(socket, :show_confirm, false)}
-  end
-
-  def handle_event("toggle-details", _params, socket) do
-    {:noreply, assign(socket, :show_details, !socket.assigns.show_details)}
-  end
-
-  # Publicar/tirar da praça no visualizador: a zona do arquivo é o
-  # consentimento (RFC_003), então a alavanca mora aqui também, não só em
-  # Arquivos. O contexto valida dono e zona; a tela espelha o que voltou.
-  def handle_event("ask-zona", _params, socket) do
-    {:noreply, assign(socket, :show_zona, true)}
-  end
-
-  def handle_event("close-zona", _params, socket) do
-    {:noreply, assign(socket, :show_zona, false)}
-  end
-
-  # O padrao e o estrito do `confirm-delete`: `current` nil (evento atrasado
-  # depois do patch que fechou o visualizador) cai na clausula de baixo, nao
-  # levanta no meio do handler.
-  def handle_event("confirm-zona", _params, %{assigns: %{current: %{rkey: rkey, zona: zona}}} = socket) do
-    scope = socket.assigns.current_scope
-
-    result =
-      case zona do
-        :casa -> Ybira.publicar_file(scope, rkey)
-        :praca -> Ybira.tirar_file_da_praca(scope, rkey)
-      end
-
-    case result do
-      {:ok, updated} ->
-        {:noreply,
-         socket
-         |> assign(:current, updated)
-         |> assign(:show_zona, false)
-         |> mark_zone_changed()
-         |> Phoenix.LiveView.put_flash(:info, zona_flash_ok(zona))}
-
-      {:error, _reason} ->
-        {:noreply,
-         socket
-         |> assign(:show_zona, false)
-         |> Phoenix.LiveView.put_flash(:error, zona_flash_error(zona))}
-    end
-  end
-
-  def handle_event("confirm-zona", _params, socket) do
-    {:noreply, assign(socket, :show_zona, false)}
-  end
-
-  def handle_event("confirm-delete", _params, %{assigns: %{current: %{rkey: rkey}}} = socket) do
-    case Ybira.delete_file(socket.assigns.current_scope, rkey) do
-      {:ok, _file} ->
-        {:noreply,
-         socket
-         |> assign(:show_confirm, false)
-         |> Phoenix.LiveView.put_flash(:info, gettext("Foto movida para a lixeira."))
-         |> reset_gallery()
-         |> Phoenix.LiveView.push_patch(to: ~p"/galeria")}
-
-      {:error, _reason} ->
-        {:noreply,
-         socket
-         |> assign(:show_confirm, false)
-         |> Phoenix.LiveView.put_flash(:error, gettext("Não foi possível excluir a foto."))}
-    end
-  end
-
-  def handle_event("confirm-delete", _params, socket) do
-    {:noreply, assign(socket, :show_confirm, false)}
-  end
-
-  defp guarded_step(socket, delta) do
-    if modal_open?(socket.assigns), do: socket, else: step(socket, delta)
-  end
-
-  defp modal_open?(%{show_confirm: show_confirm, show_details: show_details, show_zona: show_zona}) do
-    show_confirm or show_details or show_zona
-  end
-
-  # Publicar muda o badge nos tiles embaixo do visualizador: as duas visões
-  # recarregam na volta. Os ids seguem em mãos, a navegação não pula.
-  defp mark_zone_changed(socket) do
-    socket
-    |> assign(:grid_stale, true)
-    |> assign(:timeline_stale, true)
-  end
-
-  defp reset_gallery(socket) do
-    socket
-    |> assign(:loaded, false)
-    |> assign(:grid_stale, true)
-    |> assign(:timeline_stale, true)
-    |> assign(:photo_ids, [])
-    |> assign(:last_group, nil)
-    |> assign(:timeline_empty, true)
+  # "Falar com quem cuida" (segunda saída do cartão de erro): a Saúde é a tela
+  # que diz quem cuida da máquina. Web não abre conversa com ninguém.
+  def handle_event("contact", _params, socket) do
+    {:noreply, Phoenix.LiveView.push_navigate(socket, to: ~p"/saude")}
   end
 
   defp step(socket, delta) do
@@ -374,13 +279,24 @@ defmodule TainaWeb.GalleryLive do
   # empilhar uma seção nova com o mesmo dia.
   defp timeline_dom_id(group), do: "timeline-group-#{group.date}"
 
+  # "4 de outubro" (board): o dia escrito por extenso. O strftime não sabe
+  # pt-BR sem locale, então o mês vem do mapa nosso.
   defp group_title(date) do
-    case Date.diff(Date.utc_today(), date) do
-      0 -> gettext("Hoje")
-      1 -> gettext("Ontem")
-      _days -> Calendar.strftime(date, "%d/%m/%Y")
-    end
+    gettext("%{day} de %{month}", day: date.day, month: month_name(date.month))
   end
+
+  defp month_name(1), do: gettext("janeiro")
+  defp month_name(2), do: gettext("fevereiro")
+  defp month_name(3), do: gettext("março")
+  defp month_name(4), do: gettext("abril")
+  defp month_name(5), do: gettext("maio")
+  defp month_name(6), do: gettext("junho")
+  defp month_name(7), do: gettext("julho")
+  defp month_name(8), do: gettext("agosto")
+  defp month_name(9), do: gettext("setembro")
+  defp month_name(10), do: gettext("outubro")
+  defp month_name(11), do: gettext("novembro")
+  defp month_name(12), do: gettext("dezembro")
 
   defp video?(%{mime: mime}), do: String.starts_with?(mime, "video/")
 
@@ -403,60 +319,12 @@ defmodule TainaWeb.GalleryLive do
   defp gallery_path(:grid, :praca), do: ~p"/galeria?#{[zona: "praca"]}"
   defp gallery_path(:grid, :casa), do: ~p"/galeria?#{[zona: "casa"]}"
 
-  defp gallery_path(:timeline, :tudo), do: ~p"/galeria/linha-do-tempo"
-  defp gallery_path(:timeline, :praca), do: ~p"/galeria/linha-do-tempo?#{[zona: "praca"]}"
-  defp gallery_path(:timeline, :casa), do: ~p"/galeria/linha-do-tempo?#{[zona: "casa"]}"
-
-  defp view_action(:timeline), do: :timeline
-  defp view_action(_grade_default), do: :grid
-
-  # Badge do tile e aba compartilham as palavras. A casa propria e a
-  # compartilhada nao podem se misturar (a tela e sobre consentimento): a
-  # sua diz "Casa"; a de outra pessoa diz de quem e.
-  defp zona_short(:praca, _own), do: gettext("Praça")
-  defp zona_short(:casa, true), do: gettext("Casa")
-  defp zona_short(:casa, false), do: gettext("Casa de quem enviou")
-
-  # A zona nomeada no Detalhes: a palavra da aba e a leitura de quem ve. O
-  # conjunto legivel inclui a casa de OUTRA pessoa (o que te deixarem ver),
-  # entao o texto diz de quem e a casa em vez de fingir que e a sua.
-  defp zona_long(:praca, _own), do: gettext("Na praça: todos os moradores veem.")
-  defp zona_long(:casa, true), do: gettext("Na sua casa: só você, e quem você deixar.")
-  defp zona_long(:casa, false), do: gettext("Na casa de quem enviou: só a pessoa, e quem ela deixar.")
-
-  # A acao oferecida e sempre a oposta da zona atual.
-  defp zona_confirm_title(:casa, name), do: gettext("Publicar \"%{name}\" na praça?", name: name)
-  defp zona_confirm_title(:praca, name), do: gettext("Tirar \"%{name}\" da praça?", name: name)
-
-  defp zona_confirm_body(:casa), do: gettext("Todos os moradores vão poder ver. Você pode tirar da praça quando quiser.")
-
-  defp zona_confirm_body(:praca), do: gettext("Volta a ser só seu. Só você, e quem você deixar, vê de novo.")
-
-  defp zona_confirm_primary(:casa), do: gettext("Publicar")
-  defp zona_confirm_primary(:praca), do: gettext("Tirar da praça")
-
-  defp zona_flash_ok(:casa), do: gettext("Publicado na praça.")
-  defp zona_flash_ok(:praca), do: gettext("Tirado da praça.")
-
-  defp zona_flash_error(:casa), do: gettext("Não foi possível publicar na praça.")
-  defp zona_flash_error(:praca), do: gettext("Não foi possível tirar da praça.")
-
-  defp own?(scope, file), do: scope.ava.id == file.dono_id
-
-  # Tipo legível: "image/jpeg" vira "Imagem JPEG" (o kind do design system
-  # traduzido, o subtipo em maiúsculas). "application/pdf" vira só "PDF",
-  # sem repetir o subtipo quando ele já é o nome curto.
-  defp human_type(%{mime: mime}) do
-    kind = file_kind(mime)
-    subtype = mime |> String.split("/") |> List.last() |> String.upcase()
-
-    if kind == subtype, do: kind, else: "#{kind} #{subtype}"
-  end
-
-  # O estado vazio diz a verdade sobre a aba: em Tudo fala da comunidade; na
-  # casa, das suas fotos; na praca, das publicadas.
+  # O estado vazio diz a verdade sobre o que está sendo lido: o board desenha
+  # o conjunto inteiro; ?zona= segue filtrando na URL, então as palavras da
+  # casa e da praça continuam para quem chega por elas.
   defp photo_empty_copy(:tudo),
-    do: {gettext("Nenhuma foto ainda"), gettext("As imagens que a comunidade enviar aparecem aqui.")}
+    do:
+      {gettext("Ainda não há fotos"), gettext("Quando alguém enviar uma foto, ela aparece aqui para toda a comunidade.")}
 
   defp photo_empty_copy(:casa),
     do:
@@ -465,6 +333,44 @@ defmodule TainaWeb.GalleryLive do
 
   defp photo_empty_copy(:praca),
     do: {gettext("A praça está vazia"), gettext("As fotos publicadas para a comunidade aparecem aqui.")}
+
+  # "38 fotos, 4 vídeos" (board): o retrato do conjunto, vírgula como
+  # separador (spec 1.6). A linha só existe quando a página carregou o
+  # conjunto inteiro (sem cursor): com páginas pela frente, contar é chutar,
+  # e a linha cala em vez de mostrar um número que não é o de tudo.
+  defp grade_count(%{next_cursor: nil, counts: %{fotos: fotos, videos: videos}}) when fotos + videos > 0 do
+    # Parte zerada da linha do total não existe ("2 fotos" sem "0 vídeos").
+    foto_part = if fotos == 0, do: nil, else: ngettext("1 foto", "%{count} fotos", fotos)
+    video_part = if videos == 0, do: nil, else: ngettext("1 vídeo", "%{count} vídeos", videos)
+
+    [foto_part, video_part]
+    |> Enum.reject(&is_nil/1)
+    |> Enum.join(", ")
+  end
+
+  defp grade_count(_pagina_incompleta_ou_vazia), do: nil
+
+  # O resumo corre com as páginas (grade): o stream do LiveView não pode ser
+  # consumido fora de um `for`, então o total mora num assign próprio.
+  defp count_summary(photos) do
+    %{fotos: Enum.count(photos, &(not video?(&1))), videos: Enum.count(photos, &video?/1)}
+  end
+
+  defp merge_counts(nil, photos), do: count_summary(photos)
+
+  defp merge_counts(%{fotos: fotos, videos: videos}, photos) do
+    page = count_summary(photos)
+    %{fotos: fotos + page.fotos, videos: videos + page.videos}
+  end
+
+  # "3 de 24" (board): a posição na trilha que a tela já carrega. Sem trilha
+  # (link direto que falhou), a linha cala em vez de inventar "1 de 1".
+  defp viewer_counter(ids, id) do
+    case Enum.find_index(ids, &(&1 == id)) do
+      nil -> nil
+      index -> gettext("%{index} de %{total}", index: index + 1, total: length(ids))
+    end
+  end
 
   @impl true
   def render(assigns) do
@@ -479,6 +385,15 @@ defmodule TainaWeb.GalleryLive do
       title={@page_title}
       back={~p"/"}
     >
+      <:actions>
+        <.button kind="primary" size="md" class="hide-mobile" navigate={~p"/documentos/enviar"}>
+          {gettext("Enviar")}
+        </.button>
+      </:actions>
+      <:fab>
+        <.fab label={gettext("Enviar")} navigate={~p"/documentos/enviar"} />
+      </:fab>
+
       <.gallery_content g={@gallery} />
     </Layouts.service>
 
@@ -504,6 +419,7 @@ defmodule TainaWeb.GalleryLive do
       :live_action,
       :zona,
       :next_cursor,
+      :counts,
       :photo_ids,
       :loaded,
       :grid_error,
@@ -511,46 +427,37 @@ defmodule TainaWeb.GalleryLive do
       :timeline_empty,
       :timeline_error,
       :current,
-      :show_confirm,
-      :show_details,
-      :show_zona,
+      :viewer_error,
+      :viewer_rkey,
       :streams
     ])
   end
 
+  @doc """
+  Corpo da Galeria: componente puro, recebe os assigns que a tela usa (ver
+  `gallery_content_attrs/1`) e devolve HEEx. É aqui que cada estado dos
+  boards escolhe a sua branch: grade, linha do tempo, visualizador e o
+  visualizador de erro, nenhum estado de fora (spec 1.3).
+  """
   attr :g, :map,
     required: true,
     doc: "assigns de que a tela precisa (ver gallery_content_attrs/1); quanto o socket passa"
 
-  defp gallery_content(assigns) do
+  def gallery_content(assigns) do
     assigns = assign(assigns, assigns.g)
 
+    assigns =
+      assigns
+      |> assign(:grade_count, grade_count(assigns))
+      |> assign(:viewer_counter, viewer_counter(assigns.photo_ids, assigns.viewer_rkey))
+
     ~H"""
-    <div class="row between wrap gap-3">
-      <.segmented>
-        <:option patch={gallery_path(:grid, @zona)} current={@live_action == :grid}>
-          {gettext("Grade")}
-        </:option>
-        <:option patch={gallery_path(:timeline, @zona)} current={@live_action == :timeline}>
-          {gettext("Linha do tempo")}
-        </:option>
-      </.segmented>
-
-      <.segmented>
-        <:option patch={gallery_path(view_action(@live_action), :tudo)} current={@zona == :tudo}>
-          {gettext("Tudo")}
-        </:option>
-        <:option patch={gallery_path(view_action(@live_action), :praca)} current={@zona == :praca}>
-          {gettext("Praça")}
-        </:option>
-        <:option patch={gallery_path(view_action(@live_action), :casa)} current={@zona == :casa}>
-          {gettext("Casa")}
-        </:option>
-      </.segmented>
-    </div>
-
     <div :if={@live_action in [:grid, :viewer]} class="mt-4">
-      <div id="photo-grid" class="photo-grid" phx-update="stream">
+      <.skeleton :if={not @loaded} kind="photo_grid" count={12} />
+
+      <p :if={@grade_count} class="type-caption text-muted mb-2">{@grade_count}</p>
+
+      <div :if={@loaded} id="photo-grid" class="photo-grid" phx-update="stream">
         <.link
           :for={{dom_id, photo} <- @streams.photos}
           id={dom_id}
@@ -558,7 +465,6 @@ defmodule TainaWeb.GalleryLive do
           class="photo-grid__item"
           aria-label={photo.nome}
         >
-          <span class="photo-grid__tag">{zona_short(photo.zona, own?(@current_scope, photo))}</span>
           <div :if={video?(photo)} class="photo-grid__video">
             <.icon name="play" size={28} />
           </div>
@@ -571,8 +477,8 @@ defmodule TainaWeb.GalleryLive do
         </.link>
       </div>
 
-      <div :if={@next_cursor} id="grid-load-more" phx-viewport-bottom="load-more" class="center py-4">
-        <p class="type-caption text-muted">{gettext("Carregando mais...")}</p>
+      <div :if={@loaded && @next_cursor} id="grid-load-more" phx-viewport-bottom="load-more" class="mt-4">
+        <.skeleton kind="photo_grid" count={6} />
       </div>
 
       <% {empty_title, empty_hint} = photo_empty_copy(@zona) %>
@@ -581,10 +487,10 @@ defmodule TainaWeb.GalleryLive do
         :if={@loaded && @photo_ids == [] and not @grid_error}
         icon="image"
         title={empty_title}
-        hint={empty_hint}
+        body={empty_hint}
       >
-        <.button variant="primary" size="md" navigate={~p"/documentos/enviar"}>
-          {gettext("Enviar fotos")}
+        <.button kind="primary" size="md" navigate={~p"/documentos/enviar"}>
+          {gettext("Enviar uma foto")}
         </.button>
       </.empty_state>
 
@@ -592,9 +498,9 @@ defmodule TainaWeb.GalleryLive do
         :if={@grid_error}
         icon="alert"
         title={gettext("Não foi possível carregar")}
-        hint={gettext("As fotos não responderam agora.")}
+        body={gettext("As fotos não responderam agora.")}
       >
-        <.button variant="secondary" phx-click="retry">{gettext("Tentar de novo")}</.button>
+        <.button kind="secondary" phx-click="retry">{gettext("Tentar de novo")}</.button>
       </.empty_state>
     </div>
 
@@ -602,16 +508,15 @@ defmodule TainaWeb.GalleryLive do
       <div id="timeline-groups" phx-update="stream" class="col gap-5">
         <section :for={{dom_id, group} <- @streams.timeline_groups} id={dom_id}>
           <h2 class="type-h3 mb-2">
-            {group_title(group.date)}, {ngettext("%{count} foto", "%{count} fotos", length(group.photos))}
+            {group_title(group.date)}
           </h2>
-          <div class="photo-grid">
+          <div class="photo-grid photo-grid--timeline">
             <.link
               :for={photo <- group.photos}
               patch={~p"/galeria/#{photo.rkey}"}
               class="photo-grid__item"
               aria-label={photo.nome}
             >
-              <span class="photo-grid__tag">{zona_short(photo.zona, own?(@current_scope, photo))}</span>
               <div :if={video?(photo)} class="photo-grid__video">
                 <.icon name="play" size={28} />
               </div>
@@ -626,8 +531,8 @@ defmodule TainaWeb.GalleryLive do
         </section>
       </div>
 
-      <div :if={@timeline_cursor} id="timeline-load-more" phx-viewport-bottom="load-more" class="center py-4">
-        <p class="type-caption text-muted">{gettext("Carregando mais...")}</p>
+      <div :if={@timeline_cursor} id="timeline-load-more" phx-viewport-bottom="load-more">
+        <.skeleton kind="photo_grid" count={6} />
       </div>
 
       <% {empty_title, empty_hint} = photo_empty_copy(@zona) %>
@@ -636,10 +541,10 @@ defmodule TainaWeb.GalleryLive do
         :if={@live_action == :timeline and @timeline_empty and not @timeline_error}
         icon="image"
         title={empty_title}
-        hint={empty_hint}
+        body={empty_hint}
       >
-        <.button variant="primary" size="md" navigate={~p"/documentos/enviar"}>
-          {gettext("Enviar fotos")}
+        <.button kind="primary" size="md" navigate={~p"/documentos/enviar"}>
+          {gettext("Enviar uma foto")}
         </.button>
       </.empty_state>
 
@@ -647,9 +552,9 @@ defmodule TainaWeb.GalleryLive do
         :if={@live_action == :timeline and @timeline_error}
         icon="alert"
         title={gettext("Não foi possível carregar")}
-        hint={gettext("As fotos não responderam agora.")}
+        body={gettext("As fotos não responderam agora.")}
       >
-        <.button variant="secondary" phx-click="retry">{gettext("Tentar de novo")}</.button>
+        <.button kind="secondary" phx-click="retry">{gettext("Tentar de novo")}</.button>
       </.empty_state>
     </div>
 
@@ -657,77 +562,39 @@ defmodule TainaWeb.GalleryLive do
       :if={@current}
       file={@current}
       photo_ids={@photo_ids}
-      own={own?(@current_scope, @current)}
       zona={@current.zona}
       link={url(~p"/files/#{@current.rkey}")}
       src={~p"/files/#{@current.rkey}"}
       src_md={~p"/files/#{@current.rkey}/thumbnail/md"}
-      rail={viewer_rail(@photo_ids, @current.rkey)}
     />
 
-    <.confirm_dialog
-      :if={@current}
-      id="confirm-delete-photo"
-      show={@show_confirm}
-      title={gettext("Excluir \"%{name}\"?", name: @current.nome)}
-      message={gettext("Vai para a lixeira. Dá para restaurar em até 30 dias.")}
-      on_confirm="confirm-delete"
-      on_cancel={JS.push("close-confirm")}
-    />
+    <div
+      :if={@viewer_error && @live_action == :viewer}
+      id="viewer"
+      class="viewer"
+      role="dialog"
+      aria-modal="true"
+      aria-label={gettext("Visualizador de fotos")}
+      phx-hook="ViewerNav"
+    >
+      <header class="row between p-4">
+        <.icon_button name="close" label={gettext("Fechar")} id="viewer-close" phx-click="close" />
+      </header>
 
-    <.modal :if={@current} id="photo-details" show={@show_details} on_cancel={JS.push("toggle-details")}>
-      <h2 class="type-h3 mb-4">{gettext("Detalhes")}</h2>
-      <div class="col gap-3">
-        <div>
-          <p class="type-caption text-faint">{gettext("Quem vê")}</p>
-          <p class="type-body">{zona_long(@current.zona, own?(@current_scope, @current))}</p>
-        </div>
-        <div>
-          <p class="type-caption text-faint">{gettext("Nome original")}</p>
-          <p class="type-body">{@current.nome}</p>
-        </div>
-        <% file_url = url(~p"/files/#{@current.rkey}") %>
-        <div>
-          <p class="type-caption text-faint">{gettext("Link")}</p>
-          <p class="viewer__link type-mono-sm">{file_url}</p>
-        </div>
-        <div>
-          <p class="type-caption text-faint">{gettext("Tipo")}</p>
-          <p class="type-mono-sm">{human_type(@current)}</p>
-        </div>
-        <div>
-          <p class="type-caption text-faint">{gettext("Tamanho")}</p>
-          <p class="type-body">{format_bytes(@current.tamanho)}</p>
-        </div>
-        <div>
-          <p class="type-caption text-faint">{gettext("Assinatura do arquivo")}</p>
-          <p class="type-mono-sm truncate">{@current.hash}</p>
-          <p class="type-caption text-faint">{gettext("É como o Tainá confere que o arquivo está intacto.")}</p>
-        </div>
-        <div>
-          <p class="type-caption text-faint">{gettext("Enviado em")}</p>
-          <p class="type-body">{Calendar.strftime(@current.inserted_at, "%d/%m/%Y %H:%M")}</p>
-        </div>
+      <div class="viewer__stage">
+        <.error_card
+          title={gettext("Não conseguimos falar com a nuvem agora.")}
+          retry_event="retry"
+          contact_event="contact"
+        />
       </div>
-      <.button variant="secondary" class="w-full mt-6" phx-click="toggle-details">
-        {gettext("Fechar")}
-      </.button>
-    </.modal>
 
-    <.modal id="confirm-zona" show={@show_zona} on_cancel={JS.push("close-zona")}>
-      <div :if={@current}>
-        <h2 class="type-h3 mb-2">{zona_confirm_title(@current.zona, @current.nome)}</h2>
-        <p class="type-body text-secondary mb-6">{zona_confirm_body(@current.zona)}</p>
-        <div class="row gap-3">
-          <.button variant="secondary" size="md" class="flex-1" phx-click="close-zona">
-            {gettext("Cancelar")}
-          </.button>
-          <.button variant="primary" size="md" class="flex-1" phx-click="confirm-zona">
-            {zona_confirm_primary(@current.zona)}
-          </.button>
-        </div>
+      <div class="viewer__caption row between gap-3">
+        <span class="truncate">{gettext("Não conseguimos abrir esta foto")}</span>
+        <span :if={@viewer_counter} class="text-faint">{@viewer_counter}</span>
       </div>
-    </.modal>
+    </div>
+
     """
   end
 end

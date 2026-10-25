@@ -17,12 +17,10 @@ defmodule TainaWeb.UI.MediaTest do
     <.viewer
       file={@file}
       photo_ids={@photo_ids}
-      own={@own}
       zona={@zona}
       link="/files/abc"
       src="/files/abc"
       src_md="/files/abc/thumbnail/md"
-      rail={@rail}
     />
     """
   end
@@ -69,9 +67,10 @@ defmodule TainaWeb.UI.MediaTest do
       Enum.into(opts, %{
         file: @viewer_file,
         photo_ids: ["bcd", "abc"],
-        own: true,
         zona: :casa,
-        rail: []
+        link: "/files/abc",
+        src: "/files/abc",
+        src_md: "/files/abc/thumbnail/md"
       })
 
     render_component(&viewer_component/1, assigns)
@@ -108,15 +107,23 @@ defmodule TainaWeb.UI.MediaTest do
     assert viewer_html() =~ ~s(id="viewer")
   end
 
-  test "viewer: FECHAR e copiar link no cabeçalho" do
+  test "viewer: FECHAR no cabeçalho, sem barra de ações" do
     html = viewer_html()
 
     assert html =~ ~s(aria-label="Fechar")
     assert html =~ ~s(phx-click="close")
     assert html =~ ~s(id="viewer-close")
-    assert html =~ ~s(aria-label="Copiar link")
-    assert html =~ ~s(data-copy="/files/abc")
-    assert html =~ ~s(id="viewer-copy-link")
+
+    # o board não tem ações no visualizador: elas moram em /documentos/:id
+    refute html =~ "viewer__actions"
+    refute html =~ ~s(id="viewer-copy-link")
+  end
+
+  test "viewer: legenda do board traz nome, data e zona" do
+    html = viewer_html(zona: :praca)
+
+    assert html =~ "trilha-da-praia.jpg, 04/10/2026, na praça"
+    assert html =~ "2 de 2"
   end
 
   test "viewer: full swap só dentro do techo do Pi; sem troca de imagem fora" do
@@ -151,58 +158,6 @@ defmodule TainaWeb.UI.MediaTest do
 
     assert par =~ "viewer__nav--prev"
     assert par =~ "viewer__nav--next"
-  end
-
-  test "viewer: trilha de fotos vizinhas embaixo do board" do
-    rail = viewer_rail(["bcd", "abc", "dfg"], "abc")
-    html = viewer_html(photo_ids: ["bcd", "abc", "dfg"], rail: rail)
-
-    assert html =~ "viewer__rail"
-    assert html =~ "aria-current"
-    assert html =~ "/files/bcd/thumbnail/sm"
-  end
-
-  test "viewer: ações de próprio dono (publicar na praça) e alheias" do
-    html = viewer_html(own: true, zona: :casa)
-
-    assert html =~ "Publicar na praça"
-    assert html =~ ~s(phx-click="ask-zona")
-    # sem dono: a alavanca da zona não desenha
-
-    html = viewer_html(own: false)
-
-    refute html =~ "ask-zona"
-
-    html = viewer_html(own: true, zona: :praca)
-
-    assert html =~ "Tirar da praça"
-  end
-
-  test "viewer: ações do rodapé (Compartilhar, Baixar, Detalhes, Excluir)" do
-    html = viewer_html()
-
-    assert html =~ ~s(id="viewer-share")
-    assert html =~ "Compartilhar"
-    assert html =~ ~s(download)
-    assert html =~ "Baixar"
-    assert html =~ "Detalhes"
-    assert html =~ "Excluir"
-    assert html =~ "viewer__action--danger"
-  end
-
-  test "viewer_rail: janela em volta da atual, posições 1-based" do
-    rail = viewer_rail(["a", "b", "c", "d", "e"], "c")
-
-    assert [
-             %{id: "a", position: 1},
-             %{id: "b", position: 2},
-             %{id: "c", position: 3},
-             %{id: "d", position: 4},
-             %{id: "e", position: 5}
-           ] = rail
-
-    assert Enum.all?(rail, &String.starts_with?(&1.thumb, "/files/"))
-    assert Enum.all?(rail, &String.starts_with?(&1.patch, "/galeria/"))
   end
 
   # ---------- Dropzone ----------

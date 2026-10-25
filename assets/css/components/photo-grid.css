@@ -1,31 +1,12 @@
-/* Grade de fotos (Penpot: photo-grid). Espelho de Jaci - Galeria; mantenha
-   em sincronia. */
+/* Grade de fotos (Penpot: Jaci / Grade e Jaci / Linha do tempo). Espelho de
+   "Servico / Jaci Grade" e "Servico / Jaci Linha": no celular as células são
+   quadradas, 3 por linha; do tablet para cima a grade vira 4 células
+   paisagem e a linha do tempo 5 células menores. */
 
-/* 2 colunas no mobile (thumb grande sob o dedo), 6 no tablet, 8/10 quando a
-   tela sobe (1024/1440) */
 .photo-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: var(--gap-photo);
-}
-
-@media (min-width: 768px) {
-  .photo-grid {
-    grid-template-columns: repeat(6, 1fr);
-    gap: var(--space-1);
-  }
-}
-
-@media (min-width: 1024px) {
-  .photo-grid {
-    grid-template-columns: repeat(8, 1fr);
-  }
-}
-
-@media (min-width: 1440px) {
-  .photo-grid {
-    grid-template-columns: repeat(10, 1fr);
-  }
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-3);
 }
 
 .photo-grid__item {
@@ -36,8 +17,22 @@
 }
 
 @media (min-width: 768px) {
+  .photo-grid {
+    grid-template-columns: repeat(4, 1fr);
+    gap: var(--space-4);
+  }
+
   .photo-grid__item {
+    aspect-ratio: 278 / 200;
     border-radius: var(--radius-sm);
+  }
+
+  .photo-grid--timeline {
+    grid-template-columns: repeat(5, 1fr);
+  }
+
+  .photo-grid--timeline .photo-grid__item {
+    aspect-ratio: 160 / 120;
   }
 }
 
@@ -57,16 +52,4 @@
   height: 100%;
   background: var(--surface-high);
   color: var(--text-secondary);
-}
-
-.photo-grid__tag {
-  position: absolute;
-  right: var(--space-2);
-  bottom: var(--space-2);
-  padding: 2px var(--space-2);
-  border-radius: var(--radius-sm);
-  background: var(--surface-scrim);
-  color: var(--text-primary);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
 }
