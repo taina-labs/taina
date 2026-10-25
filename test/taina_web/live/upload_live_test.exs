@@ -4,14 +4,17 @@ defmodule TainaWeb.UploadLiveTest do
   import Phoenix.LiveViewTest
   import Taina.Fixtures
 
+  alias Taina.Repo
   alias Taina.Scope
   alias Taina.Ybira
 
   setup do
     tekoa = tekoa_fixture()
     ava = active_ava_fixture(tekoa)
-    %{scope: Scope.new(ava, tekoa), ava: ava}
+    %{scope: Scope.new(ava, tekoa), ava: ava, tekoa: tekoa}
   end
+
+  # --- boards "Enviar / enviando" e o fluxo concluído ---
 
   test "envia arquivo e mostra no grupo concluído", %{conn: conn, scope: scope, ava: ava} do
     {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/enviar")
@@ -29,6 +32,15 @@ defmodule TainaWeb.UploadLiveTest do
 
     assert {:ok, %{items: [file]}} = Ybira.list_files(scope)
     assert file.nome == "ata.txt"
+  end
+
+  test "o voltar aponta a pasta de destino, pelo nome", %{conn: conn, scope: scope, ava: ava} do
+    {:ok, folder} = Ybira.create_folder(scope, %{name: "Atas"})
+
+    {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/enviar?#{[pasta: folder.rkey]}")
+
+    assert has_element?(lv, ".page-header__title", "Documentos")
+    assert has_element?(lv, ".page-header__back-label", "Atas")
   end
 
   test "envia para a pasta indicada em ?pasta=", %{conn: conn, scope: scope, ava: ava} do
@@ -105,5 +117,33 @@ defmodule TainaWeb.UploadLiveTest do
     # a zona mudou de verdade, não só na tela
     assert {:ok, %{items: [file]}} = Ybira.list_files(scope)
     assert file.zona == :praca
+  end
+
+  # --- board "Enviar / erro cota" ---
+
+  test "erro de cota: a caixa explica com a cópia do board e aponta o espaço", %{
+    conn: conn,
+    scope: scope,
+    ava: ava,
+    tekoa: tekoa
+  } do
+    # cota de 10 bytes já consumida: qualquer envio estoura
+    tekoa |> Ecto.Changeset.change(storage_quota_bytes: 10, storage_used_bytes: 10) |> Repo.update!()
+
+    {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/enviar")
+
+    input =
+      file_input(lv, "#dropzone", :files, [
+        %{name: "grande.txt", content: "esse conteúdo passa da cota", type: "text/plain"}
+      ])
+
+    render_upload(input, "grande.txt")
+
+    html = render(lv)
+    assert has_element?(lv, ".dropzone--error-cota")
+    assert html =~ "O espaço da comunidade acabou. Peça a quem cuida da nuvem para liberar."
+    assert has_element?(lv, ~s(a[href="/armazenamento"]), "Ver espaço")
+    # nada persistiu: a cota vale no domínio
+    assert {:ok, %{items: []}} = Ybira.list_files(scope)
   end
 end

@@ -74,7 +74,7 @@ defmodule TainaWeb.RouterTest do
   end
 
   # A zona é a rota: /documentos é a praça, /documentos/casa é a casa, e o
-  # `?zona=` é ignorado nelas (a aba acesa no segmented reflete a rota).
+  # `?zona=` é ignorado nelas (a aba acesa na barra de abas reflete a rota).
   test "a zona vem da rota, não de query", ctx do
     conn = log_in(ctx.conn, ctx.zelador)
 
@@ -84,16 +84,14 @@ defmodule TainaWeb.RouterTest do
 
     # o ?zona=casa na rota da praca e ignorado: a aba e a praça
     assert praca_html =~ "A praça está vazia"
-    assert has_element?(praca_view, ~s(.segmented__option[aria-current="page"]), "Praça")
-
-    assert has_element?(praca_view, ~s(.segmented__option[aria-current="page"]), "Praça")
-    assert has_element?(casa_view, ~s(.segmented__option[aria-current="page"]), "Casa")
+    assert has_element?(praca_view, ~s(.service-tab-bar__item[aria-current="page"]), "Praça")
+    assert has_element?(casa_view, ~s(.service-tab-bar__item[aria-current="page"]), "Casa")
   end
 
   test "/convite (público, sem sessão) monta com o formulário", ctx do
     {:ok, _view, html} = live(ctx.conn, ~p"/convite")
 
-    assert html =~ "Tenho um convite"
+    assert html =~ "Colar um convite"
     assert html =~ "Link ou código do convite"
   end
 end

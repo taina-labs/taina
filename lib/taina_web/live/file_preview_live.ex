@@ -1,8 +1,16 @@
 defmodule TainaWeb.FilePreviewLive do
   @moduledoc """
-  Detalhe/preview de um arquivo (tela "Ybira - Preview"): mídia inline
-  (imagem/vídeo/áudio/PDF via `/files/:id`, que já fala `Range`), metadados e
-  ações: baixar, copiar link, detalhes, excluir (lixeira).
+  Detalhe/preview de um arquivo (boards "Servico / Ybira Arquivo / padrao"
+  cc1037dc-e8ab-80cc-8008-d5e21a59286b e "casa alheia" ...d5e21d8161ac): tela
+  empurrada, sem abas. Título é o nome do arquivo; o voltar devolve para a
+  pasta onde ele mora, com o nome dela na palavra. No corpo: a mídia inline
+  (imagem/vídeo/áudio/PDF via `/files/:id`, que já fala `Range`), o badge de
+  zona, quem enviou, quando e onde, e as ações Baixar / Remover (o destructive
+  dialog do board "Overlay / Dialog remover"). As ações do menu (publicar /
+  voltar para a casa, remover) são função pura do (arquivo, escopo).
+
+  Casa de outra pessoa: o nome do arquivo não vaza para quem não pode lê lo
+  (o board intitula a tela "Documento", genérico); a saída é pedir acesso.
   """
 
   use TainaWeb, :live_view
@@ -10,25 +18,27 @@ defmodule TainaWeb.FilePreviewLive do
   alias Taina.Maraca
   alias Taina.Ybira
   alias TainaWeb.Layouts
+  alias TainaWeb.Time
 
   @impl true
   def mount(%{"id" => rkey}, _session, socket) do
-    case Ybira.get_file(socket.assigns.current_scope, rkey) do
+    scope = socket.assigns.current_scope
+
+    case Ybira.get_file(scope, rkey) do
       {:ok, file} ->
-        # O voltar devolve para a pasta onde o arquivo mora, não para o início;
-        # arquivo da raiz (ou pasta que não se pode ver) volta para o início.
-        back = back_path(Ybira.file_folder_rkey(socket.assigns.current_scope, file))
+        {back, back_label, folder_name} = back_target(scope, file)
 
         {:ok,
          socket
          |> assign(:page_title, file.nome)
          |> assign(:file, file)
          |> assign(:back, back)
-         |> assign(:photo_metadata, load_photo_metadata(socket.assigns.current_scope, file))
+         |> assign(:back_label, back_label)
+         |> assign(:folder_name, folder_name)
+         |> assign(:names, load_names(scope))
+         |> assign(:photo_metadata, load_photo_metadata(scope, file))
          |> assign(:text_preview, load_text_preview(file))
-         |> assign(:show_details, false)
-         |> assign(:show_confirm, false)
-         |> assign(:show_zona, false)}
+         |> assign(:show_confirm, false)}
 
       {:error, :forbidden} ->
         {:ok, mount_forbidden(socket, rkey)}
@@ -36,35 +46,66 @@ defmodule TainaWeb.FilePreviewLive do
       {:error, :not_found} ->
         {:ok,
          socket
-         |> Phoenix.LiveView.put_flash(:error, gettext("Arquivo não encontrado."))
-         |> Phoenix.LiveView.redirect(to: ~p"/documentos/casa")}
+         |> put_flash(:error, gettext("Arquivo não encontrado."))
+         |> redirect(to: ~p"/documentos/casa")}
 
       {:error, _reason} ->
         {:ok,
          socket
-         |> Phoenix.LiveView.put_flash(:error, gettext("Não foi possível abrir o arquivo agora."))
-         |> Phoenix.LiveView.redirect(to: ~p"/documentos/casa")}
+         |> put_flash(:error, gettext("Não foi possível abrir o arquivo agora."))
+         |> redirect(to: ~p"/documentos/casa")}
     end
   end
 
-  # Casa de outra pessoa: a pessoa nao le o conteudo, mas vemos a quem pedir.
+  # O voltar devolve para a pasta onde o arquivo mora, com o nome dela na
+  # palavra (regra 1.5); arquivo da raiz (ou pasta que não se pode ver) volta
+  # para o início da casa.
+  defp back_target(scope, file) do
+    case Ybira.file_folder_rkey(scope, file) do
+      {:ok, folder_rkey} ->
+        case Ybira.get_folder(scope, folder_rkey) do
+          {:ok, folder} ->
+            {~p"/documentos/pasta/#{folder.rkey}", back_label(folder.nome), folder.nome}
+
+          _error ->
+            {~p"/documentos/casa", nil, nil}
+        end
+
+      _no_folder ->
+        {~p"/documentos/casa", nil, nil}
+    end
+  end
+
+  # Casa de outra pessoa: a pessoa não lê o conteúdo, mas vê o caminho (o
+  # pedido de acesso). O nome do dono fica para o contexto validar; a tela
+  # não nomeia nem o arquivo.
   defp mount_forbidden(socket, rkey) do
     case Ybira.fetch_access_target(socket.assigns.current_scope, rkey) do
       {:ok, target} ->
         socket
-        |> assign(:page_title, gettext("Pedir acesso"))
+        |> assign(:page_title, gettext("Documento"))
         |> assign(:access_target, target)
-        |> assign(:show_request_modal, false)
 
       {:error, :already_readable} ->
-        Phoenix.LiveView.push_navigate(socket, to: ~p"/documentos/#{rkey}")
+        push_navigate(socket, to: ~p"/documentos/#{rkey}")
 
       {:error, :not_found} ->
         socket
-        |> Phoenix.LiveView.put_flash(:error, gettext("Arquivo não encontrado."))
-        |> Phoenix.LiveView.redirect(to: ~p"/documentos/casa")
+        |> put_flash(:error, gettext("Arquivo não encontrado."))
+        |> redirect(to: ~p"/documentos/casa")
     end
   end
+
+  defp load_names(scope) do
+    case Maraca.list_members(scope) do
+      {:ok, members} -> Map.new(members, &{&1.id, person_name(&1)})
+      _error -> %{}
+    end
+  end
+
+  defp person_name(%{display_name: name}) when is_binary(name) and name != "", do: name
+  defp person_name(%{username: name}) when is_binary(name), do: name
+  defp person_name(_ava), do: ""
 
   # As rendições (dimensões, EXIF, thumbnails) moram nos metadados do produto;
   # o arquivo do kernel só carrega o conteúdo.
@@ -73,32 +114,30 @@ defmodule TainaWeb.FilePreviewLive do
     metadata
   end
 
-  # Resultado do `Ybira.file_folder_rkey/2` vira caminho do voltar: pasta
-  # visível, volta para ela; qualquer outro caso, volta para o início.
-  defp back_path({:ok, folder_rkey}), do: ~p"/documentos/pasta/#{folder_rkey}"
-  defp back_path(_other), do: ~p"/documentos/casa"
+  # Pré-visualização de texto: lê até 256 KB do disco (o suficiente para a tela;
+  # arquivos maiores mostram o começo). Falha de leitura: sem preview, cai no
+  # quadradinho do arquivo.
+  @text_preview_limit 256 * 1024
+
+  defp load_text_preview(%{mime: "text/" <> _} = file) do
+    with {:ok, path} <- Ybira.blob_path(file),
+         {:ok, device} <- File.open(path, [:read, :binary, :raw]) do
+      try do
+        case :file.read(device, @text_preview_limit) do
+          {:ok, content} when is_binary(content) -> content
+          _ -> nil
+        end
+      after
+        :file.close(device)
+      end
+    else
+      _ -> nil
+    end
+  end
+
+  defp load_text_preview(_file), do: nil
 
   @impl true
-  def handle_event("copied", _params, socket) do
-    {:noreply, Phoenix.LiveView.put_flash(socket, :info, gettext("Link copiado!"))}
-  end
-
-  # A guarda de clipboard fica no hook (JS); quando ele não consegue copiar
-  # (origem insegura, sem permissão), a saída é o campo do link no cartão:
-  # selecionar e copiar por conta própria.
-  def handle_event("copy-failed", _params, socket) do
-    {:noreply,
-     Phoenix.LiveView.put_flash(
-       socket,
-       :error,
-       gettext("Não deu para copiar agora. Toque no campo do link, selecione e copie.")
-     )}
-  end
-
-  def handle_event("toggle-details", _params, socket) do
-    {:noreply, assign(socket, :show_details, !socket.assigns.show_details)}
-  end
-
   def handle_event("ask-delete", _params, socket) do
     {:noreply, assign(socket, :show_confirm, true)}
   end
@@ -112,29 +151,23 @@ defmodule TainaWeb.FilePreviewLive do
       {:ok, _file} ->
         {:noreply,
          socket
-         |> Phoenix.LiveView.put_flash(:info, gettext("Arquivo movido para a lixeira."))
-         |> Phoenix.LiveView.push_navigate(to: ~p"/documentos/casa")}
+         |> put_flash(:info, gettext("Arquivo movido para a lixeira."))
+         |> push_navigate(to: ~p"/documentos/casa")}
 
       {:error, _reason} ->
-        {:noreply, Phoenix.LiveView.put_flash(socket, :error, gettext("Não foi possível excluir o arquivo."))}
+        {:noreply, put_flash(socket, :error, gettext("Não foi possível remover o arquivo."))}
     end
   end
 
-  def handle_event("ask-zona", _params, socket) do
-    {:noreply, assign(socket, :show_zona, true)}
-  end
-
-  def handle_event("close-zona", _params, socket) do
-    {:noreply, assign(socket, :show_zona, false)}
-  end
-
-  def handle_event("confirm-zona", _params, socket) do
+  # Publicar / Voltar direto do menu (o consentimento é reversível, RFC_003;
+  # os boards não têm diálogo de confirmação para a zona, só para remover).
+  def handle_event("zona", %{"action" => action}, socket) do
     %{file: file, current_scope: scope} = socket.assigns
 
     result =
-      case file.zona do
-        :casa -> Ybira.publicar_file(scope, file.rkey)
-        :praca -> Ybira.tirar_file_da_praca(scope, file.rkey)
+      case action do
+        "publicar" -> Ybira.publicar_file(scope, file.rkey)
+        "voltar" -> Ybira.tirar_file_da_praca(scope, file.rkey)
       end
 
     case result do
@@ -142,23 +175,11 @@ defmodule TainaWeb.FilePreviewLive do
         {:noreply,
          socket
          |> assign(:file, updated)
-         |> assign(:show_zona, false)
-         |> Phoenix.LiveView.put_flash(:info, zona_flash_ok(file.zona))}
+         |> put_flash(:info, zona_flash(action, :ok))}
 
       {:error, _reason} ->
-        {:noreply,
-         socket
-         |> assign(:show_zona, false)
-         |> Phoenix.LiveView.put_flash(:error, zona_flash_error(file.zona))}
+        {:noreply, put_flash(socket, :error, zona_flash(action, :error))}
     end
-  end
-
-  def handle_event("ask-access", _params, socket) do
-    {:noreply, assign(socket, :show_request_modal, true)}
-  end
-
-  def handle_event("close-access", _params, socket) do
-    {:noreply, assign(socket, :show_request_modal, false)}
   end
 
   # O pedido vai sem motivo: a tela não tem campo para a pessoa escrever, e
@@ -172,53 +193,59 @@ defmodule TainaWeb.FilePreviewLive do
       {:ok, _request} ->
         {:noreply,
          socket
-         |> Phoenix.LiveView.put_flash(:info, gettext("Pedido enviado. Você vê o andamento em Pedidos."))
-         |> Phoenix.LiveView.push_navigate(to: ~p"/conta/pedidos")}
+         |> put_flash(:info, gettext("Pedido enviado. Você vê o andamento em Pedidos."))
+         |> push_navigate(to: ~p"/conta/pedidos")}
 
       {:error, :already_has_access} ->
-        {:noreply, Phoenix.LiveView.push_navigate(socket, to: ~p"/documentos/#{target.rkey}")}
+        {:noreply, push_navigate(socket, to: ~p"/documentos/#{target.rkey}")}
 
       {:error, :cannot_request_own} ->
-        {:noreply, Phoenix.LiveView.push_navigate(socket, to: ~p"/documentos/#{target.rkey}")}
+        {:noreply, push_navigate(socket, to: ~p"/documentos/#{target.rkey}")}
 
       {:error, _reason} ->
-        {:noreply,
-         socket
-         |> assign(:show_request_modal, false)
-         |> Phoenix.LiveView.put_flash(:error, gettext("Não foi possível enviar o pedido agora."))}
+        {:noreply, put_flash(socket, :error, gettext("Não foi possível enviar o pedido agora."))}
     end
   end
 
+  # O shell inscreve o morador nos eventos do Ava; esta tela não reage a eles,
+  # mas precisa ignorar o que não trata.
+  @impl true
+  def handle_info(_message, socket), do: {:noreply, socket}
+
+  # --- core puro: dados -> dados ---
+
   defp own?(scope, file), do: scope.ava.id == file.dono_id
 
-  # O nome do dono para gente: o display quando existe, o username como
-  # reserva (a mesma regra das telas de pedidos). O fetch_access_target ja
-  # o trouxe; pedir acesso e pedir a uma pessoa, nao a um arquivo solto.
-  defp owner_name(%{owner: %{display_name: display_name, username: username}}) do
-    display_name || username
+  # "Enviado por": você quando é seu; o nome de quem enviou quando não é.
+  defp sender_name(%{dono_id: dono_id}, _names, dono_id), do: gettext("você")
+
+  defp sender_name(file, names, _ava_id) do
+    Map.get(names, file.dono_id) || ""
   end
 
-  defp readability_line(:praca), do: gettext("Todos os moradores veem.")
-  defp readability_line(:casa), do: gettext("Só você, e quem você deixar.")
+  # "Hoje, 14:32" (board): o dia no fuso da comunidade, com a hora do relógio
+  # local; mais velho que ontem, a data por inteiro (o banco grava em UTC,
+  # exibir hora em UTC seria mentir).
+  defp sent_line(%{inserted_at: at}) do
+    days = Date.diff(Time.local_today(), Time.local_date(at))
+    clock = Time.local_clock(at)
 
-  defp zona_action_label(:casa), do: gettext("Publicar")
-  defp zona_action_label(:praca), do: gettext("Tirar da praça")
+    cond do
+      days <= 0 -> gettext("Hoje") <> ", " <> clock
+      days == 1 -> gettext("Ontem") <> ", " <> clock
+      true -> Calendar.strftime(Time.local_date(at), "%d/%m/%Y") <> ", " <> clock
+    end
+  end
 
-  defp zona_confirm_title(:casa, name), do: gettext("Publicar \"%{name}\" na praça?", name: name)
-  defp zona_confirm_title(:praca, name), do: gettext("Tirar \"%{name}\" da praça?", name: name)
+  # "Praça, pasta Atas" (board): a zona e a pasta onde mora; na raiz, a zona.
+  defp where_line(zona, nil), do: zone_word(zona)
+  defp where_line(zona, folder_name), do: zone_word(zona) <> ", " <> gettext("pasta %{name}", name: folder_name)
 
-  defp zona_confirm_body(:casa), do: gettext("Todos os moradores vão poder ver. Você pode tirar da praça quando quiser.")
+  defp zone_word(:praca), do: gettext("Praça")
+  defp zone_word(:casa), do: gettext("Casa")
 
-  defp zona_confirm_body(:praca), do: gettext("Volta a ser só seu. Só você, e quem você deixar, vê de novo.")
-
-  defp zona_confirm_primary(:casa), do: gettext("Publicar")
-  defp zona_confirm_primary(:praca), do: gettext("Tirar da praça")
-
-  defp zona_flash_ok(:casa), do: gettext("Publicado na praça.")
-  defp zona_flash_ok(:praca), do: gettext("Tirado da praça.")
-
-  defp zona_flash_error(:casa), do: gettext("Não foi possível publicar na praça.")
-  defp zona_flash_error(:praca), do: gettext("Não foi possível tirar da praça.")
+  defp badge_kind(:praca), do: "praca"
+  defp badge_kind(:casa), do: "casa"
 
   defp media_kind("image/" <> _rest), do: :image
   defp media_kind("video/" <> _rest), do: :video
@@ -243,96 +270,43 @@ defmodule TainaWeb.FilePreviewLive do
     end
   end
 
-  # `inserted_at` é UTC e não sabemos o fuso de quem lê; exibir a hora em UTC
-  # seria mentir, então a tela mostra só a data.
-  defp sent_date(%{inserted_at: at}), do: Calendar.strftime(at, "%d/%m/%Y")
+  defp base_meta(file), do: "#{file_kind(file.mime)}, #{format_bytes(file.tamanho)}"
 
-  # Pré-visualização de texto: lê até 256 KB do disco (o suficiente para a tela;
-  # arquivos maiores mostram o começo). Falha de leitura: sem preview, cai no
-  # ícone genérico.
-  @text_preview_limit 256 * 1024
-
-  defp load_text_preview(%{mime: "text/" <> _} = file) do
-    with {:ok, path} <- Ybira.blob_path(file),
-         {:ok, device} <- File.open(path, [:read, :binary, :raw]) do
-      try do
-        case :file.read(device, @text_preview_limit) do
-          {:ok, content} when is_binary(content) -> content
-          _ -> nil
-        end
-      after
-        :file.close(device)
-      end
-    else
-      _ -> nil
-    end
-  end
-
-  defp load_text_preview(_file), do: nil
-
-  defp file_meta(file, metadata) do
-    dimensions =
-      case metadata do
-        %{"width" => w, "height" => h} -> ", #{w}x#{h}"
-        _ -> ""
-      end
-
-    "#{file_kind(file.mime)}, #{format_bytes(file.tamanho)}#{dimensions}, " <>
-      gettext("enviado %{when}", when: relative_time(file.inserted_at))
-  end
+  defp zona_flash("publicar", :ok), do: gettext("Publicado na praça.")
+  defp zona_flash("publicar", :error), do: gettext("Não foi possível publicar na praça.")
+  defp zona_flash("voltar", :ok), do: gettext("Tirado da praça.")
+  defp zona_flash("voltar", :error), do: gettext("Não foi possível tirar da praça.")
 
   @impl true
   def render(%{access_target: _target} = assigns) do
     ~H"""
-    <Layouts.page flash={@flash} title={gettext("Pedir acesso")} back={~p"/documentos/casa"}>
-
+    <Layouts.page flash={@flash} title={@page_title} back={~p"/"}>
       <div class="col gap-4 mx-auto w-full measure">
         <.empty_state
           icon="shield"
           title={gettext("Esta casa é particular")}
-          hint={
-            gettext(
-              "O arquivo é de %{name}. Para abrir, peça acesso e a pessoa decide. O Tainá ainda não criptografa: é promessa de software, não cadeado.",
-              name: owner_name(@access_target)
-            )
-          }
+          body={gettext("Este arquivo está na casa de outra pessoa. Só quem guardou pode liberar.")}
         >
-          <.button variant="primary" phx-click="ask-access">{gettext("Pedir acesso")}</.button>
+          <:action>
+            <.button kind="primary" phx-click="request-access">{gettext("Pedir acesso")}</.button>
+          </:action>
         </.empty_state>
       </div>
-
-      <.modal id="request-access" show={@show_request_modal} on_cancel={JS.push("close-access")}>
-        <h2 class="type-h3 mb-2">
-          {gettext("Pedir acesso a %{name}?", name: owner_name(@access_target))}
-        </h2>
-        <p class="type-body text-secondary mb-6">
-          {gettext("%{name} recebe seu pedido sobre \"%{file}\" e decide se deixa você ver.",
-            name: owner_name(@access_target),
-            file: @access_target.nome
-          )}
-        </p>
-        <div class="row gap-3">
-          <.button variant="secondary" size="md" class="flex-1" phx-click="close-access">
-            {gettext("Cancelar")}
-          </.button>
-          <.button variant="primary" size="md" class="flex-1" phx-click="request-access">
-            {gettext("Pedir acesso")}
-          </.button>
-        </div>
-      </.modal>
     </Layouts.page>
     """
   end
 
+  @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.page flash={@flash} title={@page_title} back={@back}>
+    <Layouts.page flash={@flash} title={@page_title} back={@back} back_label={@back_label}>
       <:action>
         <.icon_button name="download" label={gettext("Baixar")} href={~p"/files/#{@file.rkey}"} download />
+        <.preview_menu file={@file} scope={@current_scope} />
       </:action>
 
-      <div class="col gap-4 mx-auto w-full measure-wide">
-        <div class="surface-raised radius-lg center media-frame">
+      <div class="col gap-4 mx-auto w-full measure">
+        <div class="surface-raised radius-lg center media-frame col gap-2">
           <%= case media_kind(@file.mime) do %>
             <% :image -> %>
               <img
@@ -354,131 +328,100 @@ defmodule TainaWeb.FilePreviewLive do
               </iframe>
             <% :text -> %>
               <pre :if={@text_preview} class="text-preview">{@text_preview}</pre>
-              <.empty_state
-                :if={!@text_preview}
-                icon="file"
-                title={gettext("Pré-visualização indisponível")}
-                hint={gettext("O arquivo está intacto; baixe para ler por inteiro.")}
-              >
-                <.button variant="secondary" href={~p"/files/#{@file.rkey}"} download>
-                  {gettext("Baixar")}
-                </.button>
-              </.empty_state>
+              <.service_square :if={!@text_preview} mark="doc" size="lg" />
             <% :other -> %>
-              <.empty_state
-                icon="file"
-                title={gettext("Pré-visualização indisponível")}
-                hint={gettext("O arquivo está intacto; baixe para abrir no seu dispositivo.")}
-              >
-                <.button variant="secondary" href={~p"/files/#{@file.rkey}"} download>
-                  {gettext("Baixar")}
-                </.button>
-              </.empty_state>
+              <.service_square mark="doc" size="lg" />
           <% end %>
+
+          <h2 class="type-h3">{@file.nome}</h2>
+          <div class="row items-center gap-2">
+            <span class="type-caption text-muted">{base_meta(@file)}</span>
+            <.badge kind={badge_kind(@file.zona)}>{zone_word_lower(@file.zona)}</.badge>
+          </div>
         </div>
 
-        <.card>
-          <h2 class="type-h3 mb-1">{@file.nome}</h2>
-          <p class="type-body-sm text-muted">{file_meta(@file, @photo_metadata)}</p>
-          <p class="type-body-sm text-muted">{readability_line(@file.zona)}</p>
-          <% file_url = url(~p"/documentos/#{@file.rkey}") %>
-          <div class="field mt-4">
-            <label for="file-page-link">{gettext("Link do arquivo")}</label>
-            <div class="field__control">
-              <input id="file-page-link" type="text" value={file_url} readonly />
-            </div>
-          </div>
-          <hr class="divider my-4" />
-          <div class="row between wrap">
-            <button
-              type="button"
-              class="viewer__action"
-              id="copy-file-link"
-              phx-hook="Clipboard"
-              data-copy={file_url}
-            >
-              <.icon name="link" size={20} />
-              <span>{gettext("Link")}</span>
-            </button>
-            <button
-              :if={own?(@current_scope, @file)}
-              type="button"
-              class="viewer__action"
-              phx-click="ask-zona"
-            >
-              <.icon name="share" size={20} />
-              <span>{zona_action_label(@file.zona)}</span>
-            </button>
-            <button
-              :if={own?(@current_scope, @file)}
-              type="button"
-              class="viewer__action viewer__action--danger"
-              phx-click="ask-delete"
-            >
-              <.icon name="trash" size={20} />
-              <span>{gettext("Excluir")}</span>
-            </button>
-            <button type="button" class="viewer__action" phx-click="toggle-details">
-              <.icon name="info" size={20} />
-              <span>{gettext("Detalhes")}</span>
-            </button>
-          </div>
-        </.card>
-      </div>
-
-      <.modal id="file-details" show={@show_details} on_cancel={JS.push("toggle-details")}>
-        <h2 class="type-h3 mb-4">{gettext("Detalhes")}</h2>
         <div class="col gap-3">
           <div>
-            <p class="type-caption text-muted">{gettext("Nome original")}</p>
-            <p class="type-body">{@file.nome}</p>
+            <p class="type-caption text-muted">{gettext("Enviado por")}</p>
+            <p class="type-body">{sender_name(@file, @names, @current_scope.ava.id)}</p>
           </div>
           <div>
-            <p class="type-caption text-muted">{gettext("Tipo")}</p>
-            <p class="type-body">{file_kind(@file.mime)}</p>
-            <p class="type-mono-sm text-muted">{@file.mime}</p>
+            <p class="type-caption text-muted">{gettext("Quando")}</p>
+            <p class="type-body">{sent_line(@file)}</p>
           </div>
           <div>
-            <p class="type-caption text-muted">{gettext("Tamanho")}</p>
-            <p class="type-body">{format_bytes(@file.tamanho)}</p>
-          </div>
-          <div>
-            <p class="type-caption text-muted">{gettext("Assinatura do arquivo")}</p>
-            <p class="type-mono-sm truncate">{@file.hash}</p>
-            <p class="type-caption text-muted">{gettext("É como o Tainá confere que o arquivo está intacto.")}</p>
-          </div>
-          <div>
-            <p class="type-caption text-muted">{gettext("Enviado em")}</p>
-            <p class="type-body">{sent_date(@file)}</p>
+            <p class="type-caption text-muted">{gettext("Onde")}</p>
+            <p class="type-body">{where_line(@file.zona, @folder_name)}</p>
           </div>
         </div>
-        <.button variant="secondary" class="w-full mt-6" phx-click="toggle-details">
-          {gettext("Fechar")}
-        </.button>
-      </.modal>
 
-      <.confirm_dialog
-        id="confirm-delete"
+        <div class="row gap-3">
+          <.button kind="secondary" size="md" class="flex-1" href={~p"/files/#{@file.rkey}"} download>
+            {gettext("Baixar")}
+          </.button>
+          <.button
+            :if={own?(@current_scope, @file)}
+            kind="danger"
+            size="md"
+            class="flex-1"
+            phx-click="ask-delete"
+          >
+            {gettext("Remover")}
+          </.button>
+        </div>
+      </div>
+
+      <.dialog
+        id="confirm-remove"
         show={@show_confirm}
-        title={gettext("Excluir \"%{name}\"?", name: @file.nome)}
-        message={gettext("Vai para a lixeira. Dá para restaurar em até 30 dias.")}
+        kind="destructive"
+        title={gettext("Remover %{name}?", name: @file.nome)}
+        body={gettext("O arquivo vai para a lixeira e some de vez depois de 30 dias.")}
         on_confirm="confirm-delete"
         on_cancel={JS.push("close-confirm")}
       />
-
-      <.modal id="confirm-zona" show={@show_zona} on_cancel={JS.push("close-zona")}>
-        <h2 class="type-h3 mb-2">{zona_confirm_title(@file.zona, @file.nome)}</h2>
-        <p class="type-body text-secondary mb-6">{zona_confirm_body(@file.zona)}</p>
-        <div class="row gap-3">
-          <.button variant="secondary" size="md" class="flex-1" phx-click="close-zona">
-            {gettext("Cancelar")}
-          </.button>
-          <.button variant="primary" size="md" class="flex-1" phx-click="confirm-zona">
-            {zona_confirm_primary(@file.zona)}
-          </.button>
-        </div>
-      </.modal>
     </Layouts.page>
+    """
+  end
+
+  # A palavra da zona no badge (board W: "praça"), minúscula.
+  defp zone_word_lower(:praca), do: gettext("praça")
+  defp zone_word_lower(:casa), do: gettext("casa")
+
+  # Ações do arquivo aberto (spec 6.2: cabeçalho com Baixar + actions_menu).
+  # Sem "Abrir" (o arquivo já está aberto); publicar e remover são do dono, e
+  # a ação de zona é sempre a oposta (consentimento, RFC_003).
+  attr :file, :any, required: true
+  attr :scope, :any, required: true
+
+  defp preview_menu(assigns) do
+    assigns = assign(assigns, :own?, own?(assigns.scope, assigns.file))
+
+    ~H"""
+    <.actions_menu
+      id="file-actions"
+      label={gettext("Mais opções para %{name}", name: @file.nome)}
+      title={gettext("Ações do arquivo")}
+    >
+      <:item icon="download" navigate={~p"/files/#{@file.rkey}"}>{gettext("Baixar")}</:item>
+      <:item
+        :if={@own? and @file.zona == :casa}
+        icon="share"
+        click={JS.push("zona", value: %{action: "publicar"})}
+      >
+        {gettext("Publicar na praça")}
+      </:item>
+      <:item
+        :if={@own? and @file.zona == :praca}
+        icon="casa"
+        click={JS.push("zona", value: %{action: "voltar"})}
+      >
+        {gettext("Voltar para a casa")}
+      </:item>
+      <:item :if={@own?} icon="trash" kind="danger" click={JS.push("ask-delete")}>
+        {gettext("Remover")}
+      </:item>
+    </.actions_menu>
     """
   end
 end

@@ -13,106 +13,42 @@ defmodule TainaWeb.FilesLiveTest do
     %{scope: Scope.new(ava, tekoa), ava: ava}
   end
 
-  test "lista pastas e arquivos da raiz", %{conn: conn, scope: scope, ava: ava} do
-    {:ok, folder} = Ybira.create_folder(scope, %{name: "Documentos"})
-    {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("oi", "estatuto.txt"))
+  # --- boards "Praca / padrao" (M, Web movel, Web 768) e "Casa / padrao" ---
 
-    {:ok, _lv, html} = conn |> log_in(ava) |> live(~p"/documentos/casa")
+  describe "zonas como abas" do
+    test "a rota da praça lista só a praça, com a contagem e o remetente", %{
+      conn: conn,
+      scope: scope,
+      ava: ava
+    } do
+      outra = active_ava_fixture(scope.tekoa, %{username: "joao", display_name: "João"})
+      {:ok, casa} = Ybira.upload(scope, tmp_upload_fixture("oi", "minha-casa.txt"))
+      {:ok, meu} = Ybira.upload(scope, tmp_upload_fixture("oi", "meu-na-praca.txt"))
+      {:ok, _} = Ybira.publicar_file(scope, meu.rkey)
+      {:ok, dela} = Ybira.upload(Scope.new(outra, scope.tekoa), tmp_upload_fixture("oi", "dela.txt"))
+      {:ok, _} = Ybira.publicar_file(Scope.new(outra, scope.tekoa), dela.rkey)
 
-    assert html =~ folder.nome
-    assert html =~ file.nome
-    assert html =~ "2 itens"
-  end
+      {:ok, lv, html} = conn |> log_in(ava) |> live(~p"/documentos")
 
-  test "navega para dentro de uma pasta", %{conn: conn, scope: scope, ava: ava} do
-    {:ok, folder} = Ybira.create_folder(scope, %{name: "Fotos da comunidade"})
+      assert html =~ "2 itens na praça"
+      assert html =~ meu.nome
+      assert html =~ "enviado por você"
+      assert html =~ dela.nome
+      assert html =~ "enviado por João"
+      refute html =~ casa.nome
 
-    {:ok, _lv, html} = conn |> log_in(ava) |> live(~p"/documentos/pasta/#{folder.rkey}")
-
-    assert html =~ "Fotos da comunidade"
-    # a pasta nova nasce na casa, e a listagem abre na casa por padrao
-    assert html =~ "Sua casa está vazia"
-  end
-
-  describe "breadcrumb" do
-    test "pasta aninhada mostra a cadeia de ancestrais completa", %{conn: conn, scope: scope, ava: ava} do
-      {:ok, raiz} = Ybira.create_folder(scope, %{name: "Raiz"})
-      {:ok, meio} = Ybira.create_folder(scope, %{name: "Meio", parent_rkey: raiz.rkey})
-      {:ok, folha} = Ybira.create_folder(scope, %{name: "Folha", parent_rkey: meio.rkey})
-
-      {:ok, lv, html} = conn |> log_in(ava) |> live(~p"/documentos/pasta/#{folha.rkey}")
-
-      assert html =~ "Início"
-      assert html =~ "Raiz"
-      assert html =~ "Meio"
-      assert html =~ "Folha"
-
-      # cada ancestral é um link para a pasta dele, com a query da aba
-      assert has_element?(lv, ~s(a[href="/documentos/pasta/#{raiz.rkey}?sort=date-desc"]), "Raiz")
-      assert has_element?(lv, ~s(a[href="/documentos/pasta/#{meio.rkey}?sort=date-desc"]), "Meio")
-      # com meio na cadeia, o marcador de truncamento entra (visível no mobile)
-      assert has_element?(lv, ~s(.breadcrumb .hide-desktop), "...")
-      # a pasta atual fica sem link
-      refute has_element?(lv, ~s(a[href="/documentos/pasta/#{folha.rkey}"]))
+      # a zona é a aba: Praça acesa, sem seletor de zona na tela
+      assert has_element?(lv, ~s(.service-tab-bar__item[aria-current="page"]), "Praça")
+      refute has_element?(lv, ".segmented")
+      # sem badge de zona por linha (a aba inteira já é a zona)
+      refute html =~ "Todos veem"
     end
 
-    test "pasta de primeiro nível não tem meio a truncar", %{conn: conn, scope: scope, ava: ava} do
-      {:ok, raiz} = Ybira.create_folder(scope, %{name: "Raiz"})
-      {:ok, folha} = Ybira.create_folder(scope, %{name: "Folha", parent_rkey: raiz.rkey})
-
-      {:ok, lv, html} = conn |> log_in(ava) |> live(~p"/documentos/pasta/#{folha.rkey}")
-
-      assert html =~ "Raiz"
-      assert html =~ "Folha"
-      assert has_element?(lv, ~s(a[href="/documentos/pasta/#{raiz.rkey}?sort=date-desc"]), "Raiz")
-      # sem meio, o marcador de truncamento não entra
-      refute has_element?(lv, ~s(.breadcrumb .hide-desktop), "...")
-    end
-  end
-
-  test "cria pasta pelo modal", %{conn: conn, ava: ava} do
-    {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/casa")
-
-    lv |> element("button[phx-value-modal=new-folder]") |> render_click()
-    lv |> form("#new-folder-modal form") |> render_submit(%{"folder" => %{"name" => "Vídeos"}})
-
-    assert render(lv) =~ "Vídeos"
-  end
-
-  test "renomeia pasta", %{conn: conn, scope: scope, ava: ava} do
-    {:ok, folder} = Ybira.create_folder(scope, %{name: "Rascunho"})
-    {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/casa")
-
-    lv
-    |> element(~s(button[phx-click*="open-rename"][phx-click*="#{folder.rkey}"]))
-    |> render_click()
-
-    lv |> form("#rename-modal form") |> render_submit(%{"folder" => %{"name" => "Definitivo"}})
-
-    html = render(lv)
-    assert html =~ "Definitivo"
-    refute html =~ "Rascunho"
-  end
-
-  test "exclui arquivo para a lixeira", %{conn: conn, scope: scope, ava: ava} do
-    {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("oi", "velho.txt"))
-    {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/casa")
-
-    lv
-    |> element(~s(button[phx-click*="ask-delete"][phx-click*="#{file.rkey}"]))
-    |> render_click()
-
-    lv |> element(~s(button[phx-click="confirm-delete"])) |> render_click()
-
-    refute render(lv) =~ "velho.txt"
-    assert {:ok, %{items: [trashed]}} = Ybira.list_trash(scope)
-    assert trashed.id == file.id
-  end
-
-  # --- zonas casa/praca (RFC_003 D1/D2) ---
-
-  describe "zonas casa/praca" do
-    test "rota da casa mostra item da casa, esconde a praca", %{conn: conn, scope: scope, ava: ava} do
+    test "a rota da casa lista só a casa, com a linha de ensino do board", %{
+      conn: conn,
+      scope: scope,
+      ava: ava
+    } do
       {:ok, casa} = Ybira.upload(scope, tmp_upload_fixture("oi", "minha-casa.txt"))
       {:ok, praca} = Ybira.upload(scope, tmp_upload_fixture("oi", "na-praca.txt"))
       {:ok, _} = Ybira.publicar_file(scope, praca.rkey)
@@ -121,143 +57,71 @@ defmodule TainaWeb.FilesLiveTest do
 
       assert html =~ casa.nome
       refute html =~ praca.nome
-      # aba Casa acesa na rota /documentos/casa; a praca tem a rota propria
-      assert has_element?(lv, ~s(.segmented__option[aria-current="page"]), "Casa")
-      assert has_element?(lv, ~s|.segmented__option:not([aria-current])|, "Praça")
-      # linha de leitura curta da casa + acao oposta no menu do dono
-      assert html =~ "Só você"
-      assert html =~ "Publicar na praça"
+      assert html =~ "Só você vê o que está na casa."
+      assert html =~ "só você"
+      assert has_element?(lv, ~s(.service-tab-bar__item[aria-current="page"]), "Casa")
     end
+  end
 
-    test "rota da praca mostra itens da praca, esconde os da casa", %{conn: conn, scope: scope, ava: ava} do
-      {:ok, casa} = Ybira.upload(scope, tmp_upload_fixture("oi", "minha-casa.txt"))
-      {:ok, praca} = Ybira.upload(scope, tmp_upload_fixture("oi", "na-praca.txt"))
-      {:ok, _} = Ybira.publicar_file(scope, praca.rkey)
+  # --- board "Praca / pasta" (M e Web) ---
 
-      {:ok, _lv, html} = conn |> log_in(ava) |> live(~p"/documentos")
-
-      assert html =~ praca.nome
-      refute html =~ casa.nome
-      # linha de leitura curta da praca + acao oposta no menu do dono
-      assert html =~ "Todos veem"
-      assert html =~ "Tirar da praça"
-    end
-
-    test "publicar um arquivo da casa: ask -> confirm move para a praca", %{conn: conn, scope: scope, ava: ava} do
-      {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("oi", "estatuto.txt"))
-      {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/casa")
-
-      lv
-      |> element(~s(button[phx-click*="ask-zona"][phx-click*="#{file.rkey}"]))
-      |> render_click()
-
-      lv |> element(~s(button[phx-click="confirm-zona"])) |> render_click()
-
-      assert render(lv) =~ "Publicado na praça."
-      assert {:ok, updated} = Ybira.get_file(scope, file.rkey)
-      assert updated.zona == :praca
-
-      # aparece na praca depois do refresh
-      {:ok, _lv2, praca_html} = conn |> log_in(ava) |> live(~p"/documentos")
-      assert praca_html =~ file.nome
-    end
-
-    test "tirar da praca: ask -> confirm volta para casa", %{conn: conn, scope: scope, ava: ava} do
-      {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("oi", "comunicado.txt"))
-      {:ok, _} = Ybira.publicar_file(scope, file.rkey)
-      {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos")
-
-      lv
-      |> element(~s(button[phx-click*="ask-zona"][phx-click*="#{file.rkey}"]))
-      |> render_click()
-
-      lv |> element(~s(button[phx-click="confirm-zona"])) |> render_click()
-
-      assert render(lv) =~ "Tirado da praça."
-      assert {:ok, updated} = Ybira.get_file(scope, file.rkey)
-      assert updated.zona == :casa
-
-      refute render(lv) =~ file.nome
-    end
-
-    test "publicar uma pasta: confirm com aviso de nao-cascata", %{conn: conn, scope: scope, ava: ava} do
-      {:ok, folder} = Ybira.create_folder(scope, %{name: "Atas"})
-      {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/casa")
-
-      lv
-      |> element(~s(button[phx-click*="ask-zona"][phx-click*="#{folder.rkey}"]))
-      |> render_click()
-
-      html = render(lv)
-      assert html =~ "Só a pasta entra na praça. Os arquivos dentro dela continuam como estão."
-
-      lv |> element(~s(button[phx-click="confirm-zona"])) |> render_click()
-
-      assert {:ok, moved} = Ybira.get_folder(scope, folder.rkey)
-      assert moved.zona == :praca
-    end
-
-    test "item da praca de outra pessoa nao mostra controle de zona", %{conn: conn, scope: scope, ava: ava} do
-      outra = active_ava_fixture(scope.tekoa, %{username: "outra"})
-      outro_scope = Scope.new(outra, scope.tekoa)
-      {:ok, file} = Ybira.upload(outro_scope, tmp_upload_fixture("oi", "da-outra.txt"))
-      {:ok, _} = Ybira.publicar_file(outro_scope, file.rkey)
-
-      {:ok, lv, html} = conn |> log_in(ava) |> live(~p"/documentos")
-
-      assert html =~ file.nome
-      refute has_element?(lv, ~s(button[phx-click*="ask-zona"][phx-click*="#{file.rkey}"]))
-    end
-
-    test "praca vazia mostra o estado vazio da praca", %{conn: conn, scope: scope, ava: ava} do
-      {:ok, _casa} = Ybira.upload(scope, tmp_upload_fixture("oi", "so-casa.txt"))
-
-      {:ok, _lv, html} = conn |> log_in(ava) |> live(~p"/documentos")
-
-      assert html =~ "A praça está vazia"
-    end
-
-    test "entrar numa pasta pela aba praca mantem a zona: nada cai na casa vazia", %{
+  describe "pasta" do
+    test "mostra o título da pasta com a contagem de arquivos e o dia", %{
       conn: conn,
       scope: scope,
       ava: ava
     } do
-      {:ok, folder} = Ybira.create_folder(scope, %{name: "Comunitarias"})
+      {:ok, folder} = Ybira.create_folder(scope, %{name: "Atas"})
+      {:ok, _} = Ybira.upload(scope, tmp_upload_fixture("oi", "marco.txt"), folder_rkey: folder.rkey)
+      {:ok, _} = Ybira.upload(scope, tmp_upload_fixture("oi", "abril.txt"), folder_rkey: folder.rkey)
+
+      {:ok, lv, html} = conn |> log_in(ava) |> live(~p"/documentos/pasta/#{folder.rkey}")
+
+      assert html =~ "2 arquivos"
+      assert html =~ "atualizados hoje"
+      assert has_element?(lv, ~s(.service-tab-bar__item[aria-current="page"]), "Casa")
+      # pasta de primeiro nível: o voltar aponta a raiz da zona, palavra padrão
+      assert has_element?(lv, ".service-header__back-label", "Início")
+    end
+
+    test "pasta aninhada: o voltar aponta o parente pelo nome e a migalha nasce na zona", %{
+      conn: conn,
+      scope: scope,
+      ava: ava
+    } do
+      {:ok, raiz} = Ybira.create_folder(scope, %{name: "Raiz"})
+      {:ok, folha} = Ybira.create_folder(scope, %{name: "Folha", parent_rkey: raiz.rkey})
+
+      {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/pasta/#{folha.rkey}")
+
+      assert has_element?(lv, ".service-header__back-label", "Raiz")
+
+      # desktop: migalha enraizada na zona ("Casa > Raiz > Folha")
+      assert has_element?(lv, ~s(.breadcrumb a[href="/documentos/casa"]), "Casa")
+      assert has_element?(lv, ~s(.breadcrumb a[href="/documentos/pasta/#{raiz.rkey}"]), "Raiz")
+      assert has_element?(lv, ".breadcrumb .breadcrumb__current", "Folha")
+
+      assert {:error, {:live_redirect, %{to: to}}} =
+               lv |> element(".service-header__back") |> render_click()
+
+      assert to == "/documentos/pasta/#{raiz.rkey}"
+    end
+
+    test "pasta da praça abre na aba praça, com o conteúdo dela", %{
+      conn: conn,
+      scope: scope,
+      ava: ava
+    } do
+      {:ok, folder} = Ybira.create_folder(scope, %{name: "Comunitárias"})
       {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("oi", "cartaz.txt"), folder_rkey: folder.rkey)
       {:ok, _} = Ybira.publicar_folder(scope, folder.rkey)
       {:ok, _} = Ybira.publicar_file(scope, file.rkey)
 
-      {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos")
+      {:ok, lv, html} = conn |> log_in(ava) |> live(~p"/documentos/pasta/#{folder.rkey}")
 
-      # o link da pasta carrega a query (sort + zona); sem ela, a navegacao
-      # caia na aba casa e a pasta aparecia vazia
-      assert {:error, {:live_redirect, %{to: to}}} =
-               lv
-               |> element(~s(a[href*="/documentos/pasta/#{folder.rkey}"]))
-               |> render_click()
-
-      assert to == "/documentos/pasta/#{folder.rkey}?sort=date-desc&zona=praca"
-
-      # e o destino abre na praca, com o conteudo dela
-      {:ok, _lv, html} = conn |> log_in(ava) |> live(to)
-
-      assert html =~ "cartaz.txt"
-      assert html =~ "Todos veem"
-      refute html =~ "A pasta nasce na praça"
-    end
-
-    test "a pasta nasce na casa mesmo na aba praca, e a copia diz isso", %{conn: conn, scope: scope, ava: ava} do
-      {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos")
-
-      lv |> element("button[phx-value-modal=new-folder]") |> render_click()
-
-      assert render(lv) =~ "A pasta nasce na sua casa. Para todos verem, publique na praça depois."
-
-      lv |> form("#new-folder-modal form") |> render_submit(%{"folder" => %{"name" => "Atas"}})
-
-      # o comportamento nao mudou: nasce na casa; so a copia mudou
-      {:ok, [folder]} = Ybira.list_folders(scope)
-      assert folder.zona == :casa
+      assert html =~ file.nome
+      assert has_element?(lv, ~s(.service-tab-bar__item[aria-current="page"]), "Praça")
+      refute html =~ "A pasta nasce na sua casa"
     end
 
     test "pasta na casa de outro morador volta ao início com o aviso", %{conn: conn, scope: scope, ava: ava} do
@@ -269,19 +133,198 @@ defmodule TainaWeb.FilesLiveTest do
 
       assert to == "/documentos/casa"
     end
+  end
 
-    test "erro ao publicar mostra flash e nao quebra", %{conn: conn, scope: scope, ava: ava} do
-      {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("oi", "doc.txt"))
+  # --- boards "Praca / vazio" e "Casa / vazio" ---
+
+  describe "estados vazios" do
+    test "a praça vazia não tem botão de enviar (publicar é um ato explícito)", %{
+      conn: conn,
+      scope: scope,
+      ava: ava
+    } do
+      {:ok, _casa} = Ybira.upload(scope, tmp_upload_fixture("oi", "so-casa.txt"))
+
+      {:ok, lv, html} = conn |> log_in(ava) |> live(~p"/documentos")
+
+      assert html =~ "A praça está vazia"
+      assert html =~ "Quando alguém publicar um arquivo na praça, ele aparece aqui para toda a comunidade."
+      refute has_element?(lv, "a", "Enviar um arquivo")
+    end
+
+    test "a casa vazia oferece o envio como ação primária", %{conn: conn, ava: ava} do
+      {:ok, lv, html} = conn |> log_in(ava) |> live(~p"/documentos/casa")
+
+      assert html =~ "Sua casa está vazia"
+      assert html =~ "Envie um arquivo. Ele fica só com você até você publicar na praça."
+      assert has_element?(lv, "a", "Enviar um arquivo")
+    end
+  end
+
+  # --- boards "Overlay / Sheet acoes" e "Overlay / Dialog remover" ---
+
+  describe "ações de linha" do
+    test "o menu da casa oferece Abrir, Baixar, Publicar na praça, Mover, Renomear e Remover", %{
+      conn: conn,
+      scope: scope,
+      ava: ava
+    } do
+      {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("oi", "estatuto.txt"))
+      {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/casa")
+
+      for label <- ["Abrir", "Baixar", "Publicar na praça", "Mover", "Renomear", "Remover"] do
+        assert has_element?(lv, ~s(#item-file-#{file.rkey}-panel), label)
+      end
+
+      assert has_element?(lv, ~s(#item-file-#{file.rkey}), "Ações do arquivo")
+    end
+
+    test "o menu da praça troca a ação de zona: Voltar para a casa, não Publicar", %{
+      conn: conn,
+      scope: scope,
+      ava: ava
+    } do
+      {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("oi", "comunicado.txt"))
+      {:ok, _} = Ybira.publicar_file(scope, file.rkey)
+      {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos")
+
+      assert has_element?(lv, ~s(#item-file-#{file.rkey}-panel), "Voltar para a casa")
+      refute has_element?(lv, ~s(#item-file-#{file.rkey}-panel), "Publicar na praça")
+    end
+
+    test "item alheio só oferece Abrir e Baixar: o servidor recusa o resto", %{
+      conn: conn,
+      scope: scope,
+      ava: ava
+    } do
+      outra = active_ava_fixture(scope.tekoa, %{username: "outra"})
+      {:ok, file} = Ybira.upload(Scope.new(outra, scope.tekoa), tmp_upload_fixture("oi", "da-outra.txt"))
+      {:ok, _} = Ybira.publicar_file(Scope.new(outra, scope.tekoa), file.rkey)
+
+      {:ok, lv, html} = conn |> log_in(ava) |> live(~p"/documentos")
+
+      assert html =~ file.nome
+      assert has_element?(lv, ~s(#item-file-#{file.rkey}-panel), "Abrir")
+      assert has_element?(lv, ~s(#item-file-#{file.rkey}-panel), "Baixar")
+
+      for label <- ["Publicar na praça", "Mover", "Renomear", "Remover"] do
+        refute has_element?(lv, ~s(#item-file-#{file.rkey}-panel), label)
+      end
+    end
+
+    test "publicar do menu move o arquivo para a praça", %{conn: conn, scope: scope, ava: ava} do
+      {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("oi", "estatuto.txt"))
       {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/casa")
 
       lv
-      |> element(~s(button[phx-click*="ask-zona"][phx-click*="#{file.rkey}"]))
+      |> element(~s(button[phx-click*="zona"][phx-click*="#{file.rkey}"]))
       |> render_click()
+
+      assert render(lv) =~ "Publicado na praça."
+      assert {:ok, updated} = Ybira.get_file(scope, file.rkey)
+      assert updated.zona == :praca
+
+      {:ok, _lv, praca_html} = conn |> log_in(ava) |> live(~p"/documentos")
+      assert praca_html =~ file.nome
+    end
+
+    test "tirar da praça devolve o arquivo para a casa", %{conn: conn, scope: scope, ava: ava} do
+      {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("oi", "comunicado.txt"))
+      {:ok, _} = Ybira.publicar_file(scope, file.rkey)
+      {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos")
+
+      lv
+      |> element(~s(button[phx-click*="zona"][phx-click*="#{file.rkey}"]))
+      |> render_click()
+
+      assert render(lv) =~ "Tirado da praça."
+      assert {:ok, updated} = Ybira.get_file(scope, file.rkey)
+      assert updated.zona == :casa
+    end
+
+    test "erro ao publicar mostra flash e não quebra", %{conn: conn, scope: scope, ava: ava} do
+      {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("oi", "doc.txt"))
+      {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/casa")
 
       # remove o arquivo por baixo dos panos: publicar_file devolve {:error, :not_found}
       {:ok, _} = Ybira.delete_file(scope, file.rkey)
 
-      assert render_click(element(lv, ~s(button[phx-click="confirm-zona"]))) =~ "Não foi possível publicar na praça."
+      assert render_click(element(lv, ~s(button[phx-click*="zona"][phx-click*="#{file.rkey}"]))) =~
+               "Não foi possível publicar na praça."
+    end
+
+    test "Remover abre o diálogo destrutivo e manda para a lixeira", %{
+      conn: conn,
+      scope: scope,
+      ava: ava
+    } do
+      {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("oi", "velho.txt"))
+      {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/casa")
+
+      lv
+      |> element(~s(button[phx-click*="ask-delete"][phx-click*="#{file.rkey}"]))
+      |> render_click()
+
+      # diálogo destrutivo do board: título com o nome e a cópia dos 30 dias
+      assert has_element?(lv, ~s(#confirm-remove.dialog .dialog__title), "Remover velho.txt?")
+
+      assert has_element?(
+               lv,
+               ~s(#confirm-remove .dialog__body),
+               "O arquivo vai para a lixeira e some de vez depois de 30 dias."
+             )
+
+      lv |> element(~s(#confirm-remove button[phx-click="confirm-delete"])) |> render_click()
+
+      refute render(lv) =~ "velho.txt"
+      assert {:ok, %{items: [trashed]}} = Ybira.list_trash(scope)
+      assert trashed.id == file.id
+    end
+  end
+
+  # --- fluxos de domínio preservados ---
+
+  describe "fluxos preservados" do
+    test "cria pasta pelo modal", %{conn: conn, ava: ava} do
+      {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/casa")
+
+      lv |> element("button[phx-value-modal=new-folder]") |> render_click()
+      lv |> form("#new-folder-modal form") |> render_submit(%{"folder" => %{"name" => "Vídeos"}})
+
+      assert render(lv) =~ "Vídeos"
+    end
+
+    test "renomeia arquivo pelo menu", %{conn: conn, scope: scope, ava: ava} do
+      {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("oi", "rascunho.txt"))
+      {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/casa")
+
+      lv
+      |> element(~s(button[phx-click*="open-rename"][phx-click*="#{file.rkey}"]))
+      |> render_click()
+
+      lv |> form("#rename-modal form") |> render_submit(%{"folder" => %{"name" => "definitivo.txt"}})
+
+      html = render(lv)
+      assert html =~ "definitivo.txt"
+      refute html =~ "rascunho.txt"
+    end
+
+    test "move arquivo pelo seletor de pastas", %{conn: conn, scope: scope, ava: ava} do
+      {:ok, destino} = Ybira.create_folder(scope, %{name: "Destino"})
+      {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("oi", "solto.txt"))
+      {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/casa")
+
+      lv
+      |> element(~s(button[phx-click*="open-move"][phx-click*="#{file.rkey}"]))
+      |> render_click()
+
+      lv
+      |> element(~s(button[phx-click*="move-item"][phx-click*="#{destino.rkey}"]))
+      |> render_click()
+
+      assert render(lv) =~ "Movido."
+      assert {:ok, %{files: [movido]}} = Ybira.list_folder_contents(scope, destino.rkey)
+      assert movido.id == file.id
     end
   end
 end

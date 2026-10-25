@@ -1,149 +1,152 @@
 defmodule TainaWeb.FilesLive do
   @moduledoc """
-  Navegador de arquivos do Ybira: pastas + arquivos da pasta atual, breadcrumb
-  com a cadeia completa de pastas (Início / ... / pasta atual; em telas
-  pequenas o meio encolhe em "..."), ordenação (nome/data/tamanho),
-  alternância lista/grade, e ações por item no menu de três pontinhos: abrir,
-  renomear, mover (seletor ou arrastar-e-soltar), publicar/tirar da praça e
-  excluir (com confirmação). Telas "Ybira - Arquivos" e "Desktop - Arquivos".
+  Navegador de Documentos (Ybira): pastas e arquivos da zona corrente. A zona
+  é a aba, não um filtro: `/documentos` é a praça, `/documentos/casa` é a casa
+  e, dentro de pasta, a zona vem da própria pasta. Não há seletor de zona na
+  tela e não há badge de zona por linha (a aba inteira já é a zona). Boards
+  "Servico / Ybira Praca / padrao" cc1037dc-e8ab-80cc-8008-d5e07c15fbae,
+  "pasta" ...d5e1868d4043, "vazio" ...d5e189a70758, "Servico / Ybira Casa /
+  padrao" ...d5e18bcb3a18 e "vazio" ...d5e18f3ae917 (mais os quadros "Web 768"
+  e "Web", docs/web-revamp-spec.md 6.2).
 
-  Abrir um item (o corpo da linha ou da grade) navega para a tela dele, com os
-  detalhes completos; não há painel lateral, o mesmo caminho no mobile e no
-  desktop.
+  As ações de linha moram no `actions_menu` (sheet no mobile, popover no
+  desktop): Abrir, Baixar, Publicar na praça / Voltar para a casa, Mover,
+  Renomear, Remover. Quais aparecem é função pura do (item, escopo); Remover
+  abre o diálogo destrutivo. Pastas aceitam arquivos arrastados
+  (`data-drop-folder`, hook DnD) e soltar arquivos do sistema navega ao envio.
 
-  Ordenação e visão moram na URL (`?sort=name-asc&view=grid`); a zona (praca
-  ou casa) e a própria rota nas abas raiz (`/documentos` e `/documentos/casa`,
-  o parâmetro `?zona=` é ignorado nelas) e continua na query dentro de pasta
-  (default casa). Então sobrevive a navegação, recarga e compartilhamento de
-  link. Paginação por offset (`list_folder_contents`), o que permite qualquer ordem.
+  Saíram do navegador antigo o que os boards não mostram: alternância
+  lista/grade, menu de ordenação, o seletor Praça/Casa e o mini-modal de
+  espaço (o espaço mora no cartão do hub e em /armazenamento).
   """
 
   use TainaWeb, :live_view
 
+  alias Taina.Maraca
   alias Taina.Ybira
   alias TainaWeb.Layouts
+  alias Ypy.Ybira.File
+  alias Ypy.Ybira.Folder
 
-  # O mini-modal "Espaço da comunidade" é dado da tela: ele carrega os próprios
-  # números (a casca não entrega estatística que a tela não renderiza; com
-  # `assign_new`, o resultado da render HTTP segue para o connected mount).
   @impl true
   def mount(_params, _session, socket) do
-    {:ok, assign_new(socket, :storage_stats, fn -> load_storage_stats(socket.assigns.current_scope) end)}
-  end
-
-  defp load_storage_stats(scope) do
-    case Ybira.storage_stats(scope) do
-      {:ok, stats} -> stats
-      _error -> nil
-    end
+    {:ok, assign(socket, :page_title, gettext("Documentos"))}
   end
 
   @impl true
   def handle_params(params, _uri, socket) do
-    folder_rkey = params["folder_id"]
-    sort = parse_sort(params["sort"])
-    view = if params["view"] == "grid", do: :grid, else: :list
-    zona = zona_de(params, socket.assigns.live_action)
     scope = socket.assigns.current_scope
+    folder_rkey = params["folder_id"]
 
     case load_folder(scope, folder_rkey) do
       {:ok, folder} ->
-        case Ybira.list_folder_contents(scope, folder_rkey, sort: sort) do
-          {:ok, %{folders: folders, files: files, next_cursor: next_cursor}} ->
-            zona_folders = for_zona(folders, zona)
-            zona_files = for_zona(files, zona)
+        zona = zone_of(socket.assigns.live_action, folder)
 
-            {:noreply,
-             socket
-             |> assign(:page_title, (folder && folder.nome) || gettext("Documentos"))
-             |> assign(:folder, folder)
-             |> assign(:breadcrumb, breadcrumb(scope, folder))
-             |> assign(:folder_rkey, folder_rkey)
-             |> assign(:folders, zona_folders)
-             |> assign(:next_cursor, next_cursor)
-             |> assign(:item_count, length(zona_folders) + length(zona_files))
-             |> assign(:sort, sort)
-             |> assign(:view, view)
-             |> assign(:zona, zona)
-             |> assign(:modal, nil)
-             |> assign(:rename_target, nil)
-             |> assign(:move_target, nil)
-             |> assign(:all_folders, [])
-             |> assign(:confirm, nil)
-             |> assign(:zona_confirm, nil)
-             |> stream(:files, zona_files, reset: true)}
+        case load_page(scope, folder_rkey, zona) do
+          {:ok, page} ->
+            {:noreply, assign_page(socket, folder, zona, folder_rkey, page)}
 
           {:error, _reason} ->
             {:noreply,
              socket
-             |> Phoenix.LiveView.put_flash(:error, gettext("Não foi possível carregar a pasta."))
-             |> Phoenix.LiveView.push_navigate(to: ~p"/documentos/casa")}
+             |> put_flash(:error, gettext("Não foi possível carregar a pasta."))
+             |> push_navigate(to: ~p"/documentos/casa")}
         end
 
       {:error, :not_found} ->
         {:noreply,
          socket
-         |> Phoenix.LiveView.put_flash(:error, gettext("Pasta não encontrada."))
-         |> Phoenix.LiveView.push_navigate(to: ~p"/documentos/casa")}
+         |> put_flash(:error, gettext("Pasta não encontrada."))
+         |> push_navigate(to: ~p"/documentos/casa")}
 
       # Casa de outra pessoa: a pasta em si não é para os nossos olhos, volta
       # ao início com o porquê.
       {:error, :forbidden} ->
         {:noreply,
          socket
-         |> Phoenix.LiveView.put_flash(
+         |> put_flash(
            :error,
            gettext("Esta pasta é particular. Só quem a guardou, e quem essa pessoa deixar, vê.")
          )
-         |> Phoenix.LiveView.push_navigate(to: ~p"/documentos/casa")}
+         |> push_navigate(to: ~p"/documentos/casa")}
     end
   end
+
+  # A zona é a aba: nas rotas raiz é a live_action; dentro de pasta, a da
+  # pasta (spec 6.2).
+  defp zone_of(live_action, _folder) when live_action in [:praca, :casa], do: live_action
+  defp zone_of(_folder_action, folder), do: folder.zona
 
   defp load_folder(_scope, nil), do: {:ok, nil}
   defp load_folder(scope, rkey), do: Ybira.get_folder(scope, rkey)
 
-  # --- breadcrumb (cadeia raiz -> pasta atual) ---
-
-  # A cadeia vem de `Ybira.folder_path/2` (raiz -> atual, inclusive). Se ela
-  # falhou por baixo (pasta apagada no meio da requisição, por exemplo), o
-  # breadcrumb cai para o elo único de hoje em vez de quebrar a tela.
-  defp breadcrumb(_scope, nil), do: []
-
-  defp breadcrumb(scope, folder) do
-    case Ybira.folder_path(scope, folder.rkey) do
-      {:ok, path} -> path
-      {:error, _reason} -> [%{rkey: folder.rkey, nome: folder.nome}]
+  # Uma leitura para a página: a listagem filtrada pela zona + os nomes de quem
+  # enviou ("enviado por Maria", board da praça). Falhou, a página inteira
+  # avisa; nada de seção morta.
+  defp load_page(scope, folder_rkey, zona) do
+    with {:ok, %{folders: folders, files: files, next_cursor: next_cursor}} <-
+           Ybira.list_folder_contents(scope, folder_rkey),
+         {:ok, members} <- Maraca.list_members(scope) do
+      {:ok,
+       %{
+         folders: for_zona(folders, zona),
+         files: for_zona(files, zona),
+         next_cursor: next_cursor,
+         names: name_map(members)
+       }}
     end
   end
 
-  # A cadeia inteira vira três papéis: ancestrais como links de patch, a pasta
-  # atual sem link e, quando existe meio (ancestrais além do primeiro), um
-  # "..." que só aparece em telas pequenas (375px): lá o meio some e ficam
-  # sempre o primeiro e o último elo. No desktop a cadeia inteira aparece.
-  defp breadcrumb_items([]), do: []
+  defp name_map(members), do: Map.new(members, &{&1.id, person_name(&1)})
 
-  defp breadcrumb_items([current]), do: [%{kind: :current, nome: current.nome, rkey: current.rkey}]
+  defp person_name(%{display_name: name}) when is_binary(name) and name != "", do: name
+  defp person_name(%{username: name}) when is_binary(name), do: name
+  defp person_name(_ava), do: ""
 
-  defp breadcrumb_items([first | rest]) do
-    current = List.last(rest)
-    ancestors = [first | Enum.drop(rest, -1)]
+  # --- casca imperativa: o handle_params só assign/stream ---
 
-    links =
-      for {segment, index} <- Enum.with_index(ancestors) do
-        %{kind: :link, nome: segment.nome, rkey: segment.rkey, middle?: index > 0}
+  defp assign_page(socket, folder, zona, folder_rkey, page) do
+    breadcrumb =
+      case folder do
+        nil ->
+          []
+
+        %{rkey: rkey} ->
+          # A cadeia vem de `Ybira.folder_path/2` (raiz -> atual, inclusive).
+          # Se ela falhou por baixo (pasta apagada no meio da requisição, por
+          # exemplo), cai para o elo único de hoje em vez de quebrar a tela.
+          case Ybira.folder_path(socket.assigns.current_scope, rkey) do
+            {:ok, path} -> path
+            {:error, _reason} -> [%{rkey: rkey, nome: folder.nome}]
+          end
       end
 
-    ellipsis = if length(ancestors) > 1, do: [%{kind: :ellipsis}], else: []
-
-    links ++ ellipsis ++ [%{kind: :current, nome: current.nome, rkey: current.rkey}]
+    socket
+    |> assign(:page_title, (folder && folder.nome) || gettext("Documentos"))
+    |> assign(:folder, folder)
+    |> assign(:folder_rkey, folder_rkey)
+    |> assign(:zona, zona)
+    |> assign(:breadcrumb, breadcrumb)
+    |> assign(:crumbs, crumbs(zona, breadcrumb))
+    |> assign(:folders, page.folders)
+    |> assign(:item_count, length(page.folders) + length(page.files))
+    |> assign(:file_count, length(page.files))
+    |> assign(:next_cursor, page.next_cursor)
+    |> assign(:names, page.names)
+    |> assign(:modal, nil)
+    |> assign(:rename_target, nil)
+    |> assign(:move_target, nil)
+    |> assign(:all_folders, [])
+    |> assign(:confirm, nil)
+    |> stream(:files, page.files, reset: true)
   end
 
   @impl true
   def handle_event("load-more", _params, socket) do
-    %{next_cursor: offset, folder_rkey: folder_rkey, sort: sort, zona: zona} = socket.assigns
+    %{next_cursor: offset, folder_rkey: folder_rkey, zona: zona} = socket.assigns
 
     if offset do
-      case Ybira.list_folder_contents(socket.assigns.current_scope, folder_rkey, sort: sort, offset: offset) do
+      case Ybira.list_folder_contents(socket.assigns.current_scope, folder_rkey, offset: offset) do
         {:ok, %{files: files, next_cursor: next_cursor}} ->
           zona_files = for_zona(files, zona)
 
@@ -151,10 +154,11 @@ defmodule TainaWeb.FilesLive do
            socket
            |> assign(:next_cursor, next_cursor)
            |> assign(:item_count, socket.assigns.item_count + length(zona_files))
+           |> assign(:file_count, socket.assigns.file_count + length(zona_files))
            |> stream(:files, zona_files)}
 
         {:error, _reason} ->
-          {:noreply, Phoenix.LiveView.put_flash(socket, :error, gettext("Não foi possível carregar mais itens."))}
+          {:noreply, put_flash(socket, :error, gettext("Não foi possível carregar mais itens."))}
       end
     else
       {:noreply, socket}
@@ -170,8 +174,8 @@ defmodule TainaWeb.FilesLive do
   end
 
   def handle_event("open-move", %{"kind" => kind, "id" => id, "name" => name}, socket) do
-    # O seletor so oferece pastas SUAS: mover para pasta alheia o servidor
-    # recusa, entao a UI nao pode oferecer.
+    # O seletor só oferece pastas SUAS: mover para pasta alheia o servidor
+    # recusa, então a UI não pode oferecer.
     case Ybira.list_folders(socket.assigns.current_scope) do
       {:ok, folders} ->
         {:noreply,
@@ -181,7 +185,7 @@ defmodule TainaWeb.FilesLive do
          |> assign(:all_folders, Enum.filter(folders, &own?(socket.assigns.current_scope, &1)))}
 
       {:error, _reason} ->
-        {:noreply, Phoenix.LiveView.put_flash(socket, :error, gettext("Não foi possível abrir as pastas."))}
+        {:noreply, put_flash(socket, :error, gettext("Não foi possível abrir as pastas."))}
     end
   end
 
@@ -198,22 +202,22 @@ defmodule TainaWeb.FilesLive do
   # atual. O guard de preventDefault mora no hook DnD (JS); sem ele, o
   # navegador navega para fora do app quando o arrasto vem do sistema.
   def handle_event("drop-files", _params, socket) do
-    {:noreply, Phoenix.LiveView.push_navigate(socket, to: upload_path(socket.assigns.folder_rkey))}
+    {:noreply, push_navigate(socket, to: upload_path(socket.assigns.folder_rkey))}
   end
 
   def handle_event("create-folder", %{"folder" => %{"name" => name}}, socket) do
-    # A pasta nasce sempre na casa: o kernel nao aceita zona na criacao
-    # (Ybira.create_folder so fala nome e pai). A praca e um passo seguinte,
-    # no menu do item; a copia do modal promete so o que o sistema faz.
+    # A pasta nasce sempre na casa: o kernel não aceita zona na criação
+    # (Ybira.create_folder só fala nome e pai). A praça é um passo seguinte,
+    # no menu do item; a cópia do modal promete só o que o sistema faz.
     case Ybira.create_folder(socket.assigns.current_scope, %{
            name: name,
            parent_rkey: socket.assigns.folder_rkey
          }) do
       {:ok, _folder} ->
-        {:noreply, socket |> Phoenix.LiveView.put_flash(:info, gettext("Pasta criada.")) |> refresh()}
+        {:noreply, socket |> put_flash(:info, gettext("Pasta criada.")) |> refresh()}
 
       {:error, _reason} ->
-        {:noreply, Phoenix.LiveView.put_flash(socket, :error, gettext("Não foi possível criar a pasta."))}
+        {:noreply, put_flash(socket, :error, gettext("Não foi possível criar a pasta."))}
     end
   end
 
@@ -229,7 +233,7 @@ defmodule TainaWeb.FilesLive do
 
     case result do
       {:ok, _} -> {:noreply, refresh(socket)}
-      {:error, _} -> {:noreply, Phoenix.LiveView.put_flash(socket, :error, gettext("Não foi possível renomear."))}
+      {:error, _} -> {:noreply, put_flash(socket, :error, gettext("Não foi possível renomear."))}
     end
   end
 
@@ -247,19 +251,19 @@ defmodule TainaWeb.FilesLive do
 
     case result do
       {:ok, _} ->
-        {:noreply, socket |> Phoenix.LiveView.put_flash(:info, gettext("Movido.")) |> refresh()}
+        {:noreply, socket |> put_flash(:info, gettext("Movido.")) |> refresh()}
 
       {:error, :circular_reference} ->
         {:noreply,
          socket
          |> assign(:modal, nil)
-         |> Phoenix.LiveView.put_flash(:error, gettext("Não dá para mover uma pasta para dentro dela mesma."))}
+         |> put_flash(:error, gettext("Não dá para mover uma pasta para dentro dela mesma."))}
 
       {:error, _} ->
         {:noreply,
          socket
          |> assign(:modal, nil)
-         |> Phoenix.LiveView.put_flash(:error, gettext("Só dá para mover para as suas pastas."))}
+         |> put_flash(:error, gettext("Só dá para mover para as suas pastas."))}
     end
   end
 
@@ -273,14 +277,14 @@ defmodule TainaWeb.FilesLive do
         {:noreply,
          socket
          |> assign(:confirm, nil)
-         |> Phoenix.LiveView.put_flash(:info, gettext("Pasta movida para a lixeira."))
+         |> put_flash(:info, gettext("Pasta movida para a lixeira."))
          |> refresh()}
 
       {:error, _reason} ->
         {:noreply,
          socket
          |> assign(:confirm, nil)
-         |> Phoenix.LiveView.put_flash(:error, gettext("Não foi possível excluir a pasta."))}
+         |> put_flash(:error, gettext("Não foi possível remover a pasta."))}
     end
   end
 
@@ -290,14 +294,14 @@ defmodule TainaWeb.FilesLive do
         {:noreply,
          socket
          |> assign(:confirm, nil)
-         |> Phoenix.LiveView.put_flash(:info, gettext("Arquivo movido para a lixeira."))
+         |> put_flash(:info, gettext("Arquivo movido para a lixeira."))
          |> refresh()}
 
       {:error, _reason} ->
         {:noreply,
          socket
          |> assign(:confirm, nil)
-         |> Phoenix.LiveView.put_flash(:error, gettext("Não foi possível excluir o arquivo."))}
+         |> put_flash(:error, gettext("Não foi possível remover o arquivo."))}
     end
   end
 
@@ -305,159 +309,96 @@ defmodule TainaWeb.FilesLive do
     {:noreply, assign(socket, :confirm, nil)}
   end
 
-  # `zona` aqui e a zona ATUAL do item: a acao oferecida e sempre a oposta.
-  def handle_event("ask-zona", %{"kind" => kind, "id" => id, "name" => name, "zona" => zona}, socket) do
-    {:noreply, assign(socket, :zona_confirm, %{kind: kind, id: id, name: name, zona: parse_zona(zona)})}
-  end
-
-  def handle_event("close-zona", _params, socket) do
-    {:noreply, assign(socket, :zona_confirm, nil)}
-  end
-
-  def handle_event("confirm-zona", _params, %{assigns: %{zona_confirm: %{kind: kind, id: id, zona: zona}}} = socket) do
+  # Publicar / Voltar direto do menu (os boards não têm diálogo de confirmação
+  # para a zona, só para remover; o consentimento é reversível, RFC_003). A
+  # ação é sempre a oposta da zona atual do item.
+  def handle_event("zona", %{"kind" => kind, "id" => id, "action" => action}, socket) do
     scope = socket.assigns.current_scope
 
-    result =
-      case {kind, zona} do
-        {"file", :casa} -> Ybira.publicar_file(scope, id)
-        {"file", :praca} -> Ybira.tirar_file_da_praca(scope, id)
-        {"folder", :casa} -> Ybira.publicar_folder(scope, id)
-        {"folder", :praca} -> Ybira.tirar_folder_da_praca(scope, id)
-        _ -> {:error, :invalid_kind}
-      end
-
-    case result do
+    case apply_zona(scope, kind, action, id) do
       {:ok, _} ->
-        {:noreply,
-         socket
-         |> assign(:zona_confirm, nil)
-         |> Phoenix.LiveView.put_flash(:info, zona_flash_ok(zona))
-         |> refresh()}
+        {:noreply, socket |> put_flash(:info, zona_flash(action, :ok)) |> refresh()}
 
       {:error, _reason} ->
-        {:noreply,
-         socket
-         |> assign(:zona_confirm, nil)
-         |> Phoenix.LiveView.put_flash(:error, zona_flash_error(zona))}
+        {:noreply, socket |> put_flash(:error, zona_flash(action, :error)) |> refresh()}
     end
   end
 
-  def handle_event("confirm-zona", _params, socket) do
-    {:noreply, assign(socket, :zona_confirm, nil)}
-  end
+  defp apply_zona(scope, "file", "publicar", id), do: Ybira.publicar_file(scope, id)
+  defp apply_zona(scope, "file", "voltar", id), do: Ybira.tirar_file_da_praca(scope, id)
+  defp apply_zona(scope, "folder", "publicar", id), do: Ybira.publicar_folder(scope, id)
+  defp apply_zona(scope, "folder", "voltar", id), do: Ybira.tirar_folder_da_praca(scope, id)
 
-  # Recarrega a pasta atual reaproveitando o handle_params, preservando
-  # ordem/visão/zona e o arquivo aberto no painel de detalhes.
+  defp zona_flash("publicar", :ok), do: gettext("Publicado na praça.")
+  defp zona_flash("publicar", :error), do: gettext("Não foi possível publicar na praça.")
+  defp zona_flash("voltar", :ok), do: gettext("Tirado da praça.")
+  defp zona_flash("voltar", :error), do: gettext("Não foi possível tirar da praça.")
+
+  # O shell inscreve o morador nos eventos do Ava; esta tela não reage a eles
+  # (a listagem se refaz no próximo handle_params), mas precisa ignorar o que
+  # não trata.
+  @impl true
+  def handle_info(_message, socket), do: {:noreply, socket}
+
+  # Recarrega a pasta atual reaproveitando o handle_params.
   defp refresh(socket) do
-    Phoenix.LiveView.push_patch(socket,
-      to:
-        browse_path(
-          socket.assigns.folder_rkey,
-          socket.assigns.sort,
-          socket.assigns.view,
-          socket.assigns.zona
-        )
-    )
-  end
-
-  # --- ordenação / visão / caminhos ---
-
-  defp parse_sort("name-asc"), do: {:name, :asc}
-  defp parse_sort("name-desc"), do: {:name, :desc}
-  defp parse_sort("date-asc"), do: {:date, :asc}
-  defp parse_sort("size-asc"), do: {:size, :asc}
-  defp parse_sort("size-desc"), do: {:size, :desc}
-  defp parse_sort(_default), do: {:date, :desc}
-
-  defp sort_param({field, dir}), do: "#{field}-#{dir}"
-
-  # Clicar no campo já ativo inverte a direção; em outro campo, começa crescente.
-  defp toggle_sort(field, {field, :asc}), do: {field, :desc}
-  defp toggle_sort(field, {field, :desc}), do: {field, :asc}
-  defp toggle_sort(field, _other), do: {field, :asc}
-
-  defp sort_label({:name, _}), do: gettext("Nome")
-  defp sort_label({:date, _}), do: gettext("Data")
-  defp sort_label({:size, _}), do: gettext("Tamanho")
-
-  defp sort_arrow_icon({_field, :asc}), do: "chevron-up"
-  defp sort_arrow_icon({_field, :desc}), do: "chevron-down"
-
-  # No menu de ordenação o item atual ganha um check, e o Nome divide a
-  # direção em dois itens (A-Z / Z-A): clicar nunca vira surpresa, aplica
-  # exatamente o que está escrito. Data e Tamanho continuam alternando.
-  defp sort_check({:name, :asc}, :name_az), do: "check"
-  defp sort_check({:name, :desc}, :name_za), do: "check"
-  defp sort_check({:date, _}, :date), do: "check"
-  defp sort_check({:size, _}, :size), do: "check"
-  defp sort_check(_sort, _item), do: nil
-
-  defp browse_path(folder_rkey, sort, view, zona) do
-    params = %{sort: sort_param(sort)}
-    params = if view == :grid, do: Map.put(params, :view, "grid"), else: params
-
-    # Nas abas raiz (praca/casa) a zona e a propria rota, não entra na query;
-    # dentro de pasta o filtro continua na query, default na casa.
-    params =
-      case folder_rkey do
-        nil -> if zona == :casa, do: params, else: Map.put(params, :zona, "praca")
-        _id -> if zona == :praca, do: Map.put(params, :zona, "praca"), else: params
+    to =
+      case socket.assigns.folder_rkey do
+        nil -> zone_path(socket.assigns.zona)
+        folder_rkey -> ~p"/documentos/pasta/#{folder_rkey}"
       end
 
-    case folder_rkey do
-      nil -> zona_path(zona, params)
-      id -> ~p"/documentos/pasta/#{id}?#{params}"
-    end
+    push_patch(socket, to: to)
   end
 
-  # --- zonas casa/praca (RFC_003 D1/D2) ---
-
-  # Na rota, a zona e a aba: `/documentos` e a praca, `/documentos/casa` e a
-  # casa (a ação decide; o `?zona=` é ignorado nessas ações). Dentro de pasta
-  # (`:folder`) o filtro continua na query, com o default na casa. Conteudo
-  # novo nasce na casa, e a listagem acompanha: se caisse na praca antes, o
-  # upload "sumia" da tela.
-  defp zona_de(_params, live_action) when live_action in [:praca, :casa], do: live_action
-  defp zona_de(params, _live_action), do: parse_zona(params["zona"])
-
-  defp parse_zona("praca"), do: :praca
-  defp parse_zona(_casa_default), do: :casa
-
-  # A rota raiz é a zona: a praca é /documentos, a casa é /documentos/casa.
-  defp zona_path(:praca, params), do: ~p"/documentos?#{params}"
-  defp zona_path(:casa, params), do: ~p"/documentos/casa?#{params}"
+  # --- core puro: dados -> dados ---
 
   defp for_zona(items, zona), do: Enum.filter(items, &(&1.zona == zona))
 
-  # --- casca `service` (a casca possui o cabeçalho, W2b) ---
-
-  # Aba corrente do service_tab_bar: nas rotas raiz a live_action é a aba
-  # (:praca e :casa); dentro de pasta, a zona da pasta aponta a aba de origem
-  # (spec 6: "zone from folder"). Sem pasta carregada, a zona da listagem.
-  defp service_tab(:praca, _zona, _folder), do: "praca"
-  defp service_tab(:casa, _zona, _folder), do: "casa"
-
-  defp service_tab(:folder, _zona, %{zona: zona}), do: zona_key(zona)
-
-  defp service_tab(:folder, zona, _folder), do: zona_key(zona)
-
-  # Nenhuma tela indica a Lixeira aqui: ela é a própria rota (TrashLive).
-  defp zona_key(:praca), do: "praca"
-  defp zona_key(_casa_default), do: "casa"
-
-  # Voltar da casca: nas rotas raiz, o hub; dentro de pasta, o parente imediato
-  # (a penúltima elo da mesma cadeia que a breadcrumb hoje navega, com a ordem
-  # e a zona da vista atual) ou, no fundo do topo, a raiz da própria zona.
-  defp shell_back(:folder, breadcrumb, sort, view, zona) do
-    back_to = parent_of(breadcrumb) || %{rkey: nil}
-    browse_path(back_to.rkey, sort, view, zona)
+  # Migalha do desktop (spec 6.2): enraizada na zona ("Praça > Atas"), sem
+  # repetir "Início" nem "Documentos" (nota do board "Web / Ybira Casa"). Na
+  # raiz da zona, um elo só. No mobile o bloco inteiro some por CSS; quem
+  # carrega o parente é a palavra do voltar.
+  defp crumbs(zona, []) do
+    [%{label: zone_label(zona), current: true}]
   end
 
-  defp shell_back(_live_action, _breadcrumb, _sort, _view, _zona), do: ~p"/"
+  defp crumbs(zona, chain) do
+    zone = %{label: zone_label(zona), navigate: zone_path(zona)}
 
-  # A palavra do voltar é o nome do parente (a regra de 12 caracteres vive em
-  # back_label/1, do UI.Navigation); raiz de zona, a saída é o padrão ("Início").
-  defp shell_back_label(breadcrumb) do
+    links =
+      for folder <- Enum.drop(chain, -1) do
+        %{label: folder.nome, navigate: ~p"/documentos/pasta/#{folder.rkey}"}
+      end
+
+    current = chain |> List.last() |> then(&%{label: &1.nome, current: true})
+
+    [zone] ++ links ++ [current]
+  end
+
+  defp zone_label(:praca), do: gettext("Praça")
+  defp zone_label(:casa), do: gettext("Casa")
+
+  defp zone_path(:praca), do: ~p"/documentos"
+  defp zone_path(:casa), do: ~p"/documentos/casa"
+
+  # Voltar da casca: na raiz, o hub ("Início"); dentro de pasta, o parente
+  # (a penúltima elo da mesma cadeia da migalha) ou, a um nível do topo, a
+  # raiz da própria zona.
+  defp shell_back(nil, _breadcrumb, _zona), do: ~p"/"
+
+  defp shell_back(_folder_rkey, breadcrumb, zona) do
+    case parent_of(breadcrumb) do
+      %{rkey: parent_rkey} -> ~p"/documentos/pasta/#{parent_rkey}"
+      _no_parent -> zone_path(zona)
+    end
+  end
+
+  # A palavra do voltar é o nome do parente (regra 1.5, teto de 12 caracteres
+  # em back_label/1); sem parente, a saída padrão da casca ("Início").
+  defp shell_back_label(nil, _breadcrumb), do: nil
+
+  defp shell_back_label(_folder_rkey, breadcrumb) do
     case parent_of(breadcrumb) do
       %{nome: nome} -> back_label(nome)
       _no_parent -> nil
@@ -481,42 +422,29 @@ defmodule TainaWeb.FilesLive do
   defp can_create_here?(_scope, nil), do: true
   defp can_create_here?(scope, folder), do: own?(scope, folder)
 
-  defp readability_line(:praca), do: gettext("Todos os moradores veem.")
-  defp readability_line(:casa), do: gettext("Só você, e quem você deixar.")
+  # Quais ações a linha oferece (spec 6.2): função pura do (item, escopo).
+  # Só quem é dono publica, move, renomeia e remove; para quem não é, nada
+  # daqui funciona no servidor. Pasta não baixa (não há download de pasta).
+  defp row_actions(%File{} = file, scope), do: own_actions(file, scope, [:abrir, :baixar])
+  defp row_actions(%Folder{} = folder, scope), do: own_actions(folder, scope, [:abrir])
 
-  # O modal diz onde a pasta nasce antes de nascer: na casa, sempre. A
-  # praca e o passo seguinte, no menu do item.
-  defp folder_zone_line, do: gettext("A pasta nasce na sua casa. Para todos verem, publique na praça depois.")
+  defp own_actions(item, scope, base) do
+    if own?(scope, item) do
+      base ++ [zona_action(item.zona), :mover, :renomear, :remover]
+    else
+      base
+    end
+  end
 
-  # O estado vazio diz a verdade sobre onde a pessoa está: na raiz, a aba
-  # fala por si; dentro de pasta, a pasta fala. E na casa alheia a cópia
-  # para de fingir que a pasta é sua. O segundo argumento é nil na raiz e
-  # true/false conforme a pasta é de quem vê.
-  defp empty_copy(:praca, nil),
-    do: {gettext("A praça está vazia"), gettext("Publique um arquivo ou pasta para começar a memória da comunidade.")}
+  # A ação oferecida é sempre a oposta da zona atual (consentimento, RFC_003).
+  defp zona_action(:casa), do: :publicar
+  defp zona_action(:praca), do: :voltar
 
-  defp empty_copy(:praca, _pasta),
-    do: {gettext("Nada na praça desta pasta"), gettext("O que esta pasta guardar de comum aparece aqui.")}
+  defp menu_title("file"), do: gettext("Ações do arquivo")
+  defp menu_title("folder"), do: gettext("Ações da pasta")
 
-  defp empty_copy(:casa, false),
-    do: {gettext("Nada seu nesta pasta"), gettext("O que você guardar aqui aparece nesta aba, só para você.")}
-
-  defp empty_copy(:casa, _sua_ou_raiz),
-    do: {gettext("Sua casa está vazia"), gettext("Aqui ficam seus arquivos. Só você vê, até deixar alguém entrar.")}
-
-  # Versão curta para as linhas de lista: a linha de meta trunca com
-  # reticências, e a zona nunca pode ser a parte que fica de fora.
-  defp readability_short(:praca), do: gettext("Todos veem")
-  defp readability_short(:casa), do: gettext("Só você")
-
-  defp zona_action(:casa), do: {gettext("Publicar na praça"), "publicar"}
-  defp zona_action(:praca), do: {gettext("Tirar da praça"), "tirar-da-praca"}
-
-  defp zona_flash_ok(:casa), do: gettext("Publicado na praça.")
-  defp zona_flash_ok(:praca), do: gettext("Tirado da praça.")
-
-  defp zona_flash_error(:casa), do: gettext("Não foi possível publicar na praça.")
-  defp zona_flash_error(:praca), do: gettext("Não foi possível tirar da praça.")
+  defp item_path("file", rkey), do: ~p"/documentos/#{rkey}"
+  defp item_path("folder", rkey), do: ~p"/documentos/pasta/#{rkey}"
 
   defp normalize_target(target) when target in [nil, ""], do: nil
   defp normalize_target(target), do: target
@@ -524,18 +452,84 @@ defmodule TainaWeb.FilesLive do
   defp upload_path(nil), do: ~p"/documentos/enviar"
   defp upload_path(folder_id), do: ~p"/documentos/enviar?#{[pasta: folder_id]}"
 
-  defp file_meta(file) do
-    "#{file_kind(file.mime)}, #{format_bytes(file.tamanho)}"
+  # Meta da linha (boards): "PDF, 1,2 MB, só você" na casa; na praça quem
+  # enviou, "enviado por Maria" (ou "enviado por você").
+  defp file_meta(file, names, ava_id) do
+    [base_meta(file), ownership_or_sender(file, names, ava_id)]
+    |> Enum.reject(&is_nil/1)
+    |> Enum.join(", ")
   end
 
-  defp storage_percent(%{used_bytes: used, quota_bytes: quota}) when is_integer(quota) and quota > 0 do
-    round(used / quota * 100)
+  defp ownership_or_sender(%{zona: :casa, dono_id: dono_id}, _names, dono_id), do: gettext("só você")
+  defp ownership_or_sender(%{dono_id: dono_id}, _names, dono_id), do: gettext("enviado por você")
+
+  defp ownership_or_sender(file, names, _ava_id) do
+    case Map.get(names, file.dono_id) do
+      nil -> nil
+      name -> gettext("enviado por %{name}", name: name)
+    end
   end
 
-  defp storage_percent(_stats), do: 0
+  defp base_meta(file), do: "#{file_kind(file.mime)}, #{format_bytes(file.tamanho)}"
 
-  defp storage_free(%{used_bytes: used, quota_bytes: quota}) when is_integer(quota), do: max(quota - used, 0)
-  defp storage_free(_stats), do: 0
+  # O quadradinho da linha: foto leva o acento do Jaci, vídeo o do vídeo, o
+  # resto o documento (o mesmo mapa do hub).
+  defp file_mark("image/" <> _rest), do: "jaci"
+  defp file_mark("video/" <> _rest), do: "video"
+  defp file_mark(_mime), do: "doc"
+
+  # "3 arquivos, atualizados ontem" (board pasta): a contagem de arquivos da
+  # listagem corrente e o dia relativo da pasta no fuso da comunidade.
+  defp folder_meta(file_count, updated_at) do
+    ngettext("1 arquivo, atualizado %{when}", "%{count} arquivos, atualizados %{when}", file_count,
+      when: updated_line(updated_at)
+    )
+  end
+
+  defp updated_line(at) do
+    days = Date.diff(Date.utc_today(), DateTime.to_date(at))
+
+    cond do
+      days <= 0 -> gettext("hoje")
+      days == 1 -> gettext("ontem")
+      true -> gettext("há %{count} dias", count: days)
+    end
+  end
+
+  # O estado vazio diz a verdade sobre onde a pessoa está (boards "vazio"):
+  # na raiz, a zona fala; dentro de pasta, a pasta fala. E na casa alheia a
+  # cópia para de fingir que a pasta é sua.
+  defp empty_copy(:praca, nil, _scope),
+    do:
+      {gettext("A praça está vazia"),
+       gettext("Quando alguém publicar um arquivo na praça, ele aparece aqui para toda a comunidade.")}
+
+  defp empty_copy(:praca, _folder, _scope),
+    do: {gettext("Nada na praça desta pasta"), gettext("O que esta pasta guardar de comum aparece aqui.")}
+
+  defp empty_copy(:casa, nil, _scope),
+    do: {gettext("Sua casa está vazia"), gettext("Envie um arquivo. Ele fica só com você até você publicar na praça.")}
+
+  defp empty_copy(:casa, folder, scope) do
+    if own?(scope, folder) do
+      {gettext("Nada nesta pasta"), gettext("Envie um arquivo. Ele fica só com você até você publicar na praça.")}
+    else
+      {gettext("Nada para você nesta pasta"), gettext("Só aparece o que a pessoa deixar você ver.")}
+    end
+  end
+
+  # Diálogo destrutivo (board "Overlay / Dialog remover"): o arquivo vai para
+  # a lixeira e some de vez depois de 30 dias; a pasta vai com o que tem
+  # dentro e volta como unidade.
+  defp confirm_title(%{name: name}), do: gettext("Remover %{name}?", name: name)
+  defp confirm_title(_confirm), do: nil
+
+  defp confirm_body(%{kind: "file"}), do: gettext("O arquivo vai para a lixeira e some de vez depois de 30 dias.")
+
+  defp confirm_body(%{kind: "folder"}),
+    do: gettext("A pasta e o que tem dentro vão para a lixeira e somem de vez depois de 30 dias.")
+
+  defp confirm_body(_confirm), do: nil
 
   @impl true
   def render(assigns) do
@@ -543,20 +537,13 @@ defmodule TainaWeb.FilesLive do
     <Layouts.service
       flash={@flash}
       service="ybira"
-      current={service_tab(@live_action, @zona, @folder)}
-      title={@page_title}
-      back={shell_back(@live_action, @breadcrumb, @sort, @view, @zona)}
-      back_label={shell_back_label(@breadcrumb)}
+      current={zone_key(@zona)}
+      title={gettext("Documentos")}
+      back={shell_back(@folder_rkey, @breadcrumb, @zona)}
+      back_label={shell_back_label(@folder_rkey, @breadcrumb)}
     >
       <:actions>
         <div class="row gap-2">
-          <.icon_button
-            name="info"
-            label={gettext("Espaço da comunidade")}
-            phx-click="open-modal"
-            phx-value-modal="storage-info"
-          />
-          <.icon_button name="trash" label={gettext("Lixeira")} navigate={~p"/documentos/lixeira"} />
           <.icon_button
             :if={can_create_here?(@current_scope, @folder)}
             name="folder-plus"
@@ -564,8 +551,8 @@ defmodule TainaWeb.FilesLive do
             phx-click="open-modal"
             phx-value-modal="new-folder"
           />
-          <.button variant="primary" size="md" navigate={upload_path(@folder_rkey)} class="hide-mobile">
-            <.icon name="upload" size={18} /> {gettext("Enviar")}
+          <.button kind="primary" size="md" class="hide-mobile" navigate={upload_path(@folder_rkey)}>
+            {gettext("Enviar")}
           </.button>
         </div>
       </:actions>
@@ -573,201 +560,91 @@ defmodule TainaWeb.FilesLive do
         <.fab label={gettext("Enviar")} navigate={upload_path(@folder_rkey)} />
       </:fab>
 
-      <div class="row between wrap gap-3 mb-4">
-        <.segmented>
-          <:option patch={~p"/documentos"} current={@zona == :praca}>
-            {gettext("Praça")}
-          </:option>
-          <:option patch={~p"/documentos/casa"} current={@zona == :casa}>
-            {gettext("Casa")}
-          </:option>
-        </.segmented>
+      <.breadcrumb class="mb-3">
+        <:crumb
+          :for={crumb <- @crumbs}
+          label={crumb.label}
+          navigate={crumb[:navigate]}
+          current={crumb[:current]}
+        />
+      </.breadcrumb>
 
-        <div class="row gap-1">
-          <.menu id="sort-menu" icon="sort" label={gettext("Ordenar")}>
-            <:item
-              icon={sort_check(@sort, :name_az)}
-              click={JS.patch(browse_path(@folder_rkey, {:name, :asc}, @view, @zona))}
-            >
-              {gettext("Nome (A-Z)")}
-            </:item>
-            <:item
-              icon={sort_check(@sort, :name_za)}
-              click={JS.patch(browse_path(@folder_rkey, {:name, :desc}, @view, @zona))}
-            >
-              {gettext("Nome (Z-A)")}
-            </:item>
-            <:item
-              icon={sort_check(@sort, :date)}
-              click={JS.patch(browse_path(@folder_rkey, toggle_sort(:date, @sort), @view, @zona))}
-            >
-              {gettext("Data")}
-            </:item>
-            <:item
-              icon={sort_check(@sort, :size)}
-              click={JS.patch(browse_path(@folder_rkey, toggle_sort(:size, @sort), @view, @zona))}
-            >
-              {gettext("Tamanho")}
-            </:item>
-          </.menu>
-          <span class="type-caption text-muted self-center">
-            {sort_label(@sort)} <.icon name={sort_arrow_icon(@sort)} size={14} />
-          </span>
-          <.icon_button
-            name="grid"
-            label={gettext("Alternar grade/lista")}
-            phx-click={
-              JS.patch(
-                browse_path(
-                  @folder_rkey,
-                  @sort,
-                  if(@view == :grid, do: :list, else: :grid),
-                  @zona
-                )
-              )
-            }
-          />
-        </div>
-      </div>
-
-      <nav class="breadcrumb mb-3" id="ybira-breadcrumb">
-        <.link
-          navigate={browse_path(nil, @sort, @view, @zona)}
-          class="breadcrumb__link"
-          data-drop-folder=""
-        >
-          {gettext("Início")}
-        </.link>
-        <%= for item <- breadcrumb_items(@breadcrumb) do %>
-          <span class="breadcrumb__sep"><.icon name="chevron-right" size={14} /></span>
-          <.link
-            :if={item.kind == :link}
-            patch={browse_path(item.rkey, @sort, @view, @zona)}
-            class={["breadcrumb__link", item.middle? && "hide-mobile"]}
-          >
-            {item.nome}
-          </.link>
-          <span :if={item.kind == :ellipsis} class="hide-desktop" aria-hidden="true">...</span>
-          <span :if={item.kind == :current} class="breadcrumb__current text-primary">{item.nome}</span>
-        <% end %>
-      </nav>
-
-      <p class="type-body-sm text-muted mb-3">
-        <%= if @next_cursor do %>
-          {ngettext("%{count} item carregado", "%{count} itens carregados", @item_count)}
-        <% else %>
-          {ngettext("%{count} item", "%{count} itens", @item_count)}
-        <% end %>
+      <% # Linha de contexto da raiz (boards): contagem na praça, ensino na casa.
+      %>
+      <p
+        :if={is_nil(@folder) and @item_count > 0 and @zona == :praca}
+        class="type-body-sm text-muted mb-4"
+      >
+        {ngettext("1 item na praça", "%{count} itens na praça", @item_count)}
+      </p>
+      <p
+        :if={is_nil(@folder) and @item_count > 0 and @zona == :casa}
+        class="type-body-sm text-muted mb-4"
+      >
+        {gettext("Só você vê o que está na casa.")}
       </p>
 
+      <div :if={@folder} class="col gap-1 mb-4">
+        <h2 class="type-h2">{@folder.nome}</h2>
+        <p class="type-caption text-muted">{folder_meta(@file_count, @folder.updated_at)}</p>
+      </div>
+
       <div id="ybira-dnd" phx-hook="DnD">
-        <%= if @view == :grid do %>
-          <div class="tiles">
-            <div
-              :for={folder <- @folders}
-              class="tile"
-              style="position: relative;"
-              data-drop-folder={drop_folder(@current_scope, folder)}
-            >
-              <.link navigate={browse_path(folder.rkey, @sort, @view, @zona)} class="col gap-1">
-                <.service_square service="ybira" icon="folder" size="lg" />
-                <p class="tile__title">{folder.nome}</p>
-                <p class="tile__meta">{gettext("Pasta")}</p>
-                <p class="tile__meta">{readability_line(folder.zona)}</p>
-              </.link>
-              <div style="position: absolute; top: var(--space-2); right: var(--space-2);">
-                <.item_menu
-                  kind="folder"
-                  id={folder.rkey}
-                  name={folder.nome}
-                  zona={folder.zona}
-                  own?={own?(@current_scope, folder)}
-                />
-              </div>
-            </div>
+        <ul :if={@folders != []} class="list mb-3">
+          <.list_row
+            :for={folder <- @folders}
+            kind="folder"
+            trailing="chevron"
+            title={folder.nome}
+            meta={gettext("Pasta")}
+            navigate={item_path("folder", folder.rkey)}
+            draggable="true"
+            data-drag-id={folder.rkey}
+            data-drag-kind="folder"
+            data-drop-folder={drop_folder(@current_scope, folder)}
+          >
+            <:leading>
+              <.service_square mark="ybira" />
+            </:leading>
+            <:actions>
+              <.row_menu
+                item_kind="folder"
+                id={folder.rkey}
+                name={folder.nome}
+                zona={folder.zona}
+                actions={row_actions(folder, @current_scope)}
+              />
+            </:actions>
+          </.list_row>
+        </ul>
 
-            <div id="files-grid" phx-update="stream" class="contents">
-              <div
-                :for={{dom_id, file} <- @streams.files}
-                id={dom_id}
-                class="tile"
-                style="position: relative;"
-              >
-                <.link navigate={~p"/documentos/#{file.rkey}"} class="col gap-1">
-                  <% {service, icon} = file_visual(file.mime) %>
-                  <.service_square service={service} icon={icon} size="lg" />
-                  <p class="tile__title">{file.nome}</p>
-                  <p class="tile__meta">{file_meta(file)}</p>
-                  <p class="tile__meta">{readability_line(file.zona)}</p>
-                </.link>
-                <div style="position: absolute; top: var(--space-2); right: var(--space-2);">
-                  <.item_menu
-                    kind="file"
-                    id={file.rkey}
-                    name={file.nome}
-                    zona={file.zona}
-                    own?={own?(@current_scope, file)}
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-        <% else %>
-          <div class="list">
-            <ul :if={@folders != []} class="list">
-              <.list_row
-                :for={folder <- @folders}
-                title={folder.nome}
-                meta={"#{gettext("Pasta")} / #{readability_short(folder.zona)}"}
-                navigate={browse_path(folder.rkey, @sort, @view, @zona)}
-                draggable="true"
-                data-drag-id={folder.rkey}
-                data-drag-kind="folder"
-                data-drop-folder={drop_folder(@current_scope, folder)}
-              >
-                <:leading>
-                  <.service_square service="ybira" icon="folder" />
-                </:leading>
-                <:actions>
-                  <.item_menu
-                    kind="folder"
-                    id={folder.rkey}
-                    name={folder.nome}
-                    zona={folder.zona}
-                    own?={own?(@current_scope, folder)}
-                  />
-                </:actions>
-              </.list_row>
-            </ul>
-
-            <ul id="files" phx-update="stream" class="list">
-              <.list_row
-                :for={{dom_id, file} <- @streams.files}
-                id={dom_id}
-                title={file.nome}
-                meta={"#{file_meta(file)} / #{readability_short(file.zona)}"}
-                navigate={~p"/documentos/#{file.rkey}"}
-                draggable="true"
-                data-drag-id={file.rkey}
-                data-drag-kind="file"
-              >
-                <:leading>
-                  <% {service, icon} = file_visual(file.mime) %>
-                  <.service_square service={service} icon={icon} />
-                </:leading>
-                <:actions>
-                  <.item_menu
-                    kind="file"
-                    id={file.rkey}
-                    name={file.nome}
-                    zona={file.zona}
-                    own?={own?(@current_scope, file)}
-                  />
-                </:actions>
-              </.list_row>
-            </ul>
-          </div>
-        <% end %>
+        <ul id="files" phx-update="stream" class="list">
+          <.list_row
+            :for={{dom_id, file} <- @streams.files}
+            id={dom_id}
+            kind="file"
+            trailing="kebab"
+            title={file.nome}
+            meta={file_meta(file, @names, @current_scope.ava.id)}
+            navigate={item_path("file", file.rkey)}
+            draggable="true"
+            data-drag-id={file.rkey}
+            data-drag-kind="file"
+          >
+            <:leading>
+              <.service_square mark={file_mark(file.mime)} />
+            </:leading>
+            <:actions>
+              <.row_menu
+                item_kind="file"
+                id={file.rkey}
+                name={file.nome}
+                zona={file.zona}
+                actions={row_actions(file, @current_scope)}
+              />
+            </:actions>
+          </.list_row>
+        </ul>
       </div>
 
       <div :if={@next_cursor} id="load-more" phx-viewport-bottom="load-more" class="list-row" aria-hidden="true">
@@ -775,20 +652,17 @@ defmodule TainaWeb.FilesLive do
         <span class="skeleton flex-1" style="height: var(--space-4);"></span>
       </div>
 
-      <% {empty_title, empty_hint} = empty_copy(@zona, @folder && own?(@current_scope, @folder)) %>
+      <% {empty_title, empty_body} = empty_copy(@zona, @folder, @current_scope) %>
 
-      <.empty_state :if={@item_count == 0} icon="folder" title={empty_title} hint={empty_hint}>
-        <div :if={@zona == :casa and (is_nil(@folder) or own?(@current_scope, @folder))} class="col gap-2">
-          <p class="type-body-sm text-muted">
-            {gettext("Isso é promessa de software e confiança: o Tainá ainda não criptografa.")}
-          </p>
-          <.button variant="primary" size="md" navigate={upload_path(@folder_rkey)}>
-            {gettext("Enviar arquivos")}
+      <.empty_state :if={@item_count == 0} icon="folder" title={empty_title} body={empty_body}>
+        <:action :if={@zona == :casa and (is_nil(@folder) or own?(@current_scope, @folder))}>
+          <.button kind="primary" size="md" navigate={upload_path(@folder_rkey)}>
+            {gettext("Enviar um arquivo")}
           </.button>
-        </div>
+        </:action>
       </.empty_state>
 
-      <.modal id="new-folder-modal" show={@modal == "new-folder"} on_cancel={JS.push("close-modal")}>
+      <.dialog id="new-folder-modal" show={@modal == "new-folder"} on_cancel={JS.push("close-modal")}>
         <h2 class="type-h3 mb-4">{gettext("Nova pasta")}</h2>
         <form id="create-folder-form" phx-submit="create-folder" class="col gap-4">
           <.input
@@ -800,17 +674,19 @@ defmodule TainaWeb.FilesLive do
             required
             autofocus
           />
-          <p class="type-body-sm text-muted">{folder_zone_line()}</p>
+          <p class="type-body-sm text-muted">
+            {gettext("A pasta nasce na sua casa. Para todos verem, publique na praça depois.")}
+          </p>
           <div class="row gap-3">
-            <.button variant="secondary" size="md" class="flex-1" phx-click="close-modal">
+            <.button kind="secondary" size="md" class="flex-1" phx-click="close-modal">
               {gettext("Cancelar")}
             </.button>
-            <.button type="submit" variant="primary" size="md" class="flex-1">{gettext("Criar")}</.button>
+            <.button type="submit" kind="primary" size="md" class="flex-1">{gettext("Criar")}</.button>
           </div>
         </form>
-      </.modal>
+      </.dialog>
 
-      <.modal id="rename-modal" show={@modal == "rename"} on_cancel={JS.push("close-modal")}>
+      <.dialog id="rename-modal" show={@modal == "rename"} on_cancel={JS.push("close-modal")}>
         <h2 class="type-h3 mb-4">{gettext("Renomear")}</h2>
         <form id="rename-form" :if={@rename_target} phx-submit="rename-item" class="col gap-4">
           <.input
@@ -822,15 +698,15 @@ defmodule TainaWeb.FilesLive do
             autofocus
           />
           <div class="row gap-3">
-            <.button variant="secondary" size="md" class="flex-1" phx-click="close-modal">
+            <.button kind="secondary" size="md" class="flex-1" phx-click="close-modal">
               {gettext("Cancelar")}
             </.button>
-            <.button type="submit" variant="primary" size="md" class="flex-1">{gettext("Renomear")}</.button>
+            <.button type="submit" kind="primary" size="md" class="flex-1">{gettext("Renomear")}</.button>
           </div>
         </form>
-      </.modal>
+      </.dialog>
 
-      <.modal id="move-modal" show={@modal == "move"} on_cancel={JS.push("close-modal")}>
+      <.dialog id="move-modal" show={@modal == "move"} on_cancel={JS.push("close-modal")}>
         <h2 class="type-h3 mb-1">{gettext("Mover para...")}</h2>
         <p :if={@move_target} class="type-body-sm text-muted mb-4">{@move_target.name}</p>
         <ul :if={@move_target} class="list">
@@ -840,7 +716,7 @@ defmodule TainaWeb.FilesLive do
               class="list-row"
               phx-click={JS.push("move-item", value: %{kind: @move_target.kind, id: @move_target.id, target: ""})}
             >
-              <.service_square service="ybira" icon="home" />
+              <.service_square mark="casa" />
               <span class="list-row__body type-label">{gettext("Início (raiz)")}</span>
             </button>
           </li>
@@ -852,127 +728,92 @@ defmodule TainaWeb.FilesLive do
                 JS.push("move-item", value: %{kind: @move_target.kind, id: @move_target.id, target: folder.rkey})
               }
             >
-              <.service_square service="ybira" icon="folder" />
+              <.service_square mark="ybira" />
               <span class="list-row__body type-label">{folder.nome}</span>
             </button>
           </li>
         </ul>
-        <.button variant="secondary" size="md" class="w-full mt-4" phx-click="close-modal">
+        <.button kind="secondary" size="md" class="w-full mt-4" phx-click="close-modal">
           {gettext("Cancelar")}
         </.button>
-      </.modal>
+      </.dialog>
 
-      <.modal id="storage-info-modal" show={@modal == "storage-info"} on_cancel={JS.push("close-modal")}>
-        <h2 class="type-h3 mb-1">{gettext("Espaço da comunidade")}</h2>
-        <p class="type-body-sm text-muted mb-4">
-          {gettext("Tudo o que vocês enviam divide o mesmo espaço. É da comunidade inteira.")}
-        </p>
-
-        <%= if @storage_stats do %>
-          <.progress value={storage_percent(@storage_stats)} />
-          <div class="row between mt-2">
-            <span class="type-body-sm text-muted">
-              {gettext("%{used} de %{total} usados",
-                used: format_bytes(@storage_stats.used_bytes),
-                total: format_bytes(@storage_stats.quota_bytes)
-              )}
-            </span>
-            <span class="type-body-sm text-success">
-              {gettext("%{free} livres", free: format_bytes(storage_free(@storage_stats)))}
-            </span>
-          </div>
-          <p class="type-caption text-muted mt-3">
-            {gettext("Quando o espaço acabar, quem cuida da comunidade pode aumentar o limite.")}
-          </p>
-          <.button variant="secondary" size="md" navigate={~p"/armazenamento"} class="w-full mt-4">
-            {gettext("Ver detalhes")}
-          </.button>
-        <% else %>
-          <p class="type-body-sm text-muted">{gettext("Não foi possível carregar o uso agora.")}</p>
-        <% end %>
-      </.modal>
-
-      <.confirm_dialog
-        id="confirm-delete"
+      <.dialog
+        id="confirm-remove"
         show={@confirm != nil}
+        kind="destructive"
         title={confirm_title(@confirm)}
-        message={confirm_message(@confirm)}
+        body={confirm_body(@confirm)}
         on_confirm="confirm-delete"
         on_cancel={JS.push("close-modal")}
       />
-
-      <.modal id="confirm-zona" show={@zona_confirm != nil} on_cancel={JS.push("close-zona")}>
-        <div :if={@zona_confirm}>
-          <h2 class="type-h3 mb-2">{zona_confirm_title(@zona_confirm)}</h2>
-          <p class="type-body text-secondary mb-2">{zona_confirm_body(@zona_confirm.zona)}</p>
-          <p :if={@zona_confirm.kind == "folder" and @zona_confirm.zona == :casa} class="type-body text-secondary mb-6">
-            {gettext("Só a pasta entra na praça. Os arquivos dentro dela continuam como estão.")}
-          </p>
-          <div class="row gap-3">
-            <.button variant="secondary" size="md" class="flex-1" phx-click="close-zona">
-              {gettext("Cancelar")}
-            </.button>
-            <.button variant="primary" size="md" class="flex-1" phx-click="confirm-zona">
-              {zona_confirm_primary(@zona_confirm.zona)}
-            </.button>
-          </div>
-        </div>
-      </.modal>
     </Layouts.service>
     """
   end
 
-  # Texto do dialogo: a zona guardada e a ATUAL; a copia descreve a acao oposta.
-  defp zona_confirm_title(%{zona: :casa, name: name}), do: gettext("Publicar \"%{name}\" na praça?", name: name)
-  defp zona_confirm_title(%{zona: :praca, name: name}), do: gettext("Tirar \"%{name}\" da praça?", name: name)
+  # Aba corrente do service_tab_bar: a zona (a aba é a própria rota).
+  defp zone_key(:praca), do: "praca"
+  defp zone_key(_casa), do: "casa"
 
-  defp zona_confirm_body(:casa), do: gettext("Todos os moradores vão poder ver. Você pode tirar da praça quando quiser.")
-
-  defp zona_confirm_body(:praca), do: gettext("Volta a ser só seu. Só você, e quem você deixar, vê de novo.")
-
-  defp zona_confirm_primary(:casa), do: gettext("Publicar")
-  defp zona_confirm_primary(:praca), do: gettext("Tirar da praça")
-
-  # Menu de ações compartilhado entre lista e grade. Só o dono renomeia, move,
-  # exclui e publica: para quem não é dono, nada daqui funciona no servidor,
-  # então o menu nem aparece (a linha continua abrindo pelo link).
-  attr :kind, :string, required: true
+  # Menu de ações da linha (actions_menu: sheet no mobile, popover no desktop,
+  # spec 4.3). A ordem é a do spec 6.2; quais itens aparecem vem de
+  # `row_actions/2`.
+  attr :item_kind, :string, required: true
   attr :id, :string, required: true
   attr :name, :string, required: true
   attr :zona, :atom, required: true
-  attr :own?, :boolean, required: true
+  attr :actions, :list, required: true
 
-  defp item_menu(assigns) do
-    assigns = assign(assigns, :zona_label, elem(zona_action(assigns.zona), 0))
-
+  defp row_menu(assigns) do
     ~H"""
-    <.menu :if={@own?} id={"item-menu-#{@id}"} label={gettext("Mais opções para %{name}", name: @name)}>
-      <:item icon="share" click={JS.push("ask-zona", value: %{kind: @kind, id: @id, name: @name, zona: @zona})}>
-        {@zona_label}
+    <.actions_menu
+      id={"item-#{@item_kind}-#{@id}"}
+      label={gettext("Mais opções para %{name}", name: @name)}
+      title={menu_title(@item_kind)}
+    >
+      <:item :if={:abrir in @actions} icon={@item_kind} navigate={item_path(@item_kind, @id)}>
+        {gettext("Abrir")}
       </:item>
-      <:item icon="pencil" click={JS.push("open-rename", value: %{kind: @kind, id: @id, name: @name})}>
-        {gettext("Renomear")}
+      <:item :if={:baixar in @actions} icon="download" navigate={~p"/files/#{@id}"}>
+        {gettext("Baixar")}
       </:item>
-      <:item icon="move" click={JS.push("open-move", value: %{kind: @kind, id: @id, name: @name})}>
+      <:item
+        :if={:publicar in @actions}
+        icon="share"
+        click={JS.push("zona", value: %{kind: @item_kind, id: @id, action: "publicar"})}
+      >
+        {gettext("Publicar na praça")}
+      </:item>
+      <:item
+        :if={:voltar in @actions}
+        icon="casa"
+        click={JS.push("zona", value: %{kind: @item_kind, id: @id, action: "voltar"})}
+      >
+        {gettext("Voltar para a casa")}
+      </:item>
+      <:item
+        :if={:mover in @actions}
+        icon="move"
+        click={JS.push("open-move", value: %{kind: @item_kind, id: @id, name: @name})}
+      >
         {gettext("Mover")}
       </:item>
-      <:item icon="trash" danger click={JS.push("ask-delete", value: %{kind: @kind, id: @id, name: @name})}>
-        {gettext("Excluir")}
+      <:item
+        :if={:renomear in @actions}
+        icon="pencil"
+        click={JS.push("open-rename", value: %{kind: @item_kind, id: @id, name: @name})}
+      >
+        {gettext("Renomear")}
       </:item>
-    </.menu>
+      <:item
+        :if={:remover in @actions}
+        icon="trash"
+        kind="danger"
+        click={JS.push("ask-delete", value: %{kind: @item_kind, id: @id, name: @name})}
+      >
+        {gettext("Remover")}
+      </:item>
+    </.actions_menu>
     """
   end
-
-  defp confirm_title(%{kind: "folder", name: name}), do: gettext("Excluir a pasta \"%{name}\"?", name: name)
-  defp confirm_title(%{kind: "file", name: name}), do: gettext("Excluir \"%{name}\"?", name: name)
-  defp confirm_title(_confirm), do: gettext("Excluir?")
-
-  # A pasta vai para a lixeira com o que tem dentro e volta como unidade
-  # (`restore_folder/2`, na tela da lixeira): a cópia promete o que o sistema
-  # faz.
-  defp confirm_message(%{kind: "folder"}),
-    do: gettext("A pasta e o que tem dentro vão para a lixeira. A pasta volta com tudo o que tem dentro.")
-
-  defp confirm_message(%{kind: "file"}), do: gettext("Vai para a lixeira. Dá para restaurar em até 30 dias.")
-  defp confirm_message(_confirm), do: gettext("Vai para a lixeira.")
 end

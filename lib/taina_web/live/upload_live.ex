@@ -1,11 +1,16 @@
 defmodule TainaWeb.UploadLive do
   @moduledoc """
-  Envio de arquivos (tela "Ybira - Upload"): dropzone tracejada, progresso por
-  arquivo (ENVIANDO/CONCLUÍDO), cancelamento individual e total. LiveView
-  uploads com `auto_upload`; cada arquivo concluído vai direto para
-  `Ybira.upload/3` (validação por magic bytes e cota acontecem lá). A linha
-  concluída oferece o "Publicar na praça": o arquivo nasce na casa, e o
-  consentimento fica a um toque dali (RFC_003).
+  Envio de arquivos (boards "Servico / Ybira Enviar / enviando"
+  cc1037dc-e8ab-80cc-8008-d5e2162dfb73 e "erro cota" ...d5e218361ef0): tela
+  empurrada do Documentos, sem abas. O voltar aponta a pasta de destino
+  ("< Atas"); a caixa de envio mostra os estados do board: parada, enviando
+  (progresso do arquivo corrente) e erro de espaço, com a saída "Ver espaço".
+
+  LiveView uploads com `auto_upload`; cada arquivo concluído vai direto para
+  `Ybira.upload/3` (validação por magic bytes e cota acontecem lá) e nasce na
+  casa, com o "Publicar na praça" a um toque na linha concluída (RFC_003). A
+  câmera do celular é uma segunda entrada (RFC 002, fase 3) para o mesmo
+  destino, para não tirar da pessoa a escolha de arquivos existentes.
 
   `?pasta=<rkey>` define a pasta de destino.
   """
@@ -22,51 +27,36 @@ defmodule TainaWeb.UploadLive do
     scope = socket.assigns.current_scope
     {folder, folder_note} = resolve_folder(scope, params["pasta"])
 
-    # A linha "Espaço livre da comunidade" é da tela: ela carrega os próprios
-    # números (a casca não entrega estatística que a tela não renderiza).
     socket =
       socket
-      |> assign(:page_title, gettext("Enviar arquivos"))
+      |> assign(:page_title, gettext("Documentos"))
       |> assign(:folder, folder)
-      |> assign_new(:storage_stats, fn -> local_storage_stats(scope) end)
+      |> assign(:quota_error?, false)
+      |> assign(:done, [])
+      |> assign(:failed, [])
+      |> maybe_flash_folder_note(folder_note)
+      |> allow_upload(:files,
+        accept: :any,
+        max_entries: 10,
+        max_file_size: @max_file_size,
+        auto_upload: true,
+        progress: &handle_progress/3
+      )
+      |> allow_upload(:camera,
+        accept: :any,
+        max_entries: 10,
+        max_file_size: @max_file_size,
+        auto_upload: true,
+        progress: &handle_progress/3
+      )
 
-    {:ok,
-     socket
-     |> assign(:free_space, free_space_text(socket.assigns.storage_stats))
-     |> assign(:done, [])
-     |> assign(:failed, [])
-     |> maybe_flash_folder_note(folder_note)
-     |> allow_upload(:files,
-       accept: :any,
-       max_entries: 10,
-       max_file_size: @max_file_size,
-       auto_upload: true,
-       progress: &handle_progress/3
-     )
-     # Segunda entrada (RFC 002, Fase 3): a câmera do celular. Entrada à parte
-     # para não tirar do usuário a escolha de arquivos existentes na entrada
-     # principal (um único input com `capture` travaria o celular na câmera).
-     # Os dois envios caem no mesmo `finish_upload/2`.
-     |> allow_upload(:camera,
-       accept: :any,
-       max_entries: 10,
-       max_file_size: @max_file_size,
-       auto_upload: true,
-       progress: &handle_progress/3
-     )}
+    {:ok, socket}
   end
-
-  defp local_storage_stats(scope) do
-    case Ybira.storage_stats(scope) do
-      {:ok, stats} -> stats
-      _error -> nil
-    end
-  end
-
-  defp resolve_folder(_scope, nil), do: {nil, nil}
 
   # Pasta inexistente ou casa de outra pessoa: sobe para a raiz sem travar o
-  # envio; o flash explica por que a pasta sumiu do cabeçalho.
+  # envio; o flash explica por que a pasta sumiu do voltar.
+  defp resolve_folder(_scope, nil), do: {nil, nil}
+
   defp resolve_folder(scope, rkey) do
     case Ybira.get_folder(scope, rkey) do
       {:ok, folder} ->
@@ -78,18 +68,10 @@ defmodule TainaWeb.UploadLive do
   end
 
   defp maybe_flash_folder_note(socket, nil), do: socket
-  defp maybe_flash_folder_note(socket, note), do: Phoenix.LiveView.put_flash(socket, :error, note)
-
-  # Espaço livre da comunidade, em texto humano. Sem cota configurada não há
-  # "livres" para mostrar (a cota infinita não avisa).
-  defp free_space_text(%{quota_bytes: quota, used_bytes: used}) when is_integer(quota) do
-    gettext("Espaço livre da comunidade: %{free}.", free: format_bytes(max(quota - used, 0)))
-  end
-
-  defp free_space_text(_stats), do: nil
+  defp maybe_flash_folder_note(socket, note), do: put_flash(socket, :error, note)
 
   # Consome cada arquivo assim que termina de subir, de qualquer um dos dois
-  # envios (arquivos ou câmera); o resultado vai para a lista CONCLUÍDO (ou
+  # envios (arquivos ou câmera); o resultado vai para a lista concluído (ou
   # para os erros, sem derrubar os demais envios).
   defp handle_progress(_name, entry, socket) do
     if entry.done?, do: finish_upload(entry, socket), else: {:noreply, socket}
@@ -107,6 +89,11 @@ defmodule TainaWeb.UploadLive do
       {:ok, file} ->
         {:noreply, update(socket, :done, &[file | &1])}
 
+      {:error, :storage_quota_exceeded} ->
+        # Board "erro cota": a caixa explica o espaço e aponta a saída ("Ver
+        # espaço"); sem repetir a falha em lista.
+        {:noreply, assign(socket, :quota_error?, true)}
+
       {:error, reason} ->
         {:noreply, update(socket, :failed, &[{entry.client_name, upload_error(reason)} | &1])}
     end
@@ -116,30 +103,14 @@ defmodule TainaWeb.UploadLive do
   defp upload_opts(entry, folder), do: [filename: entry.client_name, folder_rkey: folder.rkey]
 
   # Cada erro explica o que houve e dá a saída (tom-de-voz: erros com saída,
-  # sem culpa). A saída comum é a caixa de envio, no topo da tela.
+  # sem culpa). A cópia de cota é da caixa (Dropzone, board), não da lista.
   defp upload_error(:mime_not_allowed),
     do: gettext("Não aceitamos este tipo de arquivo. Use imagens, PDFs, texto, áudio, vídeo ou ZIP.")
-
-  defp upload_error(:storage_quota_exceeded),
-    do: gettext("O espaço da comunidade acabou. Quem cuida da máquina pode aumentar o limite.")
 
   defp upload_error(_reason), do: gettext("O envio falhou. Toque na caixa acima para tentar de novo.")
 
   @impl true
   def handle_event("validate", _params, socket), do: {:noreply, socket}
-
-  def handle_event("cancel", %{"ref" => ref}, socket) do
-    {:noreply, cancel_any(socket, ref)}
-  end
-
-  def handle_event("cancel-all", _params, socket) do
-    socket =
-      socket.assigns.uploads
-      |> uploading_entries()
-      |> Enum.reduce(socket, fn entry, socket -> cancel_any(socket, entry.ref) end)
-
-    {:noreply, socket}
-  end
 
   # Publicar na linha concluída: o reverso do destino casa, a um toque do
   # momento em que a pessoa decide. O contexto valida dono e zona; a linha
@@ -150,10 +121,10 @@ defmodule TainaWeb.UploadLive do
         {:noreply,
          socket
          |> mark_published(rkey)
-         |> Phoenix.LiveView.put_flash(:info, gettext("Publicado na praça."))}
+         |> put_flash(:info, gettext("Publicado na praça."))}
 
       {:error, _reason} ->
-        {:noreply, Phoenix.LiveView.put_flash(socket, :error, gettext("Não foi possível publicar na praça."))}
+        {:noreply, put_flash(socket, :error, gettext("Não foi possível publicar na praça."))}
     end
   end
 
@@ -167,39 +138,33 @@ defmodule TainaWeb.UploadLive do
     end)
   end
 
+  # O shell inscreve o morador nos eventos do Ava; esta tela não reage a eles,
+  # mas precisa ignorar o que não trata.
+  @impl true
+  def handle_info(_message, socket), do: {:noreply, socket}
+
+  # --- core puro: dados -> dados ---
+
   # A palavra do voltar: o nome da pasta de destino quando há uma, senão o
   # padrão da casca (spec 1.5, limite de 12 caracteres em back_label/1).
   defp folder_back_label(nil), do: nil
   defp folder_back_label(folder), do: back_label(folder.nome)
 
-  # Onde os arquivos caíram: na pasta alvo, ou no início já na aba casa (o
-  # default da listagem). Cair na praça faria o recém-chegado "sumir" da tela.
+  # Onde os arquivos caíram: na pasta alvo, ou no início já na casa (o
+  # destino de quem chega pela raiz). Cair na praça faria o recém-chegado
+  # "sumir" da tela.
   defp back_path(nil), do: ~p"/documentos/casa"
   defp back_path(folder), do: ~p"/documentos/pasta/#{folder.rkey}"
 
-  # --- core puro: dados -> dados ---
+  # State da caixa (board): estourou a cota, o painel explica e aponta o
+  # espaço; com envio em voo, o progresso do arquivo corrente; senão, parada.
+  defp dropzone_state(_uploads, true), do: "error-cota"
 
-  # O evento traz só o ref, sem dizer de qual dos dois envios a entrada veio;
-  # procuramos em qual lista ela está.
-  defp cancel_any(socket, ref) do
-    uploads = socket.assigns.uploads
-
-    cond do
-      Enum.any?(uploads.files.entries, &(&1.ref == ref)) -> cancel_upload(socket, :files, ref)
-      Enum.any?(uploads.camera.entries, &(&1.ref == ref)) -> cancel_upload(socket, :camera, ref)
-      true -> socket
-    end
+  defp dropzone_state(uploads, _quota_error) do
+    if uploads.files.entries == [], do: "idle", else: "uploading"
   end
 
-  # A fila "Enviando" junta as duas entradas, arquivos e câmera.
-  defp uploading_entries(uploads), do: uploads.files.entries ++ uploads.camera.entries
-
-  defp uploading?(uploads), do: uploading_entries(uploads) != []
-
-  # State da Dropzone é decisão da tela: com o próprio envio em vôo o painel
-  # vira "Enviando"; os erros (cota) continuam saindo na lista Falharam por
-  # enquanto (o wiring dos estados de erro é da W3.2).
-  defp dropzone_state(upload), do: if(upload.entries == [], do: "idle", else: "uploading")
+  defp uploading?(uploads), do: uploads.files.entries != [] or uploads.camera.entries != []
 
   # Erros de configuração (tamanho, quantidade) somados dos dois envios.
   defp config_errors(uploads), do: upload_errors(uploads.files) ++ upload_errors(uploads.camera)
@@ -209,15 +174,21 @@ defmodule TainaWeb.UploadLive do
     ~H"""
     <Layouts.page
       flash={@flash}
-      title={@page_title}
+      title={gettext("Documentos")}
       back={back_path(@folder)}
       back_label={folder_back_label(@folder)}
     >
       <div class="col gap-6 mx-auto w-full measure-md">
         <form id="upload-form" phx-change="validate" phx-submit="validate">
-          <.dropzone id="dropzone" upload={@uploads.files} state={dropzone_state(@uploads.files)} class="w-full" />
+          <.dropzone
+            id="dropzone"
+            upload={@uploads.files}
+            state={dropzone_state(@uploads, @quota_error?)}
+            error_href={~p"/armazenamento"}
+            class="w-full"
+          />
 
-          <label id="camera-input" class="dropzone hide-desktop mt-3">
+          <label id="camera-input" class="dropzone hide-desktop mt-3" :if={!@quota_error?}>
             <.icon name="image" size={28} />
             <span class="type-label text-primary">{gettext("Tirar foto com a câmera")}</span>
             <span class="type-caption text-muted">
@@ -225,40 +196,22 @@ defmodule TainaWeb.UploadLive do
             </span>
             <.live_file_input upload={@uploads.camera} capture="environment" class="sr-only" />
           </label>
-        </form>
 
-        <p :if={@free_space} class="type-caption text-muted">{@free_space}</p>
-
-        <div :if={uploading?(@uploads)}>
-          <p class="type-overline text-muted mb-2">
-            {gettext("Enviando (%{count})", count: length(uploading_entries(@uploads)))}
-          </p>
-          <div class="list">
-            <div :for={entry <- uploading_entries(@uploads)}>
-              <.list_row title={entry.client_name} tag="div">
-                <:leading>
-                  <% {service, icon} = file_visual(entry.client_type || "") %>
-                  <.service_square service={service} icon={icon} />
-                </:leading>
-                <:actions>
-                  <span class="type-caption text-brand">{entry.progress}%</span>
-                  <.icon_button name="close" label={gettext("Cancelar envio")} phx-click="cancel" phx-value-ref={entry.ref} />
-                </:actions>
-              </.list_row>
-              <.progress value={entry.progress} label={gettext("Enviando %{name}", name: entry.client_name)} />
-            </div>
-          </div>
           <p :for={err <- config_errors(@uploads)} class="field__error mt-2">
             {upload_config_error(err)}
           </p>
-        </div>
+        </form>
+
+        <p :if={uploading?(@uploads)} class="type-body-sm text-muted">
+          {gettext("Você pode continuar usando o app enquanto envia.")}
+        </p>
 
         <div :if={@failed != []}>
           <p class="type-overline text-error mb-2">{gettext("Falharam (%{count})", count: length(@failed))}</p>
           <ul class="list">
-            <.list_row :for={{name, reason} <- @failed} title={name} meta={reason} meta_class="text-error">
+            <.list_row :for={{name, reason} <- @failed} kind="file" title={name} meta={reason} meta_class="text-error">
               <:leading>
-                <.service_square service="neutral" icon="alert" />
+                <.service_square mark="neutral" />
               </:leading>
             </.list_row>
           </ul>
@@ -269,17 +222,17 @@ defmodule TainaWeb.UploadLive do
           <ul class="list">
             <.list_row
               :for={file <- @done}
+              kind="file"
               title={file.nome}
               meta={gettext("Concluído")}
               meta_class="text-success"
             >
               <:leading>
-                <% {service, icon} = file_visual(file.mime) %>
-                <.service_square service={service} icon={icon} />
+                <.service_square mark={file_mark(file.mime)} />
               </:leading>
               <:actions>
                 <%= if file.zona == :casa do %>
-                  <.button variant="secondary" size="sm" phx-click="publish" phx-value-rkey={file.rkey}>
+                  <.button kind="secondary" size="sm" phx-click="publish" phx-value-rkey={file.rkey}>
                     {gettext("Publicar na praça")}
                   </.button>
                 <% else %>
@@ -289,30 +242,16 @@ defmodule TainaWeb.UploadLive do
               </:actions>
             </.list_row>
           </ul>
-          <.progress value={100} color="success" />
-        </div>
-
-        <div class="col gap-3 mt-4">
-          <%= if uploading?(@uploads) do %>
-            <button type="button" class="btn btn--primary w-full" disabled>
-              {gettext("Concluir")}
-            </button>
-            <p class="type-caption text-muted text-center">
-              {gettext("Envio em andamento. Espere terminar para não perder arquivos.")}
-            </p>
-            <.button variant="ghost" size="sm" phx-click="cancel-all">
-              {gettext("Cancelar tudo")}
-            </.button>
-          <% else %>
-            <.button variant="primary" class="w-full" navigate={back_path(@folder)}>
-              {gettext("Concluir")}
-            </.button>
-          <% end %>
         </div>
       </div>
     </Layouts.page>
     """
   end
+
+  # O quadradinho da linha concluída: o mesmo mapa do hub e do navegador.
+  defp file_mark("image/" <> _rest), do: "jaci"
+  defp file_mark("video/" <> _rest), do: "video"
+  defp file_mark(_mime), do: "doc"
 
   defp upload_config_error(:too_large), do: gettext("O arquivo passa de 2 GB, o limite por arquivo.")
 
