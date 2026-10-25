@@ -357,14 +357,33 @@ defmodule TainaWeb.UI.ContentTest do
     assert html =~ "progress__fill--success"
   end
 
-  test "storage_card full: barra, meta e livres" do
+  test "storage_card full: número grande do board, barra e livres" do
     html = storage_card_html(stats: @normal_stats, detail: "full")
 
     assert html =~ "storage-card--full"
-    assert html =~ "usados"
-    assert html =~ "livres"
+    # o board do card completo não repete "usados" no número grande
+    assert html =~ ~s(storage-card__hero)
+    assert html =~ "82 GB de 238 GB"
+    refute html =~ "82 GB de 238 GB usados"
+    assert html =~ "156 GB livres"
     # compact só: sem Ver detalhes no full (o card já é o detalhe)
     refute html =~ "Ver detalhes"
+  end
+
+  test "storage_card full sem cota: disco inteiro com o tamanho do disco quando a tela sabe" do
+    stats = %{used_bytes: 82_000_000_000, quota_bytes: nil, disk_bytes: 256_000_000_000}
+    html = storage_card_html(stats: stats, detail: "full")
+
+    assert html =~ "Usando o disco inteiro: 76 GB de 238 GB"
+    assert html =~ "162 GB livres"
+    refute html =~ "progress__fill"
+  end
+
+  test "storage_card full com uso acima da cota: livres nunca fica negativo" do
+    stats = %{used_bytes: 300_000_000_000, quota_bytes: 256_000_000_000}
+    html = storage_card_html(stats: stats, detail: "full")
+
+    assert html =~ "0 B livres"
   end
 
   test "storage_card tone warning (disco quase cheio): modifier, barra âmbar e frase do board" do

@@ -1,19 +1,24 @@
 defmodule TainaWeb.SaudeLive do
   @moduledoc """
-  Saúde da comunidade (RFC_003 seção 6, camada 2): o estado da máquina em frases
-  simples, para a comunidade inteira ler.
+  Saúde da comunidade (RFC_003 seção 6, camada 2): o estado da caixa em
+  quatro linhas de status, ícone e palavra juntos, nunca só cor.
 
-  Não é a tela de cota (essa é o `StorageLive`, que fica como está): aqui são
-  fatos do presente, sem gráfico, sem histórico, sem exportação. Cuidado, não
-  controle: avisos são ambientes, ícone e frase juntos, nunca só cor, sem
-  vermelho de urgência. Morador lê tudo; quem cuida da máquina ganha o próximo
-  passo (fazer um backup agora) onde ele existe.
+  Boards do Penpot (docs/web-revamp-spec.md 6.4): morador
+  cc1037dc-e8ab-80cc-8008-d5e1a7913c2f, zelador cc1037dc-e8ab-80cc-8008-d5e1ab4909e2,
+  atenção cc1037dc-e8ab-80cc-8008-d5e1b8c51263 e Web
+  cc1037dc-e8ab-80cc-8008-d5eaeec2de68. O board `atenção` cobre também o
+  problema: disco quase cheio é atenção (âmbar), backup que falhou é problema
+  (vermelho), e a caixa segue no ar: ninguém perdeu arquivo.
 
-  A verificação de atualizações é opt-in e desligada por padrão (soberana,
-  RFC_003 D6, ver `Taina.Nhaman.Update`). Quando ligada, é um GET na
-  internet: ele não pode segurar o primeiro desenho no Pi. O mount decide só
-  o estado barato (desligada, ou "verificando") e, quando conectado, uma
-  `Task` busca a resposta e entra por `handle_info`.
+  Não é a tela de limite (essa é o `StorageLive`): aqui são vereditos do
+  presente, sem gráfico, sem histórico, sem exportação. Quem não cuida da
+  máquina lê quem cuida (pelo nome, do Moradores); quando algo pede atenção,
+  a saída é falar com quem cuida; quem cuida lê a própria parte e ganha o
+  passo "Fazer backup agora" quando o destino está configurado. A verificação
+  de atualizações é opt-in e desligada por padrão (soberana, RFC_003 D6, ver
+  `Taina.Nhaman.Update`): o mount decide só o estado barato (desligada, ou
+  "verificando") e, quando conectado, uma `Task` busca a resposta e entra por
+  `handle_info`.
   """
 
   use TainaWeb, :live_view
@@ -23,7 +28,7 @@ defmodule TainaWeb.SaudeLive do
   alias Taina.Nhaman.Update
   alias Taina.Ybira
   alias TainaWeb.Layouts
-  alias TainaWeb.Time
+  alias TainaWeb.Saude
   alias Ypy.Maraca.Ava
 
   @impl true
@@ -67,8 +72,6 @@ defmodule TainaWeb.SaudeLive do
      |> assign(:painel, painel)}
   end
 
-  defp checking_status, do: %{running: Update.running_version(), result: :checking}
-
   @impl true
   def handle_event("run-backup", _params, socket) do
     if Maraca.zelador?(socket.assigns.current_scope.ava) and Backup.enabled?() do
@@ -77,11 +80,10 @@ defmodule TainaWeb.SaudeLive do
       # produção de `Taina.Nhaman.Backup.run/1`.
       case Oban.insert(Taina.Nhaman.Workers.Backup.new(%{})) do
         {:ok, _job} ->
-          {:noreply,
-           Phoenix.LiveView.put_flash(socket, :info, gettext("Backup a caminho. Volte daqui a pouco para conferir."))}
+          {:noreply, put_flash(socket, :info, gettext("Backup a caminho. Volte daqui a pouco para conferir."))}
 
         {:error, _reason} ->
-          {:noreply, Phoenix.LiveView.put_flash(socket, :error, gettext("Não foi possível agendar o backup agora."))}
+          {:noreply, put_flash(socket, :error, gettext("Não foi possível agendar o backup agora."))}
       end
     else
       {:noreply, socket}
@@ -92,22 +94,19 @@ defmodule TainaWeb.SaudeLive do
     {:noreply, assign_painel(socket, socket.assigns.current_scope)}
   end
 
-  # Carrega os fatos que vêm do banco (disco, moradores, jobs) sem derrubar a
-  # tela: se falharem, o empty_state com "Tentar de novo" assume o lugar
-  # (sem flash duplicado). Backup e atualização têm degradação própria, cada
-  # linha diz o seu estado.
+  # Carrega os fatos que vêm do banco (disco, moradores) mais o backup e o
+  # estado da verificação, sem derrubar a tela: se falharem, o cartão de erro
+  # assume o lugar (sem flash duplicado).
   defp assign_painel(socket, scope) do
     with {:ok, stats} <- Ybira.storage_stats(scope),
-         {:ok, trash} <- Ybira.trash_stats(scope),
          {:ok, members} <- Maraca.list_members(scope) do
       socket
       |> assign(:painel, %{
         stats: stats,
-        trash: trash,
-        members: members,
-        jobs: Ybira.pending_job_counts(),
-        last_backup: Backup.last_backup(),
-        update_status: socket.assigns.update_status
+        backup: Backup.last_backup(),
+        update_status: socket.assigns.update_status,
+        zelador?: Maraca.zelador?(scope.ava),
+        zeladores: zelador_names(members)
       })
       |> assign(:load_error, false)
     else
@@ -120,219 +119,119 @@ defmodule TainaWeb.SaudeLive do
 
   # --- core puro: dados -> dados ---
 
-  # As linhas do painel, na ordem do RFC_003 seção 6. Cada linha é um fato do
-  # presente; contagem zerada não mostra linha ("0" não é fato, é número).
-  defp painel_rows(%Ypy.Scope{} = scope, %{
-         stats: stats,
-         trash: trash,
-         members: members,
-         jobs: jobs,
-         last_backup: last_backup,
-         update_status: update_status
-       }) do
-    Enum.reject(
-      [
-        disk_row(stats, trash),
-        backup_row(last_backup, scope),
-        jobs_row(jobs),
-        residents_row(members),
-        update_row(update_status),
-        identity_row(scope)
-      ],
-      &is_nil(&1)
+  # O modelo do corpo: nil (a carga falhou) não desenha nada além do cartão
+  # de erro; senão, as linhas, o rodapé e o botão do backup, decididos de uma
+  # vez (spec 1.3: qual estado renderizar é decisão pura do dado).
+  defp body_model(nil), do: nil
+
+  defp body_model(painel) do
+    rows = saude_rows(painel)
+
+    %{rows: rows, footer: care_footer(painel, rows), backup_button: backup_button?(painel)}
+  end
+
+  # As quatro linhas do board, na ordem: backup, espaço, atualização e a
+  # caixa no ar. Linha do board não leva detalhe (Detail: none).
+  defp saude_rows(%{stats: stats, backup: backup, update_status: update_status}) do
+    [
+      backup_row(backup),
+      disk_row(stats, backup),
+      update_row(update_status),
+      %{state: "ok", title: gettext("Tudo no ar")}
+    ]
+  end
+
+  # Em dia é "Backup em dia"; caixa nova (nunca houve backup) é atenção e
+  # backup ilegível é problema (o board `atenção` pinta o falhado de
+  # vermelho). A palavra nasce no resumo da Saúde, o mesmo veredito do hub.
+  defp backup_row({:ok, _guardou}), do: %{state: "ok", title: gettext("Backup em dia")}
+
+  defp backup_row({:error, reason} = backup) do
+    %{line: title} = backup_verdict(backup)
+
+    %{state: backup_state(reason), title: title}
+  end
+
+  # O veredito do backup, isolado do disco: com cota nil o disco não chama
+  # atenção, então a linha do resumo é só do backup (`TainaWeb.Saude`).
+  defp backup_verdict(backup) do
+    Saude.summary_line(%{storage: %{used_bytes: 0, quota_bytes: nil}, backup: backup})
+  end
+
+  defp backup_state(reason) when reason in [:none, :no_dir], do: "attention"
+  defp backup_state(_reason), do: "problem"
+
+  # Sem limite não há o que estourar (`Saude.disk_attention?/1`): o espaço é
+  # de sobra. Na atenção, a palavra é a do resumo (o disco fala primeiro,
+  # doc do Saude), seja qual for o backup.
+  defp disk_row(stats, backup) do
+    if Saude.disk_attention?(stats) do
+      %{state: "attention", title: Saude.summary_line(%{storage: stats, backup: backup}).line}
+    else
+      %{state: "ok", title: gettext("Espaço de sobra")}
+    end
+  end
+
+  # A verificação de atualização (opt-in, soberana): "em dia" é da caixa que
+  # verificou e está na mais recente. Os outros estados dizem o que se sabe,
+  # sem fingir - nem "em dia" quem desligou a verificação ou não conseguiu
+  # verificar agora.
+  defp update_row(%{result: :up_to_date}), do: %{state: "ok", title: gettext("Atualizações em dia")}
+
+  defp update_row(%{result: {:update_available, _latest}}) do
+    %{state: "attention", title: gettext("Atualização disponível")}
+  end
+
+  defp update_row(%{result: :checking}), do: %{state: "unknown", title: gettext("Verificando atualização")}
+  defp update_row(%{result: :check_off}), do: %{state: "unknown", title: gettext("Verificação desligada")}
+
+  defp update_row(%{result: result}) when result in [:unavailable, :unknown] do
+    %{state: "unknown", title: gettext("Verificação falhou")}
+  end
+
+  # O botão do backup (board zelador): só para quem cuida da máquina e só
+  # quando o destino está configurado - botão que não funciona é beco sem
+  # saída.
+  defp backup_button?(%{zelador?: true}), do: Backup.enabled?()
+  defp backup_button?(_painel), do: false
+
+  # O rodapé do board: quem não cuida lê quem cuida, pelo nome (e o cuidado é
+  # da máquina, não dos arquivos); quando algo pede atenção, a saída é falar
+  # com quem cuida (e o alívio: ninguém perdeu arquivo); quem cuida lê a
+  # própria parte.
+  defp care_footer(%{zelador?: true}, _rows) do
+    gettext("Você cuida da nuvem. O backup é a sua parte; os arquivos continuam de cada um.")
+  end
+
+  defp care_footer(%{zeladores: zeladores}, rows) do
+    if Enum.any?(rows, &(&1.state != "ok")),
+      do: gettext("Vale falar com quem cuida da nuvem. Ninguém perdeu arquivo."),
+      else: care_names_line(zeladores)
+  end
+
+  # "Quem cuida da nuvem é a Ana" (board): sem o artigo, o nome serve para
+  # qualquer pessoa.
+  defp care_names_line([name]) do
+    gettext("Quem cuida da nuvem é %{name}. Cuida da máquina, não dos arquivos.", name: name)
+  end
+
+  defp care_names_line([_first | _rest] = names) do
+    gettext("Quem cuida da nuvem: %{names}. Cuidam da máquina, não dos arquivos.",
+      names: list_in_portuguese(names)
     )
   end
 
-  defp disk_row(%{used_bytes: used, quota_bytes: nil}, trash) do
-    row("disk", gettext("Disco"), [
-      gettext("%{used} usados. Sem limite definido.", used: format_bytes(used)) | trash_line(trash)
-    ])
+  # A última zeladoria é guardada pelo kernel, mas a frase não vai quebrar se
+  # um dia não houver nome para ler.
+  defp care_names_line([]), do: gettext("Vale falar com quem cuida da nuvem. Ninguém perdeu arquivo.")
+
+  # Quem cuida da máquina, pelo nome: só quem está ativo. Conta desativada
+  # desativada está, não é gente cuidando da caixa agora.
+  defp zelador_names(members) do
+    members
+    |> Enum.filter(&(&1.papel == :zelador and is_nil(&1.deactivated_at)))
+    |> Enum.map(&ava_name/1)
   end
-
-  defp disk_row(%{used_bytes: used, quota_bytes: quota}, trash) when is_integer(quota) do
-    free = max(quota - used, 0)
-
-    body = [
-      gettext("%{used} usados de %{total}. %{free} livres.",
-        used: format_bytes(used),
-        total: format_bytes(quota),
-        free: format_bytes(free)
-      )
-      | trash_line(trash)
-    ]
-
-    if TainaWeb.Saude.disk_attention?(%{used_bytes: used, quota_bytes: quota}) do
-      row(
-        "disk",
-        gettext("Disco"),
-        body,
-        gettext("O espaço está acabando. Quem cuida da máquina pode aumentar o limite.")
-      )
-    else
-      row("disk", gettext("Disco"), body)
-    end
-  end
-
-  # A lixeira ainda conta na cota até o expurgo: dita em agregado (bytes e
-  # contagem, sem nomes nem donos, RFC_003), explica a diferença entre os
-  # "usados" e o conteúdo vivo. Vazia não mostra linha ("0" não é fato).
-  defp trash_line(%{count: 0}), do: []
-
-  defp trash_line(%{count: count, bytes: bytes}) do
-    [
-      ngettext(
-        "%{size} na lixeira esperando a limpeza (1 arquivo).",
-        "%{size} na lixeira esperando a limpeza (%{count} arquivos).",
-        count,
-        size: format_bytes(bytes)
-      )
-    ]
-  end
-
-  defp backup_row({:ok, %{at: at, bytes: bytes}}, _scope) do
-    row("shield", gettext("Último backup"), [
-      gettext("Terminou bem %{quando} (%{size} guardados).", quando: ago(at), size: format_bytes(bytes))
-    ])
-  end
-
-  # Nenhum backup ainda: o estado dito como fato mais o próximo passo. Para
-  # quem cuida da máquina, o passo é um botão (quando o backup está
-  # configurado); para quem não cuida, cuidado é de quem cuida, não recusa.
-  defp backup_row({:error, reason}, %Ypy.Scope{} = scope) when reason in [:none, :no_dir] do
-    zelador? = Maraca.zelador?(scope.ava)
-
-    body =
-      cond do
-        zelador? and Backup.enabled?() ->
-          [gettext("Nenhum backup ainda."), gettext("Quem cuida da máquina pode fazer um agora.")]
-
-        zelador? ->
-          [
-            gettext("Nenhum backup ainda."),
-            gettext("Quem cuida da máquina ainda não configurou onde guardar os backups.")
-          ]
-
-        true ->
-          [gettext("Nenhum backup ainda."), gettext("Quem cuida da máquina cuida do backup.")]
-      end
-
-    if zelador? and Backup.enabled?(),
-      do: row("shield", gettext("Último backup"), body, nil, :run_backup),
-      else: row("shield", gettext("Último backup"), body)
-  end
-
-  # Ilegível não é beco sem saída: diz o estado e nomeia o próximo passo e o
-  # ator, o mesmo falar das outras linhas.
-  defp backup_row({:error, :unreadable}, _scope) do
-    row("shield", gettext("Último backup"), [
-      gettext("Não foi possível ler os backups agora."),
-      gettext("Fale com quem cuida da máquina se persistir.")
-    ])
-  end
-
-  # Jobs em espera ou em andamento: contagem com substantivo, zerado não
-  # mostra linha (a linha inteira desaparece quando não há trabalho).
-  defp jobs_row(%{renditions: renditions, trash_purge: trash_purge}) do
-    body =
-      []
-      |> maybe_append(renditions > 0, fn ->
-        ngettext("1 miniatura ainda sendo gerada", "%{count} miniaturas ainda sendo geradas", renditions)
-      end)
-      |> maybe_append(trash_purge > 0, fn ->
-        ngettext("1 limpeza da lixeira em andamento", "%{count} limpezas da lixeira em andamento", trash_purge)
-      end)
-
-    if body == [], do: nil, else: row("clock", gettext("Trabalhos da caixa"), body)
-  end
-
-  defp residents_row(members) do
-    # Moradores de verdade: quem pode entrar. Conta desativada desativada
-    # está, não é gente usando a caixa agora.
-    active = Enum.filter(members, &is_nil(&1.deactivated_at))
-
-    zeladores =
-      active
-      |> Enum.filter(&(&1.papel == :zelador))
-      |> Enum.map(&ava_name/1)
-
-    body = [ngettext("1 morador", "%{count} moradores", length(active))] ++ caretaker_line(zeladores)
-
-    row("user", gettext("Moradores"), body)
-  end
-
-  defp update_row(%{running: running, result: :check_off}) do
-    row("restore", gettext("Atualização"), [
-      gettext("A caixa está na versão %{version}.", version: running),
-      gettext("A verificação de atualizações está desligada: a caixa não conversa com a internet por conta própria.")
-    ])
-  end
-
-  defp update_row(%{running: running, result: :up_to_date}) do
-    row("restore", gettext("Atualização"), [
-      gettext("A caixa está na versão %{version}, a mais recente.", version: running)
-    ])
-  end
-
-  defp update_row(%{running: running, result: :checking}) do
-    row("restore", gettext("Atualização"), [
-      gettext("A caixa está na versão %{version}. A verificação de versão mais nova está em andamento.",
-        version: running
-      )
-    ])
-  end
-
-  defp update_row(%{running: running, result: {:update_available, latest}}) do
-    row("restore", gettext("Atualização"), [
-      gettext("Há uma versão mais nova (%{latest}). A caixa está na %{version}.", latest: latest, version: running),
-      gettext("Quem cuida da máquina pode atualizar a caixa.")
-    ])
-  end
-
-  defp update_row(%{running: running, result: :unavailable}) do
-    row("restore", gettext("Atualização"), [
-      gettext("Não foi possível verificar atualizações agora. A caixa está na versão %{version}.", version: running)
-    ])
-  end
-
-  defp update_row(%{result: :unknown}) do
-    row("restore", gettext("Atualização"), [
-      gettext("Não deu para comparar a versão da caixa com a publicada agora.")
-    ])
-  end
-
-  defp identity_row(%Ypy.Scope{} = scope) do
-    row("home", gettext("A caixa"), caixa_body(scope))
-  end
-
-  # O endereço só entra como fato quando existe de verdade. O default
-  # "example.com" não é fato: nesta tela, cujo trabalho é dizer a verdade,
-  # endereço ausente é dito como estado.
-  defp caixa_body(%Ypy.Scope{} = scope) do
-    base = [gettext("Esta é a caixa de %{tekoa}.", tekoa: scope.tekoa.name)]
-
-    case box_address() do
-      {:ok, address} ->
-        base ++ [gettext("A comunidade acessa por %{address}.", address: address)]
-
-      :unconfigured ->
-        base ++ [gettext("O endereço da caixa ainda não foi configurado na instalação.")]
-    end
-  end
-
-  defp row(icon, label, body, warning \\ nil, action \\ nil) do
-    %{icon: icon, label: label, body: body, warning: warning, action: action}
-  end
-
-  defp maybe_append(list, true, fun), do: list ++ [fun.()]
-  defp maybe_append(list, false, _fun), do: list
-
-  defp caretaker_line([]), do: []
-
-  defp caretaker_line(zeladores) do
-    [gettext("Quem cuida da máquina: %{names}.", names: list_in_portuguese(zeladores))]
-  end
-
-  defp ava_name(%Ava{} = ava), do: ava.display_name || ava.username
 
   # Lista de nomes em pt-BR: "Ana", "Ana e Bruno", "Ana, Bruno e Carol".
   defp list_in_portuguese([name]), do: name
@@ -343,71 +242,57 @@ defmodule TainaWeb.SaudeLive do
     Enum.join(Enum.reverse(rest), ", ") <> " #{gettext("e")} #{last}"
   end
 
-  # "Quando" do backup, no horário da comunidade: o mesmo passo do
-  # `relative_time/1` do design system, que só recebe NaiveDateTime (e conta
-  # o dia em UTC; aqui o dia é o de quem lê).
-  defp ago(%DateTime{} = at) do
-    days = Date.diff(Time.local_today(), Time.local_date(at))
+  defp ava_name(%Ava{} = ava), do: ava.display_name || ava.username
 
-    cond do
-      days <= 0 -> gettext("hoje")
-      days == 1 -> gettext("ontem")
-      days < 30 -> gettext("há %{count} dias", count: days)
-      true -> gettext("há %{count} meses", count: div(days, 30))
-    end
-  end
+  defp checking_status, do: %{running: Update.running_version(), result: :checking}
 
-  # O endereço pelo qual a comunidade alcança a caixa: o host configurado do
-  # endpoint (PHX_HOST), não um valor que o navegador inventa. O default de
-  # instalação (o "example.com" do prod) conta como não configurado.
-  defp box_address do
-    case TainaWeb.Endpoint.config(:url)[:host] do
-      host when host in [nil, "example.com"] -> :unconfigured
-      host -> {:ok, host}
-    end
-  end
+  # --- shell imperativo: assign/render ---
 
   @impl true
   def render(assigns) do
     ~H"""
     <Layouts.page flash={@flash} title={@page_title} back={~p"/"}>
-      <div class="col gap-6">
-        <div class="row gap-3">
-          <.service_square service="nhaman" icon="saude" />
-        </div>
-
-        <.empty_state
-          :if={@load_error}
-          icon="alert"
-          title={gettext("Não foi possível carregar")}
-          hint={gettext("A saúde da caixa não respondeu agora.")}
-        >
-          <.button variant="secondary" phx-click="retry">{gettext("Tentar de novo")}</.button>
-        </.empty_state>
-
-        <div :if={not @load_error} class="painel-grid">
-          <.card :for={row <- painel_rows(@current_scope, @painel)} raised class="col gap-2">
-            <div class="row gap-3">
-              <.icon name={row.icon} size={20} class="text-muted" />
-              <p class="type-label">{row.label}</p>
-            </div>
-            <p :for={line <- row.body} class="type-body-sm text-secondary">{line}</p>
-            <p :if={row.warning} class="row gap-2 type-body-sm text-warning">
-              <.icon name="alert" size={16} /> {row.warning}
-            </p>
-            <.button
-              :if={row.action == :run_backup}
-              variant="secondary"
-              size="sm"
-              class="self-start"
-              phx-click="run-backup"
-            >
-              {gettext("Fazer backup agora")}
-            </.button>
-          </.card>
-        </div>
-      </div>
+      <.saude_body load_error={@load_error} painel={@painel} />
     </Layouts.page>
+    """
+  end
+
+  @doc """
+  Corpo da Saúde: componente puro, recebe o resumo carregado e devolve HEEx.
+  As linhas são `status_line` (estado pelo dado, nunca só cor, spec 1.7); o
+  cartão de erro assume quando a nuvem não responde.
+  """
+  attr :load_error, :boolean, required: true
+  attr :painel, :map, default: nil
+
+  def saude_body(assigns) do
+    assigns = assign(assigns, :saude, body_model(assigns.painel))
+
+    ~H"""
+    <div class="col gap-6">
+      <.error_card
+        :if={@load_error}
+        title={gettext("Não conseguimos falar com a nuvem agora.")}
+        retry_event="retry"
+      />
+
+      <div :if={@saude} class="col gap-4">
+        <p class="type-overline text-muted">{gettext("ESTADO DA NUVEM")}</p>
+
+        <div class="col">
+          <div :for={{row, index} <- Enum.with_index(@saude.rows)}>
+            <hr :if={index > 0} class="divider" />
+            <.status_line state={row.state} title={row.title} />
+          </div>
+        </div>
+
+        <.button :if={@saude.backup_button} kind="primary" class="self-start" phx-click="run-backup">
+          {gettext("Fazer backup agora")}
+        </.button>
+
+        <p class="type-body-sm text-secondary">{@saude.footer}</p>
+      </div>
+    </div>
     """
   end
 end

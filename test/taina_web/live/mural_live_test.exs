@@ -1,8 +1,12 @@
 defmodule TainaWeb.MuralLiveTest do
   @moduledoc """
-  Tela do mural: frases simples de quem fez o quê, agrupadas por dia,
-  somente leitura para todos os papéis (zelador incluso). O registro é a
-  projecao da cadeia unica: atos do produto e verbos do kernel.
+  Tela do mural (docs/web-revamp-spec.md 6.4): frases simples de quem fez o
+  quê, do mais recente para o mais antigo, somente leitura para todos os
+  papéis (zelador incluso). Cada linha leva o próprio dia no meta ("Hoje,
+  09:12") e a lista acaba no "Fim do mural.". Um teste por board do Penpot:
+  `padrao`, `vazio` e `degradado` (este no componente puro do corpo, já que
+  as chamadas de contexto não falham sob demanda), mais a paginação que
+  termina.
   """
 
   use TainaWeb.ConnCase, async: true
@@ -21,12 +25,58 @@ defmodule TainaWeb.MuralLiveTest do
     %{tekoa: tekoa, zelador: zelador, morador: active_ava_fixture(tekoa, %{display_name: "Bruno"})}
   end
 
-  test "mural vazio ensina o que ele é e que é registro permanente", %{conn: conn, morador: morador} do
+  # board `padrao`
+  test "atos do kernel viram linhas com o dia no meta, e a lista acaba no 'Fim do mural.'", %{
+    conn: conn,
+    tekoa: tekoa,
+    zelador: zelador
+  } do
+    scope = Scope.new(zelador, tekoa)
+    path = tmp_upload_fixture("conteúdo", "estatuto.pdf")
+    {:ok, file} = Ybira.upload(scope, path, filename: "estatuto.pdf")
+    {:ok, _file} = Ybira.publicar_file(scope, file.rkey)
+
+    {:ok, _lv, html} = conn |> log_in(zelador) |> live(~p"/mural")
+
+    # as linhas são ListRow mural, quadradinho à esquerda
+    assert html =~ "list-row--mural"
+    assert html =~ "Ana guardou um arquivo na caixa"
+    assert html =~ "Ana publicou um arquivo na praça"
+
+    # o meta do board: dia e hora juntos, "Hoje, 09:12"
+    assert html =~ ~r/Hoje, \d{2}:\d{2}/
+
+    # uma página só: a lista já acabou, o "Fim do mural." assume
+    assert html =~ "Fim do mural."
+  end
+
+  # board `vazio`
+  test "mural vazio ensina o que ele é", %{conn: conn, morador: morador} do
     {:ok, _lv, html} = conn |> log_in(morador) |> live(~p"/mural")
 
-    assert html =~ "Mural"
-    assert html =~ "Nada aconteceu ainda"
-    assert html =~ "Ninguém edita e ninguém apaga"
+    assert html =~ "empty-state"
+    assert html =~ "Nada no mural ainda"
+    assert html =~ "Ainda não aconteceu nada por aqui. Quando alguém publicar na praça ou cuidar da máquina"
+  end
+
+  # board `degradado` (componente puro: o contexto não falha sob demanda)
+  test "degradado: cartão de erro no topo e esqueleto no lugar das linhas", %{conn: _conn} do
+    html =
+      render_component(&TainaWeb.MuralLive.mural_body/1, %{
+        load_error: true,
+        entries: [],
+        event_count: 0,
+        next_offset: nil,
+        more_error: false
+      })
+
+    assert html =~ "error-card"
+    assert html =~ "Não conseguimos falar com a nuvem agora."
+    assert html =~ "Tentar de novo"
+    assert html =~ "Falar com quem cuida"
+
+    # as linhas que não carregaram esqueletam, não somem em silêncio
+    assert html =~ "skeleton--list-row"
   end
 
   test "verbos do kernel viram frases com quem fez e quando", %{conn: conn, tekoa: tekoa, zelador: zelador} do
@@ -37,12 +87,9 @@ defmodule TainaWeb.MuralLiveTest do
 
     {:ok, _lv, html} = conn |> log_in(zelador) |> live(~p"/mural")
 
-    assert html =~ "Ana guardou um arquivo na caixa."
-    assert html =~ "Ana publicou um arquivo na praça."
-    # sob "Hoje"/"Ontem" a hora basta: o dia nao se repete em cada linha
-    assert html =~ "Hoje"
+    assert html =~ "Ana guardou um arquivo na caixa"
+    assert html =~ "Ana publicou um arquivo na praça"
     assert html =~ ~r/\d{2}:\d{2}/
-    refute html =~ "hoje"
   end
 
   test "zelador vê o mesmo mural, sem controle nenhum sobre o registro", %{conn: conn, tekoa: tekoa, zelador: zelador} do
@@ -50,7 +97,7 @@ defmodule TainaWeb.MuralLiveTest do
 
     {:ok, lv, html} = conn |> log_in(zelador) |> live(~p"/mural")
 
-    assert html =~ "Ana convidou uma nova pessoa para a comunidade."
+    assert html =~ "Ana convidou uma nova pessoa para a comunidade"
     # Somente leitura: sem um único controle na tela.
     refute has_element?(lv, "#mural-events button")
     refute has_element?(lv, "#mural-events a")
@@ -74,7 +121,7 @@ defmodule TainaWeb.MuralLiveTest do
 
     {:ok, _lv, html} = conn |> log_in(zelador) |> live(~p"/mural")
 
-    assert html =~ "Joana entrou na comunidade para cuidar da máquina."
+    assert html =~ "Joana entrou na comunidade para cuidar da máquina"
   end
 
   test "revogação de convite nomeia o cuidado da máquina", %{
@@ -86,7 +133,7 @@ defmodule TainaWeb.MuralLiveTest do
 
     {:ok, _lv, html} = conn |> log_in(zelador) |> live(~p"/mural")
 
-    assert html =~ "Ana revogou um convite para cuidar da máquina."
+    assert html =~ "Ana revogou um convite para cuidar da máquina"
   end
 
   test "aceite antigo (sem papel no registro) continua com a frase genérica", %{
@@ -98,7 +145,7 @@ defmodule TainaWeb.MuralLiveTest do
 
     {:ok, _lv, html} = conn |> log_in(morador) |> live(~p"/mural")
 
-    assert html =~ "Bruno entrou na comunidade."
+    assert html =~ "Bruno entrou na comunidade"
   end
 
   test "link de nova senha vira frase com quem gerou e para quem", %{
@@ -112,7 +159,7 @@ defmodule TainaWeb.MuralLiveTest do
 
     {:ok, _lv, html} = conn |> log_in(zelador) |> live(~p"/mural")
 
-    assert html =~ "Ana gerou um link de nova senha para Bruno."
+    assert html =~ "Ana gerou um link de nova senha para Bruno"
   end
 
   test "atos do zelador sobre papéis viram frases de cuidado da máquina", %{
@@ -133,13 +180,13 @@ defmodule TainaWeb.MuralLiveTest do
     # A troca de papel e verbo do kernel: o payload da cadeia nomina o papel,
     # nao a pessoa (a projecao de nomes cobre o ator). Desativar e reativar
     # sao atos do produto e nomeiam a pessoa.
-    assert html =~ "Ana deu a um morador o cuidado da máquina."
-    assert html =~ "Ana desativou a conta de Bruno."
-    assert html =~ "Ana reativou a conta de Bruno."
-    assert html =~ "Ana tirou de um morador o cuidado da máquina."
+    assert html =~ "Ana deu a um morador o cuidado da máquina"
+    assert html =~ "Ana desativou a conta de Bruno"
+    assert html =~ "Ana reativou a conta de Bruno"
+    assert html =~ "Ana tirou de um morador o cuidado da máquina"
   end
 
-  test "pagina com 'carregar mais' quando passa da primeira página", %{conn: conn, tekoa: tekoa, zelador: zelador} do
+  test "pagina com 'Carregando mais' e acaba no 'Fim do mural.'", %{conn: conn, tekoa: tekoa, zelador: zelador} do
     # 55 atos do zelador: a primeira página (50) deixa resto.
     scope = Scope.new(zelador, tekoa)
 
@@ -150,11 +197,13 @@ defmodule TainaWeb.MuralLiveTest do
     {:ok, lv, html} = conn |> log_in(zelador) |> live(~p"/mural")
 
     assert html =~ "Carregando mais..."
+    refute html =~ "Fim do mural."
 
     html = render_hook(lv, "load-more")
 
     refute html =~ "Carregando mais..."
     assert html =~ "mudou o limite de armazenamento para"
+    assert html =~ "Fim do mural."
   end
 
   test "Mural renderiza a casca page com o título no cabeçalho (a casca é quem possui o título)", %{

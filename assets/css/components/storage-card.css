@@ -27,6 +27,11 @@
 }
 
 /* "Ver detalhes": pílula com borda, alvo de toque grande por paddings */
+/* o número grande do card completo ("236 GB de 256 GB"), como no board */
+.storage-card__hero {
+  color: var(--text-primary);
+}
+
 .storage-card__link {
   display: inline-flex;
   align-items: center;

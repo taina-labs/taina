@@ -412,6 +412,8 @@ defmodule TainaWeb.UI.Content do
         </.link>
       </div>
 
+      <.storage_hero :if={@detail == "full"} stats={@stats} />
+
       <.progress
         :if={storage_limited?(@stats)}
         value={storage_usage_percent(@stats)}
@@ -434,6 +436,26 @@ defmodule TainaWeb.UI.Content do
 
   defp storage_usage_percent(_stats), do: 0
 
+  defp storage_hero(%{stats: %{used_bytes: used, quota_bytes: quota}} = assigns) when is_integer(quota) and quota > 0 do
+    assigns = assign(assigns, used_text: format_bytes(used), total_text: format_bytes(quota))
+
+    ~H"""
+    <p class="storage-card__hero type-h2">{gettext("%{used} de %{total}", used: @used_text, total: @total_text)}</p>
+    """
+  end
+
+  defp storage_hero(%{stats: %{used_bytes: used, disk_bytes: disk}} = assigns) when is_integer(disk) and disk > 0 do
+    assigns = assign(assigns, used_text: format_bytes(used), total_text: format_bytes(disk))
+
+    ~H"""
+    <p class="storage-card__hero type-h2">
+      {gettext("Usando o disco inteiro: %{used} de %{total}", used: @used_text, total: @total_text)}
+    </p>
+    """
+  end
+
+  defp storage_hero(assigns), do: ~H""
+
   attr :stats, :map, required: true
   attr :detail, :string, required: true
   attr :attention, :boolean, required: true
@@ -443,11 +465,27 @@ defmodule TainaWeb.UI.Content do
       assign(assigns,
         used_text: format_bytes(used),
         total_text: format_bytes(quota),
-        free: format_bytes(quota - used)
+        free: format_bytes(max(quota - used, 0))
       )
 
     ~H"""
-    <p class="storage-card__meta">{gettext("%{used} de %{total} usados", used: @used_text, total: @total_text)}</p>
+    <p :if={@detail == "compact"} class="storage-card__meta">
+      {gettext("%{used} de %{total} usados", used: @used_text, total: @total_text)}
+    </p>
+    <p :if={@detail == "full"} class="storage-card__free">
+      {gettext("%{free} livres", free: @free)}
+    </p>
+    <p :if={@attention} class="storage-card__hint">{storage_hint(@detail)}</p>
+    """
+  end
+
+  # Sem cota: o board do disco inteiro também mostra "N livres" quando a tela
+  # sabe o tamanho do disco; sem esse número, a linha do disco inteiro fica
+  # sozinha em vez de inventar folga.
+  defp storage_lines(%{stats: %{used_bytes: used, disk_bytes: disk}} = assigns) when is_integer(disk) and disk > 0 do
+    assigns = assign(assigns, free: format_bytes(max(disk - used, 0)))
+
+    ~H"""
     <p :if={@detail == "full"} class="storage-card__free">
       {gettext("%{free} livres", free: @free)}
     </p>

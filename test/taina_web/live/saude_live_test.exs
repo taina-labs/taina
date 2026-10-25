@@ -1,8 +1,11 @@
 defmodule TainaWeb.SaudeLiveTest do
   @moduledoc """
-  Tela "Saúde da comunidade" (RFC_003 seção 6, camada 2): fatos do presente em
-  frases simples. Morador lê tudo; quem cuida da máquina ganha o próximo passo
-  do backup quando ele existe. Mutando config de backup, roda sem async.
+  Tela "Saúde da comunidade" (docs/web-revamp-spec.md 6.4): quatro linhas de
+  status (ícone e palavra juntos, nunca só cor), o rodapé que diz quem cuida
+  e, para quem cuida, o passo "Fazer backup agora". Um teste por board do
+  Penpot: `morador`, `zelador` e `atenção` (os três no componente puro do
+  corpo, que decide cada linha do dado, mais os caminhos vivos na LiveView).
+  Mutando config de backup, roda sem async.
   """
 
   use TainaWeb.ConnCase, async: false
@@ -11,11 +14,9 @@ defmodule TainaWeb.SaudeLiveTest do
   import Taina.Fixtures
 
   alias Ecto.Changeset
-  alias Taina.Nhaman
-  alias Taina.Nhaman.Backup
   alias Taina.Repo
-  alias Taina.Scope
-  alias Taina.Ybira
+
+  @gb 1024 * 1024 * 1024
 
   setup do
     tekoa = tekoa_fixture()
@@ -31,43 +32,88 @@ defmodule TainaWeb.SaudeLiveTest do
     }
   end
 
-  test "morador lê os fatos: disco, moradores, atualização e a caixa", %{
+  # board `morador` (componente puro: as quatro linhas em dia)
+  test "board morador: quatro linhas ok e o rodapé nomeando quem cuida", %{conn: _conn} do
+    html = saude_body_html(zelador?: false, zeladores: ["Ana"], backup: {:ok, %{at: now(), bytes: 100}})
+
+    assert html =~ "ESTADO DA NUVEM"
+    assert html =~ "status-line--ok"
+    assert html =~ "Backup em dia"
+    assert html =~ "Espaço de sobra"
+    assert html =~ "Atualizações em dia"
+    assert html =~ "Tudo no ar"
+
+    # o rodapé do board: quem cuida, pelo nome, e o cuidado é da máquina
+    assert html =~ "Quem cuida da nuvem é Ana. Cuida da máquina, não dos arquivos."
+
+    # quem não cuida não ganha o botão do backup
+    refute html =~ "Fazer backup agora"
+  end
+
+  # board `zelador` (componente puro: o passo de quem cuida)
+  test "board zelador: 'Fazer backup agora' e a parte de quem cuida no rodapé", %{conn: _conn} do
+    Application.put_env(:taina, :backup, enabled: true, dir: backup_dir())
+
+    html = saude_body_html(zelador?: true, zeladores: ["Ana"], backup: {:ok, %{at: now(), bytes: 100}})
+
+    assert html =~ "Fazer backup agora"
+    assert html =~ "Você cuida da nuvem. O backup é a sua parte; os arquivos continuam de cada um."
+  end
+
+  # board `atenção` (componente puro: atenção e problema na mesma tela)
+  test "board atenção: disco em atenção, backup falhado em problema e a saída é falar com quem cuida", %{
+    conn: _conn
+  } do
+    html =
+      saude_body_html(
+        zelador?: false,
+        zeladores: ["Ana"],
+        stats: %{used_bytes: @gb, quota_bytes: @gb},
+        backup: {:error, :unreadable}
+      )
+
+    assert html =~ ~s(status-line--attention)
+    assert html =~ "Disco quase cheio"
+
+    assert html =~ ~s(status-line--problem)
+    assert html =~ "Último backup falhou"
+
+    # a caixa segue no ar: o alívio vai junto do aviso
+    assert html =~ "Tudo no ar"
+    assert html =~ "Vale falar com quem cuida da nuvem. Ninguém perdeu arquivo."
+  end
+
+  # load error (componente puro: o contexto não falha sob demanda)
+  test "degradado: cartão de erro quando a nuvem não responde", %{conn: _conn} do
+    html = render_component(&TainaWeb.SaudeLive.saude_body/1, %{load_error: true, painel: nil})
+
+    assert html =~ "error-card"
+    assert html =~ "Não conseguimos falar com a nuvem agora."
+    assert html =~ "Tentar de novo"
+    refute html =~ "ESTADO DA NUVEM"
+  end
+
+  test "morador lê as linhas do presente: backup ainda não houve, verificação desligada", %{
     conn: conn,
-    tekoa: tekoa,
     morador: morador
   } do
-    {:ok, _lv, html} = conn |> log_in(morador) |> live(~p"/saude")
+    {:ok, lv, html} = conn |> log_in(morador) |> live(~p"/saude")
 
-    assert html =~ "Saúde da comunidade"
+    assert html =~ "ESTADO DA NUVEM"
 
-    # Disco em unidades humanas, nunca bytes crus.
-    assert html =~ "0 B usados de 1,0 GB. 1,0 GB livres."
+    # caixa nova: nunca houve backup, e isso é atenção (âmbar), não problema
+    assert html =~ "status-line--attention"
+    assert html =~ "Nenhum backup ainda"
 
-    # Lixeira vazia não mostra linha ("0" não é fato).
-    refute html =~ "na lixeira"
+    # o default soberano: a verificação desligada se diz como estado
+    assert html =~ "status-line--unknown"
+    assert html =~ "Verificação desligada"
 
-    # Moradores e quem cuida da máquina.
-    assert html =~ "2 moradores"
-    assert html =~ "Quem cuida da máquina: Ana."
+    # com algo em atenção, a saída do morador é falar com quem cuida
+    assert html =~ "Vale falar com quem cuida da nuvem. Ninguém perdeu arquivo."
 
-    # Atualização desligada (o default soberano): dita como estado, sem
-    # fingir "atualizado".
-    assert html =~ "A verificação de atualizações está desligada"
-    assert html =~ "não conversa com a internet por conta própria"
-    version = Nhaman.Update.running_version()
-    assert html =~ "A caixa está na versão " <> version
-
-    # A caixa: nome da Tekoa e o endereço que a comunidade usa.
-    assert html =~ "Esta é a caixa de #{tekoa.name}."
-    assert html =~ "A comunidade acessa por localhost."
-
-    # Sem backup ainda: cuidado, não recusa, sem botão para morador.
-    assert html =~ "Nenhum backup ainda."
-    assert html =~ "Quem cuida da máquina cuida do backup."
-    refute html =~ "Fazer backup agora"
-
-    # Jobs zerados não mostram linha ("0" não é fato).
-    refute html =~ "Trabalhos da caixa"
+    # sem botão para quem não cuida
+    refute has_element?(lv, ~s(button[phx-click="run-backup"]))
   end
 
   test "zelador com backup configurado ganha o passo 'Fazer backup agora'", %{conn: conn, zelador: zelador} do
@@ -75,51 +121,32 @@ defmodule TainaWeb.SaudeLiveTest do
 
     {:ok, lv, html} = conn |> log_in(zelador) |> live(~p"/saude")
 
-    assert html =~ "Nenhum backup ainda."
-    assert html =~ "Quem cuida da máquina pode fazer um agora."
+    assert html =~ "Nenhum backup ainda"
     assert has_element?(lv, ~s(button[phx-click="run-backup"]))
+
+    lv |> element(~s(button[phx-click="run-backup"])) |> render_click()
+
+    assert render(lv) =~ "Backup a caminho. Volte daqui a pouco para conferir."
   end
 
   test "zelador sem backup configurado ouve isso, sem botão de beco sem saída", %{conn: conn, zelador: zelador} do
     {:ok, lv, html} = conn |> log_in(zelador) |> live(~p"/saude")
 
-    assert html =~ "Nenhum backup ainda."
-    assert html =~ "Quem cuida da máquina ainda não configurou onde guardar os backups."
+    assert html =~ "Nenhum backup ainda"
+    assert html =~ "Você cuida da nuvem. O backup é a sua parte; os arquivos continuam de cada um."
     refute has_element?(lv, ~s(button[phx-click="run-backup"]))
   end
 
-  test "último backup lido do destino: quando terminou bem e quanto guardou", %{conn: conn, zelador: zelador} do
-    dir = backup_dir()
-
-    at = DateTime.utc_now() |> DateTime.shift(day: -2) |> DateTime.truncate(:second)
-    File.write!(Path.join(dir, Backup.archive_filename(at)), "bytes do cofre")
-    Application.put_env(:taina, :backup, enabled: true, dir: dir)
-
-    {:ok, _lv, html} = conn |> log_in(zelador) |> live(~p"/saude")
-
-    assert html =~ "Terminou bem há 2 dias (14 B guardados)."
-  end
-
-  test "disco acabando é aviso ambiente: ícone e frase junto, nunca alarme", %{conn: conn, tekoa: tekoa, morador: morador} do
+  test "disco acabando é atenção: ícone e palavra junto, nunca alarme", %{conn: conn, tekoa: tekoa, morador: morador} do
     Repo.with_tekoa(tekoa.public_id, fn ->
       {:ok, tekoa |> Changeset.change(storage_used_bytes: tekoa.storage_quota_bytes) |> Repo.update!()}
     end)
 
     {:ok, _lv, html} = conn |> log_in(morador) |> live(~p"/saude")
 
-    assert html =~ "1,0 GB usados de 1,0 GB. 0 B livres."
-    assert html =~ "O espaço está acabando."
-  end
-
-  test "lixeira entra como fato agregado, sem nome nem dono", %{conn: conn, tekoa: tekoa, morador: morador} do
-    scope = Scope.new(morador, tekoa)
-    {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("x", "arquivo_da_casa.txt"))
-    {:ok, _} = Ybira.delete_file(scope, file.rkey)
-
-    {:ok, _lv, html} = conn |> log_in(morador) |> live(~p"/saude")
-
-    assert html =~ "na lixeira esperando a limpeza (1 arquivo)."
-    refute html =~ "arquivo_da_casa"
+    assert html =~ "status-line--attention"
+    assert html =~ "Disco quase cheio"
+    assert html =~ "Vale falar com quem cuida da nuvem. Ninguém perdeu arquivo."
   end
 
   test "Saúde renderiza a casca page com o título no cabeçalho (a casca é quem possui o título)", %{
@@ -130,6 +157,21 @@ defmodule TainaWeb.SaudeLiveTest do
 
     assert has_element?(lv, ".page-header__title", "Saúde da comunidade")
   end
+
+  defp saude_body_html(opts) do
+    painel =
+      %{
+        stats: Keyword.get(opts, :stats, %{used_bytes: 0, quota_bytes: @gb}),
+        backup: Keyword.fetch!(opts, :backup),
+        update_status: Keyword.get(opts, :update_status, %{running: "0.2.0", result: :up_to_date}),
+        zelador?: Keyword.fetch!(opts, :zelador?),
+        zeladores: Keyword.fetch!(opts, :zeladores)
+      }
+
+    render_component(&TainaWeb.SaudeLive.saude_body/1, %{load_error: false, painel: painel})
+  end
+
+  defp now, do: DateTime.truncate(DateTime.utc_now(), :second)
 
   defp backup_dir do
     dir = Path.join(System.tmp_dir!(), "taina_saude_test_#{System.unique_integer([:positive])}")
