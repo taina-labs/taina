@@ -1,16 +1,20 @@
 defmodule TainaWeb.AccessRequestsLive do
   @moduledoc """
-  Pedidos ("Conta -> Pedidos", RFC_003 D4), recebidos e enviados numa tela só:
-  quem pediu para abrir um arquivo seu (com o motivo), o que você pediu e
-  aguarda decisão, o que já foi decidido e as permissões que você liberou.
+  Pedidos ("Conta -> Pedidos", RFC_003 D4; spec 6.4, boards "Pedidos" do
+  Penpot): `com pedidos` cc1037dc-e8ab-80cc-8008-d5e227df15d9, `vazio`
+  cc1037dc-e8ab-80cc-8008-d5e22b5109c1 e `enviado`
+  cc1037dc-e8ab-80cc-8008-d62898a2525a.
 
-  O dono aprova (libera leitura) ou nega (a pessoa pode pedir de novo depois).
-  Um pedido decidido não desaparece (RFC_003: sem resultado silencioso):
-  aprovado ou recusado, ele desce para "Já decididos" com a resposta dita por
-  quem pediu. O poder concedido também é legível e reversível: "Já liberados"
-  lista as permissões de leitura que o dono concedeu, com quem recebeu, o
-  arquivo e desde quando. Sem board próprio no Penpot, composto com os
-  componentes de linha do design system.
+  A fila de quem recebe o pedido, nos três estados do board: pendente ("Carla
+  pediu acesso" com Recusar e Dar acesso na linha), concedido ("João recebeu
+  acesso", com o dia) e recusado ("Marina teve o acesso recusado"). Um pedido
+  decidido não desaparece (RFC_003: sem resultado silencioso) e o concedido
+  continua reversível na linha ("Tirar acesso"): o rodapé do board promete
+  "Você pode mudar de ideia quando quiser".
+
+  Quem pediu vê o estado `enviado` enquanto a resposta não vem ("Ana vai
+  decidir. Você vê a resposta aqui em Pedidos."). O pedido em si sai da
+  pré-visualização do arquivo; a resposta chega por aqui e por aviso no hub.
   """
 
   use TainaWeb, :live_view
@@ -18,6 +22,7 @@ defmodule TainaWeb.AccessRequestsLive do
   alias Taina.Maraca
   alias Taina.Ybira
   alias TainaWeb.Layouts
+  alias TainaWeb.Time
 
   @impl true
   def mount(_params, _session, socket) do
@@ -40,12 +45,11 @@ defmodule TainaWeb.AccessRequestsLive do
       {:ok, _concessao} ->
         {:noreply,
          socket
-         |> remove_request(id)
-         |> assign_grants()
+         |> assign_requests()
          |> Phoenix.LiveView.put_flash(:info, message)}
 
       result when result in [nil, {:error, :not_authorized}, {:error, :not_pending}, {:error, :not_found}] ->
-        {:noreply, socket |> remove_request(id) |> decision_gone()}
+        {:noreply, socket |> assign_requests() |> decision_gone()}
 
       {:error, _reason} ->
         {:noreply, Phoenix.LiveView.put_flash(socket, :error, gettext("Este pedido já foi resolvido."))}
@@ -72,14 +76,14 @@ defmodule TainaWeb.AccessRequestsLive do
         {:noreply,
          socket
          |> assign(:confirm_deny, nil)
-         |> remove_request(id)
+         |> assign_requests()
          |> Phoenix.LiveView.put_flash(:info, gettext("Pedido negado."))}
 
       result when result in [nil, {:error, :not_authorized}, {:error, :not_pending}, {:error, :not_found}] ->
         {:noreply,
          socket
          |> assign(:confirm_deny, nil)
-         |> remove_request(id)
+         |> assign_requests()
          |> decision_gone()}
 
       {:error, _reason} ->
@@ -101,7 +105,7 @@ defmodule TainaWeb.AccessRequestsLive do
         {:noreply,
          socket
          |> assign(:confirm_revoke, nil)
-         |> assign_grants()
+         |> assign_requests()
          |> Phoenix.LiveView.put_flash(:info, revoked_message(concessao))}
 
       result when result in [nil, {:error, :not_authorized}, {:error, :invalid_status}, {:error, :not_found}] ->
@@ -118,13 +122,13 @@ defmodule TainaWeb.AccessRequestsLive do
     end
   end
 
-  def handle_event("retry-grants", _params, socket), do: {:noreply, assign_grants(socket)}
+  def handle_event("retry-grants", _params, socket), do: {:noreply, assign_requests(socket)}
 
   defp access_gone(socket) do
     {:noreply,
      socket
      |> assign(:confirm_revoke, nil)
-     |> assign_grants()
+     |> assign_requests()
      |> Phoenix.LiveView.put_flash(:error, gettext("Este acesso já foi tirado."))}
   end
 
@@ -151,7 +155,7 @@ defmodule TainaWeb.AccessRequestsLive do
 
   def handle_info(_message, socket), do: {:noreply, socket}
 
-  # --- shell imperativo: assign/stream/put_flash ---
+  # --- shell imperativo: assign/put_flash ---
 
   defp assign_requests(socket) do
     scope = socket.assigns.current_scope
@@ -162,19 +166,15 @@ defmodule TainaWeb.AccessRequestsLive do
     socket
     |> assign(:requests, requests)
     |> assign(:incoming_names, incoming_names(scope, requests))
-    |> assign(:any_requests?, requests != [])
     |> assign(:outgoing, outgoing)
     |> assign(:outgoing_names, outgoing_names(scope, outgoing))
-    |> assign(:any_outgoing?, outgoing != [])
     |> assign(:decisions, decisions)
-    |> assign(:decision_names, decision_names(scope, decisions))
-    |> assign(:account_alert, account_alert?(scope))
-    |> stream(:requests, requests, reset: true)
     |> assign_grants()
   end
 
-  # A seção "Já liberados" carrega por último e decai sozinha: se falhar, o
-  # resto da tela continua no ar, com o estado de erro (e a saída) só nela.
+  # A seção concedida ("João recebeu acesso", board) carrega por último e
+  # decai sozinha: se falhar, o resto da tela continua no ar, com o estado de
+  # erro (e a saída) só nela.
   defp assign_grants(socket) do
     scope = socket.assigns.current_scope
 
@@ -183,14 +183,12 @@ defmodule TainaWeb.AccessRequestsLive do
         socket
         |> assign(:grants, grants)
         |> assign(:grant_names, grant_names(scope, grants))
-        |> assign(:any_grants?, grants != [])
         |> assign(:grants_error, false)
 
       {:error, _reason} ->
         socket
         |> assign(:grants, [])
         |> assign(:grant_names, %{})
-        |> assign(:any_grants?, false)
         |> assign(:grants_error, true)
     end
   end
@@ -205,31 +203,31 @@ defmodule TainaWeb.AccessRequestsLive do
     Phoenix.LiveView.put_flash(socket, :error, gettext("Este pedido já foi resolvido."))
   end
 
-  defp remove_request(socket, id) do
-    scope = socket.assigns.current_scope
-    requests = Enum.reject(socket.assigns.requests, &(&1.id == String.to_integer(id)))
+  # --- core puro: dados -> dados ---
 
-    socket
-    |> stream_delete(:requests, %{id: id})
-    |> assign(:requests, requests)
-    |> assign(:incoming_names, incoming_names(scope, requests))
-    |> assign(:any_requests?, requests != [])
-    |> assign(:account_alert, account_alert?(scope))
+  # O estado do board é função pura do que há em cada lado (spec 1.3):
+  #   * nada em lugar nenhum: `vazio` ("Nenhum pedido ainda");
+  #   * quem pediu esperando resposta, sem fila para decidir: `enviado`
+  #     ("Pedido enviado");
+  #   * o resto: `com` (a fila do board, pendente e decidido). A seção
+  #     concedida que falhou também conta: erro nunca vira vazio mentiroso.
+  defp board_state(assigns) do
+    cond do
+      assigns.grants_error -> :com_pedidos
+      nothing_here?(assigns) and assigns.outgoing == [] -> :vazio
+      nothing_here?(assigns) -> :enviado
+      true -> :com_pedidos
+    end
+  end
+
+  # A fila do dono (o que há para decidir ou já foi decidido) está vazia.
+  defp nothing_here?(assigns) do
+    assigns.requests == [] and assigns.grants == [] and assigns.decisions == []
   end
 
   # --- core puro: dados -> dados ---
-
-  defp account_alert?(scope) do
-    {:ok, recebidos} = Maraca.pedidos_recebidos(scope)
-    {:ok, enviados} = Maraca.pedidos_enviados(scope)
-    recebidos != [] or enviados != []
-  end
-
-  # A tela só mostra o vazio de verdade quando não há nada em nenhuma seção.
-  defp empty?(assigns) do
-    not assigns.any_requests? and not assigns.any_outgoing? and assigns.decisions == [] and
-      not assigns.any_grants? and not assigns.grants_error
-  end
+  # (decidido em `board_state/1` abaixo: o estado do board é função pura do
+  # que há em cada lado)
 
   defp requester_name(request) do
     request.pedinte.display_name || request.pedinte.username
@@ -281,30 +279,6 @@ defmodule TainaWeb.AccessRequestsLive do
     Map.get(names, request.recurso, gettext("arquivo apagado"))
   end
 
-  # O pedido aprovado deixa a pessoa podendo ler o arquivo (o caminho de pedido
-  # responde :already_readable), então o nome sai primeiro do caminho de
-  # leitura; o recusado continua pelo caminho de pedido. Sem os dois, rótulo
-  # neutro.
-  defp decision_names(scope, decisions) do
-    decisions
-    |> Enum.filter(&(&1.tipo == "ypy.file.v0"))
-    |> Enum.uniq_by(& &1.recurso)
-    |> Map.new(fn decision -> {decision.recurso, resolve_decision_name(scope, decision.recurso)} end)
-  end
-
-  defp resolve_decision_name(scope, rkey) do
-    case Ybira.get_file(scope, rkey) do
-      {:ok, file} ->
-        file.nome
-
-      _error ->
-        case Ybira.fetch_access_target(scope, rkey) do
-          {:ok, %{nome: nome}} -> nome
-          _other -> gettext("arquivo apagado")
-        end
-    end
-  end
-
   # Nome do recurso concedido, resolvido no escopo do dono (ele pode ler o que
   # concedeu). Recurso que não existe mais vira rótulo neutro: a linha segue
   # valendo, para limpar o acesso que ficou órfão.
@@ -330,39 +304,53 @@ defmodule TainaWeb.AccessRequestsLive do
 
   defp resolve_resource_name(_scope, _concessao), do: gettext("arquivo apagado")
 
-  # "doc.txt, desde há 2 semanas": o que foi liberado e há quanto, calmo, sem
-  # virar tabela de auditoria.
-  defp grant_meta(concessao, names) do
-    gettext("%{file}, desde %{when}",
-      file: Map.get(names, concessao.recurso, gettext("arquivo apagado")),
-      when: relative_time(concessao.concedida_em)
-    )
+  defp decision_names(scope, decisions) do
+    decisions
+    |> Enum.filter(&(&1.tipo == "ypy.file.v0"))
+    |> Enum.uniq_by(& &1.recurso)
+    |> Map.new(fn decision -> {decision.recurso, resolve_decision_name(scope, decision.recurso)} end)
   end
 
-  # "Pedido para abrir relatorio.pdf, esperando Joana decidir, hoje."
-  defp outgoing_meta(request, names) do
-    gettext("Pedido para abrir %{file}, esperando %{name} decidir, %{when}",
-      file: file_display_name(names, request),
-      name: owner_name(request),
-      when: relative_time(request.inserted_at)
-    )
-  end
+  defp resolve_decision_name(scope, rkey) do
+    case Ybira.get_file(scope, rkey) do
+      {:ok, file} ->
+        file.nome
 
-  # A resposta dita por quem pediu, com o arquivo na frente para a linha não
-  # ficar ambígua quando há mais de um pedido para a mesma pessoa.
-  defp decision_meta(decision, names) do
-    file = file_display_name(names, decision)
-
-    case decision.status do
-      :aprovado ->
-        gettext("%{file}: %{name} liberou. Você já pode abrir.", file: file, name: owner_name(decision))
-
-      :negado ->
-        gettext("%{file}: %{name} recusou este pedido. Você pode pedir de novo quando quiser.",
-          file: file,
-          name: owner_name(decision)
-        )
+      _error ->
+        case Ybira.fetch_access_target(scope, rkey) do
+          {:ok, %{nome: nome}} -> nome
+          _other -> gettext("arquivo apagado")
+        end
     end
+  end
+
+  # "doc.txt, hoje 09:12" (board: metadados separados por vírgula, o relógio
+  # da comunidade).
+  defp row_meta(names, resource) do
+    Enum.join([file_display_name(names, resource), day_clock(acted_at(resource))], ", ")
+  end
+
+  # Pedido tem o instante no `inserted_at`; concessão, no `concedida_em`.
+  defp acted_at(%{concedida_em: at}) when not is_nil(at), do: at
+  defp acted_at(%{inserted_at: at}), do: at
+
+  # "hoje 09:12" / "ontem 18:20" (board); mais velho que isso, o relativo do
+  # design system.
+  defp day_clock(at) do
+    case Date.diff(Time.local_today(), Time.local_date(at)) do
+      0 -> gettext("hoje") <> " " <> Time.local_clock(at)
+      1 -> gettext("ontem") <> " " <> Time.local_clock(at)
+      _days -> relative_time(at)
+    end
+  end
+
+  # "23 out" (board): dia e mês curto da comunidade (o strftime do Elixir não
+  # fala pt-BR, então o mês curto é da tela).
+  defp day_label(at) do
+    date = Time.local_date(at)
+    months = ~w(jan fev mar abr mai jun jul ago set out nov dez)
+
+    "#{date.day} #{Enum.at(months, date.month - 1)}"
   end
 
   defp find_grant(grants, id) when is_binary(id) do
@@ -380,23 +368,6 @@ defmodule TainaWeb.AccessRequestsLive do
 
   defp revoked_message(grant) do
     gettext("Acesso de %{name} tirado.", name: recipient_name(grant))
-  end
-
-  # "Ana pediu acesso a relatorio.pdf, há 3 dias." O motivo vem na sequência e
-  # a linha quebra em vez de cortar com reticências (`list-row__meta--wrap`
-  # no render): decidir sem ler o porquê é decidir às cegas.
-  defp request_meta(request, names) do
-    base =
-      gettext("%{name} pediu acesso a %{file}, %{when}",
-        name: requester_name(request),
-        file: file_display_name(names, request),
-        when: relative_time(request.inserted_at)
-      )
-
-    case request.motivo do
-      nil -> base
-      reason -> base <> " " <> gettext("Motivo: %{reason}", reason: reason)
-    end
   end
 
   # Flash da aprovação nomeia o arquivo: a decisão é sobre aquele arquivo, não
@@ -417,124 +388,185 @@ defmodule TainaWeb.AccessRequestsLive do
     end
   end
 
+  # O motivo vem na sequência do meta e a linha quebra em vez de cortar com
+  # reticências (`list-row__meta--wrap` no render): decidir sem ler o porquê
+  # é decidir às cegas.
+  defp request_meta(request, names) do
+    base = row_meta(names, request)
+
+    case request.motivo do
+      nil -> base
+      reason -> base <> " " <> gettext("Motivo: %{reason}", reason: reason)
+    end
+  end
+
+  # As linhas decididas do board (spec 1.3; a composição mora aqui para o
+  # render ficar plano). São dois lados:
+  #
+  #   * o que EU concedi (dono): "Maria recebeu acesso", com o dia pendurado
+  #     na linha (ícone + palavra; nunca só a cor, spec 1.7) e o Tirar acesso;
+  #   * a resposta para os pedidos que EU mandei (quem pediu): o verbo é do
+  #     dono ("Joana liberou o acesso" / "Joana recusou o pedido"), o
+  #     compromisso do board `enviado` ("você vê a resposta aqui").
+  defp granted_rows(grants, names) do
+    Enum.map(grants, fn grant ->
+      %{
+        id: grant.id,
+        state: "dado",
+        title: gettext("%{name} recebeu acesso", name: recipient_name(grant)),
+        meta: row_meta(names, grant),
+        status_state: "ok",
+        status: gettext("Acesso dado em %{date}", date: day_label(grant.concedida_em)),
+        revocable: true
+      }
+    end)
+  end
+
+  defp decided_sent_rows(decisions, names) do
+    Enum.map(decisions, fn decision ->
+      %{
+        id: decision.id,
+        state: decision_state(decision.status),
+        title: decision_title(decision),
+        meta: row_meta(names, decision),
+        status_state: nil,
+        status: nil,
+        revocable: false
+      }
+    end)
+  end
+
+  defp decision_state(:aprovado), do: "dado"
+  defp decision_state(:negado), do: "recusado"
+
+  defp decision_title(%{status: :aprovado} = decision) do
+    gettext("%{name} liberou o acesso", name: owner_name(decision))
+  end
+
+  defp decision_title(%{status: :negado} = decision) do
+    gettext("%{name} recusou o pedido", name: owner_name(decision))
+  end
+
   @impl true
   def render(assigns) do
+    scope = assigns.current_scope
+
+    assigns =
+      assigns
+      |> assign(:state, board_state(assigns))
+      |> assign(:decided_grants, granted_rows(assigns.grants, assigns.grant_names))
+      |> assign(
+        :decided_sent,
+        decided_sent_rows(assigns.decisions, decision_names(scope, assigns.decisions))
+      )
+
     ~H"""
-    <Layouts.page flash={@flash} title={@page_title} back={~p"/conta"}>
-      <div class="col gap-6 mx-auto w-full measure">
+    <Layouts.page flash={@flash} title={@page_title} back={~p"/conta"} back_label={back_label("Conta")}>
+      <div class="col gap-6">
         <.empty_state
-          :if={empty?(assigns)}
-          icon="shield"
-          title={gettext("Nenhum pedido por enquanto")}
-          hint={gettext("Ninguém acessa seus arquivos sem você deixar. Quando alguém pedir, ou você pedir acesso a algo, aparece aqui.")}
+          :if={@state == :vazio}
+          icon="folder"
+          title={gettext("Nenhum pedido ainda")}
+          body={gettext("Quando alguém pedir para abrir um arquivo da sua casa, aparece aqui.")}
+          tag="h2"
         />
 
-        <div :if={@any_requests?} class="col gap-2">
-          <p class="type-overline text-muted">
-            {ngettext(
-              "%{count} pedido esperando sua resposta",
-              "%{count} pedidos esperando sua resposta",
-              length(@requests)
-            )}
-          </p>
+        <.empty_state
+          :if={@state == :enviado}
+          icon="folder"
+          title={gettext("Pedido enviado")}
+          body={
+            gettext(
+              "%{name} vai decidir. Você vê a resposta aqui em Pedidos.",
+              name: @outgoing |> List.first() |> owner_name()
+            )
+          }
+          tag="h2"
+        />
 
-          <ul class="list" id="requests" phx-update="stream">
+        <div :if={@state == :com_pedidos} class="col gap-4">
+          <ul class="list">
             <.list_row
-              :for={{dom_id, request} <- @streams.requests}
-              id={dom_id}
-              title={requester_name(request)}
+              :for={request <- @requests}
+              kind="pedido"
+              state="esperando"
+              trailing="action"
+              title={gettext("%{name} pediu acesso", name: requester_name(request))}
               meta={request_meta(request, @incoming_names)}
               meta_class="list-row__meta--wrap"
             >
-              <:leading><.avatar name={requester_name(request)} /></:leading>
+              <:leading>
+                <.service_square mark="pedidos" tone="service" />
+              </:leading>
               <:actions>
-                <.button variant="ghost" size="md" phx-click="ask-deny" phx-value-id={request.id}>
-                  {gettext("Negar")}
+                <.button kind="secondary" size="sm" phx-click="ask-deny" phx-value-id={request.id}>
+                  {gettext("Recusar")}
                 </.button>
-                <.button variant="primary" size="md" phx-click="approve" phx-value-id={request.id}>
-                  {gettext("Aprovar")}
+                <.button kind="primary" size="sm" phx-click="approve" phx-value-id={request.id}>
+                  {gettext("Dar acesso")}
                 </.button>
               </:actions>
             </.list_row>
+
+            <li :for={row <- @decided_grants} class="col">
+              <.list_row tag="div" kind="pedido" state={row.state} title={row.title} meta={row.meta}>
+                <:leading>
+                  <.service_square mark="pedidos" tone="service" />
+                </:leading>
+                <:actions>
+                  <.button kind="ghost" size="sm" phx-click="ask-revoke" phx-value-id={row.id}>
+                    {gettext("Tirar acesso")}
+                  </.button>
+                </:actions>
+              </.list_row>
+              <div class="px-4 pb-3">
+                <.status_line state={row.status_state} title={row.status} />
+              </div>
+            </li>
+
+            <li :for={row <- @decided_sent} class="col">
+              <.list_row tag="div" kind="pedido" state={row.state} title={row.title} meta={row.meta}>
+                <:leading>
+                  <.service_square mark="pedidos" tone="service" />
+                </:leading>
+              </.list_row>
+            </li>
           </ul>
+
+          <p class="type-body-sm text-secondary">
+            {gettext("Os pedidos resolvidos ficam visíveis. Você pode mudar de ideia quando quiser.")}
+          </p>
+
+          <.empty_state
+            :if={@grants_error}
+            icon="info"
+            title={gettext("Não deu para abrir os acessos liberados")}
+            body={gettext("Pode ter sido um instante de rede ou da caixa. Tente de novo.")}
+          >
+            <.button kind="secondary" phx-click="retry-grants">
+              {gettext("Tentar de novo")}
+            </.button>
+          </.empty_state>
         </div>
-
-        <div :if={@any_outgoing?} class="col gap-2">
-          <p class="type-overline text-muted">{gettext("Seus pedidos")}</p>
-
-          <ul class="list">
-            <.list_row
-              :for={request <- @outgoing}
-              title={owner_name(request)}
-              meta={outgoing_meta(request, @outgoing_names)}
-              meta_class="list-row__meta--wrap"
-            >
-              <:leading><.avatar name={owner_name(request)} /></:leading>
-            </.list_row>
-          </ul>
-        </div>
-
-        <div :if={@decisions != []} class="col gap-2">
-          <p class="type-overline text-muted">{gettext("Já decididos")}</p>
-
-          <ul class="list">
-            <.list_row
-              :for={decision <- @decisions}
-              title={owner_name(decision)}
-              meta={decision_meta(decision, @decision_names)}
-              meta_class="list-row__meta--wrap"
-            >
-              <:leading><.avatar name={owner_name(decision)} /></:leading>
-            </.list_row>
-          </ul>
-        </div>
-
-        <div :if={@any_grants?} class="col gap-2">
-          <p class="type-overline text-muted">{gettext("Já liberados")}</p>
-
-          <ul class="list">
-            <.list_row
-              :for={grant <- @grants}
-              title={recipient_name(grant)}
-              meta={grant_meta(grant, @grant_names)}
-            >
-              <:leading><.avatar name={recipient_name(grant)} /></:leading>
-              <:actions>
-                <.button variant="ghost" size="md" phx-click="ask-revoke" phx-value-id={grant.id}>
-                  {gettext("Tirar acesso")}
-                </.button>
-              </:actions>
-            </.list_row>
-          </ul>
-        </div>
-
-        <.empty_state
-          :if={@grants_error}
-          icon="alert"
-          title={gettext("Não deu para abrir os acessos liberados")}
-          hint={gettext("Pode ter sido um instante de rede ou da caixa. Tente de novo.")}
-        >
-          <.button variant="secondary" phx-click="retry-grants">
-            {gettext("Tentar de novo")}
-          </.button>
-        </.empty_state>
       </div>
 
-      <.confirm_dialog
+      <.dialog
         id="confirm-deny"
         show={@confirm_deny != nil}
+        kind="destructive"
         title={gettext("Negar este pedido?")}
-        message={gettext("A pessoa não vai poder abrir o arquivo. Ela pode pedir de novo depois.")}
+        body={gettext("A pessoa não vai poder abrir o arquivo. Ela pode pedir de novo depois.")}
         confirm_label={gettext("Negar")}
         on_confirm={JS.push("deny", value: %{id: @confirm_deny})}
         on_cancel={JS.push("close-confirm")}
       />
 
-      <.confirm_dialog
+      <.dialog
         id="confirm-revoke"
         show={@confirm_revoke != nil}
+        kind="destructive"
         title={revoke_title(@grants, @confirm_revoke)}
-        message={gettext("Para abrir de novo, ela precisa pedir.")}
+        body={gettext("Para abrir de novo, ela precisa pedir.")}
         confirm_label={gettext("Tirar acesso")}
         on_confirm={JS.push("revoke")}
         on_cancel={JS.push("close-confirm")}

@@ -1,9 +1,15 @@
 defmodule TainaWeb.AccountLive do
   @moduledoc """
-  Hub "Conta": cartão da pessoa logada e atalhos para pedidos (recebidos e
-  enviados), membros, convites, armazenamento, lixeira, troca da própria senha
-  e sair. Não tem board próprio no Penpot, composto com os componentes de
-  linha do design system.
+  Conta (spec 6.4, boards "Conta" do Penpot): `morador`
+  cc1037dc-e8ab-80cc-8008-d5e23c048bf9, `zelador`
+  cc1037dc-e8ab-80cc-8008-d5e261192f2d e W cc1037dc-e8ab-80cc-8008-d5eaef8a5541.
+
+  O cartão da pessoa (avatar, nome, papel e comunidade) e as linhas do dia a
+  dia: Pedidos (com o que está esperando), Privacidade, Convidar (só quem
+  cuida), Trocar senha (sobe no sheet com o formulário) e Dispositivos (os
+  aparelhos com acesso, cada um revogável). "Sair" encerra a sessão. O que o
+  board tirou daqui (Lixeira, Moradores, Armazenamento, Convites) mora nas
+  próprias telas ou no hub.
   """
 
   use TainaWeb, :live_view
@@ -15,27 +21,29 @@ defmodule TainaWeb.AccountLive do
   def mount(_params, _session, socket) do
     socket =
       socket
-      |> assign_alerts(socket.assigns.current_scope)
+      |> assign_pedidos(socket.assigns.current_scope)
       |> assign(:page_title, gettext("Conta"))
       |> assign(:show_password, false)
+      |> assign(:show_devices, false)
+      |> assign(:devices, [])
       |> assign(:password_errors, %{})
 
     {:ok, socket}
   end
 
-  # O ponto da linha "Pedidos" acende quando há algo esperando, recebido ou
-  # enviado. Nenhuma navegação acende nada por cima (spec 1.5); eventos do Ava
-  # (PubSub) recomputam.
-  defp assign_alerts(socket, scope) do
+  # A meta da linha "Pedidos" vive (board: "Nada pendente"): recebidos e
+  # enviados contam juntos. Nenhuma navegação acende nada por cima (spec 1.5);
+  # eventos do Ava (PubSub) recomputam.
+  defp assign_pedidos(socket, scope) do
     {:ok, recebidos} = Maraca.pedidos_recebidos(scope)
     {:ok, enviados} = Maraca.pedidos_enviados(scope)
 
-    assign(socket, :pedidos_alert, recebidos != [] or enviados != [])
+    assign(socket, :pedidos_meta, pedidos_meta(length(recebidos) + length(enviados)))
   end
 
   @impl true
   def handle_info(_message, socket) do
-    {:noreply, assign_alerts(socket, socket.assigns.current_scope)}
+    {:noreply, assign_pedidos(socket, socket.assigns.current_scope)}
   end
 
   @impl true
@@ -44,7 +52,41 @@ defmodule TainaWeb.AccountLive do
   end
 
   def handle_event("close-password", _params, socket) do
-    {:noreply, close_password_modal(socket)}
+    {:noreply, close_password_sheet(socket)}
+  end
+
+  def handle_event("open-devices", _params, socket) do
+    {:ok, devices} = Maraca.list_devices(socket.assigns.current_scope)
+
+    {:noreply, socket |> assign(:devices, active_devices(devices)) |> assign(:show_devices, true)}
+  end
+
+  def handle_event("close-devices", _params, socket) do
+    {:noreply, close_devices_sheet(socket)}
+  end
+
+  # Revogar um aparelho tira o acesso dele na hora (o app precisa entrar de
+  # novo). Idempotente no contexto; a lista volta do banco.
+  def handle_event("revoke-device", %{"id" => public_id}, socket) do
+    scope = socket.assigns.current_scope
+
+    case Maraca.revoke_device(scope, public_id) do
+      {:ok, _device} ->
+        {:ok, devices} = Maraca.list_devices(scope)
+
+        {:noreply,
+         socket
+         |> assign(:devices, active_devices(devices))
+         |> Phoenix.LiveView.put_flash(:info, gettext("Acesso do aparelho revogado."))}
+
+      {:error, _reason} ->
+        {:noreply,
+         Phoenix.LiveView.put_flash(
+           socket,
+           :error,
+           gettext("Não foi possível revogar o aparelho agora. Tente de novo.")
+         )}
+    end
   end
 
   # A confirmacao de senha e rito do formulario: o contexto ve so a senha
@@ -63,18 +105,25 @@ defmodule TainaWeb.AccountLive do
       {:noreply,
        socket
        |> Phoenix.LiveView.put_flash(:info, gettext("Senha trocada. Da próxima vez, entre com a senha nova."))
-       |> close_password_modal()}
+       |> close_password_sheet()}
     else
       {:error, reason} ->
         {:noreply, assign(socket, :password_errors, password_errors(reason))}
     end
   end
 
-  # Fechar o modal desmonta o form (`:if` do modal): na reabertura os campos
+  # Fechar o sheet desmonta o form (`:if` do sheet): na reabertura os campos
   # voltam vazios, sem senha velha preenchida.
-  defp close_password_modal(socket) do
+  defp close_password_sheet(socket) do
     assign(socket, show_password: false, password_errors: %{})
   end
+
+  defp close_devices_sheet(socket) do
+    assign(socket, show_devices: false, devices: [])
+  end
+
+  # A revogação é do ciclo de vida: aparelho revogado sai da lista.
+  defp active_devices(devices), do: Enum.filter(devices, &is_nil(&1.revoked_at))
 
   defp confirmation_ok?(%{"new_password" => new, "password_confirmation" => confirm}) do
     if is_binary(new) and new != "" and confirm == new, do: :ok, else: {:error, :password_mismatch}
@@ -101,89 +150,108 @@ defmodule TainaWeb.AccountLive do
     %{"password_confirmation" => [gettext("As duas senhas não são iguais.")]}
   end
 
+  # --- core puro: dados -> dados ---
+
+  defp person_name(ava), do: ava.display_name || ava.username
+
+  # "Moradora, Quilombo do Café" (board): papel e comunidade no cartão.
+  defp person_meta(scope) do
+    gettext("%{role}, %{community}",
+      role: role_label(scope.ava.papel),
+      community: scope.tekoa.name
+    )
+  end
+
+  defp role_label(:zelador), do: gettext("Zelador(a)")
+  defp role_label(:morador), do: gettext("Morador(a)")
+
+  # "Nada pendente" (board); com o que espera, a conta diz quanto.
+  defp pedidos_meta(0), do: gettext("Nada pendente")
+
+  defp pedidos_meta(count) do
+    gettext("%{count} esperando sua resposta", count: count)
+  end
+
+  defp device_meta(device) do
+    case device.last_used_at do
+      nil -> gettext("Nunca usado")
+      at -> gettext("usado %{when}", when: relative_time(at))
+    end
+  end
+
   @impl true
   def render(assigns) do
     ~H"""
     <Layouts.page flash={@flash} title={@page_title} back={~p"/"}>
-      <div class="col gap-6 mx-auto w-full measure">
-        <.card class="row gap-4">
-          <.avatar name={@current_scope.ava.display_name || @current_scope.ava.username} />
+      <div class="col gap-6">
+        <.card class="row items-center gap-4">
+          <.avatar name={person_name(@current_scope.ava)} />
           <div class="flex-1">
-            <p class="type-h3">{@current_scope.ava.display_name || @current_scope.ava.username}</p>
-            <p class="type-body-sm text-muted">{"@" <> @current_scope.ava.username}</p>
+            <p class="type-h3">{person_name(@current_scope.ava)}</p>
+            <p class="type-body-sm text-muted">{person_meta(@current_scope)}</p>
           </div>
-          <.badge :if={Maraca.zelador?(@current_scope.ava)} variant="zelador">{gettext("Zelador(a)")}</.badge>
         </.card>
 
         <ul class="list">
-          <.list_row
-            title={gettext("Pedidos")}
-            meta={gettext("quem pediu e o que você pediu")}
-            navigate={~p"/conta/pedidos"}
-          >
-            <:leading><.service_square service="maraca" icon="shield" /></:leading>
-            <:actions>
-              <span :if={@pedidos_alert} class="nav-dot" aria-hidden="true"></span>
-              <.icon name="chevron-right" size={18} class="text-faint" />
-            </:actions>
+          <.list_row kind="civic" trailing="chevron" title={gettext("Pedidos")} meta={@pedidos_meta} navigate={~p"/conta/pedidos"}>
+            <:leading><.service_square mark="pedidos" /></:leading>
           </.list_row>
 
-          <.list_row title={gettext("Moradores")} meta={gettext("quem faz parte da comunidade")} navigate={~p"/moradores"}>
-            <:leading><.service_square service="maraca" icon="user" /></:leading>
-            <:actions><.icon name="chevron-right" size={18} class="text-faint" /></:actions>
+          <.list_row
+            kind="civic"
+            trailing="chevron"
+            title={gettext("Privacidade")}
+            meta={gettext("Como funciona o acesso")}
+            navigate={~p"/conta/privacidade"}
+          >
+            <:leading><.service_square mark="privacidade" /></:leading>
           </.list_row>
 
           <.list_row
             :if={Maraca.zelador?(@current_scope.ava)}
-            title={gettext("Convidar pessoas")}
-            meta={gettext("link + QR code")}
+            kind="civic"
+            trailing="chevron"
+            title={gettext("Convidar")}
+            meta={gettext("Criar um convite")}
             navigate={~p"/moradores/convidar"}
           >
-            <:leading><.service_square service="maraca" icon="qr" /></:leading>
-            <:actions><.icon name="chevron-right" size={18} class="text-faint" /></:actions>
+            <:leading><.service_square mark="moradores" /></:leading>
           </.list_row>
 
           <.list_row
-            title={gettext("Armazenamento")}
-            meta={gettext("uso do disco e cota")}
-            navigate={~p"/armazenamento"}
-          >
-            <:leading><.service_square service="ybira" icon="disk" /></:leading>
-            <:actions><.icon name="chevron-right" size={18} class="text-faint" /></:actions>
-          </.list_row>
-
-          <.list_row title={gettext("Lixeira")} meta={gettext("itens dos últimos 30 dias")} navigate={~p"/documentos/lixeira"}>
-            <:leading><.service_square service="ybira" icon="trash" /></:leading>
-            <:actions><.icon name="chevron-right" size={18} class="text-faint" /></:actions>
-          </.list_row>
-
-          <.list_row
-            title={gettext("Trocar minha senha")}
-            meta={gettext("confirma a senha atual e cria outra")}
+            kind="civic"
+            trailing="chevron"
+            title={gettext("Trocar senha")}
+            meta={gettext("Atualize a sua senha")}
             phx-click="open-password"
           >
-            <:leading><.service_square service="maraca" icon="shield" /></:leading>
-            <:actions><.icon name="chevron-right" size={18} class="text-faint" /></:actions>
+            <:leading><.service_square mark="senha" /></:leading>
+          </.list_row>
+
+          <.list_row
+            kind="civic"
+            trailing="chevron"
+            title={gettext("Dispositivos")}
+            meta={gettext("Aparelhos com acesso")}
+            phx-click="open-devices"
+          >
+            <:leading><.service_square mark="dispositivos" /></:leading>
           </.list_row>
         </ul>
 
-        <.button href={~p"/logout"} method="delete" variant="secondary" size="md" class="w-full">
-          <.icon name="logout" size={18} /> {gettext("Sair da conta")}
+        <.button href={~p"/logout"} method="delete" kind="secondary" size="lg" icon="sair" class="w-full">
+          {gettext("Sair")}
         </.button>
       </div>
 
-      <.modal id="password-modal" show={@show_password} on_cancel={JS.push("close-password")}>
-        <h2 id="password-modal-title" class="type-h3 mb-3">{gettext("Trocar minha senha")}</h2>
-        <p class="type-body text-secondary mb-4">
-          {gettext(
-            "Confirme com a senha que você usa hoje e crie uma nova. As outras pessoas não são avisadas: isso é só seu."
-          )}
-        </p>
-
+      <.sheet id="password-sheet" show={@show_password} on_cancel="close-password" kind="content" title={gettext("Trocar senha")}>
         <form id="password-form" phx-submit="change-password" class="col gap-4">
-          <.input
+          <p class="type-body text-secondary">
+            {gettext("Confirme com a senha que você usa hoje e crie uma nova. As outras pessoas não são avisadas: isso é só seu.")}
+          </p>
+          <.field
+            kind="password"
             label={gettext("Senha atual")}
-            type="password"
             name="account[current_password]"
             id="account_current_password"
             value=""
@@ -192,10 +260,10 @@ defmodule TainaWeb.AccountLive do
             errors={@password_errors["current_password"] || []}
           >
             <:trailing><.password_toggle target="account_current_password" /></:trailing>
-          </.input>
-          <.input
+          </.field>
+          <.field
+            kind="password"
             label={gettext("Senha nova")}
-            type="password"
             name="account[new_password]"
             id="account_new_password"
             value=""
@@ -207,10 +275,10 @@ defmodule TainaWeb.AccountLive do
             errors={@password_errors["new_password"] || []}
           >
             <:trailing><.password_toggle target="account_new_password" /></:trailing>
-          </.input>
-          <.input
+          </.field>
+          <.field
+            kind="password"
             label={gettext("Confirme a senha nova")}
-            type="password"
             name="account[password_confirmation]"
             id="account_password_confirmation"
             value=""
@@ -221,18 +289,45 @@ defmodule TainaWeb.AccountLive do
             errors={@password_errors["password_confirmation"] || []}
           >
             <:trailing><.password_toggle target="account_password_confirmation" /></:trailing>
-          </.input>
+          </.field>
 
           <div class="row gap-3 mt-2">
-            <.button variant="secondary" size="md" class="flex-1" phx-click={JS.push("close-password")}>
+            <.button kind="secondary" size="md" class="flex-1" phx-click={JS.push("close-password")}>
               {gettext("Cancelar")}
             </.button>
-            <.button type="submit" variant="primary" size="md" class="flex-1" phx-disable-with={gettext("Trocando...")}>
+            <.button type="submit" kind="primary" size="md" class="flex-1" phx-disable-with={gettext("Trocando...")}>
               {gettext("Trocar senha")}
             </.button>
           </div>
         </form>
-      </.modal>
+      </.sheet>
+
+      <.sheet id="devices-sheet" show={@show_devices} on_cancel="close-devices" kind="content" title={gettext("Dispositivos")}>
+        <div class="col gap-2">
+          <p class="type-body-sm text-secondary">
+            {gettext("Aparelhos com acesso à sua conta. Revogar não apaga nada da caixa: o aparelho só precisa entrar de novo.")}
+          </p>
+
+          <ul class="list">
+            <.list_row
+              :for={device <- @devices}
+              kind="person"
+              title={device.name}
+              meta={device_meta(device)}
+            >
+              <:actions>
+                <.button kind="ghost" size="sm" phx-click="revoke-device" phx-value-id={device.public_id}>
+                  {gettext("Revogar")}
+                </.button>
+              </:actions>
+            </.list_row>
+          </ul>
+
+          <p :if={@devices == []} class="type-body-sm text-muted">
+            {gettext("Nenhum aparelho com acesso agora.")}
+          </p>
+        </div>
+      </.sheet>
     </Layouts.page>
     """
   end

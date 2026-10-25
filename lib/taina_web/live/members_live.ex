@@ -1,15 +1,27 @@
 defmodule TainaWeb.MembersLive do
   @moduledoc """
-  Moradores da comunidade: lista com papel e estado de cada conta, busca local
-  (a lista inteira já está na memória, 50 pessoas é o teto do produto) e atalho
-  para convidar. Visível para qualquer morador; convidar e gerar link de
-  redefinição é só quem cuida (zelador).
+  Moradores da comunidade (spec 6.4, boards "Moradores" do Penpot): `morador`
+  cc1037dc-e8ab-80cc-8008-d5e1bc7a5a02, `zelador`
+  cc1037dc-e8ab-80cc-8008-d5e1c8a5c025, `busca vazia`
+  cc1037dc-e8ab-80cc-8008-d5e1cd378b7e e `acoes da pessoa`
+  cc1037dc-e8ab-80cc-8008-d5e1d5f3b551.
+
+  Lista com busca local (a lista inteira já está na memória, 50 pessoas é o
+  teto do produto) e, para quem cuida (zelador), a ação "Convidar" no
+  cabeçalho e o menu de ações da pessoa. O papel de cada um aparece na meta da
+  linha ("Zelador(a), entrou em 2024", board). Convites pendentes continuam em
+  seção própria, fora da contagem de quem já entrou.
+
+  Não há mais troca de papel nem desativação por aqui (o board as troca por
+  atos de assembleia, que chegam depois do MVP): o menu da pessoa oferta o que
+  a caixa faz hoje, gerar o link de redefinição de senha.
   """
 
   use TainaWeb, :live_view
 
   alias Taina.Maraca
   alias TainaWeb.Layouts
+  alias TainaWeb.Time
   alias Ypy.Maraca.Ava
 
   @impl true
@@ -20,8 +32,6 @@ defmodule TainaWeb.MembersLive do
      |> assign(:query, "")
      |> assign(:reset_link, nil)
      |> assign(:reset_member, nil)
-     |> assign(:confirm_deactivate, nil)
-     |> assign(:confirm_role, nil)
      |> assign(:confirm_revoke, nil)
      |> assign_members()}
   end
@@ -66,71 +76,14 @@ defmodule TainaWeb.MembersLive do
      )}
   end
 
-  def handle_event("set-role", %{"id" => public_id, "role" => role}, socket) do
-    role = String.to_existing_atom(role)
-    member = Enum.find(socket.assigns.members, &(&1.public_id == public_id))
-    socket = assign(socket, :confirm_role, nil)
-
-    case Maraca.update_member_role(socket.assigns.current_scope, public_id, role) do
-      {:ok, _ava} ->
-        {:noreply, socket |> assign_members() |> flash_info(role_changed_message(member, role))}
-
-      {:error, :last_zelador} ->
-        {:noreply, flash_error(socket, last_zelador_message())}
-
-      {:error, _reason} ->
-        {:noreply, flash_error(socket, gettext("Não foi possível mudar o papel. Tente de novo."))}
-    end
-  end
-
-  # Mudar papel é ato de poder (RFC_003, seção 6): a promoção passa pela
-  # confirmação, como desativar. Rebaixar fica direto: tira poder, não dá.
-  def handle_event("ask-role", %{"id" => public_id, "role" => role}, socket) do
-    member = Enum.find(socket.assigns.members, &(&1.public_id == public_id))
-    role = String.to_existing_atom(role)
-
-    {:noreply, assign(socket, :confirm_role, member && %{member: member, role: role})}
-  end
-
-  def handle_event("close-confirm", _params, socket) do
-    {:noreply, assign(socket, confirm_deactivate: nil, confirm_role: nil, confirm_revoke: nil)}
-  end
-
-  def handle_event("ask-deactivate", %{"id" => public_id}, socket) do
-    member = Enum.find(socket.assigns.members, &(&1.public_id == public_id))
-    {:noreply, assign(socket, :confirm_deactivate, member)}
-  end
-
-  def handle_event("deactivate", %{"id" => public_id}, socket) do
-    socket = assign(socket, :confirm_deactivate, nil)
-
-    case Maraca.deactivate_member(socket.assigns.current_scope, public_id) do
-      {:ok, _ava} ->
-        {:noreply, socket |> assign_members() |> flash_info(gettext("Conta desativada."))}
-
-      {:error, :last_zelador} ->
-        {:noreply, flash_error(socket, last_zelador_message())}
-
-      {:error, _reason} ->
-        {:noreply, flash_error(socket, gettext("Não foi possível desativar a conta. Tente de novo."))}
-    end
-  end
-
-  def handle_event("reactivate", %{"id" => public_id}, socket) do
-    case Maraca.reactivate_member(socket.assigns.current_scope, public_id) do
-      {:ok, _ava} ->
-        {:noreply, socket |> assign_members() |> flash_info(gettext("Conta reativada."))}
-
-      {:error, _reason} ->
-        {:noreply, flash_error(socket, gettext("Não foi possível reativar a conta. Tente de novo."))}
-    end
-  end
-
-  # Convite pendente se revoga apagando a linha (não tem identidade nem dados);
-  # desativar é para conta de verdade. A confirmação espelha a de desativar.
+  # Convite pendente se revoga apagando a linha (não tem identidade nem dados).
   def handle_event("ask-revoke", %{"id" => public_id}, socket) do
     invite = Enum.find(socket.assigns.pendings, &(&1.public_id == public_id))
     {:noreply, assign(socket, :confirm_revoke, invite)}
+  end
+
+  def handle_event("close-confirm", _params, socket) do
+    {:noreply, assign(socket, :confirm_revoke, nil)}
   end
 
   def handle_event("revoke", %{"id" => public_id}, socket) do
@@ -156,18 +109,6 @@ defmodule TainaWeb.MembersLive do
   defp flash_info(socket, msg), do: Phoenix.LiveView.put_flash(socket, :info, msg)
   defp flash_error(socket, msg), do: Phoenix.LiveView.put_flash(socket, :error, msg)
 
-  defp last_zelador_message do
-    gettext("A comunidade precisa de pelo menos um zelador ativo. Promova outra pessoa antes.")
-  end
-
-  # A promoção é um ato de poder visível: o flash nomeia a pessoa e aponta o
-  # registro no mural (RFC_003, seção 6).
-  defp role_changed_message(%Ava{} = member, :zelador) do
-    gettext("%{name} agora é zelador(a). Registrado no mural.", name: display_name(member))
-  end
-
-  defp role_changed_message(_member, _role), do: gettext("Papel atualizado.")
-
   # Busca sem sotaque: normaliza acentos (NFD + remove marcas) e procura no nome
   # de exibição e no nome de usuário, então "joao" acha "João" e vice-versa.
   defp filtered(members, ""), do: members
@@ -192,12 +133,16 @@ defmodule TainaWeb.MembersLive do
     member.display_name || member.username || gettext("Convite pendente")
   end
 
-  defp member_meta(member, scope) do
-    cond do
-      deactivated?(member) -> gettext("Conta desativada")
-      member.id == scope.ava.id -> gettext("Você")
-      member.papel == :zelador -> gettext("Quem cuida da máquina")
-      true -> gettext("Entrou %{when}", when: relative_time(member.inserted_at))
+  # "Zeladora, entrou em 2024" (board): papel e ano de entrada. O ano é o da
+  # comunidade (o banco grava em UTC; o ano de quem lê não é o do banco).
+  defp member_meta(member) do
+    if deactivated?(member) do
+      gettext("Conta desativada")
+    else
+      gettext("%{role}, entrou em %{year}",
+        role: role_label(member.papel),
+        year: Time.local_date(member.inserted_at).year
+      )
     end
   end
 
@@ -213,17 +158,11 @@ defmodule TainaWeb.MembersLive do
   defp role_label(:zelador), do: gettext("Zelador(a)")
   defp role_label(:morador), do: gettext("Morador(a)")
 
-  # O link de reset fica escondido na propria linha: a pessoa troca a senha
-  # sozinha em Conta ("Trocar minha senha"). O link mediado e para quem NAO
-  # consegue entrar, entao nunca se ofereceu a si mesmo aqui.
+  # Zelador agindo sobre outra conta (nunca a própria) e ativa: o link de
+  # redefinição é para quem NAO consegue entrar, a pessoa troca a senha
+  # sozinha em Conta ("Trocar senha").
   defp can_reset?(member, scope) do
     Maraca.zelador?(scope.ava) and member.id != scope.ava.id and not is_nil(member.activated_at)
-  end
-
-  # Zelador agindo sobre outra conta (nunca a própria): pode mudar papel e
-  # (des)ativar. A proteção do último zelador é reforçada no context.
-  defp manageable?(member, scope) do
-    Maraca.zelador?(scope.ava) and member.id != scope.ava.id
   end
 
   defp deactivated?(member), do: not is_nil(member.deactivated_at)
@@ -231,137 +170,106 @@ defmodule TainaWeb.MembersLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.page flash={@flash} title={@page_title} back={~p"/conta"}>
+    <Layouts.page flash={@flash} title={@page_title} back={~p"/"}>
       <:action :if={Maraca.zelador?(@current_scope.ava)}>
-        <.button variant="secondary" size="sm" navigate={~p"/moradores/convidar"}>
+        <.button kind="secondary" size="sm" navigate={~p"/moradores/convidar"}>
           {gettext("Convidar")}
         </.button>
       </:action>
 
-      <div class="col gap-4 mx-auto w-full measure">
+      <div class="col gap-6">
         <% members = filtered(@members, @query) %>
         <% pendings = filtered(@pendings, @query) %>
 
         <%!-- phx-submit cobre a tecla "ir" do teclado mobile, que submete o
         form de verdade e recarregaria a página limpando a busca --%>
-        <form id="member-search-form" phx-change="search" phx-submit="search" class="search">
-          <.icon name="search" size={20} />
-          <input
-            type="search"
+        <form id="member-search-form" phx-change="search" phx-submit="search" class="col">
+          <.field
+            kind="search"
             name="query"
             value={@query}
             placeholder={gettext("Buscar pessoa")}
             aria-label={gettext("Buscar pessoa")}
-            phx-debounce="200"
             autocomplete="off"
           />
         </form>
 
-        <%= if pendings != [] do %>
-          <div class="col gap-2">
-            <p class="type-overline text-muted">{gettext("Convites pendentes")}</p>
-            <ul class="list">
-              <.list_row
-                :for={invite <- pendings}
-                title={gettext("Convite pendente")}
-                meta={pending_meta(invite)}
-              >
-                <:leading>
-                  <.avatar name={gettext("Convite pendente")} inactive />
-                </:leading>
-                <:actions>
-                  <.badge variant="soon">{role_label(invite.papel)}</.badge>
-                  <.menu
-                    :if={Maraca.zelador?(@current_scope.ava)}
-                    id={"invite-menu-#{invite.public_id}"}
-                    label={gettext("Ações do convite")}
-                  >
-                    <:item
-                      icon="trash"
-                      danger
-                      click={JS.push("ask-revoke", value: %{id: invite.public_id})}
-                    >
-                      {gettext("Revogar convite")}
-                    </:item>
-                  </.menu>
-                </:actions>
-              </.list_row>
-            </ul>
-          </div>
-        <% end %>
-
-        <p class="type-overline text-muted">
-          {ngettext("%{count} pessoa", "%{count} pessoas", length(members))}
-        </p>
+        <div :if={pendings != []} class="col gap-2">
+          <p class="type-overline text-muted">{gettext("Convites pendentes")}</p>
+          <ul class="list">
+            <.list_row
+              :for={invite <- pendings}
+              kind="person"
+              title={gettext("Convite pendente")}
+              meta={pending_meta(invite)}
+            >
+              <:leading>
+                <.avatar name={gettext("Convite pendente")} off />
+              </:leading>
+              <:actions>
+                <.badge kind="inactive">{role_label(invite.papel)}</.badge>
+                <.actions_menu
+                  :if={Maraca.zelador?(@current_scope.ava)}
+                  id={"invite-menu-#{invite.public_id}"}
+                  label={gettext("Ações do convite")}
+                  title={gettext("Convite pendente")}
+                >
+                  <:item icon="trash" kind="danger" click={JS.push("ask-revoke", value: %{id: invite.public_id})}>
+                    {gettext("Revogar convite")}
+                  </:item>
+                </.actions_menu>
+              </:actions>
+            </.list_row>
+          </ul>
+        </div>
 
         <ul class="list">
-          <.list_row :for={member <- members} title={display_name(member)} meta={member_meta(member, @current_scope)}>
+          <.list_row
+            :for={member <- members}
+            kind="person"
+            title={display_name(member)}
+            meta={member_meta(member)}
+            trailing={member_trailing(member, @current_scope)}
+          >
             <:leading>
-              <.avatar name={display_name(member)} inactive={deactivated?(member)} />
+              <.avatar name={display_name(member)} off={deactivated?(member)} />
             </:leading>
-            <:actions>
-              <.badge :if={member.papel == :zelador} variant="zelador">
-                {gettext("Zelador(a)")}
-              </.badge>
-              <.icon_button
-                :if={can_reset?(member, @current_scope)}
-                name="link"
-                label={gettext("Gerar link de redefinição de senha")}
-                phx-click="reset-link"
-                phx-value-id={member.public_id}
-              />
-              <.menu
-                :if={manageable?(member, @current_scope)}
+            <:actions :if={can_reset?(member, @current_scope)}>
+              <.actions_menu
                 id={"member-menu-#{member.public_id}"}
                 label={gettext("Ações da conta")}
+                title={display_name(member)}
               >
                 <:item
-                  :if={member.papel == :morador}
-                  icon="shield"
-                  click={JS.push("ask-role", value: %{id: member.public_id, role: "zelador"})}
+                  icon="link"
+                  click={JS.push("reset-link", value: %{id: member.public_id})}
                 >
-                  {gettext("Tornar zelador(a)")}
+                  {gettext("Gerar link de redefinição de senha")}
                 </:item>
-                <:item
-                  :if={member.papel == :zelador}
-                  icon="user"
-                  click={JS.push("set-role", value: %{id: member.public_id, role: "morador"})}
-                >
-                  {gettext("Tornar morador(a)")}
-                </:item>
-                <:item
-                  :if={not deactivated?(member)}
-                  icon="logout"
-                  danger
-                  click={JS.push("ask-deactivate", value: %{id: member.public_id})}
-                >
-                  {gettext("Desativar conta")}
-                </:item>
-                <:item
-                  :if={deactivated?(member)}
-                  icon="restore"
-                  click={JS.push("reactivate", value: %{id: member.public_id})}
-                >
-                  {gettext("Reativar conta")}
-                </:item>
-              </.menu>
+              </.actions_menu>
             </:actions>
           </.list_row>
         </ul>
 
         <.empty_state
           :if={members == [] and pendings == []}
-          icon="user"
-          title={gettext("Ninguém por aqui")}
-          hint={gettext("Nenhuma pessoa corresponde à busca.")}
-        >
-          <.button variant="secondary" size="sm" phx-click="search" phx-value-query="">
-            {gettext("Limpar busca")}
-          </.button>
-        </.empty_state>
+          icon="folder"
+          title={gettext("Ninguém com esse nome")}
+          body={gettext("Confira a escrita ou procure por outro nome.")}
+          tag="h2"
+        />
+
+        <%!-- O rodapé do board do zelador: o que o papel pode e o que ele
+        nao pode (nenhum acesso à casa de ninguém). --%>
+        <div :if={Maraca.zelador?(@current_scope.ava)} class="col gap-2">
+          <.badge kind="zelador">{gettext("zelador")}</.badge>
+          <p class="type-body-sm text-secondary">
+            {gettext("Quem cuida da nuvem só convida pessoas. Ninguém pode mexer nos arquivos de outra pessoa.")}
+          </p>
+        </div>
       </div>
 
-      <.modal id="reset-link-modal" show={@reset_link != nil} on_cancel={JS.push("close-reset")}>
+      <.dialog id="reset-link-modal" show={@reset_link != nil} on_cancel={JS.push("close-reset")}>
         <h2 class="type-h3 mb-3">{gettext("Link de redefinição de senha")}</h2>
         <p class="type-body text-secondary mb-4">
           {gettext(
@@ -373,61 +281,17 @@ defmodule TainaWeb.MembersLive do
           <span class="type-mono-sm truncate flex-1">{@reset_link}</span>
           <.icon name="link" size={18} class="text-brand" />
         </div>
-        <.button id="copy-reset" variant="primary" class="w-full" phx-hook="Clipboard" data-copy={@reset_link}>
+        <.button id="copy-reset" kind="primary" class="w-full" phx-hook="Clipboard" data-copy={@reset_link}>
           {gettext("Copiar link")}
         </.button>
-      </.modal>
+      </.dialog>
 
-      <.confirm_dialog
-        id="confirm-deactivate"
-        show={@confirm_deactivate != nil}
-        title={gettext("Desativar esta conta?")}
-        message={
-          gettext(
-            "%{name} não vai mais conseguir entrar. Os dados ficam guardados e você pode reativar quando quiser.",
-            name: @confirm_deactivate && display_name(@confirm_deactivate)
-          )
-        }
-        confirm_label={gettext("Desativar")}
-        on_confirm={
-          JS.push("deactivate", value: %{id: @confirm_deactivate && @confirm_deactivate.public_id})
-        }
-        on_cancel={JS.push("close-confirm")}
-      />
-
-      <%!-- Promocao nao pode ler como destrutiva: o confirm_dialog acende o
-      botao vermelho de perigo, entao a confirmacao daqui e propria, com botao
-      neutro de confirmacao (dao poder, nao tiram) --%>
-      <.modal id="confirm-role" show={@confirm_role != nil} on_cancel={JS.push("close-confirm")}>
-        <h2 id="confirm-role-title" class="type-h3 mb-2">{gettext("Tornar zelador(a)?")}</h2>
-        <p class="type-body text-secondary mb-6">
-          {gettext(
-            "%{name} vai poder gerar convites e links de redefinição de senha. Não ganha acesso à casa de ninguém. A mudança fica registrada no mural.",
-            name: @confirm_role && display_name(@confirm_role.member)
-          )}
-        </p>
-        <div class="row gap-3">
-          <.button variant="secondary" size="md" class="flex-1" phx-click={JS.push("close-confirm")}>
-            {gettext("Cancelar")}
-          </.button>
-          <.button
-            variant="primary"
-            size="md"
-            class="flex-1"
-            phx-click={
-              JS.push("set-role", value: %{id: @confirm_role && @confirm_role.member.public_id, role: "zelador"})
-            }
-          >
-            {gettext("Tornar zelador(a)")}
-          </.button>
-        </div>
-      </.modal>
-
-      <.confirm_dialog
+      <.dialog
         id="confirm-revoke"
         show={@confirm_revoke != nil}
+        kind="destructive"
         title={gettext("Revogar este convite?")}
-        message={
+        body={
           gettext(
             "O link deixa de funcionar na hora: quem tiver o link não consegue mais entrar com ele. A pessoa ainda não entrou, então não some nenhuma conta. Você pode gerar um convite novo quando quiser."
           )
@@ -438,5 +302,11 @@ defmodule TainaWeb.MembersLive do
       />
     </Layouts.page>
     """
+  end
+
+  # O trilho da direita: quem não tem menu (morador comum, conta própria)
+  # fica com o chevron do board; quem tem ações leva o kebab delas.
+  defp member_trailing(member, scope) do
+    if can_reset?(member, scope), do: "action", else: "chevron"
   end
 end

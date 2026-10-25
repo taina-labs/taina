@@ -1,4 +1,12 @@
 defmodule TainaWeb.AccessRequestsLiveTest do
+  @moduledoc """
+  Pedidos (spec 6.4, boards do Penpot): `vazio`
+  cc1037dc-e8ab-80cc-8008-d5e22b5109c1 ("Nenhum pedido ainda"), `com pedidos`
+  cc1037dc-e8ab-80cc-8008-d5e227df15d9 (pendente com Recusar/Dar acesso,
+  concedido e recusado com o estado na linha) e `enviado`
+  cc1037dc-e8ab-80cc-8008-d62898a2525a (quem pediu vê a confirmação).
+  """
+
   use TainaWeb.ConnCase, async: true
 
   import Phoenix.LiveViewTest
@@ -21,14 +29,16 @@ defmodule TainaWeb.AccessRequestsLiveTest do
     req
   end
 
+  # board `vazio`
   test "empty inbox shows the teaching copy", %{conn: conn, owner: owner} do
     {:ok, _lv, html} = conn |> log_in(owner) |> live(~p"/conta/pedidos")
 
-    assert html =~ "Nenhum pedido por enquanto"
-    assert html =~ "Ninguém acessa seus arquivos sem você deixar"
+    assert html =~ "Nenhum pedido ainda"
+    assert html =~ "Quando alguém pedir para abrir um arquivo da sua casa, aparece aqui."
   end
 
-  test "approving removes the pending row and shows the grant as reversible", %{
+  # board `com pedidos`: pendente
+  test "a pending request shows the person, the reason and the row actions", %{
     conn: conn,
     tekoa: tekoa,
     owner: owner,
@@ -38,19 +48,15 @@ defmodule TainaWeb.AccessRequestsLiveTest do
     _req = request(requester, tekoa, file)
     {:ok, lv, html} = conn |> log_in(owner) |> live(~p"/conta/pedidos")
 
-    assert html =~ "Maria"
-
-    lv |> element(~s(button[phx-click="approve"])) |> render_click()
-
-    html = render(lv)
-    assert html =~ "Acesso a doc.txt liberado"
-    assert html =~ "Já liberados"
-    assert html =~ "doc.txt, desde"
-    refute html =~ "pediu acesso"
-    assert Maraca.authorize?(requester, :read, "ypy.file.v0", file.rkey)
+    assert has_element?(lv, ".list-row--pedido", "Maria pediu acesso")
+    assert html =~ "doc.txt, hoje"
+    assert html =~ "Motivo: Por favor"
+    assert has_element?(lv, ~s(button[phx-click="ask-deny"]), "Recusar")
+    assert has_element?(lv, ~s(button[phx-click="approve"]), "Dar acesso")
   end
 
-  test "a granted permission can be revoked from the Já liberados section", %{
+  # board `com pedidos`: decidido
+  test "approving turns the row into a reversible grant", %{
     conn: conn,
     tekoa: tekoa,
     owner: owner,
@@ -61,8 +67,27 @@ defmodule TainaWeb.AccessRequestsLiveTest do
     {:ok, lv, _html} = conn |> log_in(owner) |> live(~p"/conta/pedidos")
 
     lv |> element(~s(button[phx-click="approve"])) |> render_click()
-    assert render(lv) =~ "Tirar acesso"
 
+    html = render(lv)
+    assert html =~ "Acesso a doc.txt liberado"
+    assert has_element?(lv, ".list-row--dado", "Maria recebeu acesso")
+    assert html =~ "Acesso dado em"
+    assert has_element?(lv, ~s(button[phx-click="ask-revoke"]), "Tirar acesso")
+    assert html =~ "Os pedidos resolvidos ficam visíveis. Você pode mudar de ideia quando quiser."
+    assert Maraca.authorize?(requester, :read, "ypy.file.v0", file.rkey)
+  end
+
+  test "a granted permission can be revoked from its row", %{
+    conn: conn,
+    tekoa: tekoa,
+    owner: owner,
+    requester: requester,
+    target_file: file
+  } do
+    _req = request(requester, tekoa, file)
+    {:ok, lv, _html} = conn |> log_in(owner) |> live(~p"/conta/pedidos")
+
+    lv |> element(~s(button[phx-click="approve"])) |> render_click()
     lv |> element(~s(button[phx-click="ask-revoke"])) |> render_click()
     assert render(lv) =~ "Tirar o acesso de Maria?"
     assert render(lv) =~ "Para abrir de novo, ela precisa pedir."
@@ -72,11 +97,12 @@ defmodule TainaWeb.AccessRequestsLiveTest do
     html = render(lv)
     assert html =~ "Acesso de Maria tirado"
     refute has_element?(lv, ~s(button[phx-click="ask-revoke"]))
-    assert html =~ "Nenhum pedido por enquanto"
+    assert html =~ "Nenhum pedido ainda"
     refute Maraca.authorize?(requester, :read, "ypy.file.v0", file.rkey)
   end
 
-  test "denying is gated by the confirm dialog then removes the row", %{
+  # board `com pedidos`: recusado
+  test "denying is gated by the confirm dialog and the refusal reaches who asked", %{
     conn: conn,
     tekoa: tekoa,
     owner: owner,
@@ -92,7 +118,6 @@ defmodule TainaWeb.AccessRequestsLiveTest do
     lv |> element(~s(#confirm-deny button[phx-click*="deny"])) |> render_click()
 
     html = render(lv)
-    refute html =~ "Maria"
     assert html =~ "Pedido negado"
     refute Maraca.authorize?(requester, :read, "ypy.file.v0", file.rkey)
   end
@@ -105,119 +130,60 @@ defmodule TainaWeb.AccessRequestsLiveTest do
     target_file: file
   } do
     {:ok, lv, html} = conn |> log_in(owner) |> live(~p"/conta/pedidos")
-    refute html =~ "Maria"
+    assert html =~ "Nenhum pedido ainda"
 
     _req = request(requester, tekoa, file)
 
-    assert render(lv) =~ "Maria"
+    assert render(lv) =~ "Maria pediu acesso"
   end
 
-  test "a linha Pedidos em Conta acende o ponto quando há pedido esperando", %{
+  # board `enviado`: quem pediu acompanha a resposta por aqui
+  test "the requester sees the sent confirmation while waiting", %{
+    conn: conn,
+    tekoa: tekoa,
+    owner: _owner,
+    requester: requester,
+    target_file: file
+  } do
+    _req = request(requester, tekoa, file)
+    {:ok, _lv, html} = conn |> log_in(requester) |> live(~p"/conta/pedidos")
+
+    assert html =~ "Pedido enviado"
+    assert html =~ "Joana vai decidir. Você vê a resposta aqui em Pedidos."
+    refute html =~ "Dar acesso"
+  end
+
+  test "approval reaches the requester as a flash, not silence", %{
     conn: conn,
     tekoa: tekoa,
     owner: owner,
     requester: requester,
     target_file: file
   } do
-    _req = request(requester, tekoa, file)
-    {:ok, lv, _html} = conn |> log_in(owner) |> live(~p"/conta")
+    req = request(requester, tekoa, file)
+    {:ok, lv, _html} = conn |> log_in(requester) |> live(~p"/conta/pedidos")
 
-    assert has_element?(lv, ".nav-dot")
+    {:ok, _} = Maraca.aprovar(Scope.new(owner, tekoa), req)
+
+    html = render(lv)
+    assert html =~ "Pedido aprovado: agora você pode abrir doc.txt."
+    assert has_element?(lv, ".list-row--dado", "Joana liberou o acesso")
   end
 
-  test "a linha Pedidos em Conta não acende ponto quando nada espera", %{conn: conn, owner: owner} do
-    {:ok, lv, _html} = conn |> log_in(owner) |> live(~p"/conta")
+  test "denial reaches the requester as a flash and a line", %{
+    conn: conn,
+    tekoa: tekoa,
+    owner: owner,
+    requester: requester,
+    target_file: file
+  } do
+    req = request(requester, tekoa, file)
+    {:ok, lv, _html} = conn |> log_in(requester) |> live(~p"/conta/pedidos")
 
-    refute has_element?(lv, ".nav-dot")
-  end
+    {:ok, _} = Maraca.negar(Scope.new(owner, tekoa), req)
 
-  describe "pedidos enviados" do
-    test "empty screen shows the teaching copy", %{conn: conn, requester: requester} do
-      {:ok, _lv, html} = conn |> log_in(requester) |> live(~p"/conta/pedidos")
-
-      assert html =~ "Nenhum pedido por enquanto"
-    end
-
-    test "lists a pending request waiting on the owner", %{
-      conn: conn,
-      tekoa: tekoa,
-      requester: requester,
-      target_file: file
-    } do
-      _req = request(requester, tekoa, file)
-      {:ok, _lv, html} = conn |> log_in(requester) |> live(~p"/conta/pedidos")
-
-      assert html =~ "Seus pedidos"
-      assert html =~ "Joana"
-      assert html =~ "esperando"
-    end
-
-    test "an approved request shows the liberation line instead of vanishing", %{
-      conn: conn,
-      tekoa: tekoa,
-      owner: owner,
-      requester: requester,
-      target_file: file
-    } do
-      req = request(requester, tekoa, file)
-      {:ok, _} = Maraca.aprovar(Scope.new(owner, tekoa), req)
-      {:ok, _lv, html} = conn |> log_in(requester) |> live(~p"/conta/pedidos")
-
-      assert html =~ "Já decididos"
-      assert html =~ "doc.txt: Joana liberou. Você já pode abrir."
-      refute html =~ "esperando"
-    end
-
-    test "a denied request shows the refusal line and invites trying again", %{
-      conn: conn,
-      tekoa: tekoa,
-      owner: owner,
-      requester: requester,
-      target_file: file
-    } do
-      req = request(requester, tekoa, file)
-      {:ok, _} = Maraca.negar(Scope.new(owner, tekoa), req)
-      {:ok, _lv, html} = conn |> log_in(requester) |> live(~p"/conta/pedidos")
-
-      assert html =~ "Já decididos"
-      assert html =~ "doc.txt: Joana recusou este pedido. Você pode pedir de novo quando quiser."
-    end
-
-    test "approval refreshes the list and flashes", %{
-      conn: conn,
-      tekoa: tekoa,
-      owner: owner,
-      requester: requester,
-      target_file: file
-    } do
-      req = request(requester, tekoa, file)
-      {:ok, lv, _html} = conn |> log_in(requester) |> live(~p"/conta/pedidos")
-
-      {:ok, _} = Maraca.aprovar(Scope.new(owner, tekoa), req)
-
-      html = render(lv)
-      assert html =~ "Pedido aprovado"
-      refute html =~ "esperando"
-      assert html =~ "Já decididos"
-      assert html =~ "Joana liberou"
-    end
-
-    test "denial refreshes the list and flashes", %{
-      conn: conn,
-      tekoa: tekoa,
-      owner: owner,
-      requester: requester,
-      target_file: file
-    } do
-      req = request(requester, tekoa, file)
-      {:ok, lv, _html} = conn |> log_in(requester) |> live(~p"/conta/pedidos")
-
-      {:ok, _} = Maraca.negar(Scope.new(owner, tekoa), req)
-
-      html = render(lv)
-      assert html =~ "Seu pedido foi negado"
-      refute html =~ "esperando"
-      assert html =~ "Joana recusou este pedido"
-    end
+    html = render(lv)
+    assert html =~ "Seu pedido foi negado."
+    assert has_element?(lv, ".list-row--recusado", "Joana recusou o pedido")
   end
 end
