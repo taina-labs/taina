@@ -1,11 +1,13 @@
 defmodule TainaWeb.ResetPasswordLive do
   @moduledoc """
   Redefinição de senha pelo link que o zelador gerou (recuperação mediada, sem
-  e-mail). O submit é um POST tradicional para `PasswordController.update` (a
-  sessão nasce lá); aqui o LiveView cuida só da apresentação. No mount o token
-  é conferido de leve (`Maraca.reset_status/1`, só leitura): link vencido ou
-  já usado mostra o beco sem saída em vez do formulário, e a validação de
-  verdade continua no POST.
+  e-mail; spec 6.5, boards "Redefinir / padrao"
+  cc1037dc-e8ab-80cc-8008-d5e19abb9e90 e "expirado"
+  cc1037dc-e8ab-80cc-8008-d5e19e56bc3d). O submit é um POST tradicional para
+  `PasswordController.update` (a sessão nasce lá); aqui o LiveView cuida só da
+  apresentação. No mount o token é conferido de leve (`Maraca.reset_status/1`,
+  só leitura): link vencido ou já usado mostra o beco sem saída em vez do
+  formulário, e a validação de verdade continua no POST.
   """
 
   use TainaWeb, :live_view
@@ -22,24 +24,28 @@ defmodule TainaWeb.ResetPasswordLive do
      |> assign(:token_status, Maraca.reset_status(token))}
   end
 
+  # O "Tentar de novo" do cartão, num link vencido, só tem um lugar para onde
+  # ir: entrar.
+  @impl true
+  def handle_event("voltar", _params, socket) do
+    {:noreply, Phoenix.LiveView.push_navigate(socket, to: ~p"/login")}
+  end
+
   @impl true
   def render(assigns) do
     ~H"""
     <Layouts.auth flash={@flash} secure_connection?={@secure_connection?}>
-      <.empty_state
+      <.error_card
         :if={@token_status == :invalid}
-        icon="clock"
-        title={gettext("Este link expirou ou já foi usado")}
-        hint={gettext(
+        title={gettext("Este link expirou.")}
+        body={gettext(
           "O link de redefinição vale uma hora e só pode ser usado uma vez. Peça um novo a quem cuida da sua comunidade."
         )}
-      >
-        <.button variant="primary" navigate={~p"/login"}>{gettext("Ir para o login")}</.button>
-      </.empty_state>
+        retry_event="voltar"
+      />
 
       <div :if={@token_status == :ok}>
         <div class="col gap-3 text-center mt-10 mb-8 items-center">
-          <.icon name="shield" size={40} class="spark" />
           <h1 class="type-h1">{gettext("Redefinir senha")}</h1>
           <p class="type-body text-secondary">
             {gettext("Crie uma senha nova para voltar a entrar.")}
@@ -55,27 +61,14 @@ defmodule TainaWeb.ResetPasswordLive do
             id="reset_password"
             value=""
             placeholder={gettext("mínimo 8 caracteres")}
-            help={gettext("Pelo menos 8 caracteres. Uma frase que só você lembra é ainda melhor.")}
+            help={gettext("Use uma frase longa que só você lembra.")}
             autocomplete="new-password"
             required
             minlength="8"
           >
             <:trailing><.password_toggle target="reset_password" /></:trailing>
           </.input>
-          <.input
-            label={gettext("Confirme a senha")}
-            type="password"
-            name="account[password_confirmation]"
-            id="reset_password_confirmation"
-            value=""
-            placeholder={gettext("a mesma senha")}
-            autocomplete="new-password"
-            required
-            minlength="8"
-          >
-            <:trailing><.password_toggle target="reset_password_confirmation" /></:trailing>
-          </.input>
-          <.button type="submit" variant="primary" class="w-full mt-2">{gettext("Salvar nova senha")}</.button>
+          <.button type="submit" kind="primary" class="w-full mt-2">{gettext("Salvar nova senha")}</.button>
         </form>
       </div>
     </Layouts.auth>

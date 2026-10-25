@@ -1,22 +1,30 @@
 defmodule TainaWeb.SetupLive do
   @moduledoc """
-  Wizard de primeiro boot (3 passos): nome da comunidade, conta de quem cuida
-  (zelador) e armazenamento. Cada passo vive na própria URL (`?passo=`): o
-  gesto de voltar do Android desce um passo em vez de sair do wizard. A
-  validação roda ao vivo e espelha as regras do servidor (`Tekoa`/`Ava`) para
-  o erro ficar no campo, não virar falha de changeset no POST que derruba o
-  wizard inteiro; o submit final valida todos os passos (somente leitura) e só
-  então solta o POST tradicional para `SetupController` (`phx-trigger-action`),
-  que faz `Maraca.bootstrap/2` e abre a sessão na mesma requisição.
+  Wizard de primeiro boot (3 passos, spec 6.5): boas-vindas
+  (cc1037dc-e8ab-80cc-8008-d5e12cb51f5d), conta de quem cuida
+  (cc1037dc-e8ab-80cc-8008-d5e12f7715cd) e armazenamento
+  (cc1037dc-e8ab-80cc-8008-d5e1336e1a44). Cada passo vive na própria URL
+  (`?passo=`): o gesto de voltar do Android desce um passo em vez de sair do
+  wizard. A validação roda ao vivo e espelha as regras do servidor
+  (`Tekoa`/`Ava`) para o erro ficar no campo, não virar falha de changeset no
+  POST que derruba o wizard inteiro; o submit final valida todos os passos
+  (somente leitura) e só então solta o POST tradicional para
+  `SetupController` (`phx-trigger-action`), que faz `Maraca.bootstrap/2` e
+  abre a sessão na mesma requisição.
 
-  Deriva da RFC 002 (D2): só roda em instância virgem, se já existe Tekoa,
-  redireciona para o login. A conta criada é a do zelador (quem cuida da
-  máquina); identidade por nome de usuário, sem e-mail (RFC_003, seção 4).
+  O disco é escolhido na instalação da caixa e não pode ser trocado por aqui
+  (spec 10): o passo 3 mostra o disco como fato de leitura e decide só o
+  LIMITE ("O disco inteiro" / "Um limite" em GB), que o controller valida
+  contra o tamanho do disco. Deriva da RFC 002 (D2): só roda em instância
+  virgem, se já existe Tekoa, redireciona para o login. A conta criada é a do
+  zelador (quem cuida da máquina); identidade por nome de usuário, sem e-mail
+  (RFC_003, seção 4).
   """
 
   use TainaWeb, :live_view
 
   alias Taina.Maraca
+  alias TainaWeb.Disk
   alias TainaWeb.Layouts
 
   @impl true
@@ -35,7 +43,9 @@ defmodule TainaWeb.SetupLive do
            "username" => "",
            "display_name" => "",
            "password" => "",
-           "password_confirmation" => ""
+           # O board traz "O disco inteiro (recomendado)" já escolhido.
+           "storage_quota" => "inteiro",
+           "quota_gb" => ""
          }
        )
        |> assign(:errors, %{})
@@ -100,12 +110,6 @@ defmodule TainaWeb.SetupLive do
 
   def handle_event("final", _params, socket), do: {:noreply, socket}
 
-  # O passo vive na URL: o patch coloca o passo anterior no histórico e o
-  # `handle_params` aplica.
-  def handle_event("back", _params, socket) do
-    {:noreply, push_patch(socket, to: ~p"/setup?passo=#{max(socket.assigns.step - 1, 1)}")}
-  end
-
   defp step_from_passo(passo, current) when is_binary(passo) do
     case Integer.parse(passo) do
       {step, ""} when step in 1..3 -> step
@@ -138,10 +142,31 @@ defmodule TainaWeb.SetupLive do
     |> validate_username(data)
     |> validate_length_in(data, "display_name", 0..80, gettext("de no máximo 80 caracteres"))
     |> validate_password(data)
-    |> validate_confirmation(data)
   end
 
+  # Espelha o `parse_quota/2` do SetupController para o erro ficar no campo:
+  # "Um limite" exige um número de GB inteiro e positivo. O teto do tamanho
+  # do disco é conferido lá, com o disco na mão.
+  defp validate_step(3, data), do: validate_quota(data)
+
   defp validate_step(_step, _data), do: %{}
+
+  defp validate_quota(%{"storage_quota" => "limite"} = data) do
+    if positive_integer?(data["quota_gb"] || "") do
+      %{}
+    else
+      %{"quota_gb" => gettext("O limite precisa ser um número de GB maior que zero.")}
+    end
+  end
+
+  defp validate_quota(_data), do: %{}
+
+  defp positive_integer?(value) do
+    case Integer.parse(value) do
+      {n, ""} -> n > 0
+      _other -> false
+    end
+  end
 
   # Espelha `Ava.validate_username/1` (3 a 50 caracteres, só minúsculas,
   # números, ponto, hífen e _): o erro de formato aparece no campo aqui.
@@ -188,7 +213,7 @@ defmodule TainaWeb.SetupLive do
         1
 
       Map.has_key?(errors, "username") or Map.has_key?(errors, "display_name") or
-        Map.has_key?(errors, "password") or Map.has_key?(errors, "password_confirmation") ->
+          Map.has_key?(errors, "password") ->
         2
 
       true ->
@@ -206,42 +231,58 @@ defmodule TainaWeb.SetupLive do
       else: errors
   end
 
-  defp validate_confirmation(errors, data) do
-    if data["password_confirmation"] == data["password"],
-      do: errors,
-      else: Map.put(errors, "password_confirmation", gettext("as duas senhas não são iguais"))
+  # Resumo do board ("Quilombo do Café, quem cuida é Ana. Disco interno,
+  # limite: o disco inteiro."): o nome de exibição quando existe, o username
+  # como reserva.
+  defp resumo(data) do
+    gettext("%{community}, quem cuida é %{quem}. Disco interno, limite: %{limite}.",
+      community: data["community_name"],
+      quem: display_name_or_username(data),
+      limite: limite_text(data)
+    )
+  end
+
+  defp display_name_or_username(%{"display_name" => name}) when is_binary(name) and name != "", do: name
+
+  defp display_name_or_username(data), do: data["username"] || ""
+
+  defp limite_text(%{"storage_quota" => "limite", "quota_gb" => gb}), do: "#{gb} GB"
+  defp limite_text(_data), do: gettext("o disco inteiro")
+
+  # Formulário mínimo só para o rádio do limite: `to_form` com o valor atual
+  # faz o `radio_card` refletir a escolha (o `used_input?` vê o param).
+  defp quota_form(data) do
+    Phoenix.Component.to_form(%{"storage_quota" => data["storage_quota"]}, as: :setup)
   end
 
   # Espaço livre no volume do storage, melhor esforço (`df` POSIX). Falhou?
   # O número simplesmente não aparece: é conforto, não requisito.
+  # O espaço livre do disco para o passo 1: a mesma leitura da interface
+  # (`TainaWeb.Disk`), sem parsing duplicado de `df`.
   defp free_space do
-    storage_root = Application.fetch_env!(:taina, :storage_root)
-
-    with {out, 0} <- System.cmd("df", ["-k", storage_root], stderr_to_stdout: true),
-         [_header, line | _rest] <- String.split(out, "\n"),
-         [_fs, _blocks, _used, avail | _] <- String.split(line, ~r/\s+/, trim: true),
-         {kbytes, ""} <- Integer.parse(avail) do
-      kbytes * 1024
-    else
-      _ -> nil
+    case Disk.stats() do
+      {:ok, %{free_bytes: free}} -> free
+      {:error, _reason} -> nil
     end
-  rescue
-    _e in ErlangError -> nil
   end
 
   @impl true
   def render(assigns) do
+    # O estado da escolha de limite vem do rádio (igual ao HTML), via
+    # FormField, que é o que o `radio_card` entende.
+    assigns = assign(assigns, :quota_form, quota_form(assigns.data))
+
     ~H"""
     <Layouts.auth flash={@flash} secure_connection?={@secure_connection?}>
       <div :if={@step == 1} class="col flex-1">
         <div class="col gap-4 text-center mt-10 mb-8 items-center">
-          <.icon name="spark" size={48} class="spark" />
-          <h1 id="step-heading-1" tabindex="-1" phx-mounted={JS.focus()} class="type-display">Tainá</h1>
+          <.steps current={1} label={gettext("Boas-vindas")} />
+          <h1 id="step-heading-1" tabindex="-1" phx-mounted={JS.focus()} class="type-display">
+            {gettext("Boas-vindas à Tainá")}
+          </h1>
           <p class="type-body text-secondary">
-            {gettext("A estrela da manhã da sua comunidade. Arquivos e fotos, na sua casa, sob seu controle.")}
+            {gettext("A estrela da manhã da sua comunidade. Arquivos e fotos da comunidade, guardados com você.")}
           </p>
-          <.steps current={1} />
-          <p class="type-label text-faint">{gettext("Passo 1 de 3: sua comunidade")}</p>
         </div>
 
         <form id="setup-step-1" phx-change="validate" phx-submit="next" class="col gap-6 flex-1">
@@ -256,23 +297,21 @@ defmodule TainaWeb.SetupLive do
             autofocus
           />
           <div class="flex-1"></div>
-          <.button type="submit" variant="primary" class="w-full" phx-disable-with={gettext("Começar...")}>
+          <.button type="submit" kind="primary" class="w-full" phx-disable-with={gettext("Começar...")}>
             {gettext("Começar")}
           </.button>
         </form>
       </div>
 
       <div :if={@step == 2} class="col flex-1">
-        <.icon_button name="chevron-left" label={gettext("Voltar")} phx-click="back" />
         <div class="col gap-3 mt-4 mb-6">
+          <.steps current={2} label={gettext("Quem cuida")} />
           <h1 id="step-heading-2" tabindex="-1" phx-mounted={JS.focus()} class="type-h1">
-            {gettext("Crie a conta de quem cuida")}
+            {gettext("Quem cuida da comunidade")}
           </h1>
           <p class="type-body text-secondary">
-            {gettext("Você é o primeiro zelador desta comunidade. Guarde bem este acesso: quem o tem cuida da máquina.")}
+            {gettext("Você é quem vai cuidar da máquina da comunidade. Guarde bem este acesso.")}
           </p>
-          <.steps current={2} />
-          <p class="type-label text-faint">{gettext("Passo 2 de 3: quem cuida")}</p>
         </div>
 
         <form id="setup-step-2" phx-change="validate" phx-submit="next" class="col gap-5 flex-1">
@@ -304,45 +343,45 @@ defmodule TainaWeb.SetupLive do
             id="setup_password"
             value={@data["password"]}
             placeholder={gettext("mínimo 8 caracteres")}
-            help={gettext("Pelo menos 8 caracteres. Uma frase que só você lembra é ainda melhor.")}
+            help={gettext("Use uma frase longa que só você lembra.")}
             autocomplete="new-password"
             errors={List.wrap(@errors["password"])}
           >
             <:trailing><.password_toggle target="setup_password" /></:trailing>
           </.input>
-          <.input
-            label={gettext("Confirme a senha")}
-            type="password"
-            name="setup[password_confirmation]"
-            id="setup_password_confirmation"
-            value={@data["password_confirmation"]}
-            placeholder={gettext("a mesma senha")}
-            autocomplete="new-password"
-            errors={List.wrap(@errors["password_confirmation"])}
-          >
-            <:trailing><.password_toggle target="setup_password_confirmation" /></:trailing>
-          </.input>
           <div class="flex-1"></div>
-          <.button type="submit" variant="primary" class="w-full" phx-disable-with={gettext("Continuar...")}>
+          <.button type="submit" kind="primary" class="w-full" phx-disable-with={gettext("Continuar...")}>
             {gettext("Continuar")}
           </.button>
         </form>
       </div>
 
       <div :if={@step == 3} class="col flex-1">
-        <.icon_button name="chevron-left" label={gettext("Voltar")} phx-click="back" />
         <div class="col gap-3 mt-4 mb-6">
+          <.steps current={3} label={gettext("Armazenamento")} />
           <h1 id="step-heading-3" tabindex="-1" phx-mounted={JS.focus()} class="type-h1">
             {gettext("O disco da comunidade")}
           </h1>
           <p class="type-body text-secondary">
             {gettext("Este é o disco da comunidade. Ele é escolhido na instalação da caixa e não pode ser trocado por aqui.")}
           </p>
-          <.steps current={3} />
-          <p class="type-label text-faint">{gettext("Passo 3 de 3: armazenamento")}</p>
         </div>
 
-        <div class="col gap-4 flex-1">
+        <form
+          id="setup-step-3"
+          phx-change="validate"
+          phx-submit="final"
+          phx-trigger-action={@trigger_submit}
+          action={~p"/setup"}
+          method="post"
+          class="col gap-4 flex-1"
+        >
+          <input type="hidden" name="_csrf_token" value={get_csrf_token()} />
+          <input type="hidden" name="setup[community_name]" value={@data["community_name"]} />
+          <input type="hidden" name="setup[username]" value={@data["username"]} />
+          <input type="hidden" name="setup[display_name]" value={@data["display_name"]} />
+          <input type="hidden" name="setup[password]" value={@data["password"]} />
+
           <.card class="row gap-3 items-center">
             <.icon name="check" size={22} class="text-success" />
             <div class="flex-1">
@@ -360,27 +399,43 @@ defmodule TainaWeb.SetupLive do
             </div>
           </.card>
 
+          <div class="col gap-3">
+            <p class="type-label">{gettext("Quanto do disco a comunidade pode usar")}</p>
+            <.radio_card
+              field={@quota_form[:storage_quota]}
+              value="inteiro"
+              label={gettext("O disco inteiro (recomendado)")}
+            />
+            <.radio_card
+              field={@quota_form[:storage_quota]}
+              value="limite"
+              label={gettext("Um limite")}
+            />
+            <.input
+              :if={@data["storage_quota"] == "limite"}
+              label={gettext("Limite em GB")}
+              name="setup[quota_gb]"
+              id="setup_quota_gb"
+              value={@data["quota_gb"]}
+              placeholder={gettext("ex.: 50")}
+              help={gettext("Em GB. Vale para toda a comunidade.")}
+              inputmode="numeric"
+              errors={List.wrap(@errors["quota_gb"])}
+            />
+          </div>
+
           <.card class="mt-2">
             <p class="type-overline text-faint mb-2">{gettext("Resumo")}</p>
-            <p class="type-body">
-              {@data["community_name"]}, {gettext("zelador(a)")} {@data["username"]}, {gettext("disco interno")}
-            </p>
+            <p class="type-body">{resumo(@data)}</p>
+            <p class="type-body-sm text-muted">{gettext("Quem cuida pode mudar o limite depois.")}</p>
           </.card>
 
           <div class="flex-1"></div>
 
-          <form id="setup-submit" phx-submit="final" phx-trigger-action={@trigger_submit} action={~p"/setup"} method="post" class="col">
-            <input type="hidden" name="_csrf_token" value={get_csrf_token()} />
-            <input type="hidden" name="setup[community_name]" value={@data["community_name"]} />
-            <input type="hidden" name="setup[username]" value={@data["username"]} />
-            <input type="hidden" name="setup[display_name]" value={@data["display_name"]} />
-            <input type="hidden" name="setup[password]" value={@data["password"]} />
-            <input type="hidden" name="setup[password_confirmation]" value={@data["password_confirmation"]} />
-            <.button type="submit" variant="primary" class="w-full" phx-disable-with={gettext("Criar minha nuvem...")}>
-              {gettext("Criar minha nuvem")}
-            </.button>
-          </form>
-        </div>
+          <.button type="submit" kind="primary" class="w-full" phx-disable-with={gettext("Criando...")}>
+            {gettext("Criar a nuvem da comunidade")}
+          </.button>
+        </form>
       </div>
     </Layouts.auth>
     """

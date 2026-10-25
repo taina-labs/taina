@@ -19,6 +19,17 @@ defmodule TainaWeb.InviteFlowTest do
     assert {:error, {:redirect, %{to: "/"}}} = conn |> log_in(morador) |> live(~p"/moradores/convidar")
   end
 
+  test "papel: RadioCards do board com o que cada papel pode", %{conn: conn, zelador: zelador} do
+    {:ok, lv, html} = conn |> log_in(zelador) |> live(~p"/moradores/convidar")
+
+    assert has_element?(lv, ".radio-card", "Morador")
+    assert has_element?(lv, ".radio-card", "Zelador")
+    assert html =~ "Vê a praça e ganha uma casa própria."
+    assert html =~ "Cuida da máquina: disco, backups e convites. Para abrir uma casa, pede como todo mundo."
+    assert has_element?(lv, ~s(#invite-form button[type="submit"]), "Criar convite")
+    assert html =~ "Você cria convites só quando quiser. Dá para cancelar depois."
+  end
+
   test "zelador gera convite com link + QR, sem e-mail", %{conn: conn, zelador: zelador} do
     {:ok, lv, _html} = conn |> log_in(zelador) |> live(~p"/moradores/convidar")
 
@@ -27,6 +38,8 @@ defmodule TainaWeb.InviteFlowTest do
     assert html =~ "/convite/"
     assert html =~ "<svg"
     assert html =~ "Copiar link"
+    assert html =~ "Convite criado. Envie o link para a pessoa."
+    assert html =~ "O convite vale por 7 dias."
   end
 
   test "aviso honesto quando o navegador não consegue copiar o link", %{conn: conn, zelador: zelador} do
@@ -41,12 +54,21 @@ defmodule TainaWeb.InviteFlowTest do
     assert html =~ "Selecione o link e copie com a mão."
   end
 
-  test "convite aceito vira conta logada", %{conn: conn, zelador: zelador, tekoa: tekoa} do
+  test "convite aceito vira conta logada, sem o campo de confirmar senha", %{
+    conn: conn,
+    zelador: zelador,
+    tekoa: tekoa
+  } do
     {:ok, %{token: token}} = Maraca.invite_user(zelador, tekoa)
 
-    # a tela de aceite renderiza com o token na URL
-    {:ok, _lv, html} = live(conn, ~p"/convite/#{token}")
-    assert html =~ "Você foi convidado!"
+    # a tela de aceite renderiza com o token na URL, uma senha só (o
+    # "Mostrar" cobre a conferência, spec 6.5)
+    {:ok, lv, html} = live(conn, ~p"/convite/#{token}")
+
+    assert html =~ "Você recebeu um convite"
+    assert html =~ tekoa.name
+    refute html =~ "account[password_confirmation]"
+    assert has_element?(lv, ~s(a[href="/login"]), "Entrar")
 
     # o POST cria a conta e entra
     conn =
@@ -54,8 +76,7 @@ defmodule TainaWeb.InviteFlowTest do
         "account" => %{
           "username" => "joao",
           "display_name" => "João Mendes",
-          "password" => "frase-longa-segura",
-          "password_confirmation" => "frase-longa-segura"
+          "password" => "frase-longa-segura"
         }
       })
 
@@ -68,8 +89,7 @@ defmodule TainaWeb.InviteFlowTest do
       post(conn, ~p"/convite/token-invalido", %{
         "account" => %{
           "username" => "joao",
-          "password" => "frase-longa-segura",
-          "password_confirmation" => "frase-longa-segura"
+          "password" => "frase-longa-segura"
         }
       })
 
@@ -77,12 +97,22 @@ defmodule TainaWeb.InviteFlowTest do
     assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "expirou"
   end
 
-  test "token desconhecido mostra o estado de convite expirado em vez do formulário", %{conn: conn} do
-    {:ok, _lv, html} = live(conn, ~p"/convite/nao-existe")
+  test "token desconhecido mostra o cartão de convite inválido em vez do formulário", %{conn: conn} do
+    {:ok, lv, html} = live(conn, ~p"/convite/nao-existe")
 
-    assert html =~ "Este convite expirou ou já foi usado"
-    assert html =~ "Ir para o login"
+    # O board "Convite / expirado" é um cartão de erro com a saída para o
+    # login embaixo.
+    assert html =~ "Este convite não é mais válido."
+    assert has_element?(lv, ~s(.error-card))
+    assert has_element?(lv, ~s(a[href="/login"]), "Voltar para entrar")
     refute html =~ "Criar conta"
+  end
+
+  test "o Tentar de novo do cartão leva para o login", %{conn: conn} do
+    {:ok, lv, _html} = live(conn, ~p"/convite/nao-existe")
+
+    assert {:error, {:live_redirect, %{to: "/login"}}} =
+             lv |> element(~s(.error-card button), "Tentar de novo") |> render_click()
   end
 
   test "convite expirado mostra o estado de beco sem saída antes de preencher o formulário", %{
@@ -103,7 +133,8 @@ defmodule TainaWeb.InviteFlowTest do
 
     {:ok, _lv, html} = live(conn, ~p"/convite/#{token}")
 
-    assert html =~ "Este convite expirou ou já foi usado"
+    assert html =~ "Este convite não é mais válido."
+    assert html =~ "Voltar para entrar"
     refute html =~ "account[password]"
   end
 end

@@ -4,6 +4,8 @@ defmodule TainaWeb.LoginLiveTest do
   import Phoenix.LiveViewTest
   import Taina.Fixtures
 
+  @login_error "Nome ou senha incorretos. Tente de novo ou fale com quem cuida da comunidade."
+
   test "instância virgem redireciona para o setup", %{conn: conn} do
     assert {:error, {:redirect, %{to: "/setup"}}} = live(conn, ~p"/login")
   end
@@ -20,25 +22,69 @@ defmodule TainaWeb.LoginLiveTest do
 
     {:ok, lv, html} = live(conn, ~p"/login")
 
-    assert html =~ "Boas-vindas de volta"
+    assert html =~ "Entre com seu nome na nuvem da sua comunidade."
+    assert html =~ "É com ele que você entra."
     assert has_element?(lv, ~s(form[action="/login"]))
     assert has_element?(lv, ~s(input[name="username"]))
     assert has_element?(lv, ~s(input[name="password"]))
   end
 
-  test "o convite abre pelo código, sem link completo", %{conn: conn} do
+  test "sem o aviso de tamanho de senha no login (spec 6.5)", %{conn: conn} do
+    tekoa_fixture()
+
+    {:ok, _lv, html} = live(conn, ~p"/login")
+
+    refute html =~ "Mínimo 8"
+  end
+
+  test "login que falhou acende o erro do campo da senha (board erro)", %{conn: conn} do
+    tekoa_fixture()
+
+    {:ok, lv, html} =
+      conn
+      |> init_test_session(%{})
+      |> Phoenix.Controller.fetch_flash([])
+      |> put_flash(:error, @login_error)
+      |> live(~p"/login")
+
+    # O flash do controller segue na casca e o board repete o aviso no campo.
+    assert html =~ @login_error
+    assert html =~ "Confira a senha e tente de novo."
+    assert has_element?(lv, ~s(.field--invalid input[name="password"]))
+  end
+
+  test "outro erro que cai no login (convite vencido) não acende o campo", %{conn: conn} do
+    tekoa_fixture()
+
+    expired = "Este convite expirou ou já foi usado. Peça um novo link a quem te convidou."
+
+    {:ok, _lv, html} =
+      conn
+      |> init_test_session(%{})
+      |> Phoenix.Controller.fetch_flash([])
+      |> put_flash(:error, expired)
+      |> live(~p"/login")
+
+    assert html =~ expired
+    refute html =~ "Confira a senha e tente de novo."
+  end
+
+  test "Esqueci minha senha abre a explicação da recuperação mediada", %{conn: conn} do
     tekoa_fixture()
 
     {:ok, lv, _html} = live(conn, ~p"/login")
 
-    # O campo do link não tem `field` nem `value`: é o caso que derrubava o
-    # render com KeyError.
-    assert lv |> element("button", "Tenho um convite") |> render_click() =~
-             "Cole aqui o link do convite"
+    html = lv |> element("button", "Esqueci minha senha") |> render_click()
 
-    assert {:error, {:live_redirect, %{to: "/convite/abc123"}}} =
-             lv
-             |> element("#invite-code-form")
-             |> render_submit(%{"code" => " abc123 "})
+    assert html =~ "O Tainá não usa e-mail."
+  end
+
+  test "Tenho um convite leva ao /convite", %{conn: conn} do
+    tekoa_fixture()
+
+    {:ok, lv, _html} = live(conn, ~p"/login")
+
+    assert {:error, {:live_redirect, %{to: "/convite"}}} =
+             lv |> element("a", "Tenho um convite") |> render_click()
   end
 end

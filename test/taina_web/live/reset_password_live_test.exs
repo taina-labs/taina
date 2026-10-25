@@ -15,21 +15,40 @@ defmodule TainaWeb.ResetPasswordLiveTest do
     %{tekoa: tekoa, zelador: zelador, member: member}
   end
 
-  test "link válido renderiza o formulário de redefinição", %{conn: conn, zelador: zelador, member: member, tekoa: tekoa} do
+  test "link válido renderiza o formulário de redefinição, uma senha só", %{
+    conn: conn,
+    zelador: zelador,
+    member: member,
+    tekoa: tekoa
+  } do
     {:ok, %{token: token}} = Maraca.mint_reset_link(Scope.new(zelador, tekoa), member)
 
-    {:ok, _lv, html} = live(conn, ~p"/redefinir/#{token}")
+    {:ok, lv, html} = live(conn, ~p"/redefinir/#{token}")
 
+    # O "Mostrar" cobre a conferência: sem o segundo campo (spec 6.5).
     assert html =~ "Redefinir senha"
+    assert html =~ "Crie uma senha nova para voltar a entrar."
+    assert html =~ "Use uma frase longa que só você lembra."
     assert html =~ "Salvar nova senha"
+    refute html =~ "account[password_confirmation]"
+    assert has_element?(lv, ~s(form#reset-form))
   end
 
   test "token desconhecido mostra o estado de link expirado em vez do formulário", %{conn: conn} do
-    {:ok, _lv, html} = live(conn, ~p"/redefinir/nao-existe")
+    {:ok, lv, html} = live(conn, ~p"/redefinir/nao-existe")
 
-    assert html =~ "Este link expirou ou já foi usado"
-    assert html =~ "Ir para o login"
+    # O board "Redefinir / expirado" é um cartão de erro, não um form.
+    assert html =~ "Este link expirou."
+    assert has_element?(lv, ~s(.error-card))
+    assert has_element?(lv, ~s(button), "Tentar de novo")
     refute html =~ "Salvar nova senha"
+  end
+
+  test "o Tentar de novo do cartão leva para o login", %{conn: conn} do
+    {:ok, lv, _html} = live(conn, ~p"/redefinir/nao-existe")
+
+    assert {:error, {:live_redirect, %{to: "/login"}}} =
+             lv |> element(~s(.error-card button), "Tentar de novo") |> render_click()
   end
 
   test "link expirado mostra o estado de beco sem saída antes de preencher o formulário", %{
@@ -53,7 +72,7 @@ defmodule TainaWeb.ResetPasswordLiveTest do
     # desconhecido, mas o teste prova o do token que um dia valeu.
     {:ok, _lv, html} = live(conn, ~p"/redefinir/#{token}")
 
-    assert html =~ "Este link expirou ou já foi usado"
+    assert html =~ "Este link expirou."
     refute html =~ "reset_password"
   end
 end

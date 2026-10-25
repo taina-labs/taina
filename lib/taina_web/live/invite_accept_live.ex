@@ -1,12 +1,14 @@
 defmodule TainaWeb.InviteAcceptLive do
   @moduledoc """
-  Aceite de convite: a pessoa convidada escolhe nome e senha. O submit é um
-  POST tradicional para `InviteController.accept` (`accept_invite/2` + sessão
-  na mesma requisição). No mount o token é conferido de leve (só leitura, via
-  `Maraca.invite_status/1`): convite vencido ou já usado mostra o beco sem
-  saída em vez do formulário, e a validação de verdade continua no POST.
-  Campos não secretos voltam preenchidos pela query quando o POST falha
-  (senha nunca viaja na URL).
+  Aceite de convite (spec 6.5, boards "Convite / padrao"
+  cc1037dc-e8ab-80cc-8008-d5e137c103f1 e "expirado"
+  cc1037dc-e8ab-80cc-8008-d5e198c9a947): a pessoa convidada escolhe nome e
+  senha. O submit é um POST tradicional para `InviteController.accept`
+  (`accept_invite/2` + sessão na mesma requisição). No mount o token é
+  conferido de leve (só leitura, via `Maraca.invite_status/1`): convite
+  vencido ou já usado mostra o beco sem saída em vez do formulário, e a
+  validação de verdade continua no POST. Campos não secretos voltam
+  preenchidos pela query quando o POST falha (senha nunca viaja na URL).
   """
 
   use TainaWeb, :live_view
@@ -20,7 +22,8 @@ defmodule TainaWeb.InviteAcceptLive do
      socket
      |> assign(:page_title, gettext("Aceitar convite"))
      |> assign(:token, token)
-     |> assign(:token_status, Maraca.invite_status(token))}
+     |> assign(:token_status, Maraca.invite_status(token))
+     |> assign(:community_name, community_name())}
   end
 
   # Campos não secretos voltam pela URL quando o POST falha (o
@@ -31,28 +34,58 @@ defmodule TainaWeb.InviteAcceptLive do
     {:noreply, assign(socket, :prefill, Map.take(params, ["username", "display_name"]))}
   end
 
+  # O "Tentar de novo" do cartão, num convite vencido, só tem um lugar para
+  # onde ir: entrar.
+  @impl true
+  def handle_event("voltar", _params, socket) do
+    {:noreply, Phoenix.LiveView.push_navigate(socket, to: ~p"/login")}
+  end
+
+  # O nome da comunidade entra na frase do convite. Sem Tekoa (na prática
+  # impossível: convite nasce depois do bootstrap), a frase sai sem nome em
+  # vez de derrubar a tela.
+  defp community_name do
+    case Maraca.get_tekoa() do
+      {:ok, tekoa} -> tekoa.name
+      {:error, _motivo} -> nil
+    end
+  end
+
+  # "Ana convidou você para a comunidade Quilombo do Café." (board): o status
+  # do token não traz quem convidou, então a frase abre pela comunidade.
+  defp invite_body(nil), do: gettext("Você foi convidado. Crie sua conta para entrar.")
+
+  defp invite_body(community) do
+    gettext("Você foi convidado para a comunidade %{community}. Crie sua conta para entrar.",
+      community: community
+    )
+  end
+
   @impl true
   def render(assigns) do
     ~H"""
     <Layouts.auth flash={@flash} secure_connection?={@secure_connection?}>
-      <.empty_state
+      <.error_card
         :if={@token_status == :invalid}
-        icon="clock"
-        title={gettext("Este convite expirou ou já foi usado")}
-        hint={gettext(
+        title={gettext("Este convite não é mais válido.")}
+        body={gettext(
           "Convites valem sete dias e só podem ser usados uma vez. Peça um novo link a quem cuida da sua comunidade."
         )}
+        retry_event="voltar"
+      />
+
+      <.link
+        :if={@token_status == :invalid}
+        navigate={~p"/login"}
+        class="type-label text-brand self-start"
       >
-        <.button variant="primary" navigate={~p"/login"}>{gettext("Ir para o login")}</.button>
-      </.empty_state>
+        {gettext("Voltar para entrar")}
+      </.link>
 
       <div :if={@token_status == :ok}>
         <div class="col gap-3 text-center mt-10 mb-8 items-center">
-          <.icon name="spark" size={40} class="spark" />
-          <h1 class="type-h1">{gettext("Você foi convidado!")}</h1>
-          <p class="type-body text-secondary">
-            {gettext("Crie sua conta para entrar na nuvem da comunidade.")}
-          </p>
+          <h1 class="type-h1">{gettext("Você recebeu um convite")}</h1>
+          <p class="type-body text-secondary">{invite_body(@community_name)}</p>
         </div>
 
         <form id="invite-accept-form" action={~p"/convite/#{@token}"} method="post" class="col gap-5">
@@ -86,28 +119,20 @@ defmodule TainaWeb.InviteAcceptLive do
             id="account_password"
             value=""
             placeholder={gettext("mínimo 8 caracteres")}
-            help={gettext("Pelo menos 8 caracteres. Uma frase que só você lembra é ainda melhor.")}
+            help={gettext("Use uma frase longa que só você lembra.")}
             autocomplete="new-password"
             required
             minlength="8"
           >
             <:trailing><.password_toggle target="account_password" /></:trailing>
           </.input>
-          <.input
-            label={gettext("Confirme a senha")}
-            type="password"
-            name="account[password_confirmation]"
-            id="account_password_confirmation"
-            value=""
-            placeholder={gettext("a mesma senha")}
-            autocomplete="new-password"
-            required
-            minlength="8"
-          >
-            <:trailing><.password_toggle target="account_password_confirmation" /></:trailing>
-          </.input>
-          <.button type="submit" variant="primary" class="w-full mt-2">{gettext("Criar conta")}</.button>
+          <.button type="submit" kind="primary" class="w-full mt-2">{gettext("Criar conta")}</.button>
         </form>
+
+        <.link navigate={~p"/login"} class="row gap-2 items-center mt-6 text-secondary self-start">
+          <.icon name="chevron-left" size={20} />
+          <span class="type-label">{gettext("Entrar")}</span>
+        </.link>
       </div>
     </Layouts.auth>
     """
