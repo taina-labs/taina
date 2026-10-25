@@ -16,10 +16,9 @@ defmodule TainaWeb.MuralLive do
 
   alias Taina.Maraca
   alias TainaWeb.Layouts
+  alias TainaWeb.MuralText
   alias TainaWeb.Time
   alias Ypy.Mural.Entry
-
-  require Logger
 
   @impl true
   def mount(_params, _session, socket) do
@@ -108,7 +107,7 @@ defmodule TainaWeb.MuralLive do
     %{
       id: event.id,
       day_label: day_label,
-      sentence: sentence(event, names),
+      sentence: MuralText.sentence(event, names),
       ago: ago_label(event.inserted_at)
     }
   end
@@ -135,10 +134,6 @@ defmodule TainaWeb.MuralLive do
     Map.new(pairs, fn {pid, {display, username}} -> {pid, display || username} end)
   end
 
-  defp actor_label(event, names) do
-    Map.get(names, event.payload["actor"], gettext("O sistema"))
-  end
-
   # Rótulo do grupo de dia, o mesmo da linha do tempo do Jaci.
   defp day_title(date) do
     case Date.diff(Time.local_today(), date) do
@@ -154,134 +149,6 @@ defmodule TainaWeb.MuralLive do
     if Date.diff(Time.local_today(), Time.local_date(at)) in 0..1,
       do: Time.local_clock(at),
       else: relative_time(at)
-  end
-
-  # Frases do mural: cada `type` vira uma frase simples, sem IDs e sem jargão.
-  # Se um ato não cabe numa frase, o problema é o `type`, não a frase.
-  defp sentence(%Entry{tipo: "invite_created"} = event, names) do
-    if event.payload["role"] == "zelador" do
-      gettext("%{actor} convidou uma nova pessoa para cuidar da máquina.", actor: actor_label(event, names))
-    else
-      gettext("%{actor} convidou uma nova pessoa para a comunidade.", actor: actor_label(event, names))
-    end
-  end
-
-  # O papel do convite, gravado no aceite, decide a frase: quem entra para
-  # cuidar da máquina merece a frase certa na hora da concessão. Eventos
-  # antigos (payload vazio) caem na frase genérica.
-  defp sentence(%Entry{tipo: "invite_accepted", payload: %{"role" => "zelador"}} = event, names),
-    do: gettext("%{actor} entrou na comunidade para cuidar da máquina.", actor: actor_label(event, names))
-
-  defp sentence(%Entry{tipo: "invite_accepted"} = event, names),
-    do: gettext("%{actor} entrou na comunidade.", actor: actor_label(event, names))
-
-  defp sentence(%Entry{tipo: "invite_revoked", payload: %{"role" => "zelador"}} = event, names),
-    do: gettext("%{actor} revogou um convite para cuidar da máquina.", actor: actor_label(event, names))
-
-  defp sentence(%Entry{tipo: "invite_revoked"} = event, names),
-    do: gettext("%{actor} revogou um convite.", actor: actor_label(event, names))
-
-  # O zelador não vê nem define a senha nova, só gera o link: o ato é dele,
-  # o destino é o membro nomeado no payload.
-  defp sentence(%Entry{tipo: "reset_link_created", payload: %{"member" => member}} = event, names) when is_binary(member),
-    do: gettext("%{actor} gerou um link de nova senha para %{member}.", actor: actor_label(event, names), member: member)
-
-  defp sentence(%Entry{tipo: "reset_link_created"} = event, names),
-    do: gettext("%{actor} gerou um link de nova senha para um membro da comunidade.", actor: actor_label(event, names))
-
-  defp sentence(%Entry{tipo: "member_deactivated"} = event, names) do
-    case event.payload["member"] do
-      nil -> gettext("%{actor} desativou uma conta.", actor: actor_label(event, names))
-      member -> gettext("%{actor} desativou a conta de %{member}.", actor: actor_label(event, names), member: member)
-    end
-  end
-
-  defp sentence(%Entry{tipo: "member_reactivated", payload: %{"member" => member}} = event, names) when is_binary(member),
-    do: gettext("%{actor} reativou a conta de %{member}.", actor: actor_label(event, names), member: member)
-
-  defp sentence(%Entry{tipo: "member_reactivated"} = event, names),
-    do: gettext("%{actor} reativou uma conta.", actor: actor_label(event, names))
-
-  defp sentence(%Entry{tipo: "quota_changed", payload: %{"from" => from, "to" => to}} = event, names)
-       when is_integer(from) do
-    gettext("%{actor} mudou o limite de armazenamento de %{from} para %{to}.",
-      actor: actor_label(event, names),
-      from: format_bytes(from),
-      to: format_bytes(to)
-    )
-  end
-
-  defp sentence(%Entry{tipo: "quota_changed", payload: %{"to" => to}} = event, names),
-    do:
-      gettext("%{actor} mudou o limite de armazenamento para %{to}.",
-        actor: actor_label(event, names),
-        to: format_bytes(to)
-      )
-
-  defp sentence(%Entry{tipo: "quota_changed"} = event, names),
-    do: gettext("%{actor} mudou o limite de armazenamento.", actor: actor_label(event, names))
-
-  # Verbos do kernel na cadeia: o payload deles carrega o ator e a coleção
-  # (o rkey do recurso fica no payload para a auditoria, não para a frase),
-  # então a frase nomeia quem fez e o que fez, sem o nome do recurso.
-  defp sentence(%Entry{tipo: "put", payload: %{"collection" => "ypy.folder.v0"}} = event, names),
-    do: gettext("%{actor} criou uma pasta.", actor: actor_label(event, names))
-
-  defp sentence(%Entry{tipo: "put"} = event, names),
-    do: gettext("%{actor} guardou um arquivo na caixa.", actor: actor_label(event, names))
-
-  defp sentence(%Entry{tipo: "publicar", payload: %{"collection" => "ypy.folder.v0"}} = event, names),
-    do: gettext("%{actor} publicou uma pasta na praça.", actor: actor_label(event, names))
-
-  defp sentence(%Entry{tipo: "publicar"} = event, names),
-    do: gettext("%{actor} publicou um arquivo na praça.", actor: actor_label(event, names))
-
-  defp sentence(%Entry{tipo: "tirar_da_praca", payload: %{"collection" => "ypy.folder.v0"}} = event, names),
-    do: gettext("%{actor} tirou uma pasta da praça.", actor: actor_label(event, names))
-
-  defp sentence(%Entry{tipo: "tirar_da_praca"} = event, names),
-    do: gettext("%{actor} tirou um arquivo da praça.", actor: actor_label(event, names))
-
-  defp sentence(%Entry{tipo: "apagar", payload: %{"collection" => "ypy.folder.v0"}} = event, names),
-    do: gettext("%{actor} mandou uma pasta para a lixeira.", actor: actor_label(event, names))
-
-  defp sentence(%Entry{tipo: "apagar"} = event, names),
-    do: gettext("%{actor} mandou um arquivo para a lixeira.", actor: actor_label(event, names))
-
-  defp sentence(%Entry{tipo: "restaurar"} = event, names),
-    do: gettext("%{actor} tirou um arquivo da lixeira.", actor: actor_label(event, names))
-
-  defp sentence(%Entry{tipo: "mover"} = event, names),
-    do: gettext("%{actor} moveu um arquivo de pasta.", actor: actor_label(event, names))
-
-  defp sentence(%Entry{tipo: "renomear", payload: %{"collection" => "ypy.folder.v0"}} = event, names),
-    do: gettext("%{actor} renomeou uma pasta.", actor: actor_label(event, names))
-
-  defp sentence(%Entry{tipo: "renomear"} = event, names),
-    do: gettext("%{actor} renomeou um arquivo.", actor: actor_label(event, names))
-
-  # A concessao nasce de um pedido aprovado ou do proprio dono abrindo a
-  # casa; o "leitor" (public_id) no payload para a auditoria.
-  defp sentence(%Entry{tipo: "concessao"} = event, names),
-    do: gettext("%{actor} abriu a sua casa para a leitura de um morador.", actor: actor_label(event, names))
-
-  defp sentence(%Entry{tipo: "revogar"} = event, names),
-    do: gettext("%{actor} tirou a leitura que tinha aberto.", actor: actor_label(event, names))
-
-  defp sentence(%Entry{tipo: "mudar_papel", payload: %{"papel" => "zelador"}} = event, names),
-    do: gettext("%{actor} deu a um morador o cuidado da máquina.", actor: actor_label(event, names))
-
-  defp sentence(%Entry{tipo: "mudar_papel"} = event, names),
-    do: gettext("%{actor} tirou de um morador o cuidado da máquina.", actor: actor_label(event, names))
-
-  # Entrada de um tipo que a tela ainda não conhece (inclui os tipos do
-  # kernel: concessao, publicar, put...): o mural e append-only e nao pode
-  # derrubar por causa de uma frase faltando. A frase genérica mantém a linha
-  # no ar e o log marca o tipo para alguém escrever a frase dele.
-  defp sentence(%Entry{tipo: tipo} = event, names) do
-    Logger.warning("mural: entrada sem frase mapeada", event_type: tipo, event_id: event.id)
-
-    gettext("%{actor} fez um ato registrado na comunidade.", actor: actor_label(event, names))
   end
 
   @impl true

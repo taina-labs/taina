@@ -3,13 +3,17 @@
 
 /* O wrapper é um <ul> (as linhas do list_row são <li>): zera o margin, o
    padding e o marcador que o navegador aplica a listas para o resultado
-   ficar igual ao da <div> de antes. */
+   ficar igual ao da <div> de antes. No Penpot as linhas ficam sobre uma
+   faixa de superfície (o hub e o Documentos desenham a faixa), então o grupo
+   carrega o fundo e o raio; as linhas carregam os divisores. */
 .list {
   display: flex;
   flex-direction: column;
   list-style: none;
   margin: 0;
   padding: 0;
+  background: var(--surface-default);
+  border-radius: var(--radius-lg);
 }
 
 .list > * + * {
@@ -20,7 +24,7 @@
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  padding-block: var(--space-3);
+  padding: var(--space-3) var(--space-4);
   min-height: var(--size-control-lg);
   text-align: left;
   width: 100%;
