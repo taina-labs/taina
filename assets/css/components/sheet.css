@@ -9,7 +9,7 @@
 .sheet {
   position: fixed;
   inset: 0;
-  /* acima da bottom-nav (30) e do visualizador fullscreen (50); abaixo do
+  /* acima da barra de abas (30) e do visualizador fullscreen (50); abaixo do
      flash (60), que deve aparecer sobre tudo. */
   z-index: 55;
   display: flex;

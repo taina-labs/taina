@@ -85,7 +85,6 @@
   --size-icon-lg: 28px;
   --size-nav-mobile: 72px;
   --size-appbar: 64px;
-  --size-nav-dot: 6px;
 
   --font-size-xs: 0.75rem;
   --font-size-sm: 0.875rem;
@@ -203,7 +202,6 @@
 
   /* component sizes, shells and grid gaps (semantic) */
   --font-size-mono-sm: 0.8125rem;
-  --size-sidebar: 248px;
   --size-menu-min: 180px;
   --size-qr: 200px;
   --gap-photo: 2px;

@@ -1,8 +1,7 @@
-/* Botão de ícone (appbar, kebab, ações de linha). Espelho de
+/* Botão de ícone (cabeçalhos, kebab, ações de linha). Espelho de
    TainaWeb.UI.Actions.icon_button/1; mantenha os dois em sincronia. */
 
-.icon-button,
-.icon-btn {
+.icon-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -12,26 +11,22 @@
   color: var(--text-secondary);
 }
 
-.icon-button:hover,
-.icon-btn:hover {
+.icon-button:hover {
   background: var(--surface-raised);
   color: var(--text-primary);
 }
 
-/* Penpot Kind: danger (alias do booleano `danger` legado) */
-.icon-button--danger,
-.icon-btn--danger {
+/* Penpot Kind: danger */
+.icon-button--danger {
   color: var(--feedback-error);
 }
 
-.icon-button:disabled,
-.icon-btn:disabled {
+.icon-button:disabled {
   opacity: var(--opacity-disabled);
   cursor: not-allowed;
 }
 
 /* press feedback: the control sinks 1px while active (DESIGN.md, motion) */
-.icon-button:active,
-.icon-btn:active {
+.icon-button:active {
   transform: translateY(1px);
 }

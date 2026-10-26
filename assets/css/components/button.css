@@ -1,8 +1,7 @@
 /* Botões (Penpot: Button). Espelho de TainaWeb.UI.Actions.button/1;
    mantenha os dois em sincronia. */
 
-.button,
-.btn {
+.button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -19,77 +18,63 @@
     border-color 120ms ease;
 }
 
-.button--primary,
-.btn--primary {
+.button--primary {
   background: var(--brand-primary);
   color: var(--text-on-brand);
 }
 
-.button--primary:hover,
-.btn--primary:hover {
+.button--primary:hover {
   background: var(--brand-primary-hover);
 }
 
-.button--primary:active,
-.btn--primary:active {
+.button--primary:active {
   background: var(--brand-primary-pressed);
 }
 
-.button--secondary,
-.btn--secondary {
+.button--secondary {
   background: transparent;
   border: var(--border-hairline) solid var(--border-strong);
   color: var(--text-primary);
 }
 
-.button--secondary:hover,
-.btn--secondary:hover {
+.button--secondary:hover {
   background: var(--surface-raised);
 }
 
-.button--ghost,
-.btn--ghost {
+.button--ghost {
   background: transparent;
   color: var(--brand-primary);
   padding-inline: var(--space-3);
 }
 
-.button--ghost:hover,
-.btn--ghost:hover {
+.button--ghost:hover {
   color: var(--brand-primary-hover);
 }
 
-.button--danger,
-.btn--danger {
+.button--danger {
   background: transparent;
   color: var(--feedback-error);
 }
 
-.button--danger:hover,
-.btn--danger:hover {
+.button--danger:hover {
   background: var(--surface-raised);
 }
 
-.button--sm,
-.btn--sm {
+.button--sm {
   height: var(--size-control-sm);
   padding-inline: var(--space-4);
   font-size: var(--font-size-sm);
   border-radius: var(--radius-md);
 }
 
-.button--md,
-.btn--md {
+.button--md {
   height: var(--size-control-md);
 }
 
 /* Penpot State: loading: o controle desabilita e opaca enquanto envia */
 .button:disabled,
 .button[aria-disabled="true"],
-.button--loading,
-.btn:disabled,
-.btn[aria-disabled="true"],
-.btn--loading {
+.button--loading {
   opacity: var(--opacity-disabled);
   cursor: not-allowed;
 }
@@ -97,14 +82,12 @@
 /* Controles compactos (36px, tamanho de desktop) sobem para 44px abaixo de
    768: onde o dedo manda, nada de alvo menor que --size-touch. */
 @media (max-width: 767.98px) {
-  .button--sm,
-  .btn--sm {
+  .button--sm {
     min-height: var(--size-touch);
   }
 }
 
 /* press feedback: the control sinks 1px while active (DESIGN.md, motion) */
-.button:active,
-.btn:active {
+.button:active {
   transform: translateY(1px);
 }

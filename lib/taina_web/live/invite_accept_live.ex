@@ -90,7 +90,7 @@ defmodule TainaWeb.InviteAcceptLive do
 
         <form id="invite-accept-form" action={~p"/convite/#{@token}"} method="post" class="col gap-5">
           <input type="hidden" name="_csrf_token" value={get_csrf_token()} />
-          <.input
+          <.field
             label={gettext("Seu nome de usuário")}
             name="account[username]"
             id="account_username"
@@ -104,7 +104,7 @@ defmodule TainaWeb.InviteAcceptLive do
             required
             minlength="3"
           />
-          <.input
+          <.field
             label={gettext("Nome de exibição (opcional)")}
             name="account[display_name]"
             id="account_display_name"
@@ -112,9 +112,9 @@ defmodule TainaWeb.InviteAcceptLive do
             placeholder={gettext("ex.: João Mendes")}
             help={gettext("Como seu nome aparece para a comunidade.")}
           />
-          <.input
+          <.field
             label={gettext("Senha")}
-            type="password"
+            kind="password"
             name="account[password]"
             id="account_password"
             value=""
@@ -125,7 +125,7 @@ defmodule TainaWeb.InviteAcceptLive do
             minlength="8"
           >
             <:trailing><.password_toggle target="account_password" /></:trailing>
-          </.input>
+          </.field>
           <.button type="submit" kind="primary" class="w-full mt-2">{gettext("Criar conta")}</.button>
         </form>
 

@@ -1,7 +1,7 @@
 defmodule TainaWeb.UI.ContentTest do
   @moduledoc """
   Testes de variante dos componentes de conteúdo: Wave 1a (badge, avatar,
-  service_square) e Wave 1b (card kind/raised legado, service_card,
+  service_square) e Wave 1b (card kind, service_card,
   list_row kinds/trailing/estados de pedido, storage_card compact/full/sem
   cota/atenção, status_line estados + detail, care_line, qr_card, steps com
   e sem label, progress warning).
@@ -17,34 +17,34 @@ defmodule TainaWeb.UI.ContentTest do
 
   defp badge_component(assigns) do
     ~H"""
-    <.badge kind={@kind} variant={@variant}>{@text}</.badge>
+    <.badge kind={@kind}>{@text}</.badge>
     """
   end
 
   defp avatar_component(assigns) do
     ~H"""
-    <.avatar name={@name} size={@size} off={@off} inactive={@inactive} />
+    <.avatar name={@name} size={@size} off={@off} />
     """
   end
 
   defp service_square_component(assigns) do
     ~H"""
-    <.service_square mark={@mark} service={@service} icon={@icon} tone={@tone} size={@size} />
+    <.service_square mark={@mark} tone={@tone} size={@size} />
     """
   end
 
   defp badge_html(opts) do
-    assigns = Enum.into(opts, %{kind: nil, variant: nil, text: "Praça"})
+    assigns = Enum.into(opts, %{kind: "praca", text: "Praça"})
     render_component(&badge_component/1, assigns)
   end
 
   defp avatar_html(opts \\ []) do
-    assigns = Enum.into(opts, %{name: "Ana", size: "md", off: false, inactive: nil})
+    assigns = Enum.into(opts, %{name: "Ana", size: "md", off: false})
     render_component(&avatar_component/1, assigns)
   end
 
-  defp square_html(opts \\ []) do
-    assigns = Enum.into(opts, %{mark: nil, service: nil, icon: nil, tone: "neutral", size: "md"})
+  defp square_html(opts) do
+    assigns = Enum.into(opts, %{mark: "neutral", tone: "neutral", size: "md"})
     render_component(&service_square_component/1, assigns)
   end
 
@@ -57,21 +57,6 @@ defmodule TainaWeb.UI.ContentTest do
       assert html =~ ~s(class="badge badge--#{unquote(kind)}")
       assert html =~ "Praça"
     end
-  end
-
-  test "badge variant deprecated: zelador passa direto" do
-    html = badge_html(kind: nil, variant: "zelador")
-    assert html =~ "badge--zelador"
-  end
-
-  test "badge variant deprecated: mods apagados mapeiam para kinds novos" do
-    assert badge_html(kind: nil, variant: "ybira") =~ "badge--praca"
-    assert badge_html(kind: nil, variant: "jaci") =~ "badge--casa"
-    assert badge_html(kind: nil, variant: "soon") =~ "badge--inactive"
-  end
-
-  test "badge sem kind e sem variant levanta" do
-    assert_raise ArgumentError, fn -> badge_html(kind: nil, variant: nil) end
   end
 
   # ---------- Avatar ----------
@@ -98,11 +83,6 @@ defmodule TainaWeb.UI.ContentTest do
     html = avatar_html(off: true)
     assert html =~ "avatar--off"
     assert html =~ "A"
-  end
-
-  test "avatar inactive deprecated mapeia para off" do
-    html = avatar_html(inactive: true)
-    assert html =~ "avatar--off"
   end
 
   # ---------- ServiceSquare ----------
@@ -151,33 +131,20 @@ defmodule TainaWeb.UI.ContentTest do
     assert html =~ "service-square--lg"
   end
 
-  test "service_square caminho legado service + icon: marca mapeada e ícone do chamador" do
-    html = square_html(service: "ybira", icon: "folder")
-
-    assert html =~ "service-square--service service-square--ybira"
-    # ícone legado passado (não o derivado do mark)
-    assert html =~ "M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9"
-  end
-
-  test "service_square caminho legado service desconhecido cai no neutral" do
-    html = square_html(service: "guara", icon: "user")
-    assert html =~ "service-square service-square--neutral service-square--neutral"
-  end
-
-  test "service_square sem mark e sem par legado levanta" do
-    assert_raise ArgumentError, fn -> square_html() end
+  test "service_square sem mark levanta" do
+    assert_raise ArgumentError, fn -> square_html(mark: nil) end
   end
 
   # ---------- Card (Wave 1b) ----------
 
   defp card_component(assigns) do
     ~H"""
-    <.card kind={@kind} raised={@raised} class={@class}>{@text}</.card>
+    <.card kind={@kind} class={@class}>{@text}</.card>
     """
   end
 
   defp card_html(opts) do
-    assigns = Enum.into(opts, %{kind: nil, raised: false, class: nil, text: "Espaço da comunidade"})
+    assigns = Enum.into(opts, %{kind: "default", class: nil, text: "Espaço da comunidade"})
     render_component(&card_component/1, assigns)
   end
 
@@ -191,11 +158,6 @@ defmodule TainaWeb.UI.ContentTest do
   test "card kind raised" do
     html = card_html(kind: "raised")
     assert html =~ "card card--raised"
-  end
-
-  test "card raised legado continua card--raised" do
-    assert card_html(raised: true, kind: nil) =~ "card card--raised"
-    assert card_html(raised: true, kind: nil) =~ "Espaço da comunidade"
   end
 
   # ---------- ServiceCard (Wave 1b) ----------

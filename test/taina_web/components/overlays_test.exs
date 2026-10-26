@@ -1,9 +1,9 @@
 defmodule TainaWeb.UI.OverlaysTest do
   @moduledoc """
   Testes de variante das sobreposições (Wave 1c): sheet actions/content,
-  dialog confirm/destructive, os caminhos merged (modal/confirm_dialog
-  deprecated), menu (ícone sempre à esquerda, spec 10) e a composição
-  actions_menu (um markup, Sheet no mobile e popover no desktop, spec 4.3).
+  dialog confirm/destructive, menu (ícone sempre à esquerda, spec 10) e a
+  composição actions_menu (um markup, Sheet no mobile e popover no desktop,
+  spec 4.3).
   """
 
   use ExUnit.Case, async: true
@@ -52,27 +52,7 @@ defmodule TainaWeb.UI.OverlaysTest do
 
   defp modal_component(assigns) do
     ~H"""
-    <.modal id={@id} show={@show} on_cancel={ Phoenix.LiveView.JS.push("cancel") }>{@body}</.modal>
-    """
-  end
-
-  defp confirm_dialog_default_component(assigns) do
-    ~H"""
-    <.confirm_dialog id="confirm-test" show={true} on_confirm="confirm" on_cancel="cancel" />
-    """
-  end
-
-  defp confirm_dialog_component(assigns) do
-    ~H"""
-    <.confirm_dialog
-      id="confirm-test"
-      show={true}
-      title={@title}
-      message={@message}
-      confirm_label={@confirm_label}
-      on_confirm="confirm"
-      on_cancel="cancel"
-    />
+    <.dialog id={@id} show={@show} on_cancel={ Phoenix.LiveView.JS.push("cancel") }>{@body}</.dialog>
     """
   end
 
@@ -132,17 +112,6 @@ defmodule TainaWeb.UI.OverlaysTest do
     render_component(&modal_component/1, assigns)
   end
 
-  defp confirm_dialog_default_html do
-    render_component(&confirm_dialog_default_component/1, %{})
-  end
-
-  @confirm_defaults %{title: nil, message: nil, confirm_label: nil}
-
-  defp confirm_dialog_html(opts) do
-    assigns = Enum.into(opts, @confirm_defaults)
-    render_component(&confirm_dialog_component/1, assigns)
-  end
-
   @menu_defaults %{id: "actions-test", label: "Mais opções", title: "Ações do arquivo", items: []}
 
   defp actions_menu_html(opts \\ []) do
@@ -168,7 +137,7 @@ defmodule TainaWeb.UI.OverlaysTest do
 
   test "sheet actions: itens no slot, ícone à esquerda e item danger" do
     items = [
-      %{label: "Voltar para a casa", icon: "home"},
+      %{label: "Voltar para a casa", icon: "casa"},
       %{label: "Mover", icon: "folder"},
       %{label: "Remover", icon: "trash", danger: true}
     ]
@@ -242,9 +211,9 @@ defmodule TainaWeb.UI.OverlaysTest do
     assert dialog_html(show: false) == ""
   end
 
-  # ---------- caminhos merged (modal + confirm_dialog deprecated) ----------
+  # ---------- dialog com corpo livre (slot :inner_block) ----------
 
-  test "modal deprecated delega para o dialog: casca nova, conteúdo livre e SEM rodapé" do
+  test "dialog com corpo livre: casca nova, SEM rodapé de confirmação" do
     html = modal_html()
 
     assert html =~ "dialog__panel"
@@ -252,34 +221,11 @@ defmodule TainaWeb.UI.OverlaysTest do
     refute html =~ "dialog__actions"
   end
 
-  test "modal deprecated fecha com Esc e clique fora pelo on_cancel" do
+  test "dialog com corpo livre fecha com Esc e clique fora pelo on_cancel" do
     html = modal_html()
 
     assert html =~ ~s(phx-key="escape")
     assert html =~ "phx-click-away"
-  end
-
-  test "confirm_dialog deprecated vira dialog destructive com os padrões de sempre" do
-    html = confirm_dialog_default_html()
-
-    assert html =~ "Excluir?"
-    assert html =~ "Vai para a lixeira. Dá para restaurar em até 30 dias."
-    assert html =~ "Cancelar"
-    assert html =~ "Excluir"
-    assert html =~ "button button--danger"
-    refute html =~ "phx-click-away"
-  end
-
-  test "confirm_dialog deprecated com títulos e rótulos da tela" do
-    html =
-      confirm_dialog_html(
-        title: "Excluir o Estatuto.pdf?",
-        message: "Vai para a lixeira. Dá para restaurar em até 30 dias.",
-        confirm_label: "Excluir"
-      )
-
-    assert html =~ "Excluir o Estatuto.pdf?"
-    assert html =~ "dialog__title"
   end
 
   # ---------- Menu ----------

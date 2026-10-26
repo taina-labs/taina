@@ -54,9 +54,9 @@ defmodule TainaWeb.ResetPasswordLive do
 
         <form id="reset-form" action={~p"/redefinir/#{@token}"} method="post" class="col gap-5">
           <input type="hidden" name="_csrf_token" value={get_csrf_token()} />
-          <.input
+          <.field
             label={gettext("Senha nova")}
-            type="password"
+            kind="password"
             name="account[password]"
             id="reset_password"
             value=""
@@ -67,7 +67,7 @@ defmodule TainaWeb.ResetPasswordLive do
             minlength="8"
           >
             <:trailing><.password_toggle target="reset_password" /></:trailing>
-          </.input>
+          </.field>
           <.button type="submit" kind="primary" class="w-full mt-2">{gettext("Salvar nova senha")}</.button>
         </form>
       </div>

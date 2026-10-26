@@ -1,13 +1,12 @@
-/* Dialog (Penpot: Dialog, Kind confirm/destructive. Fusão do modal +
-   confirm_dialog da Wave 0). Espelho de TainaWeb.UI.Overlays.dialog/1;
-   mantenha os dois em sincronia. Mobile: painel embaixo (como o modal era);
-   >= 768: cartão centrado. Metadados do board: painel surface-raised,
-   radius-lg, sombra elevation-lifted, largura --measure-dialog. */
+/* Dialog (Penpot: Dialog, Kind confirm/destructive). Espelho de
+   TainaWeb.UI.Overlays.dialog/1; mantenha os dois em sincronia. Mobile:
+   painel embaixo; >= 768: cartão centrado. Metadados do board: painel
+   surface-raised, radius-lg, sombra elevation-lifted, largura --measure-dialog. */
 
 .dialog {
   position: fixed;
   inset: 0;
-  /* acima da bottom-nav (30) e do visualizador fullscreen (50); abaixo do
+  /* acima da barra de abas (30) e do visualizador fullscreen (50); abaixo do
      flash (60), que deve aparecer sobre tudo. */
   z-index: 55;
   display: flex;

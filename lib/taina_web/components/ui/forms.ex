@@ -33,21 +33,16 @@ defmodule TainaWeb.UI.Forms do
   """
   attr :kind, :string, default: "text", values: ~w(text password search address)
 
-  attr :type, :string,
-    default: nil,
-    doc: "deprecated: tipo HTML do input para kinds genéricos (email, number...); kind password/search"
-
   attr :id, :any, default: nil
   attr :name, :any
   attr :label, :string, default: nil
   attr :value, :any
   attr :help, :string, default: nil
-  attr :icon, :string, default: nil, doc: "deprecated: ícone decorativo à direita; substituído pelos kinds search/address"
   attr :field, FormField, doc: "ex.: @form[:username]"
   attr :errors, :list, default: []
 
   slot :trailing,
-    doc: "controle anexo à direita do campo (ex.: <.password_toggle>); quando presente, substitui o ícone decorativo"
+    doc: "controle anexo à direita do campo (ex.: <.password_toggle>)"
 
   attr :rest, :global, include: ~w(autocomplete placeholder required minlength maxlength inputmode autofocus)
 
@@ -89,7 +84,6 @@ defmodule TainaWeb.UI.Forms do
           {@rest}
         />
         {render_slot(@trailing)}
-        <.icon :if={@icon && @trailing == []} name={@icon} size={20} />
       </div>
       <span :if={@help && @errors == []} class="field__help" id={"#{@id}-help"}>{@help}</span>
       <span
@@ -102,19 +96,13 @@ defmodule TainaWeb.UI.Forms do
     """
   end
 
-  @doc """
-  Deprecated: o `field/1` é o sucessor (docs/web-revamp-spec.md, 4.1). Mantido
-  até a Wave 4; as chamadas continuam iguais.
-  """
-  def input(assigns), do: field(assigns)
-
   defp resolve_field(assigns) do
     input_type =
       case assigns[:kind] do
         "password" -> "password"
         "search" -> "search"
         "address" -> "text"
-        _ -> assigns[:type] || "text"
+        _ -> "text"
       end
 
     assign(assigns, :input_type, input_type)
@@ -153,7 +141,7 @@ defmodule TainaWeb.UI.Forms do
     <button
       type="button"
       id={@id}
-      class={["icon-button icon-button--default", "icon-btn"]}
+      class={["icon-button", "icon-button--default"]}
       phx-hook="PasswordToggle"
       data-target={@target}
       data-label-show={gettext("Mostrar senha")}
@@ -293,7 +281,6 @@ defmodule TainaWeb.UI.Forms do
   slot :option, required: true do
     attr :patch, :string, required: true
     attr :selected, :boolean
-    attr :current, :boolean, doc: "deprecated: use selected"
   end
 
   def segmented(assigns) do
@@ -311,7 +298,7 @@ defmodule TainaWeb.UI.Forms do
     """
   end
 
-  defp option_selected?(option), do: option[:selected] == true || option[:current] == true
+  defp option_selected?(option), do: option[:selected] == true
 
   # ---------- cartão de rádio ----------
 

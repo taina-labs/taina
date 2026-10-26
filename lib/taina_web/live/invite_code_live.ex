@@ -69,7 +69,7 @@ defmodule TainaWeb.InviteCodeLive do
       </div>
 
       <form id="invite-code-form" phx-submit="continue" class="col gap-4">
-        <.input
+        <.field
           label={gettext("Link ou código do convite")}
           name="code"
           id="invite_code"

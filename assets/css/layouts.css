@@ -2,9 +2,8 @@
    conteúdo (safe-area, `page-in`) valem para todas as cinco cascas; teto e
    centrado por contexto (hub `--measure-wide`, service/page `--measure-shell`,
    auth `--measure-card`) ficam nos blocos das cascas embaixo. Sem navegação
-   global: sidebar, bottom-nav, topbar de navegação e appbar não existem mais.
-   Breakpoints: 768, 1024 (mais respiro no conteúdo) e 1440 (desktop largo:
-   conteúdo mais largo, com teto). */
+   global (spec 1.5). Breakpoints: 768, 1024 (mais respiro no conteúdo) e 1440
+   (desktop largo: conteúdo mais largo, com teto). */
 
 .shell {
   min-height: 100dvh;
@@ -91,15 +90,10 @@
   }
 }
 
-/* a "estrela da manhã" do logo (telas de auth, conteúdo delas) */
-.spark {
-  color: var(--brand-primary);
-}
-
 /* ---------- cascas do revamp (docs/web-revamp-spec.md, seção 5) ---------- */
 
-/* todas as cascas empilham em coluna em qualquer viewport: não há fileira
-   de sidebar (a regra morreu com o shell velho da navegação global). */
+/* todas as cascas empilham em coluna em qualquer viewport (a regra morreu
+   com a navegação global do shell velho). */
 .shell--hub,
 .shell--service,
 .shell--page,

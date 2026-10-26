@@ -40,25 +40,3 @@
     display: none;
   }
 }
-
-/* deprecated: o quadrado FAB legado de `<.button variant="fab">` (a W3.2 troca
-   o call site pelo `<.fab>` e a W4.1 apaga este alias junto com a cláusula). */
-.btn--fab {
-  position: fixed;
-  right: var(--space-4);
-  bottom: calc(var(--size-nav-mobile) + var(--space-4));
-  z-index: 30;
-  width: var(--size-control-lg);
-  height: var(--size-control-lg);
-  padding: 0;
-  border-radius: var(--radius-pill);
-  background: var(--brand-primary);
-  color: var(--text-on-brand);
-  box-shadow: var(--elevation-lifted);
-}
-
-@media (min-width: 768px) {
-  .btn--fab {
-    display: none;
-  }
-}

@@ -16,14 +16,14 @@ defmodule TainaWeb.UI.FormsTest do
 
   defp field_component(assigns) do
     ~H"""
-    <.field kind={@kind} type={@type} id={@id} name={@name} label={@label} value={@value} help={@help} errors={@errors} icon={@icon} />
+    <.field kind={@kind} id={@id} name={@name} label={@label} value={@value} help={@help} errors={@errors} />
     """
   end
 
   defp segmented_component(assigns) do
     ~H"""
     <.segmented>
-      <:option patch="/galeria" selected={@grade_selected} current={@grade_current}>Grade</:option>
+      <:option patch="/galeria" selected={@grade_selected}>Grade</:option>
       <:option patch="/galeria/linha-do-tempo">Linha do tempo</:option>
     </.segmented>
     """
@@ -43,20 +43,18 @@ defmodule TainaWeb.UI.FormsTest do
   defp field_assigns do
     %{
       kind: "text",
-      type: nil,
       id: "campo",
       name: "campo",
       label: "Nome",
       value: nil,
       help: nil,
       errors: [],
-      icon: nil,
       field: nil
     }
   end
 
   defp segmented_html(opts \\ []) do
-    assigns = Enum.into(opts, %{grade_selected: false, grade_current: false})
+    assigns = Enum.into(opts, %{grade_selected: false})
     render_component(&segmented_component/1, assigns)
   end
 
@@ -109,12 +107,6 @@ defmodule TainaWeb.UI.FormsTest do
     assert html =~ ~s(type="text")
   end
 
-  test "field type deprecated mantém o input HTML (number)" do
-    html = field_html(type: "number", value: 10)
-
-    assert html =~ ~s(type="number")
-  end
-
   # ---------- Field: acessibilidade e erros ----------
 
   test "field com erro: aria-invalid, role alert" do
@@ -148,13 +140,6 @@ defmodule TainaWeb.UI.FormsTest do
     # a não selecionada não marca modifier nem aria-current
     assert html =~ ~s(class="segmented__option")
     assert html =~ "Linha do tempo"
-  end
-
-  test "segmented option attr current deprecated mapeia para selected" do
-    html = segmented_html(grade_current: true)
-
-    assert html =~ "segmented__option--selected"
-    assert html =~ ~s(aria-current="page")
   end
 
   test "segmented sem seleção não marca aria-current" do

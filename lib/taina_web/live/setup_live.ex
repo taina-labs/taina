@@ -286,7 +286,7 @@ defmodule TainaWeb.SetupLive do
         </div>
 
         <form id="setup-step-1" phx-change="validate" phx-submit="next" class="col gap-6 flex-1">
-          <.input
+          <.field
             label={gettext("Nome da comunidade")}
             name="setup[community_name]"
             id="setup_community_name"
@@ -315,7 +315,7 @@ defmodule TainaWeb.SetupLive do
         </div>
 
         <form id="setup-step-2" phx-change="validate" phx-submit="next" class="col gap-5 flex-1">
-          <.input
+          <.field
             label={gettext("Seu nome de usuário")}
             name="setup[username]"
             id="setup_username"
@@ -328,7 +328,7 @@ defmodule TainaWeb.SetupLive do
             autocorrect="off"
             errors={List.wrap(@errors["username"])}
           />
-          <.input
+          <.field
             label={gettext("Nome de exibição (opcional)")}
             name="setup[display_name]"
             id="setup_display_name"
@@ -336,9 +336,9 @@ defmodule TainaWeb.SetupLive do
             placeholder={gettext("ex.: Ana Oliveira")}
             help={gettext("Como seu nome aparece para a comunidade.")}
           />
-          <.input
+          <.field
             label={gettext("Senha")}
-            type="password"
+            kind="password"
             name="setup[password]"
             id="setup_password"
             value={@data["password"]}
@@ -348,7 +348,7 @@ defmodule TainaWeb.SetupLive do
             errors={List.wrap(@errors["password"])}
           >
             <:trailing><.password_toggle target="setup_password" /></:trailing>
-          </.input>
+          </.field>
           <div class="flex-1"></div>
           <.button type="submit" kind="primary" class="w-full" phx-disable-with={gettext("Continuar...")}>
             {gettext("Continuar")}
@@ -411,7 +411,7 @@ defmodule TainaWeb.SetupLive do
               value="limite"
               label={gettext("Um limite")}
             />
-            <.input
+            <.field
               :if={@data["storage_quota"] == "limite"}
               label={gettext("Limite em GB")}
               name="setup[quota_gb]"

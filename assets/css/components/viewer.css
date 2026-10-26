@@ -32,11 +32,29 @@
   object-fit: contain;
 }
 
+/* setas de navegação: alvo de toque do tamanho do icon_button (a casca do
+   visualizador não usa o componente porque as setas flutuam sobre a foto) */
 .viewer__nav {
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--size-touch);
+  height: var(--size-touch);
+  border-radius: var(--radius-md);
   color: var(--text-muted);
+}
+
+.viewer__nav:hover {
+  background: var(--surface-raised);
+  color: var(--text-primary);
+}
+
+/* press feedback do DESIGN.md (afunda 1px), mantendo a centralização */
+.viewer__nav:active {
+  transform: translateY(-50%) translateY(1px);
 }
 
 .viewer__nav--prev {

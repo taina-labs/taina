@@ -94,7 +94,7 @@ defmodule TainaWeb.UI.Media do
         <button
           :if={length(@photo_ids) > 1}
           type="button"
-          class="viewer__nav viewer__nav--prev icon-btn"
+          class="viewer__nav viewer__nav--prev"
           phx-click="prev"
           aria-label={gettext("Foto anterior")}
         >
@@ -103,7 +103,7 @@ defmodule TainaWeb.UI.Media do
         <button
           :if={length(@photo_ids) > 1}
           type="button"
-          class="viewer__nav viewer__nav--next icon-btn"
+          class="viewer__nav viewer__nav--next"
           phx-click="next"
           aria-label={gettext("Próxima foto")}
         >

@@ -27,31 +27,28 @@ defmodule TainaWeb.UI.Feedback do
   @doc """
   Estado vazio (Penpot: EmptyState, Action yes/no,
   3fd18cd2-90f8-80f3-8008-d5ab6ceb5dce): ícone, título e uma frase; a ação
-  da tela entra no slot `:action`. O `hint` e o `inner_block` legados
-  seguem aceitos e continuam renderizando como antes.
+  da tela entra no slot `:action`.
   """
   attr :icon, :string, default: "folder"
   attr :title, :string, required: true
-  attr :body, :string, default: nil, doc: "frase do estado vazio (a antiga hint)"
-  attr :hint, :string, default: nil, doc: "deprecated: use body"
+  attr :body, :string, default: nil, doc: "frase do estado vazio"
 
   attr :tag, :string,
     default: "p",
     doc: ~s{tag do título (padrão "p"; use "h2" etc. quando a tela tem hierarquia de cabeçalho própria)}
 
   slot :action, doc: "ação da tela (botão do board)"
-  slot :inner_block, doc: "deprecated: use :action (continua renderizando por último, como antes)"
+  slot :inner_block, doc: "conteúdo extra solto no fim do bloco; prefira o slot :action"
 
   def empty_state(assigns) do
     ~H"""
     <div class="empty-state">
       <.icon name={@icon} size={40} />
       <.dynamic_tag tag_name={@tag} class="type-h3">{@title}</.dynamic_tag>
-      <p :if={@body || @hint} class="type-body-sm">{@body || @hint}</p>
+      <p :if={@body} class="type-body-sm">{@body}</p>
       <div :if={@action != []}>
         {render_slot(@action)}
       </div>
-      {render_slot(@inner_block)}
     </div>
     """
   end
@@ -101,7 +98,7 @@ defmodule TainaWeb.UI.Feedback do
 
   @doc """
   Placeholder do estado de carregando, no formato do layout final (nunca
-  spinner circular). O `kind` forma umas unidades (linhas de lista, tiles da
+  spinner circular). O `kind` forma umas unidades (linhas de lista, fotos da
   galeria ou card) e `count` repete; sem `kind` fica o bloco solto de antes.
   O CSS mora em `assets/css/components/skeleton.css`.
 

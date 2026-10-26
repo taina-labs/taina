@@ -33,7 +33,7 @@ window.addEventListener("phx:page-loading-start", (_info) => topbar.show(300));
 window.addEventListener("phx:page-loading-stop", (_info) => topbar.hide());
 
 // Teclado virtual no iOS: o visualViewport encolhe sem redimensionar a janela.
-// Com o teclado aberto a bottom-nav some (fixa, ficaria flutuando sobre as
+// Com o teclado aberto a barra de abas some (fixa, ficaria flutuando sobre as
 // teclas); o limite de 120px separa "teclado de verdade" de barrinhas flutuantes.
 if (window.visualViewport) {
   const vv = window.visualViewport;

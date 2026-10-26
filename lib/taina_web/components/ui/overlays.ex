@@ -9,9 +9,6 @@ defmodule TainaWeb.UI.Overlays do
   | Dialog | 3fd18cd2-90f8-80f3-8008-d5c45cfb6936 |
   | Menu | 3fd18cd2-90f8-80f3-8008-d5c45d9b6f31 |
   | ActionsMenu (composição Sheet + Menu) | sem componente próprio |
-
-  `modal/confirm_dialog` (Wave 0) continuam aqui como delegadores deprecated
-  do `dialog/1`; a W4.1 os apaga. Importado pelas telas via `html_helpers`.
   """
 
   use Phoenix.Component
@@ -61,7 +58,7 @@ defmodule TainaWeb.UI.Overlays do
       <button
         type="button"
         id={"#{@id}-trigger"}
-        class="icon-button icon-btn"
+        class="icon-button"
         aria-label={@label}
         aria-haspopup="menu"
         aria-expanded="false"
@@ -235,8 +232,8 @@ defmodule TainaWeb.UI.Overlays do
 
   @doc """
   Diálogo (Penpot: Dialog, Kind confirm/destructive,
-  3fd18cd2-90f8-80f3-8008-d5c45cfb6936): funde o `modal/1` e o
-  `confirm_dialog/1`. O botão seguro ("Cancelar"/"Deixar na casa") é sempre
+  3fd18cd2-90f8-80f3-8008-d5c45cfb6936): confirmação e destruição. O botão
+  seguro ("Cancelar"/"Deixar na casa") é sempre
   secundário; a ação confirmatória é `kind="primary"` no confirm e
   `kind="danger"` no destructive. Fecha em Esc sempre; clique fora fecha
   apenas no confirm (no destructive a mão da pessoa tem que tocar um botão).
@@ -264,7 +261,7 @@ defmodule TainaWeb.UI.Overlays do
   attr :on_cancel, :any, default: %JS{}, doc: "evento (string) ou %JS{} de fechamento"
   attr :labelledby, :string, default: nil, doc: "id do título; padrão \"\#{@id}-title\""
 
-  slot :inner_block, doc: "conteúdo livre no lugar de title/body (uso do modal/1 legado)"
+  slot :inner_block, doc: "conteúdo livre no lugar de title/body (ex.: formulário montado pela tela)"
 
   def dialog(assigns) do
     confirms? = assigns[:on_confirm] not in [nil, false]
@@ -318,55 +315,6 @@ defmodule TainaWeb.UI.Overlays do
   defp dialog_confirm_label(true), do: gettext("Remover")
   defp dialog_confirm_label(false), do: gettext("Confirmar")
 
-  # ---------- composições deprecated (modal, confirm_dialog) ----------
-
-  @doc """
-  Deprecated (Wave 1c): use o `dialog/1`. O corpo livre segue aceito via slot
-  (o rodapé de confirmação só desenha com `on_confirm`, que o modal não
-  recebe); markup classado pela mesma casca do Dialog.
-  """
-  attr :id, :string, required: true
-  attr :show, :boolean, default: false
-  attr :on_cancel, JS, default: %JS{}
-  attr :labelledby, :string, default: nil
-
-  slot :inner_block, required: true
-
-  def modal(assigns) do
-    ~H"""
-    <.dialog id={@id} show={@show} labelledby={@labelledby} on_cancel={@on_cancel}>
-      {render_slot(@inner_block)}
-    </.dialog>
-    """
-  end
-
-  @doc """
-  Deprecated (Wave 1c): use `<.dialog kind="destructive">`. Os padrões de
-  título/mensagem e o "Excluir" do deck atual continuam valendo até a W4.1.
-  """
-  attr :id, :string, required: true
-  attr :show, :boolean, default: false
-  attr :title, :string, default: gettext("Excluir?")
-  attr :message, :string, default: gettext("Vai para a lixeira. Dá para restaurar em até 30 dias.")
-  attr :confirm_label, :string, default: nil
-  attr :on_confirm, :any, required: true, doc: "evento (string) ou %JS{}"
-  attr :on_cancel, :any, required: true
-
-  def confirm_dialog(assigns) do
-    ~H"""
-    <.dialog
-      id={@id}
-      show={@show}
-      kind="destructive"
-      title={@title}
-      body={@message}
-      confirm_label={@confirm_label || gettext("Excluir")}
-      on_confirm={@on_confirm}
-      on_cancel={@on_cancel}
-    />
-    """
-  end
-
   # ---------- actions_menu (Sheet + Menu) ----------
 
   @doc """
@@ -404,7 +352,7 @@ defmodule TainaWeb.UI.Overlays do
       <button
         type="button"
         id={"#{@id}-trigger"}
-        class="actions-menu__trigger icon-button icon-btn"
+        class="actions-menu__trigger icon-button"
         aria-label={@label}
         aria-haspopup="menu"
         aria-expanded="false"

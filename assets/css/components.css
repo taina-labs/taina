@@ -1,7 +1,6 @@
-/* Regras órfãs do design system: blocos sem componente Penpot (chip, tiles,
-   tabela, etc.), mantidos até a limpeza da Wave 4. Os blocos com componente
-   Penpot têm arquivo próprio em assets/css/components/, mantenha os dois em
-   sincronia. */
+/* Regras órfãs do design system: blocos sem componente Penpot próprio.
+   Os blocos com componente Penpot têm arquivo próprio em assets/css/components/,
+   mantenha os dois em sincronia. */
 
 /* busca (membros, filtro desktop) */
 .search {
@@ -36,90 +35,6 @@
   outline: none;
 }
 
-/* grade de cards da home: 2 colunas no mobile, 4 no desktop */
-.cards-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: var(--space-3);
-}
-
-@media (min-width: 768px) {
-  .cards-grid {
-    grid-template-columns: repeat(4, 1fr);
-    gap: var(--space-4);
-  }
-}
-
-/* legenda do uso por tipo (armazenamento) */
-.legend-dot {
-  width: var(--space-3);
-  height: var(--space-3);
-  border-radius: var(--radius-pill);
-  flex-shrink: 0;
-}
-
-.legend-dot--photos {
-  background: var(--service-jaci);
-}
-.legend-dot--videos {
-  background: var(--service-nhaman);
-}
-.legend-dot--documents {
-  background: var(--service-ybira);
-}
-.legend-dot--others {
-  background: var(--text-muted);
-}
-
-/* chip: sem componente Penpot (a limpeza da Wave 4 remove o bloco e o
-   componente acompanha) */
-.chip {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  height: var(--size-control-sm);
-  padding-inline: var(--space-4);
-  border-radius: var(--radius-pill);
-  border: var(--border-hairline) solid var(--border-default);
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
-  transition:
-    background-color 120ms ease,
-    border-color 120ms ease,
-    color 120ms ease;
-}
-
-.chip[aria-pressed="true"] {
-  background: var(--brand-primary);
-  border-color: var(--brand-primary);
-  color: var(--text-on-brand);
-}
-
-.chip:hover {
-  border-color: var(--border-strong);
-  color: var(--text-primary);
-}
-
-.chip:disabled {
-  opacity: var(--opacity-disabled);
-  cursor: not-allowed;
-}
-
-/* Controles compactos (36px, tamanho de desktop) sobem para 44px abaixo de
-   768: onde o dedo manda, nada de alvo menor que --size-touch. */
-@media (max-width: 767.98px) {
-  .chip {
-    min-height: var(--size-touch);
-  }
-}
-
-/* press feedback: the control sinks 1px while active (DESIGN.md, motion) */
-.chip:active {
-  transform: translateY(1px);
-}
-
 /* alvo de soltar (arrastar arquivo/pasta sobre uma pasta) */
 .is-drop {
   outline: var(--border-thick) dashed var(--brand-primary);
@@ -132,114 +47,8 @@
   cursor: grab;
 }
 
-/* ---------- grade de arquivos (toggle lista/grade) ---------- */
-
-.tiles {
-  display: grid;
-  /* mobile: 2 por linha, tiles maiores que cabem em tela estreita */
-  grid-template-columns: repeat(2, 1fr);
-  gap: var(--space-3);
-}
-
-@media (min-width: 768px) {
-  .tiles {
-    grid-template-columns: repeat(4, 1fr);
-    gap: var(--space-4);
-  }
-}
-
-/* desktop largo: densidade constante, o tile não estica até virar cartaz */
-@media (min-width: 1440px) {
-  .tiles {
-    grid-template-columns: repeat(6, 1fr);
-  }
-}
-
-.tile {
-  display: flex;
-  flex-direction: column;
-  /* grid item precisa encolher abaixo do conteúdo, senão nome longo estoura a
-     coluna e cria scroll horizontal, queremos só vertical no mobile */
-  min-width: 0;
-  gap: var(--space-1);
-  padding: var(--space-3);
-  background: var(--surface-default);
-  border: var(--border-hairline) solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  transition:
-    border-color 120ms ease,
-    background-color 120ms ease;
-}
-
-@media (min-width: 768px) {
-  .tile {
-    gap: var(--space-2);
-    padding: var(--space-4);
-    border-radius: var(--radius-lg);
-  }
-}
-
-/* nas telas estreitas o nome cabe melhor menor */
-.tile__title {
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-@media (min-width: 768px) {
-  .tile__title {
-    font-size: var(--font-size-md);
-  }
-}
-
-.tile:hover {
-  border-color: var(--border-strong);
-  background: var(--surface-raised);
-}
-
-.tile__meta {
-  font-size: var(--font-size-sm);
-  color: var(--text-muted);
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* preview de documento (PDF via iframe) */
 .doc-frame {
   height: 70dvh;
   border: 0;
-}
-
-/* ---------- tabela (arquivos desktop) ---------- */
-
-.table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.table th {
-  padding: var(--space-3) var(--space-3);
-  text-align: left;
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-  letter-spacing: var(--tracking-wide);
-  text-transform: uppercase;
-  color: var(--text-muted);
-  border-bottom: var(--border-hairline) solid var(--border-default);
-}
-
-.table td {
-  padding: var(--space-3) var(--space-3);
-  border-bottom: var(--border-hairline) solid var(--border-subtle);
-  font-size: var(--font-size-sm);
-  color: var(--text-muted);
-}
-
-.table td:first-child {
-  color: var(--text-primary);
-  font-weight: var(--font-weight-semibold);
 }

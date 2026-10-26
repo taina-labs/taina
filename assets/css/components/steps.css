@@ -20,7 +20,7 @@
 
 .steps__dot {
   width: var(--space-4);
-  height: var(--size-nav-dot);
+  height: var(--size-progress);
   border-radius: var(--radius-pill);
   background: var(--text-faint);
 }

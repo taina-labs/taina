@@ -159,7 +159,7 @@ defmodule TainaWeb.HomeLive do
   end
 
   # O quadradinho da linha: foto leva o acento do Jaci, vídeo o do vídeo, o
-  # resto o documento (o "chip" da linha de arquivo no board do hub).
+  # resto o documento (a linha de arquivo do board do hub).
   defp recent_row(file) do
     %{
       mark: file_mark(file.mime),

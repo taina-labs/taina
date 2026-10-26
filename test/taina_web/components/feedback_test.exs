@@ -1,7 +1,7 @@
 defmodule TainaWeb.UI.FeedbackTest do
   @moduledoc """
   Testes de variante dos componentes de feedback (Wave 1b): empty_state
-  (API nova body + :action, e o caminho legado hint/inner_block), error_card
+  (API nova body + :action), error_card
   (retry), skeleton (kinds + count + uso legado) e connection_notice (copy
   verbatim do board).
   """
@@ -16,13 +16,10 @@ defmodule TainaWeb.UI.FeedbackTest do
 
   defp empty_state_component(assigns) do
     ~H"""
-    <.empty_state icon={@icon} title={@title} body={@body} hint={@hint} tag={@tag}>
+    <.empty_state icon={@icon} title={@title} body={@body} tag={@tag}>
       <:action :if={@with_action}>
         <.screen_button>Enviar arquivos</.screen_button>
       </:action>
-      <div :if={@with_inner}>
-        <.screen_button>botão da tela</.screen_button>
-      </div>
     </.empty_state>
     """
   end
@@ -39,10 +36,8 @@ defmodule TainaWeb.UI.FeedbackTest do
         icon: "folder",
         title: "Lixeira vazia",
         body: nil,
-        hint: nil,
         tag: "p",
-        with_action: false,
-        with_inner: false
+        with_action: false
       })
 
     render_component(&empty_state_component/1, assigns)
@@ -104,23 +99,10 @@ defmodule TainaWeb.UI.FeedbackTest do
     assert html =~ "button"
   end
 
-  test "empty_state caminho legado hint: igual ao de antes" do
-    html = empty_state_html(title: "Não deu para abrir a lixeira", hint: "Tente de novo.")
-
-    assert html =~ "Não deu para abrir a lixeira"
-    assert html =~ "Tente de novo."
-  end
-
   test "empty_state tag do título (uso legado com hierarquia)" do
     html = empty_state_html(tag: "h2")
 
     assert html =~ "<h2 class=\"type-h3\">"
-  end
-
-  test "empty_state inner_block legado continua renderizando" do
-    html = empty_state_html(with_inner: true)
-
-    assert html =~ "botão da tela"
   end
 
   # ---------- ErrorCard ----------
@@ -176,7 +158,7 @@ defmodule TainaWeb.UI.FeedbackTest do
     assert html =~ "skeleton__line"
   end
 
-  test "skeleton photo_grid: tiles da galeria" do
+  test "skeleton photo_grid: unidades da grade da galeria" do
     html = skeleton_html(kind: "photo_grid", count: 8)
 
     assert html =~ "skeleton skeleton--photo-grid"

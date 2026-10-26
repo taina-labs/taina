@@ -8,10 +8,6 @@ defmodule TainaWeb.UI.Actions do
   | Button | 3fd18cd2-90f8-80f3-8008-d5a17ed6d723 |
   | IconButton | 3fd18cd2-90f8-80f3-8008-d596fe970f1a |
   | FAB Enviar arquivo | 3fd18cd2-90f8-80f3-8008-d597f9615561 |
-
-  Durante a Wave 1 os componentes emitidos emitem também os aliases legados
-  (`.btn*`, `.icon-btn*`, `.btn--fab`), para as telas seguirem compilando sem
-  editar as chamadas; a Wave 4.1 remove os aliases.
   """
 
   use Phoenix.Component
@@ -30,10 +26,6 @@ defmodule TainaWeb.UI.Actions do
   """
   attr :kind, :string, values: ~w(primary secondary ghost danger), doc: "Kind do Penpot; padrão primary"
 
-  attr :variant, :string,
-    default: nil,
-    doc: "deprecated: use kind. Mapeia 1:1; \"fab\" mantém o quadrado legado até a W4.1"
-
   attr :size, :string, default: "lg", values: ~w(sm md lg)
   attr :icon, :string, default: nil, doc: "ícone à esquerda (Penpot Icon: leading); \"none\"/omitido = sem ícone"
   attr :loading, :boolean, default: false, doc: "Penpot State: loading; desabilita o controle"
@@ -45,23 +37,13 @@ defmodule TainaWeb.UI.Actions do
   attr :rest, :global, include: ~w(form method download)
   slot :inner_block, required: true
 
-  # deprecated: o quadrado FAB legado (`variant="fab"`, sem kind). A W3.2
-  # troca o call site pelo `<.fab>`; a W4.1 apaga a cláusula e o alias.
-  def button(%{variant: "fab", kind: nil} = assigns) do
-    ~H"""
-    <.link navigate={@navigate} patch={@patch} href={@href} class={["btn btn--fab", @class]} {@rest}>
-      {render_slot(@inner_block)}
-    </.link>
-    """
-  end
-
   def button(%{navigate: nil, patch: nil, href: nil} = assigns) do
     assigns = resolve_button(assigns)
 
     ~H"""
     <button
       type={@type}
-      class={["button button--#{@kind} button--#{@size}", @loading && "button--loading", "btn btn--#{@kind} btn--#{@size}", @loading && "btn--loading", @class]}
+      class={["button button--#{@kind} button--#{@size}", @loading && "button--loading", @class]}
       disabled={@loading || nil}
       aria-busy={@loading && "true" || nil}
       {@rest}
@@ -80,7 +62,7 @@ defmodule TainaWeb.UI.Actions do
       navigate={@navigate}
       patch={@patch}
       href={@href}
-      class={["button button--#{@kind} button--#{@size}", @loading && "button--loading", "btn btn--#{@kind} btn--#{@size}", @loading && "btn--loading", @class]}
+      class={["button button--#{@kind} button--#{@size}", @loading && "button--loading", @class]}
       aria-disabled={@loading && "true" || nil}
       {@rest}
     >
@@ -91,7 +73,7 @@ defmodule TainaWeb.UI.Actions do
   end
 
   defp resolve_button(assigns) do
-    kind = assigns[:kind] || if assigns[:variant] in [nil, "fab"], do: "primary", else: assigns[:variant]
+    kind = assigns[:kind] || "primary"
 
     assign(assigns, kind: kind, icon_name: leading_icon(assigns[:icon]))
   end
@@ -102,26 +84,25 @@ defmodule TainaWeb.UI.Actions do
   defp leading_icon(icon), do: icon
 
   @doc """
-  Botão só-ícone (appbar, kebab, ações de linha) com rótulo acessível.
-  Penpot Kind: default | danger; o booleano `danger` legado continua aceito.
+  Botão só-ícone (cabeçalhos, kebab, ações de linha) com rótulo acessível.
+  Penpot Kind: default | danger.
   """
   attr :name, :string, required: true
   attr :label, :string, required: true
   attr :kind, :string, values: ~w(default danger), doc: "Kind do Penpot; padrão default"
-  attr :danger, :boolean, default: false, doc: "deprecated: use kind={:danger}"
   attr :navigate, :string, default: nil
   attr :href, :string, default: nil
   attr :rest, :global, include: ~w(download)
 
   def icon_button(assigns) do
-    assigns = assign(assigns, :kind, assigns[:kind] || (assigns[:danger] && "danger") || "default")
+    assigns = assign(assigns, :kind, assigns[:kind] || "default")
 
     ~H"""
     <.link
       :if={@navigate || @href}
       navigate={@navigate}
       href={@href}
-      class={["icon-button icon-button--#{@kind}", "icon-btn", @kind == "danger" && "icon-btn--danger"]}
+      class={["icon-button", "icon-button--#{@kind}"]}
       aria-label={@label}
       title={@label}
       {@rest}
@@ -131,7 +112,7 @@ defmodule TainaWeb.UI.Actions do
     <button
       :if={!@navigate && !@href}
       type="button"
-      class={["icon-button icon-button--#{@kind}", "icon-btn", @kind == "danger" && "icon-btn--danger"]}
+      class={["icon-button", "icon-button--#{@kind}"]}
       aria-label={@label}
       title={@label}
       {@rest}

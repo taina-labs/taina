@@ -9,8 +9,8 @@
   position: absolute;
   right: 0;
   top: calc(100% + var(--space-1));
-  /* acima da bottom-nav (30) e do skip link (40); abaixo do visualizador (50),
-     do modal (55) e do flash (60). */
+  /* acima da barra de abas (30) e do skip link (40); abaixo do visualizador
+     (50), do dialog (55) e do flash (60). */
   z-index: 45;
   min-width: var(--size-menu-min);
   /* nunca estoura a tela: em viewport estreita o menu encolhe em vez de

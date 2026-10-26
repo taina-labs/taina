@@ -65,9 +65,8 @@ defmodule TainaWeb.LoginLive do
 
       <form id="login-form" action={~p"/login"} method="post" class="col gap-4">
         <input type="hidden" name="_csrf_token" value={get_csrf_token()} />
-        <.input
+        <.field
           label={gettext("Seu nome de usuário")}
-          type="text"
           name="username"
           id="login_username"
           value=""
@@ -77,9 +76,9 @@ defmodule TainaWeb.LoginLive do
           autocapitalize="none"
           required
         />
-        <.input
+        <.field
           label={gettext("Senha")}
-          type="password"
+          kind="password"
           name="password"
           id="login_password"
           value=""
@@ -89,7 +88,7 @@ defmodule TainaWeb.LoginLive do
           required
         >
           <:trailing><.password_toggle target="login_password" /></:trailing>
-        </.input>
+        </.field>
         <.button kind="ghost" size="sm" type="button" class="self-start" phx-click="toggle-password-help">
           {gettext("Esqueci minha senha")}
         </.button>
@@ -106,7 +105,7 @@ defmodule TainaWeb.LoginLive do
         {gettext("Tenho um convite")}
       </.button>
 
-      <.modal id="password-help" show={@show_password_help} on_cancel={JS.push("toggle-password-help")}>
+      <.dialog id="password-help" show={@show_password_help} on_cancel={JS.push("toggle-password-help")}>
         <h2 id="password-help-title" class="type-h3 mb-3">{gettext("Esqueceu a senha?")}</h2>
         <p class="type-body text-secondary mb-4">
           {gettext(
@@ -116,7 +115,7 @@ defmodule TainaWeb.LoginLive do
         <.button kind="secondary" class="w-full" phx-click="toggle-password-help">
           {gettext("Entendi")}
         </.button>
-      </.modal>
+      </.dialog>
     </Layouts.auth>
     """
   end

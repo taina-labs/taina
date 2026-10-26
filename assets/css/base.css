@@ -79,9 +79,7 @@ a {
 /* toque: tira o atraso do gesto e o flash de destaque no toque */
 a,
 button,
-.chip,
-.segmented__option,
-.icon-btn {
+.segmented__option {
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
 }
