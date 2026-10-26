@@ -6,6 +6,13 @@ defmodule TainaWeb.Layouts do
   (fullscreen). A casca possui o cabeçalho e o próprio título: nenhuma tela
   renderiza `<h1>` de título nem barra própria (spec 1.5).
 
+  No Penpot ("Cofre da Comunidade - UI v1") a referência são as páginas
+  `02 - Mobile` e `03 - Web` e os quadros `Frame / Web movel`
+  (cc1037dc-e8ab-80cc-8008-d5c4625371e0), `Frame / Desktop`
+  (cc1037dc-e8ab-80cc-8008-d5c46431f4fd) e `Frame / iOS`
+  (cc1037dc-e8ab-80cc-8008-d5c4608aa144) - os boards de tela por cima deles é
+  que mostram o conteúdo de cada casca.
+
   LiveViews envolvem o próprio conteúdo explicitamente:
 
       <Layouts.service service="ybira" current="praca" ...>
