@@ -4,7 +4,7 @@ defmodule TainaWeb.LoginLiveTest do
   import Phoenix.LiveViewTest
   import Taina.Fixtures
 
-  @login_error "Nome ou senha incorretos. Tente de novo ou fale com quem cuida da comunidade."
+  @login_error "Não conseguimos entrar."
 
   test "instância virgem redireciona para o setup", %{conn: conn} do
     assert {:error, {:redirect, %{to: "/setup"}}} = live(conn, ~p"/login")
@@ -24,6 +24,8 @@ defmodule TainaWeb.LoginLiveTest do
 
     assert html =~ "Entre com seu nome na nuvem da sua comunidade."
     assert html =~ "É com ele que você entra."
+    assert has_element?(lv, ".auth-title", "Tainá")
+    assert has_element?(lv, "button.auth-link", "Esqueci minha senha")
     assert has_element?(lv, ~s(form[action="/login"]))
     assert has_element?(lv, ~s(input[name="username"]))
     assert has_element?(lv, ~s(input[name="password"]))
@@ -47,10 +49,12 @@ defmodule TainaWeb.LoginLiveTest do
       |> put_flash(:error, @login_error)
       |> live(~p"/login")
 
-    # O flash do controller segue na casca e o board repete o aviso no campo.
+    # O flash do controller segue na casca e o board repete o aviso no campo;
+    # o board `erro` não repete o subtítulo.
     assert html =~ @login_error
     assert html =~ "Confira a senha e tente de novo."
     assert has_element?(lv, ~s(.field--invalid input[name="password"]))
+    refute html =~ "Entre com seu nome na nuvem da sua comunidade."
   end
 
   test "outro erro que cai no login (convite vencido) não acende o campo", %{conn: conn} do

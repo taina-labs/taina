@@ -68,7 +68,13 @@ defmodule TainaWeb.UI.Feedback do
   """
   attr :title, :string, required: true
   attr :body, :string, default: nil
-  attr :retry_event, :string, required: true, doc: "evento phx-click do \"Tentar de novo\""
+  attr :retry_event, :string, required: true, doc: "evento phx-click da ação de repetir"
+
+  attr :retry_label, :string,
+    default: nil,
+    doc: ~s{rótulo da ação; nil = "Tentar de novo" (o board de auth pede "Voltar")}
+
+  attr :retry_icon, :string, default: "restore", doc: "ícone da ação de repetir"
 
   attr :contact_event, :string,
     default: nil,
@@ -83,8 +89,8 @@ defmodule TainaWeb.UI.Feedback do
       </div>
       <p :if={@body} class="error-card__body">{@body}</p>
       <div class="error-card__actions">
-        <.button kind="secondary" size="sm" icon="restore" phx-click={@retry_event}>
-          {gettext("Tentar de novo")}
+        <.button kind="secondary" size="sm" icon={@retry_icon} phx-click={@retry_event}>
+          {@retry_label || gettext("Tentar de novo")}
         </.button>
         <.button :if={@contact_event} kind="ghost" size="sm" phx-click={@contact_event}>
           {gettext("Falar com quem cuida")}

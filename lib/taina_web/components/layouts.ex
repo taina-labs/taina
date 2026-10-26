@@ -116,30 +116,23 @@ defmodule TainaWeb.Layouts do
 
   @doc """
   Shell de auth (setup, login, convite, redefinir): fundo sólido `--bg-deep`
-  (sem céu, sem estrelas, sem horizonte - spec 6.5) e cartão limitado a
-  `--measure-card`. `secure_connection?` chega por `Hooks.on_mount(:connection)`;
-  quando a página abriu fora da rede da comunidade (http, sem loopback), o
-  ConnectionNotice entra acima do cartão.
+  (sem céu, sem estrelas, sem horizonte - spec 6.5), conteúdo limitado a
+  `--measure-card` e, do tablet para cima, o cartão do board (superfície
+  elevada, hairline, `--radius-lg`). O ConnectionNotice não mora aqui: cada
+  tela o coloca abaixo do próprio cabeçalho, como nos boards ("sem https" em
+  `02 - Mobile`), e o `secure_connection?` vem de `Hooks.on_mount(:connection)`.
 
       <Layouts.auth flash={@flash}>
         ...
       </Layouts.auth>
   """
   attr :flash, :map, required: true
-
-  attr :secure_connection?,
-       :boolean,
-       doc: "atribuído por Hooks.on_mount(:connection); o Map.put_new abaixo cobre o render sem ele"
-
   slot :inner_block, required: true
 
   def auth(assigns) do
-    assigns = Map.put_new(assigns, :secure_connection?, true)
-
     ~H"""
     <.flash_group flash={@flash} />
     <main class="shell shell--auth">
-      <.connection_notice :if={@secure_connection? == false} />
       <div class="shell__content">{render_slot(@inner_block)}</div>
     </main>
     """

@@ -63,16 +63,10 @@ defmodule TainaWeb.LayoutsTest do
   end
 
   defp auth_html(opts \\ []) do
-    {secure, rest} = Keyword.pop(Keyword.new(opts), :secure)
-
-    # o spread entra sozinho quando a conexao é insegura; sem ele, o shell
-    # cai no default do put_new (true), como numa tela real.
-    extra = if secure == false, do: [secure_connection?: false], else: []
-
-    assigns = Enum.into(rest, %{flash: %{}, extra: extra})
+    assigns = Enum.into(Keyword.new(opts), %{flash: %{}})
 
     rendered_to_string(~H"""
-    <Layouts.auth flash={@flash} {@extra}>
+    <Layouts.auth flash={@flash}>
       <p>conteudo</p>
     </Layouts.auth>
     """)
@@ -169,19 +163,20 @@ defmodule TainaWeb.LayoutsTest do
   end
 
   describe "auth" do
-    test "ConnectionNotice fora de conexao segura" do
-      html = auth_html(secure: false)
+    test "casca de auth: fundo solido e conteudo, sem cabecalho proprio" do
+      html = auth_html()
 
       assert html =~ ~s(class="shell shell--auth")
-      assert html =~ "connection-notice"
-
-      assert html =~
-               "Esta conexão só fica protegida quando você está na rede da comunidade"
+      assert html =~ ~s(class="shell__content")
+      assert html =~ "conteudo"
+      refute html =~ "page-header"
+      refute html =~ "service-tab-bar"
     end
 
-    test "em conexao segura (e sem o assign, default) nao ha aviso" do
+    # O ConnectionNotice mora na tela, abaixo do cabecalho (board "sem https"),
+    # nao na casca: a casca so da o fundo e o teto.
+    test "a casca nao desenha o aviso de conexao" do
       refute auth_html() =~ "connection-notice"
-      refute auth_html(secure: true) =~ "connection-notice"
     end
 
     test "sem cabecalho e sem abas sempre" do

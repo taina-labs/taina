@@ -23,7 +23,8 @@ defmodule TainaWeb.InviteAcceptLive do
      |> assign(:page_title, gettext("Aceitar convite"))
      |> assign(:token, token)
      |> assign(:token_status, Maraca.invite_status(token))
-     |> assign(:community_name, community_name())}
+     |> assign(:community_name, community_name())
+     |> assign(:show_contact, false)}
   end
 
   # Campos não secretos voltam pela URL quando o POST falha (o
@@ -34,11 +35,22 @@ defmodule TainaWeb.InviteAcceptLive do
     {:noreply, assign(socket, :prefill, Map.take(params, ["username", "display_name"]))}
   end
 
-  # O "Tentar de novo" do cartão, num convite vencido, só tem um lugar para
-  # onde ir: entrar.
+  # O "Voltar" do cartão, num convite vencido, só tem um lugar para onde ir:
+  # entrar.
   @impl true
   def handle_event("voltar", _params, socket) do
     {:noreply, Phoenix.LiveView.push_navigate(socket, to: ~p"/login")}
+  end
+
+  # "Falar com quem cuida" (board `expirado`): web não abre conversa com
+  # ninguém e a pessoa ainda não tem conta, então a saída é a mesma do login -
+  # um cartão que diz com quem falar.
+  def handle_event("contact", _params, socket) do
+    {:noreply, assign(socket, :show_contact, true)}
+  end
+
+  def handle_event("close-contact", _params, socket) do
+    {:noreply, assign(socket, :show_contact, false)}
   end
 
   # O nome da comunidade entra na frase do convite. Sem Tekoa (na prática
@@ -64,14 +76,16 @@ defmodule TainaWeb.InviteAcceptLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.auth flash={@flash} secure_connection?={@secure_connection?}>
+    <Layouts.auth flash={@flash}>
+      <.connection_notice :if={@secure_connection? == false and @token_status == :invalid} />
+
       <.error_card
         :if={@token_status == :invalid}
         title={gettext("Este convite não é mais válido.")}
-        body={gettext(
-          "Convites valem sete dias e só podem ser usados uma vez. Peça um novo link a quem cuida da sua comunidade."
-        )}
         retry_event="voltar"
+        retry_label={gettext("Voltar")}
+        retry_icon="chevron-left"
+        contact_event="contact"
       />
 
       <.link
@@ -83,10 +97,17 @@ defmodule TainaWeb.InviteAcceptLive do
       </.link>
 
       <div :if={@token_status == :ok}>
-        <div class="col gap-3 text-center mt-10 mb-8 items-center">
+        <.link navigate={~p"/login"} class="row gap-2 items-center text-secondary self-start">
+          <.icon name="chevron-left" size={20} />
+          <span class="type-label">{gettext("Entrar")}</span>
+        </.link>
+
+        <div class="col gap-3 mt-6 mb-6">
           <h1 class="type-h1">{gettext("Você recebeu um convite")}</h1>
           <p class="type-body text-secondary">{invite_body(@community_name)}</p>
         </div>
+
+        <.connection_notice :if={@secure_connection? == false} />
 
         <form id="invite-accept-form" action={~p"/convite/#{@token}"} method="post" class="col gap-5">
           <input type="hidden" name="_csrf_token" value={get_csrf_token()} />
@@ -96,7 +117,7 @@ defmodule TainaWeb.InviteAcceptLive do
             id="account_username"
             value={@prefill["username"]}
             placeholder={gettext("ex.: joao")}
-            help={gettext("Sem espaços. É com ele que você entra na comunidade.")}
+            help={gettext("Sem espaços. É com ele que você entra.")}
             autocomplete="username"
             autocapitalize="none"
             spellcheck="false"
@@ -128,12 +149,23 @@ defmodule TainaWeb.InviteAcceptLive do
           </.field>
           <.button type="submit" kind="primary" class="w-full mt-2">{gettext("Criar conta")}</.button>
         </form>
-
-        <.link navigate={~p"/login"} class="row gap-2 items-center mt-6 text-secondary self-start">
-          <.icon name="chevron-left" size={20} />
-          <span class="type-label">{gettext("Entrar")}</span>
-        </.link>
       </div>
+
+      <.dialog
+        id="contact-help"
+        show={@show_contact}
+        on_cancel={JS.push("close-contact")}
+      >
+        <h2 id="contact-help-title" class="type-h3 mb-3">{gettext("Fale com quem cuida")}</h2>
+        <p class="type-body text-secondary mb-4">
+          {gettext(
+            "Quem cuida da sua comunidade gera um convite novo para você. O convite vale sete dias e só pode ser usado uma vez."
+          )}
+        </p>
+        <.button kind="secondary" class="w-full" phx-click="close-contact">
+          {gettext("Entendi")}
+        </.button>
+      </.dialog>
     </Layouts.auth>
     """
   end

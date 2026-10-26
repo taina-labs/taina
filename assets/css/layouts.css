@@ -124,10 +124,54 @@
 }
 
 .shell--auth .shell__content {
-  /* o card de auth e o conteúdo: a casca (acima) cuida do respiro e do
-     safe-area, o content herda do `.shell__content` só o `page-in`. */
+  /* no celular o conteúdo é a página, sem cartão (board mobile); a casca
+     cuida do respiro e do safe-area. */
   padding: 0;
   max-width: var(--measure-card);
+}
+
+/* do tablet para cima o board desenha um card de auth (420 de teto, 24 de
+   respiro interno, superfície elevada) */
+@media (min-width: 768px) {
+  .shell--auth .shell__content {
+    padding: var(--space-6);
+    background: var(--surface-raised);
+    border: var(--border-hairline) solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+  }
+}
+
+/* Título do Entrar: 44 no celular, 36 do tablet para cima (boards) */
+.auth-title {
+  font-family: var(--font-family-display);
+  font-size: var(--font-size-display);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: var(--tracking-tight);
+  line-height: 1.05;
+}
+
+@media (min-width: 768px) {
+  .auth-title {
+    font-size: var(--font-size-3xl);
+  }
+}
+
+/* Ação em texto dos boards ("Esqueci minha senha"): texto clicável, sem a
+   moldura de botão. */
+.auth-link {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--brand-primary);
+  cursor: pointer;
+}
+
+.auth-link:hover {
+  text-decoration: underline;
 }
 
 /* o aviso acompanha o teto do card: mesma fileira, mesma largura */

@@ -108,11 +108,21 @@ defmodule TainaWeb.InviteFlowTest do
     refute html =~ "Criar conta"
   end
 
-  test "o Tentar de novo do cartão leva para o login", %{conn: conn} do
+  test "o cartão vencido oferece falar com quem cuida, sem corpo inventado", %{conn: conn} do
+    {:ok, lv, _html} = live(conn, ~p"/convite/nao-existe")
+
+    assert has_element?(lv, ".error-card button", "Falar com quem cuida")
+
+    lv |> element(".error-card button", "Falar com quem cuida") |> render_click()
+
+    assert render(lv) =~ "Quem cuida da sua comunidade gera um convite novo"
+  end
+
+  test "o Voltar do cartão leva para o login", %{conn: conn} do
     {:ok, lv, _html} = live(conn, ~p"/convite/nao-existe")
 
     assert {:error, {:live_redirect, %{to: "/login"}}} =
-             lv |> element(~s(.error-card button), "Tentar de novo") |> render_click()
+             lv |> element(~s(.error-card button), "Voltar") |> render_click()
   end
 
   test "convite expirado mostra o estado de beco sem saída antes de preencher o formulário", %{

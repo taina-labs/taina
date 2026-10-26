@@ -49,13 +49,24 @@ defmodule TainaWeb.UI.FeedbackTest do
       title={@title}
       body={@body}
       retry_event={@retry_event}
+      retry_label={@retry_label}
+      retry_icon={@retry_icon}
       contact_event={@contact_event}
     />
     """
   end
 
   defp error_card_html(opts) do
-    assigns = Enum.into(opts, %{title: nil, body: nil, retry_event: nil, contact_event: nil})
+    assigns =
+      Enum.into(opts, %{
+        title: nil,
+        body: nil,
+        retry_event: nil,
+        retry_label: nil,
+        retry_icon: "restore",
+        contact_event: nil
+      })
+
     render_component(&error_card_component/1, assigns)
   end
 
@@ -145,6 +156,20 @@ defmodule TainaWeb.UI.FeedbackTest do
     html = error_card_html(title: "Erro", retry_event: "retry")
 
     refute html =~ "Falar com quem cuida"
+  end
+
+  test "error_card aceita rótulo e ícone próprios (board de auth pede Voltar)" do
+    html =
+      error_card_html(
+        title: "Este convite não é mais válido.",
+        retry_event: "voltar",
+        retry_label: "Voltar",
+        retry_icon: "chevron-left"
+      )
+
+    assert html =~ "Voltar"
+    assert html =~ ~s(d="m15 18-6-6 6-6")
+    refute html =~ "Tentar de novo"
   end
 
   # ---------- Skeleton ----------

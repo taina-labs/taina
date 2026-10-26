@@ -273,17 +273,19 @@ defmodule TainaWeb.SetupLive do
     assigns = assign(assigns, :quota_form, quota_form(assigns.data))
 
     ~H"""
-    <Layouts.auth flash={@flash} secure_connection?={@secure_connection?}>
+    <Layouts.auth flash={@flash}>
       <div :if={@step == 1} class="col flex-1">
-        <div class="col gap-4 text-center mt-10 mb-8 items-center">
+        <div class="col gap-3 mt-4 mb-6">
           <.steps current={1} label={gettext("Boas-vindas")} />
-          <h1 id="step-heading-1" tabindex="-1" phx-mounted={JS.focus()} class="type-display">
+          <h1 id="step-heading-1" tabindex="-1" phx-mounted={JS.focus()} class="type-h1">
             {gettext("Boas-vindas à Tainá")}
           </h1>
           <p class="type-body text-secondary">
             {gettext("A estrela da manhã da sua comunidade. Arquivos e fotos da comunidade, guardados com você.")}
           </p>
         </div>
+
+        <.connection_notice :if={@secure_connection? == false} />
 
         <form id="setup-step-1" phx-change="validate" phx-submit="next" class="col gap-6 flex-1">
           <.field
@@ -313,6 +315,8 @@ defmodule TainaWeb.SetupLive do
             {gettext("Você é quem vai cuidar da máquina da comunidade. Guarde bem este acesso.")}
           </p>
         </div>
+
+        <.connection_notice :if={@secure_connection? == false} />
 
         <form id="setup-step-2" phx-change="validate" phx-submit="next" class="col gap-5 flex-1">
           <.field
@@ -366,6 +370,8 @@ defmodule TainaWeb.SetupLive do
             {gettext("Este é o disco da comunidade. Ele é escolhido na instalação da caixa e não pode ser trocado por aqui.")}
           </p>
         </div>
+
+        <.connection_notice :if={@secure_connection? == false} />
 
         <form
           id="setup-step-3"

@@ -32,7 +32,8 @@ defmodule TainaWeb.LoginLive do
          socket
          |> assign(:page_title, gettext("Entrar"))
          |> assign(:show_password_help, false)
-         |> assign(:password_error, login_password_error(socket.assigns.flash))}
+         |> assign(:password_error, login_password_error(socket.assigns.flash))
+         |> assign(:login_error, not is_nil(Phoenix.Flash.get(socket.assigns.flash, :error)))}
     end
   end
 
@@ -48,8 +49,7 @@ defmodule TainaWeb.LoginLive do
   # que caem no login (convite ou link de redefinição vencidos) chegam com
   # flash próprio e não acendem o campo.
   defp login_password_error(flash) do
-    if Phoenix.Flash.get(flash, :error) ==
-         gettext("Nome ou senha incorretos. Tente de novo ou fale com quem cuida da comunidade.") do
+    if Phoenix.Flash.get(flash, :error) == gettext("Não conseguimos entrar.") do
       gettext("Confira a senha e tente de novo.")
     end
   end
@@ -57,11 +57,15 @@ defmodule TainaWeb.LoginLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.auth flash={@flash} secure_connection?={@secure_connection?}>
+    <Layouts.auth flash={@flash}>
       <div class="col gap-3 text-center mt-10 mb-8 items-center">
-        <h1 class="type-h1">Tainá</h1>
-        <p class="type-body text-secondary">{gettext("Entre com seu nome na nuvem da sua comunidade.")}</p>
+        <h1 class="auth-title">Tainá</h1>
+        <p :if={!@login_error} class="type-body text-secondary">
+          {gettext("Entre com seu nome na nuvem da sua comunidade.")}
+        </p>
       </div>
+
+      <.connection_notice :if={@secure_connection? == false} />
 
       <form id="login-form" action={~p"/login"} method="post" class="col gap-4">
         <input type="hidden" name="_csrf_token" value={get_csrf_token()} />
@@ -89,9 +93,9 @@ defmodule TainaWeb.LoginLive do
         >
           <:trailing><.password_toggle target="login_password" /></:trailing>
         </.field>
-        <.button kind="ghost" size="sm" type="button" class="self-start" phx-click="toggle-password-help">
+        <button type="button" class="auth-link" phx-click="toggle-password-help">
           {gettext("Esqueci minha senha")}
-        </.button>
+        </button>
         <.button type="submit" kind="primary" class="w-full mt-2">{gettext("Entrar")}</.button>
       </form>
 

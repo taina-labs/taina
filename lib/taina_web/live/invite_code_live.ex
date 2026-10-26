@@ -57,7 +57,7 @@ defmodule TainaWeb.InviteCodeLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.auth flash={@flash} secure_connection?={@secure_connection?}>
+    <Layouts.auth flash={@flash}>
       <.link navigate={~p"/login"} class="row gap-2 items-center text-secondary self-start">
         <.icon name="chevron-left" size={20} />
         <span class="type-label">{gettext("Entrar")}</span>
@@ -67,6 +67,8 @@ defmodule TainaWeb.InviteCodeLive do
         <h1 class="type-h1">{gettext("Colar um convite")}</h1>
         <p class="type-body text-secondary">{gettext("Cole o link ou o código que você recebeu.")}</p>
       </div>
+
+      <.connection_notice :if={@secure_connection? == false} />
 
       <form id="invite-code-form" phx-submit="continue" class="col gap-4">
         <.field
