@@ -750,4 +750,23 @@ defmodule Taina.YbiraTest do
   end
 
   # --- ZEETECH-71: alvo do pedido de acesso (RFC_003 D4) ---
+  describe "folder_item_counts/2" do
+    test "conta subpastas e arquivos por pasta, sem a lixeira" do
+      scope = scope_fixture()
+      {:ok, atas} = Ybira.create_folder(scope, %{name: "Atas"})
+      {:ok, _sub} = Ybira.create_folder(scope, %{name: "2026", parent_rkey: atas.rkey})
+      {:ok, _vivo} = Ybira.upload(scope, tmp_upload_fixture(), folder_rkey: atas.rkey)
+      {:ok, lixo} = Ybira.upload(scope, tmp_upload_fixture(), folder_rkey: atas.rkey)
+      {:ok, _} = Ybira.delete_file(scope, lixo.rkey)
+      {:ok, vazia} = Ybira.create_folder(scope, %{name: "Vazia"})
+
+      assert {:ok, counts} = Ybira.folder_item_counts(scope, [atas.id, vazia.id])
+      assert counts[atas.id] == 2
+      assert counts[vazia.id] == 0
+    end
+
+    test "sem pasta nenhuma devolve mapa vazio, sem consultar o banco" do
+      assert {:ok, %{}} = Ybira.folder_item_counts(scope_fixture(), [])
+    end
+  end
 end

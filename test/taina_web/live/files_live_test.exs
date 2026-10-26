@@ -84,6 +84,21 @@ defmodule TainaWeb.FilesLiveTest do
       assert has_element?(lv, ".service-header__back-label", "Início")
     end
 
+    test "a linha da pasta diz quantos itens ela tem (board: Pasta, 4 itens)", %{
+      conn: conn,
+      scope: scope,
+      ava: ava
+    } do
+      {:ok, folder} = Ybira.create_folder(scope, %{name: "Atas"})
+      {:ok, _} = Ybira.upload(scope, tmp_upload_fixture("oi", "marco.txt"), folder_rkey: folder.rkey)
+      {:ok, _} = Ybira.upload(scope, tmp_upload_fixture("oi", "abril.txt"), folder_rkey: folder.rkey)
+
+      {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/casa")
+
+      assert has_element?(lv, ".list-row--folder", "Atas")
+      assert has_element?(lv, ".list-row--folder .list-row__meta", "Pasta, 2 itens")
+    end
+
     test "pasta aninhada: o voltar aponta o parente pelo nome e a migalha nasce na zona", %{
       conn: conn,
       scope: scope,

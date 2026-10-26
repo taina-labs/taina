@@ -27,8 +27,8 @@ defmodule TainaWeb.GalleryLiveTest do
     %{scope: scope, ava: ava, first: first, second: second}
   end
 
-  # Board "Grade / padrao": tiles com thumbnail, FAB Enviar e abas como rotas.
-  test "grade padrão: tiles com thumbnail, FAB Enviar e abas como rotas", %{
+  # Board "Grade / padrao": fotos com thumbnail, FAB Enviar e abas como rotas.
+  test "grade padrão: fotos com thumbnail, FAB Enviar e abas como rotas", %{
     conn: conn,
     ava: ava,
     first: first,
@@ -189,7 +189,7 @@ defmodule TainaWeb.GalleryLiveTest do
     assert has_element?(lv, ".photo-grid__video")
   end
 
-  test "com páginas pela frente, a linha do total cala em vez de chutar", %{
+  test "com páginas pela frente, a linha do total diz o conjunto inteiro", %{
     conn: conn,
     ava: ava,
     scope: scope
@@ -202,7 +202,8 @@ defmodule TainaWeb.GalleryLiveTest do
     {:ok, lv, html} = conn |> log_in(ava) |> live(~p"/galeria")
 
     assert has_element?(lv, "#grid-load-more")
-    refute html =~ "52 fotos"
+    # o total é agregado no banco (Jaci.count_media/2): não depende da página
+    assert html =~ "52 fotos"
   end
 
   # --- zonas casa/praca (RFC_003 D1/D2) ---

@@ -400,6 +400,61 @@ defmodule Taina.Ybira do
     end)
   end
 
+  @doc """
+  Quantos itens cada pasta da listagem tem, para o meta "Pasta, 4 itens" do
+  board: subpastas mais arquivos, sem a lixeira, na mesma regra de leitura da
+  própria pasta. Uma consulta por tipo, agrupada por pasta - a listagem não
+  vira N+1.
+
+  Devolve `%{folder_id => count}`; pasta sem filho aparece com 0.
+  """
+  def folder_item_counts(%Scope{} = scope, folder_ids) when is_list(folder_ids) do
+    ids = folder_ids |> Enum.reject(&is_nil/1) |> Enum.uniq()
+
+    if ids == [] do
+      {:ok, %{}}
+    else
+      within_tekoa(scope, fn -> {:ok, sum_counts(scope, ids)} end)
+    end
+  end
+
+  defp sum_counts(%Scope{} = scope, ids) do
+    folders = counts_by(scope, :folder, ids)
+    files = counts_by(scope, :file, ids)
+
+    Map.new(ids, fn id ->
+      {id, Map.get(folders, id, 0) + Map.get(files, id, 0)}
+    end)
+  end
+
+  defp counts_by(%Scope{} = scope, :folder, parent_ids) do
+    scope
+    |> folders_by_parent(parent_ids)
+    |> group_by([p], p.parent_id)
+    |> select([p], {p.parent_id, count(p.id)})
+    |> Repo.all()
+    |> Map.new()
+  end
+
+  defp counts_by(%Scope{} = scope, :file, parent_ids) do
+    scope
+    |> base()
+    |> where([f], f.folder_id in ^parent_ids)
+    |> group_by([f], f.folder_id)
+    |> select([f], {f.folder_id, count(f.id)})
+    |> Repo.all()
+    |> Map.new()
+  end
+
+  defp folders_by_parent(%Scope{} = scope, parent_ids) do
+    KernelQueries.readable_folder(
+      from(p in Folder,
+        where: p.tekoa_id == ^scope.tekoa.id and p.parent_id in ^parent_ids and is_nil(p.apagado_em)
+      ),
+      scope
+    )
+  end
+
   defp paginate_offset(query, limit, offset) do
     rows =
       query

@@ -129,6 +129,7 @@ defmodule TainaWeb.FilesLive do
     |> assign(:breadcrumb, breadcrumb)
     |> assign(:crumbs, crumbs(zona, breadcrumb))
     |> assign(:folders, page.folders)
+    |> assign(:folder_counts, folder_counts(socket.assigns.current_scope, page.folders))
     |> assign(:item_count, length(page.folders) + length(page.files))
     |> assign(:file_count, length(page.files))
     |> assign(:next_cursor, page.next_cursor)
@@ -352,6 +353,23 @@ defmodule TainaWeb.FilesLive do
   end
 
   # --- core puro: dados -> dados ---
+
+  # "Pasta, 4 itens" (board): o agregado por pasta vem do contexto e vira o
+  # meta da linha. Falha do agregado não derruba a listagem: a linha fica só
+  # com "Pasta".
+  defp folder_counts(scope, folders) do
+    case Ybira.folder_item_counts(scope, Enum.map(folders, & &1.id)) do
+      {:ok, counts} -> counts
+      {:error, _reason} -> %{}
+    end
+  end
+
+  defp folder_row_meta(folder, counts) do
+    case Map.get(counts, folder.id) do
+      nil -> gettext("Pasta")
+      count -> ngettext("Pasta, %{count} item", "Pasta, %{count} itens", count, count: count)
+    end
+  end
 
   defp for_zona(items, zona), do: Enum.filter(items, &(&1.zona == zona))
 
@@ -596,7 +614,7 @@ defmodule TainaWeb.FilesLive do
             kind="folder"
             trailing="chevron"
             title={folder.nome}
-            meta={gettext("Pasta")}
+            meta={folder_row_meta(folder, @folder_counts)}
             navigate={item_path("folder", folder.rkey)}
             draggable="true"
             data-drag-id={folder.rkey}
@@ -665,11 +683,10 @@ defmodule TainaWeb.FilesLive do
       <.dialog id="new-folder-modal" show={@modal == "new-folder"} on_cancel={JS.push("close-modal")}>
         <h2 class="type-h3 mb-4">{gettext("Nova pasta")}</h2>
         <form id="create-folder-form" phx-submit="create-folder" class="col gap-4">
-          <.input
+          <.field
             label={gettext("Nome da pasta")}
             name="folder[name]"
             id="new_folder_name"
-            value=""
             placeholder={gettext("ex.: Documentos")}
             required
             autofocus
@@ -689,7 +706,7 @@ defmodule TainaWeb.FilesLive do
       <.dialog id="rename-modal" show={@modal == "rename"} on_cancel={JS.push("close-modal")}>
         <h2 class="type-h3 mb-4">{gettext("Renomear")}</h2>
         <form id="rename-form" :if={@rename_target} phx-submit="rename-item" class="col gap-4">
-          <.input
+          <.field
             label={gettext("Novo nome")}
             name="folder[name]"
             id="rename_name"

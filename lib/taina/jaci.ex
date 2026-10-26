@@ -40,6 +40,25 @@ defmodule Taina.Jaci do
     end)
   end
 
+  @doc """
+  Quantas fotos e quantos vídeos o conjunto legível tem, respeitando o
+  filtro de zona - o retrato de "38 fotos, 4 vídeos" do board. Agregado no
+  banco: a linha do total não depende de a página ter carregado tudo.
+  """
+  def count_media(%Scope{} = scope, opts \\ []) do
+    within_tekoa(scope, fn ->
+      base =
+        scope
+        |> readable_photos()
+        |> apply_zona(Keyword.get(opts, :zona))
+
+      fotos = base |> where([f], like(f.mime, "image/%")) |> Repo.aggregate(:count)
+      videos = base |> where([f], like(f.mime, "video/%")) |> Repo.aggregate(:count)
+
+      {:ok, %{fotos: fotos, videos: videos}}
+    end)
+  end
+
   @doc "A linha do tempo: as mesmas fotos, agrupadas pela data efetiva (EXIF ou upload)."
   def timeline(%Scope{} = scope, opts \\ []) do
     within_tekoa(scope, fn ->

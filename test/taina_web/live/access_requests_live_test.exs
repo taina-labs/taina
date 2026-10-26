@@ -119,6 +119,9 @@ defmodule TainaWeb.AccessRequestsLiveTest do
 
     html = render(lv)
     assert html =~ "Pedido negado"
+    # o dono também vê a recusa na seção decidida (board: "teve o acesso recusado")
+    assert html =~ "Maria teve o acesso recusado"
+    assert html =~ "Acesso recusado em"
     refute Maraca.authorize?(requester, :read, "ypy.file.v0", file.rkey)
   end
 

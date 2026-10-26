@@ -836,6 +836,28 @@ defmodule Taina.Maraca do
     end)
   end
 
+  @doc """
+  Os pedidos que `scope.ava` recusou na própria casa, para a seção decidida
+  da tela de Pedidos mostrar a recusa ao dono também ("Marina teve o acesso
+  recusado", board). Os aprovados não entram aqui: eles já aparecem como
+  concessão (`concessoes_concedidas/1`), e repetir seria contar duas vezes.
+  """
+  def list_owner_recent_refusals(%Ypy.Scope{} = scope) do
+    within_tekoa(scope, fn ->
+      refusals =
+        from(p in Pedido,
+          where: p.tekoa_id == ^scope.tekoa.id,
+          where: p.dono_id == ^scope.ava.id,
+          where: p.status == :negado,
+          order_by: [desc: p.decidido_em]
+        )
+        |> Repo.all()
+        |> Repo.preload(:pedinte)
+
+      {:ok, refusals}
+    end)
+  end
+
   def subscribe_to_my_events(%Ava{public_id: pid}) do
     Phoenix.PubSub.subscribe(Taina.PubSub, "maraca:ava:" <> pid)
   end

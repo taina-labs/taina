@@ -240,4 +240,27 @@ defmodule Taina.JaciTest do
       do: walk_timeline(scope, Keyword.put(opts, :after_cursor, next), acc),
       else: acc
   end
+
+  describe "count_media/2" do
+    test "conta fotos e vídeos do conjunto legível, sem os outros tipos" do
+      scope = scope_fixture()
+      {:ok, _} = Ybira.upload(scope, tmp_image_fixture(filename: "a.jpg"))
+      {:ok, _} = Ybira.upload(scope, tmp_image_fixture(filename: "b.jpg"))
+      {:ok, _} = Ybira.upload(scope, tmp_video_fixture("c.mp4"))
+      {:ok, _} = Ybira.upload(scope, tmp_upload_fixture("texto", "doc.txt"))
+
+      assert {:ok, %{fotos: 2, videos: 1}} = Jaci.count_media(scope)
+    end
+
+    test "o filtro de zona vale para o total" do
+      scope = scope_fixture()
+      {:ok, _casa} = Ybira.upload(scope, tmp_image_fixture(filename: "casa.jpg"))
+      {:ok, praca} = Ybira.upload(scope, tmp_image_fixture(filename: "praca.jpg"))
+      {:ok, _} = Ybira.publicar_file(scope, praca.rkey)
+
+      assert {:ok, %{fotos: 2, videos: 0}} = Jaci.count_media(scope)
+      assert {:ok, %{fotos: 1}} = Jaci.count_media(scope, zona: :praca)
+      assert {:ok, %{fotos: 1}} = Jaci.count_media(scope, zona: :casa)
+    end
+  end
 end

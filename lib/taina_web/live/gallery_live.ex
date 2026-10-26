@@ -101,7 +101,7 @@ defmodule TainaWeb.GalleryLive do
         |> assign(:loaded, true)
         |> assign(:current, nil)
         |> assign(:next_cursor, cursor)
-        |> assign(:counts, count_summary(photos))
+        |> assign(:counts, media_count(socket))
         |> assign(:photo_ids, Enum.map(photos, & &1.rkey))
         |> assign(:grid_error, false)
         |> assign(:grid_stale, false)
@@ -136,6 +136,7 @@ defmodule TainaWeb.GalleryLive do
         |> assign(:timeline_error, false)
         |> assign(:timeline_stale, false)
         |> assign(:timeline_zona, socket.assigns.zona)
+        |> assign(:counts, media_count(socket))
         |> stream(:timeline_groups, groups, reset: true, dom_id: &timeline_dom_id/1)
 
       {:error, _reason} ->
@@ -191,7 +192,6 @@ defmodule TainaWeb.GalleryLive do
             {:noreply,
              socket
              |> assign(:next_cursor, next_cursor)
-             |> update(:counts, &merge_counts(&1, photos))
              |> assign(:photo_ids, socket.assigns.photo_ids ++ Enum.map(photos, & &1.rkey))
              |> stream(:photos, photos)}
 
@@ -335,10 +335,9 @@ defmodule TainaWeb.GalleryLive do
     do: {gettext("A praça está vazia"), gettext("As fotos publicadas para a comunidade aparecem aqui.")}
 
   # "38 fotos, 4 vídeos" (board): o retrato do conjunto, vírgula como
-  # separador (spec 1.6). A linha só existe quando a página carregou o
-  # conjunto inteiro (sem cursor): com páginas pela frente, contar é chutar,
-  # e a linha cala em vez de mostrar um número que não é o de tudo.
-  defp grade_count(%{next_cursor: nil, counts: %{fotos: fotos, videos: videos}}) when fotos + videos > 0 do
+  # separador (spec 1.6). O total vem do agregado (`Jaci.count_media/2`),
+  # então a linha não depende de a grade ter carregado todas as páginas.
+  defp grade_count(%{counts: %{fotos: fotos, videos: videos}}) when fotos + videos > 0 do
     # Parte zerada da linha do total não existe ("2 fotos" sem "0 vídeos").
     foto_part = if fotos == 0, do: nil, else: ngettext("1 foto", "%{count} fotos", fotos)
     video_part = if videos == 0, do: nil, else: ngettext("1 vídeo", "%{count} vídeos", videos)
@@ -350,17 +349,14 @@ defmodule TainaWeb.GalleryLive do
 
   defp grade_count(_pagina_incompleta_ou_vazia), do: nil
 
-  # O resumo corre com as páginas (grade): o stream do LiveView não pode ser
-  # consumido fora de um `for`, então o total mora num assign próprio.
-  defp count_summary(photos) do
-    %{fotos: Enum.count(photos, &(not video?(&1))), videos: Enum.count(photos, &video?/1)}
-  end
-
-  defp merge_counts(nil, photos), do: count_summary(photos)
-
-  defp merge_counts(%{fotos: fotos, videos: videos}, photos) do
-    page = count_summary(photos)
-    %{fotos: fotos + page.fotos, videos: videos + page.videos}
+  # O total do conjunto para a linha do board: agregado no banco, com o
+  # mesmo filtro de zona da grade. Falha de agregado não derruba a tela: a
+  # linha cala em vez de mentir.
+  defp media_count(socket) do
+    case Jaci.count_media(socket.assigns.current_scope, zona: zona_filter(socket.assigns.zona)) do
+      {:ok, counts} -> counts
+      {:error, _reason} -> nil
+    end
   end
 
   # "3 de 24" (board): a posição na trilha que a tela já carrega. Sem trilha
@@ -489,9 +485,11 @@ defmodule TainaWeb.GalleryLive do
         title={empty_title}
         body={empty_hint}
       >
-        <.button kind="primary" size="md" navigate={~p"/documentos/enviar"}>
-          {gettext("Enviar uma foto")}
-        </.button>
+        <:action>
+          <.button kind="primary" size="md" navigate={~p"/documentos/enviar"}>
+            {gettext("Enviar uma foto")}
+          </.button>
+        </:action>
       </.empty_state>
 
       <.empty_state
@@ -500,7 +498,9 @@ defmodule TainaWeb.GalleryLive do
         title={gettext("Não foi possível carregar")}
         body={gettext("As fotos não responderam agora.")}
       >
-        <.button kind="secondary" phx-click="retry">{gettext("Tentar de novo")}</.button>
+        <:action>
+          <.button kind="secondary" phx-click="retry">{gettext("Tentar de novo")}</.button>
+        </:action>
       </.empty_state>
     </div>
 
@@ -543,9 +543,11 @@ defmodule TainaWeb.GalleryLive do
         title={empty_title}
         body={empty_hint}
       >
-        <.button kind="primary" size="md" navigate={~p"/documentos/enviar"}>
-          {gettext("Enviar uma foto")}
-        </.button>
+        <:action>
+          <.button kind="primary" size="md" navigate={~p"/documentos/enviar"}>
+            {gettext("Enviar uma foto")}
+          </.button>
+        </:action>
       </.empty_state>
 
       <.empty_state
@@ -554,7 +556,9 @@ defmodule TainaWeb.GalleryLive do
         title={gettext("Não foi possível carregar")}
         body={gettext("As fotos não responderam agora.")}
       >
-        <.button kind="secondary" phx-click="retry">{gettext("Tentar de novo")}</.button>
+        <:action>
+          <.button kind="secondary" phx-click="retry">{gettext("Tentar de novo")}</.button>
+        </:action>
       </.empty_state>
     </div>
 

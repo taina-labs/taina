@@ -162,6 +162,7 @@ defmodule TainaWeb.AccessRequestsLive do
     {:ok, requests} = Maraca.pedidos_recebidos(scope)
     {:ok, outgoing} = Maraca.pedidos_enviados(scope)
     {:ok, decisions} = Maraca.list_my_recent_decisions(scope)
+    {:ok, refusals} = Maraca.list_owner_recent_refusals(scope)
 
     socket
     |> assign(:requests, requests)
@@ -169,6 +170,8 @@ defmodule TainaWeb.AccessRequestsLive do
     |> assign(:outgoing, outgoing)
     |> assign(:outgoing_names, outgoing_names(scope, outgoing))
     |> assign(:decisions, decisions)
+    |> assign(:refusals, refusals)
+    |> assign(:refusal_names, incoming_names(scope, refusals))
     |> assign_grants()
   end
 
@@ -222,7 +225,7 @@ defmodule TainaWeb.AccessRequestsLive do
 
   # A fila do dono (o que há para decidir ou já foi decidido) está vazia.
   defp nothing_here?(assigns) do
-    assigns.requests == [] and assigns.grants == [] and assigns.decisions == []
+    assigns.requests == [] and assigns.grants == [] and assigns.decisions == [] and assigns.refusals == []
   end
 
   # --- core puro: dados -> dados ---
@@ -436,6 +439,22 @@ defmodule TainaWeb.AccessRequestsLive do
     end)
   end
 
+  # A recusa que EU dei (dono): o board mostra a linha e o dia, sem ação -
+  # a pessoa pode pedir de novo, e o rito fica visível.
+  defp refused_rows(refusals, names) do
+    Enum.map(refusals, fn refusal ->
+      %{
+        id: refusal.id,
+        state: "recusado",
+        title: gettext("%{name} teve o acesso recusado", name: requester_name(refusal)),
+        meta: row_meta(names, refusal),
+        status_state: "unknown",
+        status: gettext("Acesso recusado em %{date}", date: day_label(refusal.decidido_em)),
+        revocable: false
+      }
+    end)
+  end
+
   defp decision_state(:aprovado), do: "dado"
   defp decision_state(:negado), do: "recusado"
 
@@ -459,6 +478,7 @@ defmodule TainaWeb.AccessRequestsLive do
         :decided_sent,
         decided_sent_rows(assigns.decisions, decision_names(scope, assigns.decisions))
       )
+      |> assign(:decided_refused, refused_rows(assigns.refusals, assigns.refusal_names))
 
     ~H"""
     <Layouts.page flash={@flash} title={@page_title} back={~p"/conta"} back_label={back_label("Conta")}>
@@ -524,6 +544,17 @@ defmodule TainaWeb.AccessRequestsLive do
               </div>
             </li>
 
+            <li :for={row <- @decided_refused} class="col">
+              <.list_row tag="div" kind="pedido" state={row.state} title={row.title} meta={row.meta}>
+                <:leading>
+                  <.service_square mark="pedidos" tone="service" />
+                </:leading>
+              </.list_row>
+              <div class="px-4 pb-3">
+                <.status_line state={row.status_state} title={row.status} />
+              </div>
+            </li>
+
             <li :for={row <- @decided_sent} class="col">
               <.list_row tag="div" kind="pedido" state={row.state} title={row.title} meta={row.meta}>
                 <:leading>
@@ -543,9 +574,11 @@ defmodule TainaWeb.AccessRequestsLive do
             title={gettext("Não deu para abrir os acessos liberados")}
             body={gettext("Pode ter sido um instante de rede ou da caixa. Tente de novo.")}
           >
-            <.button kind="secondary" phx-click="retry-grants">
-              {gettext("Tentar de novo")}
-            </.button>
+            <:action>
+              <.button kind="secondary" phx-click="retry-grants">
+                {gettext("Tentar de novo")}
+              </.button>
+            </:action>
           </.empty_state>
         </div>
       </div>
