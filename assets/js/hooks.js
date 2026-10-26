@@ -314,6 +314,9 @@ const PasswordToggle = {
         "aria-label",
         shown ? this.el.dataset.labelHide : this.el.dataset.labelShow,
       );
+
+      const label = this.el.querySelector(".field__toggle-label");
+      if (label) label.textContent = shown ? this.el.dataset.textHide : this.el.dataset.textShow;
     };
     this.el.addEventListener("click", () => {
       if (!this.input) return;

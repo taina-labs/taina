@@ -58,6 +58,32 @@
   padding-right: var(--space-12);
 }
 
+/* "Mostrar" do board: a palavra mora dentro da caixa, à direita; o input
+   reserva o espaço no padding (72 = 64 + 8) para o texto curto caber. */
+.field__control:has(.field__toggle) input {
+  padding-right: calc(var(--space-16) + var(--space-2));
+}
+
+.field__toggle {
+  position: absolute;
+  right: var(--space-4);
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  line-height: 1;
+  color: var(--brand-primary);
+  cursor: pointer;
+}
+
+.field__toggle:hover {
+  text-decoration: underline;
+}
+
 .field__help {
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-medium);

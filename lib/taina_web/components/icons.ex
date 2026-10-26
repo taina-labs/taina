@@ -21,8 +21,6 @@ defmodule TainaWeb.Icons do
     "image" =>
       ~S(<rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>),
     "search" => ~S(<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>),
-    "eye" =>
-      ~S(<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/>),
     "plus" => ~S(<path d="M5 12h14"/><path d="M12 5v14"/>),
     "upload" =>
       ~S(<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/>),

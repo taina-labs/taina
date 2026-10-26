@@ -123,9 +123,12 @@ defmodule TainaWeb.UI.Forms do
 
   @doc """
   Alternância mostrar/ocultar senha para o campo de senha de id `target`
-  (dentro do slot `:trailing` do `field/1`). O estado fica no botão
-  (`aria-pressed`) e o hook `PasswordToggle` troca o `type` do input; os
-  rótulos viajam nos data-attrs, então o gettext continua no servidor.
+  (dentro do slot `:trailing` do `field/1`). Board (`Auth / Entrar`): o
+  controle é a palavra "Mostrar", dentro da caixa, encostada à direita - não
+  é um ícone nem um botão do lado de fora. O estado fica no botão
+  (`aria-pressed`) e o hook `PasswordToggle` troca o `type` do input e a
+  palavra visível; os textos viajam nos data-attrs, então o gettext continua
+  no servidor.
 
       <.field field={@form[:password]} kind="password" id="login_password" ...>
         <:trailing><.password_toggle target="login_password" /></:trailing>
@@ -141,15 +144,17 @@ defmodule TainaWeb.UI.Forms do
     <button
       type="button"
       id={@id}
-      class={["icon-button", "icon-button--default"]}
+      class="field__toggle"
       phx-hook="PasswordToggle"
       data-target={@target}
       data-label-show={gettext("Mostrar senha")}
       data-label-hide={gettext("Ocultar senha")}
+      data-text-show={gettext("Mostrar")}
+      data-text-hide={gettext("Ocultar")}
       aria-pressed="false"
       aria-label={gettext("Mostrar senha")}
     >
-      <.icon name="eye" size={20} />
+      <span class="field__toggle-label">{gettext("Mostrar")}</span>
     </button>
     """
   end

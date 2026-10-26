@@ -20,6 +20,14 @@ defmodule TainaWeb.UI.FormsTest do
     """
   end
 
+  defp password_field_component(assigns) do
+    ~H"""
+    <.field kind="password" id="senha" name="senha" label="Senha" value={@value}>
+      <:trailing><.password_toggle target="senha" /></:trailing>
+    </.field>
+    """
+  end
+
   defp segmented_component(assigns) do
     ~H"""
     <.segmented>
@@ -128,6 +136,18 @@ defmodule TainaWeb.UI.FormsTest do
 
     assert html =~ ~s(id="campo-help")
     assert html =~ ~s(aria-describedby="campo-help")
+  end
+
+  test "field password: a alternância é a palavra Mostrar dentro da caixa" do
+    html = render_component(&password_field_component/1, %{value: nil})
+
+    # board: texto da marca dentro do controle, não um ícone do lado de fora
+    assert html =~ ~s(class="field__toggle")
+    assert html =~ "Mostrar"
+    assert html =~ ~s(id="senha-toggle")
+    assert html =~ ~s(phx-hook="PasswordToggle")
+    assert html =~ ~s(aria-label="Mostrar senha")
+    refute html =~ "icon-button"
   end
 
   # ---------- Segmented ----------

@@ -1332,7 +1332,7 @@ msgstr ""
 msgid "Use só letras minúsculas, números, ponto, hífen ou _, sem espaços."
 msgstr ""
 
-#: lib/taina_web/components/ui/forms.ex:288
+#: lib/taina_web/components/ui/forms.ex:293
 #, elixir-autogen, elixir-format
 msgid "Ver como"
 msgstr ""
@@ -1367,8 +1367,8 @@ msgstr ""
 msgid "Este acesso já foi tirado."
 msgstr ""
 
-#: lib/taina_web/components/ui/forms.ex:147
 #: lib/taina_web/components/ui/forms.ex:150
+#: lib/taina_web/components/ui/forms.ex:155
 #, elixir-autogen, elixir-format
 msgid "Mostrar senha"
 msgstr ""
@@ -1383,7 +1383,7 @@ msgstr ""
 msgid "Não foi possível tirar o acesso agora. Tente de novo."
 msgstr ""
 
-#: lib/taina_web/components/ui/forms.ex:148
+#: lib/taina_web/components/ui/forms.ex:151
 #, elixir-autogen, elixir-format
 msgid "Ocultar senha"
 msgstr ""
@@ -2747,4 +2747,15 @@ msgstr ""
 #: lib/taina_web/live/reset_password_live.ex:97
 #, elixir-autogen, elixir-format
 msgid "Quem cuida da sua comunidade gera um link novo para você, que vale uma hora e só pode ser usado uma vez."
+msgstr ""
+
+#: lib/taina_web/components/ui/forms.ex:152
+#: lib/taina_web/components/ui/forms.ex:157
+#, elixir-autogen, elixir-format
+msgid "Mostrar"
+msgstr ""
+
+#: lib/taina_web/components/ui/forms.ex:153
+#, elixir-autogen, elixir-format
+msgid "Ocultar"
 msgstr ""
