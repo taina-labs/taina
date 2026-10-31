@@ -64,7 +64,7 @@ defmodule TainaWeb.AccountLiveTest do
     assert html =~ "Nada pendente"
   end
 
-  test "a meta de Pedidos conta o que espera resposta (recebido ou enviado)", %{
+  test "a meta de Pedidos conta solicitações recebidas como resposta pendente", %{
     conn: conn,
     tekoa: tekoa,
     member: member,
@@ -76,6 +76,21 @@ defmodule TainaWeb.AccountLiveTest do
     {:ok, _lv, html} = conn |> log_in(member) |> live(~p"/conta")
 
     assert html =~ "1 esperando sua resposta"
+  end
+
+  test "a meta de Pedidos identifica solicitações enviadas", %{
+    conn: conn,
+    tekoa: tekoa,
+    member: member,
+    zelador: zelador
+  } do
+    {:ok, file} = Ybira.upload(Scope.new(zelador, tekoa), tmp_upload_fixture())
+    {:ok, _pedido} = Maraca.pedir_acesso(Scope.new(member, tekoa), "ypy.file.v0", file.rkey, "Preciso ler")
+
+    {:ok, _lv, html} = conn |> log_in(member) |> live(~p"/conta")
+
+    assert html =~ "1 pedido enviado"
+    refute html =~ "esperando sua resposta"
   end
 
   test "trocar senha abre o sheet com o formulário e valida a senha atual", %{conn: conn, member: member} do

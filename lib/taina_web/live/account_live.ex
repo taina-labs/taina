@@ -31,14 +31,13 @@ defmodule TainaWeb.AccountLive do
     {:ok, socket}
   end
 
-  # A meta da linha "Pedidos" vive (board: "Nada pendente"): recebidos e
-  # enviados contam juntos. Nenhuma navegação acende nada por cima (spec 1.5);
-  # eventos do Ava (PubSub) recomputam.
+  # A meta distingue o que o morador precisa responder dos pedidos que enviou.
+  # Eventos do Ava (PubSub) recalculam os dois totais.
   defp assign_pedidos(socket, scope) do
     {:ok, recebidos} = Maraca.pedidos_recebidos(scope)
     {:ok, enviados} = Maraca.pedidos_enviados(scope)
 
-    assign(socket, :pedidos_meta, pedidos_meta(length(recebidos) + length(enviados)))
+    assign(socket, :pedidos_meta, pedidos_meta(length(recebidos), length(enviados)))
   end
 
   @impl true
@@ -165,12 +164,14 @@ defmodule TainaWeb.AccountLive do
   defp role_label(:zelador), do: gettext("Zelador(a)")
   defp role_label(:morador), do: gettext("Morador(a)")
 
-  # "Nada pendente" (board); com o que espera, a conta diz quanto.
-  defp pedidos_meta(0), do: gettext("Nada pendente")
+  # Pedidos enviados esperam resposta de outra pessoa, não do morador.
+  defp pedidos_meta(0, 0), do: gettext("Nada pendente")
 
-  defp pedidos_meta(count) do
-    gettext("%{count} esperando sua resposta", count: count)
+  defp pedidos_meta(received, _sent) when received > 0 do
+    gettext("%{count} esperando sua resposta", count: received)
   end
+
+  defp pedidos_meta(0, sent), do: ngettext("1 pedido enviado", "%{count} pedidos enviados", sent)
 
   defp device_meta(device) do
     case device.last_used_at do
