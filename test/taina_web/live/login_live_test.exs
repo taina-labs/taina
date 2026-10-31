@@ -39,6 +39,16 @@ defmodule TainaWeb.LoginLiveTest do
     refute html =~ "Mínimo 8"
   end
 
+  test "o aviso de conexão insegura continua após o LiveView conectar", %{conn: conn} do
+    tekoa_fixture()
+
+    conn = %{conn | host: "192.168.0.10"}
+    {:ok, lv, html} = live(conn, ~p"/login")
+
+    assert html =~ "Esta conexão só fica protegida"
+    assert render(lv) =~ "Esta conexão só fica protegida"
+  end
+
   test "login que falhou acende o erro do campo da senha (board erro)", %{conn: conn} do
     tekoa_fixture()
 
