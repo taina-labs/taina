@@ -341,12 +341,67 @@ defmodule Taina.Ybira do
   end
 
   def publicar_folder(%Scope{} = scope, rkey) when is_binary(rkey) do
-    within_tekoa(scope, fn -> Kernel.publicar(Repo, Keys.new(), scope, @tipo_folder, rkey) end)
+    within_tekoa(scope, fn -> change_folder_tree_zone(scope, rkey, :publicar) end)
   end
 
   def tirar_folder_da_praca(%Scope{} = scope, rkey) when is_binary(rkey) do
-    within_tekoa(scope, fn -> Kernel.tirar_da_praca(Repo, Keys.new(), scope, @tipo_folder, rkey) end)
+    within_tekoa(scope, fn -> change_folder_tree_zone(scope, rkey, :tirar) end)
   end
+
+  defp change_folder_tree_zone(scope, rkey, action) do
+    with {:ok, folder} <- change_zone(scope, @tipo_folder, rkey, action),
+         {:ok, folder_rkeys, file_rkeys} <- folder_tree_items(scope, folder),
+         :ok <- change_tree_items(scope, action, folder_rkeys, file_rkeys) do
+      {:ok, folder}
+    end
+  end
+
+  defp folder_tree_items(scope, root_folder) do
+    folders =
+      Repo.all(
+        from(f in Folder,
+          where: f.tekoa_id == ^scope.tekoa.id and f.dono_id == ^scope.ava.id and is_nil(f.apagado_em)
+        )
+      )
+
+    descendant_ids = descendant_folder_ids(root_folder.id, folders)
+    folders_by_id = Map.new(folders, &{&1.id, &1})
+    folder_rkeys = Enum.map(descendant_ids, &Map.fetch!(folders_by_id, &1).rkey)
+    folder_ids = [root_folder.id | descendant_ids]
+
+    file_rkeys =
+      Repo.all(
+        from(f in File,
+          where:
+            f.tekoa_id == ^scope.tekoa.id and f.dono_id == ^scope.ava.id and f.folder_id in ^folder_ids and
+              is_nil(f.apagado_em),
+          select: f.rkey
+        )
+      )
+
+    {:ok, folder_rkeys, file_rkeys}
+  end
+
+  defp descendant_folder_ids(parent_id, folders) do
+    folders
+    |> Enum.filter(&(&1.parent_id == parent_id))
+    |> Enum.flat_map(fn folder -> [folder.id | descendant_folder_ids(folder.id, folders)] end)
+  end
+
+  defp change_tree_items(scope, action, folder_rkeys, file_rkeys) do
+    items = Enum.map(folder_rkeys, &{@tipo_folder, &1}) ++ Enum.map(file_rkeys, &{@tipo_file, &1})
+
+    Enum.reduce_while(items, :ok, fn {kind, rkey}, :ok ->
+      case change_zone(scope, kind, rkey, action) do
+        {:ok, _item} -> {:cont, :ok}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+  end
+
+  defp change_zone(scope, kind, rkey, :publicar), do: Kernel.publicar(Repo, Keys.new(), scope, kind, rkey)
+
+  defp change_zone(scope, kind, rkey, :tirar), do: Kernel.tirar_da_praca(Repo, Keys.new(), scope, kind, rkey)
 
   @doc """
   Restaura a pasta como unidade: ela e tudo o que foi apagado junto com ela
@@ -372,18 +427,21 @@ defmodule Taina.Ybira do
     sort = normalize_sort(Keyword.get(opts, :sort))
     limit = Keyword.get(opts, :limit, @default_limit)
     offset = Keyword.get(opts, :offset, 0)
+    zona = Keyword.get(opts, :zona)
 
     within_tekoa(scope, fn ->
       with {:ok, folder} <- resolve_folder(scope, folder_rkey) do
         folders =
           scope
           |> folders_query(folder && folder.id)
+          |> maybe_filter_zone(if(is_nil(folder), do: zona))
           |> apply_folder_sort(sort)
           |> Repo.all()
 
         {files, next_cursor} =
           scope
           |> files_query(folder)
+          |> maybe_filter_zone(if(is_nil(folder), do: zona))
           |> apply_file_sort(sort)
           |> paginate_offset(limit, offset)
 
@@ -990,6 +1048,9 @@ defmodule Taina.Ybira do
       folder -> files_query(scope, folder)
     end
   end
+
+  defp maybe_filter_zone(query, nil), do: query
+  defp maybe_filter_zone(query, zona), do: where(query, [item], item.zona == ^zona)
 
   defp base(%Scope{} = scope) do
     KernelQueries.readable(

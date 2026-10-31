@@ -1,9 +1,9 @@
 defmodule TainaWeb.FilesLive do
   @moduledoc """
   Navegador de Documentos (Ybira): pastas e arquivos da zona corrente. A zona
-  é a aba, não um filtro: `/documentos` é a praça, `/documentos/casa` é a casa
-  e, dentro de pasta, a zona vem da própria pasta. Não há seletor de zona na
-  tela e não há badge de zona por linha (a aba inteira já é a zona). Boards
+  é a aba: `/documentos` é a praça e `/documentos/casa` é a casa. Dentro de uma
+  pasta, cada item legível aparece sem herdar a zona da pasta. Não há seletor
+  de zona na tela e não há badge de zona por linha (a aba inteira já é a zona). Boards
   "Servico / Ybira Praca / padrao" cc1037dc-e8ab-80cc-8008-d5e07c15fbae,
   "pasta" ...d5e1868d4043, "vazio" ...d5e189a70758, "Servico / Ybira Casa /
   padrao" ...d5e18bcb3a18 e "vazio" ...d5e18f3ae917 (mais os quadros "Web 768"
@@ -80,17 +80,16 @@ defmodule TainaWeb.FilesLive do
   defp load_folder(_scope, nil), do: {:ok, nil}
   defp load_folder(scope, rkey), do: Ybira.get_folder(scope, rkey)
 
-  # Uma leitura para a página: a listagem filtrada pela zona + os nomes de quem
-  # enviou ("enviado por Maria", board da praça). Falhou, a página inteira
-  # avisa; nada de seção morta.
+  # Na raiz, a zona filtra no banco antes da paginação. Dentro de uma pasta,
+  # cada item legível aparece sem herdar a zona da pasta.
   defp load_page(scope, folder_rkey, zona) do
     with {:ok, %{folders: folders, files: files, next_cursor: next_cursor}} <-
-           Ybira.list_folder_contents(scope, folder_rkey),
+           Ybira.list_folder_contents(scope, folder_rkey, zona: zona),
          {:ok, members} <- Maraca.list_members(scope) do
       {:ok,
        %{
-         folders: for_zona(folders, zona),
-         files: for_zona(files, zona),
+         folders: folders,
+         files: files,
          next_cursor: next_cursor,
          names: name_map(members)
        }}
@@ -147,16 +146,17 @@ defmodule TainaWeb.FilesLive do
     %{next_cursor: offset, folder_rkey: folder_rkey, zona: zona} = socket.assigns
 
     if offset do
-      case Ybira.list_folder_contents(socket.assigns.current_scope, folder_rkey, offset: offset) do
+      case Ybira.list_folder_contents(socket.assigns.current_scope, folder_rkey,
+             zona: zona,
+             offset: offset
+           ) do
         {:ok, %{files: files, next_cursor: next_cursor}} ->
-          zona_files = for_zona(files, zona)
-
           {:noreply,
            socket
            |> assign(:next_cursor, next_cursor)
-           |> assign(:item_count, socket.assigns.item_count + length(zona_files))
-           |> assign(:file_count, socket.assigns.file_count + length(zona_files))
-           |> stream(:files, zona_files)}
+           |> assign(:item_count, socket.assigns.item_count + length(files))
+           |> assign(:file_count, socket.assigns.file_count + length(files))
+           |> stream(:files, files)}
 
         {:error, _reason} ->
           {:noreply, put_flash(socket, :error, gettext("Não foi possível carregar mais itens."))}
@@ -310,18 +310,32 @@ defmodule TainaWeb.FilesLive do
     {:noreply, assign(socket, :confirm, nil)}
   end
 
-  # Publicar / Voltar direto do menu (os boards não têm diálogo de confirmação
-  # para a zona, só para remover; o consentimento é reversível, RFC_003). A
-  # ação é sempre a oposta da zona atual do item.
+  # Publicar arquivo e voltar para casa são ações diretas. Publicar pasta pede
+  # confirmação porque também publica todos os itens que estão dentro dela.
   def handle_event("zona", %{"kind" => kind, "id" => id, "action" => action}, socket) do
+    if kind == "folder" and action == "publicar" do
+      {:noreply, assign(socket, :confirm, %{kind: "publish-folder", id: id})}
+    else
+      {:noreply, update_zone(socket, kind, action, id)}
+    end
+  end
+
+  def handle_event("confirm-zone", _params, %{assigns: %{confirm: %{kind: "publish-folder", id: id}}} = socket) do
+    socket = assign(socket, :confirm, nil)
+    {:noreply, update_zone(socket, "folder", "publicar", id)}
+  end
+
+  def handle_event("confirm-zone", _params, socket), do: {:noreply, socket}
+
+  defp update_zone(socket, kind, action, id) do
     scope = socket.assigns.current_scope
 
     case apply_zona(scope, kind, action, id) do
       {:ok, _} ->
-        {:noreply, socket |> put_flash(:info, zona_flash(action, :ok)) |> refresh()}
+        socket |> put_flash(:info, zona_flash(action, :ok)) |> refresh()
 
       {:error, _reason} ->
-        {:noreply, socket |> put_flash(:error, zona_flash(action, :error)) |> refresh()}
+        socket |> put_flash(:error, zona_flash(action, :error)) |> refresh()
     end
   end
 
@@ -370,8 +384,6 @@ defmodule TainaWeb.FilesLive do
       count -> ngettext("Pasta, %{count} item", "Pasta, %{count} itens", count, count: count)
     end
   end
-
-  defp for_zona(items, zona), do: Enum.filter(items, &(&1.zona == zona))
 
   # Migalha do desktop (spec 6.2): enraizada na zona ("Praça > Atas"), sem
   # repetir "Início" nem "Documentos" (nota do board "Web / Ybira Casa"). Na
@@ -539,8 +551,12 @@ defmodule TainaWeb.FilesLive do
   # Diálogo destrutivo (board "Overlay / Dialog remover"): o arquivo vai para
   # a lixeira e some de vez depois de 30 dias; a pasta vai com o que tem
   # dentro e volta como unidade.
+  defp confirm_title(%{kind: "publish-folder"}), do: gettext("Publicar pasta e conteúdo na praça?")
   defp confirm_title(%{name: name}), do: gettext("Remover %{name}?", name: name)
   defp confirm_title(_confirm), do: nil
+
+  defp confirm_body(%{kind: "publish-folder"}),
+    do: gettext("Os arquivos e as pastas dentro dela também ficarão visíveis para toda a comunidade.")
 
   defp confirm_body(%{kind: "file"}), do: gettext("O arquivo vai para a lixeira e some de vez depois de 30 dias.")
 
@@ -548,6 +564,15 @@ defmodule TainaWeb.FilesLive do
     do: gettext("A pasta e o que tem dentro vão para a lixeira e somem de vez depois de 30 dias.")
 
   defp confirm_body(_confirm), do: nil
+
+  defp confirm_kind(%{kind: "publish-folder"}), do: "confirm"
+  defp confirm_kind(_confirm), do: "destructive"
+
+  defp confirm_event(%{kind: "publish-folder"}), do: "confirm-zone"
+  defp confirm_event(_confirm), do: "confirm-delete"
+
+  defp confirm_label(%{kind: "publish-folder"}), do: gettext("Publicar tudo")
+  defp confirm_label(_confirm), do: nil
 
   @impl true
   def render(assigns) do
@@ -758,10 +783,11 @@ defmodule TainaWeb.FilesLive do
       <.dialog
         id="confirm-remove"
         show={@confirm != nil}
-        kind="destructive"
+        kind={confirm_kind(@confirm)}
         title={confirm_title(@confirm)}
         body={confirm_body(@confirm)}
-        on_confirm="confirm-delete"
+        confirm_label={confirm_label(@confirm)}
+        on_confirm={confirm_event(@confirm)}
         on_cancel={JS.push("close-modal")}
       />
     </Layouts.service>
@@ -797,9 +823,9 @@ defmodule TainaWeb.FilesLive do
       <:item
         :if={:publicar in @actions}
         icon="share"
-        click={JS.push("zona", value: %{kind: @item_kind, id: @id, action: "publicar"})}
+        click={JS.push("zona", value: %{kind: @item_kind, id: @id, action: "publicar", name: @name})}
       >
-        {gettext("Publicar na praça")}
+        {if @item_kind == "folder", do: gettext("Publicar pasta e conteúdo na praça"), else: gettext("Publicar na praça")}
       </:item>
       <:item
         :if={:voltar in @actions}

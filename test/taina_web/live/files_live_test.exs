@@ -61,6 +61,17 @@ defmodule TainaWeb.FilesLiveTest do
       assert html =~ "só você"
       assert has_element?(lv, ~s(.service-tab-bar__item[aria-current="page"]), "Casa")
     end
+
+    test "a zona da raiz é filtrada antes da paginação", %{scope: scope} do
+      {:ok, public_file} = Ybira.upload(scope, tmp_upload_fixture("oi", "na-praca.txt"))
+      {:ok, _} = Ybira.publicar_file(scope, public_file.rkey)
+      {:ok, _private_file} = Ybira.upload(scope, tmp_upload_fixture("oi", "na-casa.txt"))
+
+      assert {:ok, %{files: [listed], next_cursor: nil}} =
+               Ybira.list_folder_contents(scope, nil, zona: :praca, limit: 1)
+
+      assert listed.rkey == public_file.rkey
+    end
   end
 
   # --- board "Praca / pasta" (M e Web) ---
@@ -137,6 +148,61 @@ defmodule TainaWeb.FilesLiveTest do
       assert html =~ file.nome
       assert has_element?(lv, ~s(.service-tab-bar__item[aria-current="page"]), "Praça")
       refute html =~ "A pasta nasce na sua casa"
+    end
+
+    test "arquivo publicado continua visível dentro da pasta da casa", %{
+      conn: conn,
+      scope: scope,
+      ava: ava
+    } do
+      {:ok, folder} = Ybira.create_folder(scope, %{name: "Documentos"})
+      {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("oi", "estatuto.txt"), folder_rkey: folder.rkey)
+
+      {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/pasta/#{folder.rkey}")
+
+      lv
+      |> element(~s(button[phx-click*="zona"][phx-click*="#{file.rkey}"]))
+      |> render_click()
+
+      assert render(lv) =~ "Publicado na praça."
+      assert render(lv) =~ file.nome
+      assert {:ok, updated} = Ybira.get_file(scope, file.rkey)
+      assert updated.zona == :praca
+    end
+
+    test "publicar uma pasta publica os itens dela após confirmação", %{
+      conn: conn,
+      scope: scope,
+      ava: ava
+    } do
+      outra = active_ava_fixture(scope.tekoa, %{username: "outra"})
+      other_scope = Scope.new(outra, scope.tekoa)
+      {:ok, folder} = Ybira.create_folder(scope, %{name: "Comunitárias"})
+      {:ok, child} = Ybira.create_folder(scope, %{name: "Atas", parent_rkey: folder.rkey})
+      {:ok, top_file} = Ybira.upload(scope, tmp_upload_fixture("oi", "estatuto.txt"), folder_rkey: folder.rkey)
+      {:ok, child_file} = Ybira.upload(scope, tmp_upload_fixture("oi", "ata.txt"), folder_rkey: child.rkey)
+
+      {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/casa")
+
+      lv
+      |> element(~s(button[phx-click*="zona"][phx-click*="#{folder.rkey}"]))
+      |> render_click()
+
+      assert has_element?(lv, "#confirm-remove", "Publicar pasta e conteúdo na praça?")
+      lv |> element("#confirm-remove button", "Publicar tudo") |> render_click()
+
+      assert render(lv) =~ "Publicado na praça."
+      assert {:ok, public_folder} = Ybira.get_folder(other_scope, folder.rkey)
+      assert public_folder.zona == :praca
+
+      assert {:ok, %{folders: [public_child], files: [public_file]}} =
+               Ybira.list_folder_contents(other_scope, folder.rkey)
+
+      assert public_child.zona == :praca
+      assert public_file.rkey == top_file.rkey
+      assert {:ok, %{files: [public_child_file]}} = Ybira.list_folder_contents(other_scope, child.rkey)
+      assert public_child_file.rkey == child_file.rkey
+      assert public_child_file.zona == :praca
     end
 
     test "pasta na casa de outro morador volta ao início com o aviso", %{conn: conn, scope: scope, ava: ava} do

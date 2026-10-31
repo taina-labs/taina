@@ -584,13 +584,17 @@ defmodule Taina.YbiraTest do
       assert {:error, :not_owner} = Ybira.publicar_folder(z, folder.rkey)
     end
 
-    test "publishing a folder does not cascade to its children" do
+    test "publishing and unpublishing a folder cascades to its children" do
       {_tekoa, a, _b, _z} = three_avas()
       {:ok, folder} = Ybira.create_folder(a, %{name: "album"})
       {:ok, child} = Ybira.upload(a, tmp_upload_fixture(), folder_rkey: folder.rkey)
 
       assert {:ok, %{zona: :praca}} = Ybira.publicar_folder(a, folder.rkey)
 
+      assert {:ok, refetched} = Ybira.get_file(a, child.rkey)
+      assert refetched.zona == :praca
+
+      assert {:ok, %{zona: :casa}} = Ybira.tirar_folder_da_praca(a, folder.rkey)
       assert {:ok, refetched} = Ybira.get_file(a, child.rkey)
       assert refetched.zona == :casa
     end
