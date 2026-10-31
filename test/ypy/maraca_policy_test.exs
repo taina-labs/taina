@@ -6,40 +6,52 @@ defmodule Ypy.Maraca.PolicyTest do
   describe "the read rule (praca OR dono OR concessao)" do
     test "nobody asks to read the praca" do
       for leitor <- [1, 2, 99] do
-        assert Policy.can_read?(:praca, leitor, 7, "rkey-1", [])
+        assert Policy.can_read?(:praca, leitor, 7, "ypy.file.v0", "rkey-1", [])
       end
     end
 
     test "the dono reads the dono's casa" do
-      assert Policy.can_read?(:casa, 7, 7, "rkey-1", [])
+      assert Policy.can_read?(:casa, 7, 7, "ypy.file.v0", "rkey-1", [])
     end
 
     test "another morador does not read a casa without a concessao" do
-      refute Policy.can_read?(:casa, 2, 7, "rkey-1", [])
+      refute Policy.can_read?(:casa, 2, 7, "ypy.file.v0", "rkey-1", [])
     end
 
     test "a concessao for this leitor on this recurso opens the casa" do
-      concessoes = [%{leitor_id: 2, recurso: "rkey-1"}]
+      concessoes = [%{leitor_id: 2, tipo: "ypy.file.v0", recurso: "rkey-1"}]
 
-      assert Policy.can_read?(:casa, 2, 7, "rkey-1", concessoes)
+      assert Policy.can_read?(:casa, 2, 7, "ypy.file.v0", "rkey-1", concessoes)
     end
 
-    test "a concessao for another leitor or another recurso does not" do
-      concessoes = [%{leitor_id: 3, recurso: "rkey-1"}, %{leitor_id: 2, recurso: "rkey-2"}]
+    test "a concessao for another leitor, another recurso or another tipo does not" do
+      concessoes = [
+        %{leitor_id: 3, tipo: "ypy.file.v0", recurso: "rkey-1"},
+        %{leitor_id: 2, tipo: "ypy.file.v0", recurso: "rkey-2"},
+        %{leitor_id: 2, tipo: "ypy.folder.v0", recurso: "rkey-1"}
+      ]
 
-      refute Policy.can_read?(:casa, 2, 7, "rkey-1", concessoes)
+      refute Policy.can_read?(:casa, 2, 7, "ypy.file.v0", "rkey-1", concessoes)
+    end
+
+    test "the same rkey in another collection stays closed" do
+      # O rkey sozinho nao abre a porta: a concessao nomeia a colecao.
+      concessoes = [%{leitor_id: 2, tipo: "ypy.folder.v0", recurso: "rkey-1"}]
+
+      refute Policy.can_read?(:casa, 2, 7, "ypy.file.v0", "rkey-1", concessoes)
+      assert Policy.can_read?(:casa, 2, 7, "ypy.folder.v0", "rkey-1", concessoes)
     end
 
     test "the zelador has no shortcut" do
-      refute Policy.can_read?(:casa, 1, 7, "rkey-1", [])
+      refute Policy.can_read?(:casa, 1, 7, "ypy.file.v0", "rkey-1", [])
 
-      concessoes = [%{leitor_id: 1, recurso: "rkey-1"}]
+      concessoes = [%{leitor_id: 1, tipo: "ypy.file.v0", recurso: "rkey-1"}]
 
-      assert Policy.can_read?(:casa, 1, 7, "rkey-1", concessoes)
+      assert Policy.can_read?(:casa, 1, 7, "ypy.file.v0", "rkey-1", concessoes)
     end
 
     test "a zona that is not one of the two reads as closed" do
-      refute Policy.can_read?(:local, 7, 7, "rkey-1", [])
+      refute Policy.can_read?(:local, 7, 7, "ypy.file.v0", "rkey-1", [])
     end
   end
 

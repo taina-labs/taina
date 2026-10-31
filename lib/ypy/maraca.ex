@@ -12,9 +12,6 @@ defmodule Ypy.Maraca do
   alias Ypy.KeyStore
   alias Ypy.Maraca.Ava
   alias Ypy.Maraca.Concessao
-
-  ## Concessao
-
   alias Ypy.Maraca.Pedido
   alias Ypy.Maraca.Store
   alias Ypy.Mural.Store, as: MuralStore
@@ -48,8 +45,7 @@ defmodule Ypy.Maraca do
           "recurso" => rkey
         },
         fn ->
-          Store.insert(
-            repo,
+          repo.insert(
             Concessao.changeset(%Concessao{}, %{
               tekoa_id: scope.tekoa.id,
               leitor_id: leitor.id,
@@ -71,7 +67,6 @@ defmodule Ypy.Maraca do
     with :ok <- mesma_tekoa_row(scope, concessao.tekoa_id),
          :ok <- if(concessao.dono_id == scope.ava.id, do: :ok, else: {:error, :not_authorized}),
          :ok <- if(concessao.revogada_em, do: {:error, :invalid_status}, else: :ok) do
-      ## Pedido
       MuralStore.commit(
         repo,
         keys,
@@ -84,7 +79,7 @@ defmodule Ypy.Maraca do
           "leitor" => leitor_public_id(repo, scope.tekoa.id, concessao.leitor_id)
         },
         fn ->
-          Store.update(repo, Concessao.revoke_changeset(concessao, agora()))
+          repo.update(Concessao.revoke_changeset(concessao, agora()))
         end
       )
     end
@@ -105,8 +100,7 @@ defmodule Ypy.Maraca do
              do: {:error, :already_has_access},
              else: :ok
            ) do
-      Store.insert(
-        repo,
+      repo.insert(
         Pedido.changeset(%Pedido{}, %{
           tekoa_id: scope.tekoa.id,
           pedinte_id: scope.ava.id,
@@ -119,17 +113,17 @@ defmodule Ypy.Maraca do
     end
   end
 
-  @doc "Aprova o pedido pendente: nasce a concessao (entrada na cadeia)."
+  @doc """
+  Aprova o pedido pendente: nasce a concessao, e a decisao do pedido commita
+  junto, no mesmo fato (entrada na cadeia). Ou os dois ficam, ou nada fica.
+  """
   @spec aprovar(Ecto.Repo.t(), KeyStore.t(), Scope.t(), Pedido.t()) ::
           {:ok, %{pedido: Pedido.t(), concessao: Concessao.t()}} | {:error, term()}
-  ## Papel
   def aprovar(repo, keys, %Scope{} = scope, %Pedido{} = pedido) do
     with {:ok, pedido} <- pedido_atual(repo, scope.tekoa.id, pedido),
          :ok <- if(pedido.dono_id == scope.ava.id, do: :ok, else: {:error, :not_authorized}),
-         :ok <- pendente_guard(pedido),
-         {:ok, concessao} <- conceder_por_pedido(repo, keys, scope, pedido) do
-      {:ok, pedido} = Store.update(repo, Pedido.decide_changeset(pedido, :aprovado, agora()))
-      {:ok, %{pedido: pedido, concessao: concessao}}
+         :ok <- pendente_guard(pedido) do
+      conceder_por_pedido(repo, keys, scope, pedido)
     end
   end
 
@@ -140,7 +134,7 @@ defmodule Ypy.Maraca do
     with {:ok, pedido} <- pedido_atual(repo, scope.tekoa.id, pedido),
          :ok <- if(pedido.dono_id == scope.ava.id, do: :ok, else: {:error, :not_authorized}),
          :ok <- pendente_guard(pedido) do
-      Store.update(repo, Pedido.decide_changeset(pedido, :negado, agora()))
+      repo.update(Pedido.decide_changeset(pedido, :negado, agora()))
     end
   end
 
@@ -151,8 +145,6 @@ defmodule Ypy.Maraca do
   responde {:error, :last_zelador} (RFC_003: o cuidado da maquina se
   distribui, nao se esvazia).
   """
-
-  ## Listagens
 
   @spec mudar_papel(Ecto.Repo.t(), KeyStore.t(), Scope.t(), Ava.t(), :zelador | :morador) ::
           {:ok, Ava.t()} | {:error, term()}
@@ -165,14 +157,13 @@ defmodule Ypy.Maraca do
         keys,
         scope.tekoa.id,
         "mudar_papel",
-        ## Internos
         %{
           "actor" => scope.ava.public_id,
           "ava" => ava.public_id,
           "papel" => Atom.to_string(papel)
         },
         fn ->
-          Store.update(repo, Ava.papel_changeset(ava, papel))
+          repo.update(Ava.papel_changeset(ava, papel))
         end
       )
     end
@@ -244,6 +235,8 @@ defmodule Ypy.Maraca do
 
   defp ultimo_zelador_guard(_repo, _scope, _ava, :zelador), do: :ok
 
+  # A concessao e a decisao do pedido sao um so commit: ambas entram no
+  # data_fn da transacao do mural, e uma falha de cadeia devolve as duas.
   defp conceder_por_pedido(repo, keys, scope, pedido) do
     leitor = Store.get_ava(repo, scope.tekoa.id, pedido.pedinte_id)
 
@@ -261,20 +254,26 @@ defmodule Ypy.Maraca do
           "via" => "pedido",
           "pedido" => pedido.public_id
         },
-        fn ->
-          Store.insert(
-            repo,
-            Concessao.changeset(%Concessao{}, %{
-              tekoa_id: scope.tekoa.id,
-              leitor_id: leitor.id,
-              dono_id: scope.ava.id,
-              tipo: pedido.tipo,
-              recurso: pedido.recurso,
-              concedida_em: agora()
-            })
-          )
-        end
+        fn -> concessao_e_decisao(repo, scope, pedido, leitor) end
       )
+    end
+  end
+
+  # O data_fn do aprovar: a concessao nasce e o pedido fecha no mesmo fato.
+  defp concessao_e_decisao(repo, scope, pedido, leitor) do
+    with {:ok, concessao} <-
+           repo.insert(
+             Concessao.changeset(%Concessao{}, %{
+               tekoa_id: scope.tekoa.id,
+               leitor_id: leitor.id,
+               dono_id: scope.ava.id,
+               tipo: pedido.tipo,
+               recurso: pedido.recurso,
+               concedida_em: agora()
+             })
+           ),
+         {:ok, pedido} <- repo.update(Pedido.decide_changeset(pedido, :aprovado, agora())) do
+      {:ok, %{pedido: pedido, concessao: concessao}}
     end
   end
 

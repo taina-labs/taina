@@ -7,13 +7,14 @@ defmodule Ypy.Ybira.PersistenceTest do
   alias Ypy.BrokenKeys
   alias Ypy.Cid
   alias Ypy.Mural.Store
+
+  ## Upload
+
   alias Ypy.Scope
   alias Ypy.Ybira
   alias Ypy.Ybira.Blob
 
   @mime "image/jpeg"
-
-  ## Upload
 
   setup do
     {tekoa, keys} = nova_tekoa(TestRepo)
@@ -51,9 +52,9 @@ defmodule Ypy.Ybira.PersistenceTest do
     tekoa = TestRepo.reload!(ctx.tekoa)
     assert tekoa.storage_used_bytes == byte_size(dados)
 
-    cadeia = Ypy.Mural.entradas(TestRepo, ctx.tekoa.id)
+    cadeia = Store.cadeia(TestRepo, ctx.tekoa.id)
     assert Enum.map(cadeia, & &1.tipo) == ["put"]
-    assert Ypy.Mural.verificar_cadeia(TestRepo, ctx.tekoa.id) == :ok
+    assert Store.verificar_cadeia(TestRepo, ctx.tekoa.id) == :ok
 
     # O envelope e auto-descritivo (RFC_006 secao 6): a cadeia reconstrui o
     # arquivo dele. Sem pasta, sem chave "folder".
@@ -121,7 +122,7 @@ defmodule Ypy.Ybira.PersistenceTest do
     assert Ybira.upload(TestRepo, keys, blobs(), scope, path, mime: @mime) ==
              {:error, :storage_quota_exceeded}
 
-    assert Ypy.Mural.entradas(TestRepo, tekoa.id) == []
+    assert Store.cadeia(TestRepo, tekoa.id) == []
     assert TestRepo.aggregate(Blob, :count) == 0
   end
 
@@ -142,6 +143,37 @@ defmodule Ypy.Ybira.PersistenceTest do
 
     tekoa = TestRepo.reload!(ctx.tekoa)
     assert tekoa.storage_used_bytes == 2 * byte_size(dados)
+  end
+
+  test "nome de 120 caracteres e de 200 acentos passam; 256 grafemas nao", ctx do
+    {path, _dados} = arquivo("conteudo")
+
+    # Acento em dois bytes: 200 grafemos sao 400 bytes, dentro do maxLength.
+    ascii = String.duplicate("a", 120)
+    acentos = String.duplicate("é", 200)
+    exagerado = String.duplicate("é", 256)
+
+    assert {:ok, a} =
+             Ybira.upload(TestRepo, ctx.keys, blobs(), ctx.dono_scope, path,
+               mime: @mime,
+               nome: ascii
+             )
+
+    assert a.nome == ascii
+
+    assert {:ok, b} =
+             Ybira.upload(TestRepo, ctx.keys, blobs(), ctx.dono_scope, path,
+               mime: @mime,
+               nome: acentos
+             )
+
+    assert b.nome == acentos
+
+    assert {:error, {:payload_invalido, [{["name"], _}]}} =
+             Ybira.upload(TestRepo, ctx.keys, blobs(), ctx.dono_scope, path,
+               mime: @mime,
+               nome: exagerado
+             )
   end
 
   test "upload em pasta alheia (mesmo publicada) e recusado; o dono sobe", ctx do
@@ -172,7 +204,7 @@ defmodule Ypy.Ybira.PersistenceTest do
     assert {:error, _} =
              Ybira.upload(TestRepo, ctx.keys, quebrado, ctx.dono_scope, path, mime: @mime)
 
-    assert Ypy.Mural.entradas(TestRepo, ctx.tekoa.id) == []
+    assert Store.cadeia(TestRepo, ctx.tekoa.id) == []
   end
 
   test "a matriz de leitura: praca, dono, concessao e casa alheia", ctx do
@@ -285,8 +317,21 @@ defmodule Ypy.Ybira.PersistenceTest do
     assert Ybira.restaurar(TestRepo, ctx.keys, ctx.dono_scope, "ypy.file.v0", file.rkey) ==
              {:error, :invalid_status}
 
-    tipos = Enum.map(Ypy.Mural.entradas(TestRepo, ctx.tekoa.id), & &1.tipo)
+    tipos = Enum.map(Store.cadeia(TestRepo, ctx.tekoa.id), & &1.tipo)
     assert tipos == ["put", "apagar", "restaurar"]
+  end
+
+  test "restaurar e so do dono: a lixeira alheia nao volta por outra mao", ctx do
+    {path, _dados} = arquivo("nao e meu")
+
+    {:ok, file} = Ybira.upload(TestRepo, ctx.keys, blobs(), ctx.dono_scope, path, mime: @mime)
+    {:ok, _} = Ybira.apagar(TestRepo, ctx.keys, ctx.dono_scope, "ypy.file.v0", file.rkey)
+
+    assert Ybira.restaurar(TestRepo, ctx.keys, ctx.outro_scope, "ypy.file.v0", file.rkey) ==
+             {:error, :not_owner}
+
+    # Nao restaurou: o arquivo segue na lixeira, como o dono deixou.
+    assert [_] = Ybira.list_files(TestRepo, ctx.dono_scope, lixeira: true)
   end
 
   test "publicar e tirar da praca sao idempotentes e so o dono muda", ctx do
@@ -373,7 +418,8 @@ defmodule Ypy.Ybira.PersistenceTest do
     assert novo.nome == "novo.jpg"
     assert novo.cid != file.cid
 
-    nome_longo = String.duplicate("a", 101)
+    # 256 grafemas: acima do maxGraphemes do lexicon (255).
+    nome_longo = String.duplicate("a", 256)
 
     assert {:error, {:payload_invalido, _}} =
              Ybira.renomear(
@@ -421,10 +467,26 @@ defmodule Ypy.Ybira.PersistenceTest do
 
     tekoa = TestRepo.reload!(ctx.tekoa)
     assert tekoa.storage_used_bytes == 0
-    assert Ypy.Mural.entradas(TestRepo, ctx.tekoa.id) == []
+    assert Store.cadeia(TestRepo, ctx.tekoa.id) == []
 
     cid = Cid.from_data(dados, Cid.raw())
     assert fetch_blob(armazenamento, Cid.to_string(cid)) == {:error, :not_found}
+  end
+
+  test "bytes deduplicados sobrevivem a um upload que falha na cadeia", ctx do
+    armazenamento = blobs()
+    {path, dados} = arquivo("bytes de dois")
+
+    {:ok, a} = Ybira.upload(TestRepo, ctx.keys, armazenamento, ctx.dono_scope, path, mime: @mime)
+
+    quebradas = BrokenKeys.new(dir_temporario("keys-quebradas-dedup"))
+
+    assert {:error, :not_found} =
+             Ybira.upload(TestRepo, quebradas, armazenamento, ctx.outro_scope, path, mime: @mime)
+
+    # O blob e enderecado por conteudo: a linha que A commitou segue viva na
+    # Tekoa, e os bytes ficam para o arquivo que ainda os usa.
+    assert {:ok, ^dados} = fetch_blob(armazenamento, a.blob_cid)
   end
 
   test "a escrita que commitou tem a entrada na cadeia", ctx do
@@ -433,12 +495,12 @@ defmodule Ypy.Ybira.PersistenceTest do
     assert {:ok, file} =
              Ybira.upload(TestRepo, ctx.keys, blobs(), ctx.dono_scope, path, mime: @mime)
 
-    cadeia = Ypy.Mural.entradas(TestRepo, ctx.tekoa.id)
+    cadeia = Store.cadeia(TestRepo, ctx.tekoa.id)
 
     assert [entrada] = cadeia
     assert entrada.tipo == "put"
     assert entrada.payload["rkey"] == file.rkey
-    assert Ypy.Mural.verificar_cadeia(TestRepo, ctx.tekoa.id) == :ok
+    assert Store.verificar_cadeia(TestRepo, ctx.tekoa.id) == :ok
     assert byte_size(dados) == file.tamanho
   end
 
@@ -456,11 +518,11 @@ defmodule Ypy.Ybira.PersistenceTest do
     {:ok, _} = Ybira.apagar(TestRepo, ctx.keys, ctx.dono_scope, "ypy.file.v0", file.rkey)
     {:ok, _} = Ybira.restaurar(TestRepo, ctx.keys, ctx.dono_scope, "ypy.file.v0", file.rkey)
 
-    assert Ypy.Mural.verificar_cadeia(TestRepo, ctx.tekoa.id) == :ok
+    assert Store.verificar_cadeia(TestRepo, ctx.tekoa.id) == :ok
 
     tipos =
       TestRepo
-      |> Ypy.Mural.entradas(ctx.tekoa.id)
+      |> Store.cadeia(ctx.tekoa.id)
       |> Enum.map(& &1.tipo)
 
     assert tipos == ["put", "put", "mover", "publicar", "renomear", "apagar", "restaurar"]
@@ -476,10 +538,8 @@ defmodule Ypy.Ybira.PersistenceTest do
     assert {:error, {:envelope_invalido, :unknown_collection}} =
              Ybira.upload(TestRepo, ctx.keys, blobs(), ctx.dono_scope, path, mime: @mime)
 
-    assert Ypy.Mural.entradas(TestRepo, ctx.tekoa.id) == []
+    assert Store.cadeia(TestRepo, ctx.tekoa.id) == []
   end
-
-  ## effective_at
 
   test "a dica de ordem da linha do tempo: coluna do produto, indice no COALESCE", ctx do
     {path, _dados} = arquivo("conteudo")
@@ -508,6 +568,8 @@ defmodule Ypy.Ybira.PersistenceTest do
   defp recarrega_lexicons do
     Ypy.PersistenceCase.load_lexicons()
   end
+
+  ## effective_at
 
   ## Atomicidade do ledger
 end

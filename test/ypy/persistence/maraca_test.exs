@@ -6,7 +6,7 @@ defmodule Ypy.Maraca.PersistenceTest do
   alias Ypy.BrokenKeys
   alias Ypy.Maraca
   alias Ypy.Maraca.Ava
-  alias Ypy.Maraca.Credentials
+  alias Ypy.Maraca.Concessao
   alias Ypy.Maraca.Policy
   alias Ypy.Maraca.Store
   alias Ypy.Scope
@@ -81,7 +81,7 @@ defmodule Ypy.Maraca.PersistenceTest do
            ) ==
              {:error, :already_readable}
 
-    tipos = Enum.map(Ypy.Mural.entradas(TestRepo, ctx.tekoa.id), & &1.tipo)
+    tipos = Enum.map(Ypy.Mural.Store.cadeia(TestRepo, ctx.tekoa.id), & &1.tipo)
     assert tipos == ["put", "concessao"]
   end
 
@@ -145,6 +145,9 @@ defmodule Ypy.Maraca.PersistenceTest do
 
     assert Maraca.aprovar(TestRepo, ctx.keys, ctx.dono_scope, pedido) == {:error, :not_pending}
 
+    # Aprovado duas vezes, uma concessao so nasceu.
+    assert TestRepo.aggregate(Concessao, :count) == 1
+
     # Um pedido novo para o mesmo recurso agora esbarra no ja legivel.
     assert Maraca.pedir_acesso(TestRepo, ctx.outro_scope, "ypy.file.v0", file.rkey, "de novo") ==
              {:error, :already_has_access}
@@ -202,7 +205,7 @@ defmodule Ypy.Maraca.PersistenceTest do
 
     assert promovido.papel == :zelador
 
-    entrada = Ypy.Mural.entrada(TestRepo, ctx.tekoa.id, 1)
+    entrada = Ypy.Mural.Store.entrada(TestRepo, ctx.tekoa.id, 1)
 
     assert entrada.tipo == "mudar_papel"
 
@@ -214,7 +217,7 @@ defmodule Ypy.Maraca.PersistenceTest do
            }
 
     ## Papel
-    assert Ypy.Mural.verificar_cadeia(TestRepo, ctx.tekoa.id) == :ok
+    assert Ypy.Mural.Store.verificar_cadeia(TestRepo, ctx.tekoa.id) == :ok
 
     # A cadeia falhou, o papel nao mudou: o ato e um so fato.
     quebradas = BrokenKeys.new(dir_temporario("keys-quebradas-papel"))
@@ -253,7 +256,7 @@ defmodule Ypy.Maraca.PersistenceTest do
 
     assert Ava.active?(ativo) == true
     assert ativo.password_hash
-    assert Credentials.valid_password?("senhaforte123", ativo.password_hash)
+    assert Bcrypt.verify_pass("senhaforte123", ativo.password_hash)
 
     # Expiracao do convite (politica pura sobre a coluna).
     assert Policy.invite_expired?(agora, DateTime.shift(agora, day: 3)) == true

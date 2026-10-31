@@ -17,9 +17,8 @@ defmodule Ypy.Wire do
   - todo erro segue o vocabulario de `Ypy.Wire.Errors`.
 
   Os shapes por recurso sao `Ypy.Wire.Ava`, `Ypy.Wire.File` (arquivos e
-  pastas) e `Ypy.Wire.Mural`. Os components OpenAPI do fio moram em
-  `api/openapi.components.yaml`, e o teste de conformidade afirma que nenhum
-  campo de lexicon deriva deles.
+  pastas) e `Ypy.Wire.Mural`. Os components OpenAPI do fio moram no contrato
+  do box, `priv/static/openapi.yaml`.
   """
 
   @doc """

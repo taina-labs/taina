@@ -32,9 +32,6 @@ defmodule Ypy.Maraca.Store do
   @doc "Quantos zeladores a Tekoa tem."
   def count_zeladores(repo, tekoa_id), do: repo.aggregate(Queries.zeladores(tekoa_id), :count)
 
-  @doc "Quantos moradores ativos a Tekoa tem (o quorum fala deste numero)."
-  def count_moradores(repo, tekoa_id), do: repo.aggregate(Queries.moradores(tekoa_id), :count)
-
   @doc "As concessoes ativas de um leitor, no plano da regra de leitura."
   def concessoes_ativas(repo, tekoa_id, leitor_id), do: repo.all(Queries.concessoes_ativas(tekoa_id, leitor_id))
 
@@ -60,15 +57,14 @@ defmodule Ypy.Maraca.Store do
   @doc "A chave publica ativa da Tekoa."
   def chave_ativa(repo, tekoa_id), do: repo.one(Queries.chave_ativa(tekoa_id))
 
-  @doc "Aumenta o storage usado da Tekoa (atomico, sem reler)."
+  @doc """
+  Aumenta o storage usado da Tekoa (atomico, sem reler). A Tekoa que nao
+  existe responde {:error, :not_found}.
+  """
   def add_storage(repo, tekoa_id, bytes) do
-    {1, _} = repo.update_all(Queries.tekoa(tekoa_id), inc: [storage_used_bytes: bytes])
-    :ok
+    case repo.update_all(Queries.tekoa(tekoa_id), inc: [storage_used_bytes: bytes]) do
+      {1, _} -> :ok
+      {_outras, _} -> {:error, :not_found}
+    end
   end
-
-  @doc "Insere pelo changeset dado."
-  def insert(repo, changeset), do: repo.insert(changeset)
-
-  @doc "Atualiza pelo changeset dado."
-  def update(repo, changeset), do: repo.update(changeset)
 end

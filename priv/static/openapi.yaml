@@ -2,7 +2,7 @@
 #
 # A fonte única é este arquivo, no repositório do box. Ele junta os paths
 # (RFC_005 seção 9) e os components: as formas de record, zona, papel, erro e
-# paginação. O box o serve em `GET /api/v1/openapi.yaml`; o app (Okena) e
+# paginação. O box o serve em `GET /openapi.yaml`; o app (Okena) e
 # qualquer outro cliente o consomem de lá. Um box serve uma comunidade.
 openapi: 3.0.3
 
@@ -2117,18 +2117,6 @@ components:
               error:
                 type: string
                 description: O código do motivo, quando o item falhou.
-    PropostaStatus:
-      type: string
-      description: O ciclo da proposta na assembleia.
-      enum: [aberta, aprovada, rejeitada, expirada]
-    PropostaTipo:
-      type: string
-      description: O ato sensivel que a proposta autoriza.
-      enum: [remover_morador, nomear_zelador, destituir_zelador, mudar_cota]
-    Escolha:
-      type: string
-      description: O voto do morador na proposta.
-      enum: [sim, nao]
     FileRecord:
       type: object
       description: O payload do record ypy.file.v0 (priv/ypy/lexicons/ypy.file.v0.json), auto-descritivo (RFC_006 secao 6).
@@ -2136,7 +2124,7 @@ components:
       properties:
         name:
           type: string
-          maxLength: 100
+          maxLength: 255
         folder:
           type: string
           description: O rkey da pasta pai, quando ha.
@@ -2158,4 +2146,4 @@ components:
       properties:
         name:
           type: string
-          maxLength: 100
+          maxLength: 255

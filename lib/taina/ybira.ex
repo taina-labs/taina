@@ -9,14 +9,13 @@ defmodule Taina.Ybira do
   navegacao por pastas (breadcrumb, conteudo combinado), os agregados do
   painel e o expurgo da lixeira.
 
-  ## Lixeira
-
   Deletar um arquivo ou pasta só preenche `apagado_em`, os bytes ficam no
   disco e a cota não é devolvida na hora. O worker `Taina.Ybira.Workers.PurgeTrash`
   apaga de vez o que está na lixeira há mais de 30 dias e só então recupera a
   cota. Até lá, `restore_file/2` traz o arquivo de volta (solto na raiz quando
   a pasta dele também foi apagada) e `restore_folder/2` traz a pasta inteira,
   com o que foi apagado junto dela.
+
 
   Os bytes do expurgo não saem na hora: os CIDs vão para a fila do GC
   diferido (`Taina.Ybira.BlobGc`) e o worker `Taina.Ybira.Workers.BlobGc`,
@@ -29,20 +28,16 @@ defmodule Taina.Ybira do
   do CID e a rodada do GC, em que um upload concorrente pode reanimar o blob
   (e a fila só registra o pleno).
 
-  ## Paginação
-
   Listagens usam cursor por rkey (TID, ordenável por tempo): o cursor é o
   próprio rkey do último item; passe-o de volta em `:after_cursor` para a
   próxima página.
+
   """
 
   import Ecto.Query
 
   alias Taina.Blobs
   alias Taina.Jaci.Photo
-
-  ## Upload
-
   alias Taina.Keys
   alias Taina.Repo
   alias Taina.Ybira.BlobGc
@@ -92,8 +87,6 @@ defmodule Taina.Ybira do
 
     with {:ok, cid} <- blob_cid(tmp_path),
          {:ok, file} <- locked_upload(scope, tmp_path, opts, cid) do
-      ## Arquivos
-
       maybe_enqueue_rendition(scope, file)
       {:ok, file}
     end
@@ -272,7 +265,6 @@ defmodule Taina.Ybira do
         Repo.one(
           from(f in File,
             where: f.tekoa_id == ^scope.tekoa.id and not is_nil(f.apagado_em),
-            ## Pastas
             select: %{count: count(f.id), bytes: sum(f.tamanho)}
           )
         )
@@ -499,7 +491,6 @@ defmodule Taina.Ybira do
           {:ok, [%{rkey: String.t(), nome: String.t()}]} | {:error, :not_found}
   def folder_path(%Scope{} = scope, folder_rkey) when is_binary(folder_rkey) do
     within_tekoa(scope, fn ->
-      ## Cota / armazenamento
       with {:ok, rows} <- folder_chain(folder_rkey) do
         {:ok, readable_chain(scope, rows)}
       end
@@ -696,7 +687,6 @@ defmodule Taina.Ybira do
   def pending_job_counts do
     %{
       renditions: count_pending_jobs("Taina.Ybira.Workers.Rendition"),
-      ## GC diferido de blobs
       trash_purge: count_pending_jobs("Taina.Ybira.Workers.PurgeTrash")
     }
   end
@@ -964,7 +954,7 @@ defmodule Taina.Ybira do
           {folder_id, nil}
 
         %Folder{} = folder ->
-          readable? = Policy.can_read?(folder.zona, scope.ava.id, folder.dono_id, folder.rkey, concessoes)
+          readable? = Policy.can_read?(folder.zona, scope.ava.id, folder.dono_id, @tipo_folder, folder.rkey, concessoes)
           {folder_id, if(readable?, do: folder.rkey)}
       end
     end)
@@ -1008,9 +998,13 @@ defmodule Taina.Ybira do
     )
   end
 
+  # A concessão vale pelo tipo de coleção, como no SQL do kernel: o rkey
+  # sozinho não abre a porta. Os elos que chegam aqui (pai do arquivo e CTE
+  # do breadcrumb) são todos da coleção de pastas; o caminho do arquivo fica
+  # no kernel, com o seu tipo.
   defp readable?(scope, row) do
     concessoes = Store.concessoes_ativas(Repo, scope.tekoa.id, scope.ava.id)
-    Policy.can_read?(row.zona, scope.ava.id, row.dono_id, row.rkey, concessoes)
+    Policy.can_read?(row.zona, scope.ava.id, row.dono_id, @tipo_folder, row.rkey, concessoes)
   end
 
   defp quota_check(tekoa_id, byte_size) do

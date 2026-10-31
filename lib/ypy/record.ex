@@ -110,11 +110,28 @@ defmodule Ypy.Record do
     end
   end
 
+  @doc """
+  O envelope na forma do fio: os campos de controle no nivel de cima e o
+  payload aninhado em `"payload"`, a mesma forma dos bytes de `encode/1` e
+  da checagem de `check/2`.
+  """
+  @spec to_wire(t()) :: map()
+  def to_wire(%__MODULE__{} = record) do
+    %{
+      "$type" => record.type,
+      "rkey" => record.rkey,
+      "actor" => record.actor,
+      "created_at" => record.created_at,
+      "payload" => record.payload
+    }
+  end
+
   defp safe_decode(bytes) do
     {:ok, Cbor.decode!(bytes)}
   rescue
     ArgumentError -> :error
     MatchError -> :error
+    FunctionClauseError -> :error
   end
 
   defp from_wire(
@@ -133,15 +150,5 @@ defmodule Ypy.Record do
     map_size(wire) == 5 and is_binary(type) and is_binary(rkey) and is_binary(actor) and
       is_integer(created_at) and
       is_map(payload)
-  end
-
-  defp to_wire(%__MODULE__{} = record) do
-    %{
-      "$type" => record.type,
-      "rkey" => record.rkey,
-      "actor" => record.actor,
-      "created_at" => record.created_at,
-      "payload" => record.payload
-    }
   end
 end

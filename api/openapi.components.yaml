@@ -26,18 +26,6 @@ components:
       type: string
       description: O papel social na Tekoa.
       enum: [zelador, morador]
-    PropostaStatus:
-      type: string
-      description: O ciclo da proposta na assembleia.
-      enum: [aberta, aprovada, rejeitada, expirada]
-    PropostaTipo:
-      type: string
-      description: O ato sensivel que a proposta autoriza.
-      enum: [remover_morador, nomear_zelador, destituir_zelador, mudar_cota]
-    Escolha:
-      type: string
-      description: O voto do morador na proposta.
-      enum: [sim, nao]
     Error:
       type: object
       description: O envelope unico de erro (RFC_005 D6).
@@ -214,7 +202,7 @@ components:
       properties:
         name:
           type: string
-          maxLength: 100
+          maxLength: 255
         folder:
           type: string
           description: O rkey da pasta pai, quando ha.
@@ -236,4 +224,4 @@ components:
       properties:
         name:
           type: string
-          maxLength: 100
+          maxLength: 255

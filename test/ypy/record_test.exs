@@ -129,6 +129,19 @@ defmodule Ypy.RecordTest do
     assert Record.decode(Cbor.encode(com_extra)) == {:error, :malformed}
   end
 
+  test "decode/1 refuses truncated bytes and trailing garbage" do
+    # <<0x63>> anuncia um text string de 3 bytes que nao chegam; os outros
+    # tres nem chegam a casar uma clausula do decodificador.
+    assert Record.decode(<<>>) == {:error, :malformed}
+    assert Record.decode(<<0xFF>>) == {:error, :malformed}
+    assert Record.decode(<<0xA1>>) == {:error, :malformed}
+    assert Record.decode(<<0x63>>) == {:error, :malformed}
+
+    {bytes, _cid} = Record.encode(Record.build(@attrs))
+
+    assert Record.decode(bytes <> <<0xFF>>) == {:error, :malformed}
+  end
+
   describe "check/2" do
     test ":ok when the envelope and the payload pass" do
       assert Record.check(Record.build(@attrs), @schema) == :ok

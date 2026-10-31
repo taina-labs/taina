@@ -11,7 +11,6 @@ defmodule Taina.Keys do
   alias Taina.Repo
   alias Ypy.KeyStore.Files
   alias Ypy.Layout
-  alias Ypy.Maraca.Store, as: KernelStore
   alias Ypy.Maraca.TekoaKey
 
   @spec new :: Files.t()
@@ -36,8 +35,7 @@ defmodule Taina.Keys do
       with {:ok, {pub, _priv} = keypair} <- Files.generate(files),
            :ok <- Files.rotate(files, tekoa_id, keypair),
            {:ok, _key} <-
-             KernelStore.insert(
-               repo,
+             repo.insert(
                TekoaKey.changeset(%TekoaKey{}, %{
                  tekoa_id: tekoa_id,
                  pub: pub,

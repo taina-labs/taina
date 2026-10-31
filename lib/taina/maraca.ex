@@ -9,7 +9,6 @@ defmodule Taina.Maraca do
   e a trava de uma-Tekoa-por-box. O mural e a projecao da cadeia
   (`maraca_mural`), nao uma tabela propria.
 
-  ## Filosofia
 
   - **Moradores sao donos dos seus dados** - propriedade explicita
   - **Zeladores cuidam da maquina, nao sao deuses** - pedem acesso como
@@ -82,7 +81,6 @@ defmodule Taina.Maraca do
   # O zelador de bootstrap nasce no papel: o kernel aceita so
   # username/display_name/password no accept_changeset, o papel e daqui.
   defp insert_bootstrap_zelador(%Tekoa{} = tekoa, attrs) do
-    ## Membros
     %Ava{tekoa_id: tekoa.id}
     |> Ava.accept_changeset(Map.take(attrs, [:username, :display_name, :password]))
     |> Ecto.Changeset.change(papel: :zelador)
@@ -99,7 +97,6 @@ defmodule Taina.Maraca do
 
   @doc "A Tekoa da caixa (una por construcao, RFC_006 D11)."
   def get_tekoa do
-    ## Convite e aceite
     Repo.with_system(fn ->
       case Repo.one(Tekoa, skip_tekoa_id: true) do
         %Tekoa{} = tekoa -> {:ok, tekoa}
@@ -170,7 +167,6 @@ defmodule Taina.Maraca do
   def accept_invite(token, attrs) do
     with %Ava{} = ava <- find_by_token(:invite_token_hash, token),
          false <- token_expired?(ava.invite_sent_at, @invitation_max_age_seconds),
-         ## Autenticação e sessão
          nil <- ava.deactivated_at,
          :ok <- confirmation_ok?(attrs) do
       result =
@@ -254,8 +250,6 @@ defmodule Taina.Maraca do
   # Só as falhas contam para a janela: lemos a contagem sem incrementar, então
   # uma senha correta nunca a queima (login/logout/login não tranca ninguém).
   # Acima do limite recusamos antes do bcrypt, blindando a CPU contra força
-  ## Gestão da Tekoa
-
   # bruta. Conta inexistente compartilha a janela do username (não vaza existência).
   defp login_rate_exceeded?(key) do
     RateLimit.get(key, @login_rate_scale_ms) >= @login_rate_limit
@@ -326,7 +320,6 @@ defmodule Taina.Maraca do
     Repo.with_system(fn ->
       case Repo.get_by(Ava, [public_id: public_id], skip_tekoa_id: true) do
         %Ava{deactivated_at: nil} = ava ->
-          ## Gestão de membros (zelador)
           tekoa = Repo.get!(Tekoa, ava.tekoa_id, skip_tekoa_id: true)
           {:ok, %{ava | tekoa: tekoa}}
 
@@ -448,7 +441,6 @@ defmodule Taina.Maraca do
   defp fetch_member(scope, public_id) do
     # O public_id do kernel e estrito (12 caracteres do alfabeto): id
     # malformado de URL/params nao chega a ser query, responde not_found.
-    ## Reset de senha
     if PublicId.valid?(public_id) do
       case Repo.get_by(Ava, public_id: public_id, tekoa_id: scope.tekoa.id) do
         nil -> {:error, :not_found}
@@ -500,7 +492,6 @@ defmodule Taina.Maraca do
   o chamador montar a URL (a entrega e o canal sao do produto).
   """
   def mint_reset_link(%Ypy.Scope{} = scope, %Ava{} = member) do
-    ## Verbos sociais do kernel (concessao, pedido, decisao)
     if zelador?(scope.ava) do
       mint_reset_link_zelador(scope, member)
     else
@@ -888,7 +879,6 @@ defmodule Taina.Maraca do
         :ok
 
       {:error, reason} ->
-        ## Helpers internos
         Logger.warning("Mural: falha ao registrar evento (o ato já aconteceu), #{inspect(type)}",
           reason: inspect(reason)
         )

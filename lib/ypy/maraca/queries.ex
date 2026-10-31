@@ -18,14 +18,6 @@ defmodule Ypy.Maraca.Queries do
   @doc "Os avas de uma Tekoa."
   def avas(tekoa_id), do: from(a in Ava, where: a.tekoa_id == ^tekoa_id)
 
-  @doc "Os moradores ativos: aceitaram convite e nao foram desativados."
-  def moradores(tekoa_id) do
-    from(a in avas(tekoa_id),
-      where: not is_nil(a.activated_at),
-      where: is_nil(a.deactivated_at)
-    )
-  end
-
   @doc "Os zeladores de uma Tekoa."
   def zeladores(tekoa_id), do: from(a in avas(tekoa_id), where: a.papel == :zelador)
 
@@ -35,7 +27,7 @@ defmodule Ypy.Maraca.Queries do
       where: c.tekoa_id == ^tekoa_id,
       where: c.leitor_id == ^leitor_id,
       where: is_nil(c.revogada_em),
-      select: %{leitor_id: c.leitor_id, recurso: c.recurso}
+      select: %{leitor_id: c.leitor_id, tipo: c.tipo, recurso: c.recurso}
     )
   end
 

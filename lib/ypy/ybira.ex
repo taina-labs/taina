@@ -9,25 +9,25 @@ defmodule Ypy.Ybira do
   que commitou tem entrada na cadeia.
   """
 
+  import Ecto.Changeset, only: [change: 2]
+
   alias Ypy.BlobStore
   alias Ypy.Cid
+  alias Ypy.Handle
   alias Ypy.KeyStore
   alias Ypy.Lexicon.Registry
-  alias Ypy.Lexicon.Validate
   alias Ypy.Maraca.Policy
   alias Ypy.Maraca.Store, as: MaracaStore
   alias Ypy.Mural
   alias Ypy.Record
   alias Ypy.Scope
-  ## Recurso generico (arquivo ou pasta)
+  alias Ypy.Tid
   alias Ypy.Ybira.Blob
   alias Ypy.Ybira.File
   alias Ypy.Ybira.Folder
   alias Ypy.Ybira.Queries
   alias Ypy.Ybira.Record, as: RecordRow
   alias Ypy.Ybira.Store
-
-  @max_attempts 3
 
   # Tipos MIME aceitos no upload (RFC_005 secao 8). A deteccao por magic
   # bytes e do produto, que entrega o mime em opts; daqui vem so a allowlist.
@@ -49,14 +49,8 @@ defmodule Ypy.Ybira do
           {:ok, File.t() | Folder.t()} | {:error, :not_found | :invalid_tipo}
   def recurso(repo, tekoa_id, tipo, rkey, lixeira? \\ false)
 
-  ## Arquivos
-
   def recurso(repo, tekoa_id, tipo, rkey, lixeira?) when is_map_key(@tipos, tipo) do
-    row =
-      case @tipos[tipo] do
-        File -> Store.get_file(repo, tekoa_id, rkey, lixeira?)
-        Folder -> Store.get_folder(repo, tekoa_id, rkey, lixeira?)
-      end
+    row = Store.get_recurso(repo, @tipos[tipo], tekoa_id, rkey, lixeira?)
 
     if row, do: {:ok, row}, else: {:error, :not_found}
   end
@@ -109,9 +103,9 @@ defmodule Ypy.Ybira do
   @spec criar_pasta(Ecto.Repo.t(), KeyStore.t(), Scope.t(), String.t(), keyword()) ::
           {:ok, Folder.t()} | {:error, term()}
   def criar_pasta(repo, keys, %Scope{} = scope, nome, opts \\ []) do
-    with {:ok, parent} <- resolve_folder(repo, scope, opts[:parent]),
-         :ok <- payload_ok?("ypy.folder.v0", %{"name" => nome}) do
-      commit_folder(repo, keys, scope, nome, parent)
+    case resolve_folder(repo, scope, opts[:parent]) do
+      {:ok, parent} -> commit_folder(repo, keys, scope, nome, parent)
+      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -125,7 +119,6 @@ defmodule Ypy.Ybira do
     get_readable(repo, scope, "ypy.file.v0", rkey)
   end
 
-  ## Lixeira
   @doc "A pasta pelo rkey, sob a regra de leitura."
   @spec get_folder(Ecto.Repo.t(), Scope.t(), String.t()) ::
           {:ok, Folder.t()} | {:error, :not_found | :forbidden}
@@ -147,8 +140,7 @@ defmodule Ypy.Ybira do
           |> Queries.files(Keyword.put(opts, :folder, folder && folder.id))
           |> Queries.readable(scope)
 
-        ## Zona
-        Store.all(repo, query)
+        repo.all(query)
 
       {:error, _} ->
         []
@@ -165,9 +157,7 @@ defmodule Ypy.Ybira do
           |> Queries.folders(Keyword.put(opts, :parent, parent && parent.id))
           |> Queries.readable_folder(scope)
 
-        ## Move e rename
-
-        Store.all(repo, query)
+        repo.all(query)
 
       {:error, _} ->
         []
@@ -178,8 +168,9 @@ defmodule Ypy.Ybira do
   @spec apagar(Ecto.Repo.t(), KeyStore.t(), Scope.t(), String.t(), String.t()) ::
           {:ok, File.t() | Folder.t()} | {:error, term()}
   def apagar(repo, keys, %Scope{} = scope, tipo, rkey) do
-    mutar(repo, keys, scope, tipo, rkey, "apagar", fn row, agora ->
-      Store.update(repo, changeset_de(tipo, :trash, row, agora))
+    mutar(repo, keys, scope, tipo, rkey, "apagar", fn row ->
+      agora = DateTime.truncate(DateTime.utc_now(), :second)
+      repo.update(change(row, apagado_em: agora))
     end)
   end
 
@@ -188,19 +179,16 @@ defmodule Ypy.Ybira do
           {:ok, File.t() | Folder.t()} | {:error, term()}
   def restaurar(repo, keys, %Scope{} = scope, tipo, rkey) do
     with {:ok, row} <- recurso(repo, scope.tekoa.id, tipo, rkey, true),
+         :ok <- owner_guard(row, scope),
          {:ok, row} <- linha_na_lixeira(row) do
-      mutar_row(repo, keys, scope, tipo, row, "restaurar", restaurar_upsert(repo, tipo, row))
+      mutar_row(repo, keys, scope, tipo, row, "restaurar", fn row ->
+        repo.update(change(row, apagado_em: nil))
+      end)
     end
   end
 
   defp linha_na_lixeira(%{apagado_em: nil}), do: {:error, :invalid_status}
   defp linha_na_lixeira(row), do: {:ok, row}
-
-  defp restaurar_upsert(repo, tipo, row) do
-    fn _row, _agora -> Store.update(repo, changeset_de(tipo, :restore, row, nil)) end
-  end
-
-  ## Internos
 
   @doc """
   Publica na praca (RFC_003 secao 2): colocar na praca E o ato de
@@ -231,7 +219,6 @@ defmodule Ypy.Ybira do
          {:ok, folder} <- resolve_folder(repo, scope, folder_rkey),
          payload =
            file_payload(file.nome, folder && folder.rkey, file.mime, file.tamanho, file.blob_cid),
-         :ok <- payload_ok?("ypy.file.v0", payload),
          {:ok, {cid, _} = envelope} <- nova_versao(scope, "ypy.file.v0", rkey, payload) do
       commit_versao(repo, keys, scope, "ypy.file.v0", file, envelope, "mover", fn file ->
         File.record_changeset(file, %{cid: cid, nome: file.nome, folder_id: folder && folder.id})
@@ -246,10 +233,9 @@ defmodule Ypy.Ybira do
     with {:ok, row} <- recurso(repo, scope.tekoa.id, tipo, rkey),
          :ok <- owner_guard(row, scope),
          {:ok, payload} <- payload_para(repo, row, tipo, nome),
-         :ok <- payload_ok?(tipo, payload),
          {:ok, {cid, _} = envelope} <- nova_versao(scope, tipo, rkey, payload) do
       commit_versao(repo, keys, scope, tipo, row, envelope, "renomear", fn row ->
-        changeset_de(tipo, :record, row, %{cid: cid, nome: nome})
+        record_changeset(row, %{cid: cid, nome: nome})
       end)
     end
   end
@@ -262,8 +248,13 @@ defmodule Ypy.Ybira do
 
   defp read_rule?(repo, scope, row) do
     concessoes = MaracaStore.concessoes_ativas(repo, scope.tekoa.id, scope.ava.id)
-    Policy.can_read?(row.zona, scope.ava.id, row.dono_id, row.rkey, concessoes)
+    Policy.can_read?(row.zona, scope.ava.id, row.dono_id, tipo_do_row(row), row.rkey, concessoes)
   end
+
+  # A concessao vale pelo tipo de colecao, como no SQL das listagens: o
+  # rkey sozinho nao abre a porta.
+  defp tipo_do_row(%File{}), do: "ypy.file.v0"
+  defp tipo_do_row(%Folder{}), do: "ypy.folder.v0"
 
   defp fetch_tekoa(repo, scope) do
     if tekoa = MaracaStore.get_tekoa(repo, scope.tekoa.id),
@@ -317,13 +308,6 @@ defmodule Ypy.Ybira do
     |> Map.put("folder", folder_rkey)
   end
 
-  defp payload_ok?(tipo, payload) do
-    case Validate.validate(Registry.record(tipo), payload) do
-      :ok -> :ok
-      {:error, errors} -> {:error, {:payload_invalido, errors}}
-    end
-  end
-
   # O payload atual do recurso, com o nome novo: a base da versao no
   # renomear. A pasta do arquivo entra pela chave "folder" do lexicon.
   defp payload_para(repo, row, "ypy.file.v0", nome) do
@@ -340,12 +324,8 @@ defmodule Ypy.Ybira do
   defp payload_para(_repo, _row, "ypy.folder.v0", nome), do: {:ok, %{"name" => nome}}
 
   defp nova_versao(scope, tipo, rkey, payload) do
-    actor = "#{scope.ava.username}@#{scope.tekoa.domain}"
-
-    case versao(tipo, rkey, actor, payload) do
-      {:ok, par} -> {:ok, par}
-      {:error, reason} -> {:error, {:envelope_invalido, reason}}
-    end
+    actor = Handle.of(scope.ava.username, scope.tekoa.domain)
+    versao(tipo, rkey, actor, payload)
   end
 
   # Grava a versao nova do envelope e o dado que ela descreve, com a entrada
@@ -371,8 +351,7 @@ defmodule Ypy.Ybira do
   end
 
   defp commit_record(repo, scope, rkey, tipo, cid, wire) do
-    Store.insert_record(
-      repo,
+    repo.insert(
       RecordRow.changeset(%RecordRow{}, %{
         tekoa_id: scope.tekoa.id,
         rkey: rkey,
@@ -391,12 +370,14 @@ defmodule Ypy.Ybira do
         hash = Base.encode16(blob_cid.digest, case: :lower)
         upload = Map.merge(meta, %{blob_cid: blob_cid, hash: hash})
 
-        case commit_upload_rows(repo, keys, scope, tekoa, upload, @max_attempts) do
+        case commit_upload_rows(repo, keys, scope, tekoa, upload) do
           {:ok, file} ->
             {:ok, file}
 
           {:error, reason} ->
-            _ = blob_delete(blobs, blob_cid)
+            # Os bytes sao enderecados por conteudo e deduplicados: so saem
+            # quando nenhuma linha da Tekoa os endereca.
+            recolher_bytes_orfaos(repo, blobs, tekoa.id, blob_cid)
             {:error, reason}
         end
 
@@ -405,11 +386,22 @@ defmodule Ypy.Ybira do
     end
   end
 
-  defp commit_upload_rows(_repo, _keys, _scope, _tekoa, _upload, 0), do: {:error, :rkey_conflict}
+  # O upload falhou e o rollback devolveu o dado: a linha do blob que
+  # sobrevive ao rollback e a de um upload anterior que a commitou (um
+  # arquivo vivo ainda a usa); sem linha na Tekoa, os bytes nao sao de
+  # ninguem e saem.
+  defp recolher_bytes_orfaos(repo, blobs, tekoa_id, blob_cid) do
+    if Store.get_blob(repo, tekoa_id, Cid.to_string(blob_cid)) do
+      :ok
+    else
+      _ = blob_delete(blobs, blob_cid)
+      :ok
+    end
+  end
 
-  defp commit_upload_rows(repo, keys, scope, tekoa, upload, attempts) do
-    rkey = File.next_rkey()
-    actor = "#{scope.ava.username}@#{tekoa.domain}"
+  defp commit_upload_rows(repo, keys, scope, tekoa, upload) do
+    rkey = Tid.now()
+    actor = Handle.of(scope.ava.username, tekoa.domain)
     blob = Cid.to_string(upload.blob_cid)
 
     payload =
@@ -421,32 +413,29 @@ defmodule Ypy.Ybira do
         blob
       )
 
-    with :ok <- payload_ok?("ypy.file.v0", payload),
-         {:ok, {cid_string, wire}} <- versao("ypy.file.v0", rkey, actor, payload) do
-      hash = upload.hash
+    case versao("ypy.file.v0", rkey, actor, payload) do
+      {:ok, {cid_string, wire}} ->
+        hash = upload.hash
 
-      entrada = %{
-        "actor" => scope.ava.public_id,
-        "collection" => "ypy.file.v0",
-        "rkey" => rkey,
-        "cid" => cid_string,
-        "blob" => blob,
-        "mime" => upload.mime,
-        "hash" => hash,
-        "tamanho" => upload.size
-      }
+        entrada = %{
+          "actor" => scope.ava.public_id,
+          "collection" => "ypy.file.v0",
+          "rkey" => rkey,
+          "cid" => cid_string,
+          "blob" => blob,
+          "mime" => upload.mime,
+          "hash" => hash,
+          "tamanho" => upload.size
+        }
 
-      put = %{rkey: rkey, cid: cid_string, blob: blob, wire: wire, hash: hash}
+        put = %{rkey: rkey, cid: cid_string, blob: blob, wire: wire, hash: hash}
 
-      result =
         Mural.Store.commit(repo, keys, tekoa.id, "put", entrada, fn ->
           write_upload(repo, scope, tekoa, upload, put)
         end)
 
-      upload_result(repo, keys, scope, tekoa, upload, attempts, result)
-    else
-      {:error, {:payload_invalido, _}} = error -> error
-      {:error, reason} -> {:error, {:envelope_invalido, reason}}
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -463,8 +452,7 @@ defmodule Ypy.Ybira do
            ),
          {:ok, _} <- commit_record(repo, scope, rkey, "ypy.file.v0", cid, wire),
          {:ok, file} <-
-           Store.insert_file(
-             repo,
+           repo.insert(
              File.changeset(%File{}, %{
                tekoa_id: tekoa.id,
                dono_id: scope.ava.id,
@@ -479,25 +467,23 @@ defmodule Ypy.Ybira do
                zona: :casa
              })
            ),
+         # A cota vale pelo estado no momento da escrita: o caminho rapido la
+         # fora pode ter visto lugar que um upload concorrente ja ocupou, e o
+         # used e relido aqui dentro, antes de somar. Estourar agora desfaz a
+         # transacao inteira (RFC_006 secao 8).
+         {:ok, tekoa_agora} <- fetch_tekoa(repo, scope),
+         :ok <- quota_ok?(repo, tekoa_agora, upload.size),
          :ok <- MaracaStore.add_storage(repo, tekoa.id, upload.size) do
       {:ok, file}
     end
   end
 
-  defp upload_result(_repo, _keys, _scope, _tekoa, _upload, _attempts, {:ok, file}), do: {:ok, file}
-
-  defp upload_result(repo, keys, scope, tekoa, upload, attempts, {:error, %Ecto.Changeset{} = changeset}) do
-    if unique_conflict?(changeset) and attempts > 1 do
-      commit_upload_rows(repo, keys, scope, tekoa, upload, attempts - 1)
-    else
-      {:error, changeset}
-    end
-  end
-
-  defp upload_result(_repo, _keys, _scope, _tekoa, _upload, _attempts, {:error, reason}), do: {:error, reason}
-
   # O envelope montado, checado contra o lexicon e enderecado: o par
-  # {cid string, wire} que o commit grava.
+  # {cid string, wire} que o commit grava. Os erros do check/2 chegam
+  # taggeados para a borda: quando todo erro e de payload, o envelope esta
+  # bom e o payload nao, e o tag e {:payload_invalido, erros}, com o
+  # "payload" do caminho tirado, como o validador entregou; erro de forma do
+  # envelope junto, ou colecao desconhecida, e {:envelope_invalido, motivo}.
   defp versao(tipo, rkey, actor, payload) do
     record =
       Record.build(
@@ -511,20 +497,32 @@ defmodule Ypy.Ybira do
     case Record.check(record, Registry.record(tipo)) do
       :ok ->
         {_bytes, cid} = Record.encode(record)
-        {:ok, {Cid.to_string(cid), wire_map(record)}}
+        {:ok, {Cid.to_string(cid), Record.to_wire(record)}}
 
-      {:error, reason} ->
-        {:error, reason}
+      {:error, :unknown_collection} ->
+        {:error, {:envelope_invalido, :unknown_collection}}
+
+      {:error, errors} ->
+        if so_de_payload?(errors) do
+          {:error, {:payload_invalido, Enum.map(errors, &tirar_prefixo/1)}}
+        else
+          {:error, {:envelope_invalido, errors}}
+        end
     end
   end
 
-  defp commit_folder(repo, keys, scope, nome, parent, attempts \\ @max_attempts)
+  defp so_de_payload?(errors) do
+    Enum.all?(errors, fn
+      {["payload" | _], _} -> true
+      _ -> false
+    end)
+  end
 
-  defp commit_folder(_repo, _keys, _scope, _nome, _parent, 0), do: {:error, :rkey_conflict}
+  defp tirar_prefixo({["payload" | path], reason}), do: {path, reason}
 
-  defp commit_folder(repo, keys, scope, nome, parent, attempts) do
-    rkey = Folder.next_rkey()
-    actor = "#{scope.ava.username}@#{scope.tekoa.domain}"
+  defp commit_folder(repo, keys, scope, nome, parent) do
+    rkey = Tid.now()
+    actor = Handle.of(scope.ava.username, scope.tekoa.domain)
 
     case versao("ypy.folder.v0", rkey, actor, %{"name" => nome}) do
       {:ok, {cid_string, wire}} ->
@@ -535,34 +533,18 @@ defmodule Ypy.Ybira do
           "cid" => cid_string
         }
 
-        result =
-          Mural.Store.commit(repo, keys, scope.tekoa.id, "put", entrada, fn ->
-            write_folder(repo, scope, rkey, cid_string, wire, nome, parent)
-          end)
-
-        folder_result(repo, keys, scope, nome, parent, attempts, result)
+        Mural.Store.commit(repo, keys, scope.tekoa.id, "put", entrada, fn ->
+          write_folder(repo, scope, rkey, cid_string, wire, nome, parent)
+        end)
 
       {:error, reason} ->
-        {:error, {:envelope_invalido, reason}}
+        {:error, reason}
     end
   end
-
-  defp folder_result(_repo, _keys, _scope, _nome, _parent, _attempts, {:ok, folder}), do: {:ok, folder}
-
-  defp folder_result(repo, keys, scope, nome, parent, attempts, {:error, %Ecto.Changeset{} = changeset}) do
-    if unique_conflict?(changeset) and attempts > 1 do
-      commit_folder(repo, keys, scope, nome, parent, attempts - 1)
-    else
-      {:error, changeset}
-    end
-  end
-
-  defp folder_result(_repo, _keys, _scope, _nome, _parent, _attempts, {:error, reason}), do: {:error, reason}
 
   defp write_folder(repo, scope, rkey, cid, wire, nome, parent) do
     with {:ok, _} <- commit_record(repo, scope, rkey, "ypy.folder.v0", cid, wire) do
-      Store.insert_folder(
-        repo,
+      repo.insert(
         Folder.changeset(%Folder{}, %{
           tekoa_id: scope.tekoa.id,
           dono_id: scope.ava.id,
@@ -597,7 +579,7 @@ defmodule Ypy.Ybira do
         "rkey" => row.rkey
       },
       fn ->
-        aplicar.(row, DateTime.truncate(DateTime.utc_now(), :second))
+        aplicar.(row)
       end
     )
   end
@@ -605,55 +587,24 @@ defmodule Ypy.Ybira do
   defp mudar_zona(repo, keys, scope, tipo, rkey, zona, entrada) do
     with {:ok, row} <- recurso(repo, scope.tekoa.id, tipo, rkey),
          :ok <- owner_guard(row, scope) do
-      if row.zona == zona do
-        {:ok, row}
-      else
-        mutar_row(repo, keys, scope, tipo, row, entrada, zona_upsert(repo, tipo, zona))
-      end
+      mudar_zona_row(repo, keys, scope, tipo, row, zona, entrada)
     end
   end
 
-  defp zona_upsert(repo, tipo, zona) do
-    fn row, _agora -> Store.update(repo, changeset_de(tipo, :zona, row, zona)) end
+  defp mudar_zona_row(_repo, _keys, _scope, _tipo, %{zona: zona} = row, zona, _entrada), do: {:ok, row}
+
+  defp mudar_zona_row(repo, keys, scope, tipo, row, zona, entrada) do
+    mutar_row(repo, keys, scope, tipo, row, entrada, &repo.update(change(&1, zona: zona)))
   end
 
   defp owner_guard(row, scope) do
     if row.dono_id == scope.ava.id, do: :ok, else: {:error, :not_owner}
   end
 
-  defp changeset_de(tipo, :trash, row, agora), do: trash_changeset(tipo, row, agora)
-  defp changeset_de(tipo, :restore, row, nil), do: restore_changeset(tipo, row)
-  defp changeset_de(tipo, :zona, row, zona), do: zona_changeset(tipo, row, zona)
-  defp changeset_de(tipo, :record, row, attrs), do: record_changeset(tipo, row, attrs)
-
-  defp trash_changeset("ypy.file.v0", row, agora), do: File.trash_changeset(row, agora)
-  defp trash_changeset("ypy.folder.v0", row, agora), do: Folder.trash_changeset(row, agora)
-
-  defp restore_changeset("ypy.file.v0", row), do: File.restore_changeset(row)
-  defp restore_changeset("ypy.folder.v0", row), do: Folder.restore_changeset(row)
-
-  defp zona_changeset("ypy.file.v0", row, zona), do: File.zona_changeset(row, zona)
-  defp zona_changeset("ypy.folder.v0", row, zona), do: Folder.zona_changeset(row, zona)
-
-  defp record_changeset("ypy.file.v0", row, attrs), do: File.record_changeset(row, attrs)
-  defp record_changeset("ypy.folder.v0", row, attrs), do: Folder.record_changeset(row, attrs)
-
-  defp unique_conflict?(%Ecto.Changeset{errors: errors}) do
-    Enum.any?(errors, fn
-      {_field, {_message, [constraint: :unique, constraint_name: _]}} -> true
-      _ -> false
-    end)
-  end
-
-  defp wire_map(%Record{} = record) do
-    %{
-      "$type" => record.type,
-      "rkey" => record.rkey,
-      "actor" => record.actor,
-      "created_at" => record.created_at,
-      "payload" => record.payload
-    }
-  end
+  # O changeset de record pelo struct: arquivo e pasta tem changesets
+  # diferentes para a mesma versao nova do envelope.
+  defp record_changeset(%File{} = row, attrs), do: File.record_changeset(row, attrs)
+  defp record_changeset(%Folder{} = row, attrs), do: Folder.record_changeset(row, attrs)
 
   defp now_micros, do: System.os_time(:microsecond)
 

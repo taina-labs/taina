@@ -13,7 +13,6 @@ defmodule Ypy.Maraca.Ava do
 
   import Ecto.Changeset
 
-  alias Ypy.Maraca.Credentials
   alias Ypy.Maraca.Tekoa
   alias Ypy.PublicId
 
@@ -143,7 +142,7 @@ defmodule Ypy.Maraca.Ava do
 
   defp hash_password(%Ecto.Changeset{valid?: true, changes: %{password: password}} = changeset) do
     changeset
-    |> put_change(:password_hash, Credentials.hash(password))
+    |> put_change(:password_hash, Bcrypt.hash_pwd_salt(password))
     |> delete_change(:password)
   end
 

@@ -39,21 +39,23 @@ defmodule Ypy.Maraca.Policy do
   A regra de leitura das duas zonas (RFC_003 D2): praca OU dono OU concessao.
 
   `zona` e a zona do recurso, `leitor_id` e `dono_id` identificam quem le e
-  quem e dono, `recurso` e o id publico do item e `concessoes` sao as
-  concessoes ativas, cada uma um mapa com `leitor_id` e `recurso`. Ler a casa
-  de alguem exige concessao explicita do dono, e vale para o zelador como
-  para qualquer morador; a praca ninguem pede para ler.
+  quem e dono, `tipo` e a colecao do recurso, `recurso` e o id publico do
+  item e `concessoes` sao as concessoes ativas, cada uma um mapa com
+  `leitor_id`, `tipo` e `recurso`: a concessao abre o recurso da colecao que
+  ela nomeia, e o mesmo rkey em outra colecao nao passa. Ler a casa de
+  alguem exige concessao explicita do dono, e vale para o zelador como para
+  qualquer morador; a praca ninguem pede para ler.
   """
-  @spec can_read?(:casa | :praca, term(), term(), term(), [map()]) :: boolean()
-  def can_read?(zona, leitor_id, dono_id, recurso, concessoes) when zona in @zonas and is_list(concessoes) do
+  @spec can_read?(:casa | :praca, term(), term(), String.t(), term(), [map()]) :: boolean()
+  def can_read?(zona, leitor_id, dono_id, tipo, recurso, concessoes) when zona in @zonas and is_list(concessoes) do
     zona == :praca or leitor_id == dono_id or
-      Enum.any?(concessoes, &concedido?(&1, leitor_id, recurso))
+      Enum.any?(concessoes, &concedido?(&1, leitor_id, tipo, recurso))
   end
 
-  def can_read?(_zona, _leitor_id, _dono_id, _recurso, _concessoes), do: false
+  def can_read?(_zona, _leitor_id, _dono_id, _tipo, _recurso, _concessoes), do: false
 
-  defp concedido?(%{leitor_id: leitor_id, recurso: recurso}, leitor_id, recurso), do: true
-  defp concedido?(_concessao, _leitor_id, _recurso), do: false
+  defp concedido?(%{leitor_id: leitor_id, tipo: tipo, recurso: recurso}, leitor_id, tipo, recurso), do: true
+  defp concedido?(_concessao, _leitor_id, _tipo, _recurso), do: false
 
   @doc "Quanto tempo um convite vale, em segundos, contado da emissao."
   @spec invite_max_age_seconds() :: pos_integer()

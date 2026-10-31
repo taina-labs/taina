@@ -11,24 +11,20 @@ defmodule Ypy.Ybira.Store do
   alias Ypy.Ybira.Folder
   alias Ypy.Ybira.Queries
 
+  @doc "O recurso pelo rkey (arquivo ou pasta, dado o schema); lixeira so com opt-in."
+  def get_recurso(repo, schema, tekoa_id, rkey, lixeira? \\ false) do
+    repo.one(Queries.recurso(schema, tekoa_id, rkey, lixeira?))
+  end
+
   @doc "O arquivo pelo rkey; lixeira so com opt-in."
   def get_file(repo, tekoa_id, rkey, lixeira? \\ false) do
-    repo.one(Queries.recurso(File, tekoa_id, rkey, lixeira?))
+    get_recurso(repo, File, tekoa_id, rkey, lixeira?)
   end
 
   @doc "A pasta pelo rkey; lixeira so com opt-in."
   def get_folder(repo, tekoa_id, rkey, lixeira? \\ false) do
-    repo.one(Queries.recurso(Folder, tekoa_id, rkey, lixeira?))
+    get_recurso(repo, Folder, tekoa_id, rkey, lixeira?)
   end
-
-  @doc "Insere o arquivo, reclamando o rkey."
-  def insert_file(repo, changeset), do: repo.insert(changeset)
-
-  @doc "Insere a pasta, reclamando o rkey."
-  def insert_folder(repo, changeset), do: repo.insert(changeset)
-
-  @doc "Arquiva o envelope do record."
-  def insert_record(repo, changeset), do: repo.insert(changeset)
 
   @doc "Registra a existencia do blob (dedup por conteudo)."
   def put_blob(repo, changeset) do
@@ -46,10 +42,4 @@ defmodule Ypy.Ybira.Store do
   def folder_rkey(repo, folder_id) do
     repo.one(from(p in Folder, where: p.id == ^folder_id, select: p.rkey))
   end
-
-  @doc "Atualiza pelo changeset dado."
-  def update(repo, changeset), do: repo.update(changeset)
-
-  @doc "Lista pela query dada (listagens)."
-  def all(repo, query), do: repo.all(query)
 end

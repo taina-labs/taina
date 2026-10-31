@@ -8,7 +8,6 @@ defmodule Ypy.Factories do
   alias Ypy.BlobStore
   alias Ypy.KeyStore
   alias Ypy.Maraca.Ava
-  alias Ypy.Maraca.Store
   alias Ypy.Maraca.Tekoa
   alias Ypy.Maraca.TekoaKey
   alias Ypy.Scope
@@ -29,8 +28,7 @@ defmodule Ypy.Factories do
     {pub, _priv} = keypair
 
     {:ok, _} =
-      Store.insert(
-        repo,
+      repo.insert(
         TekoaKey.changeset(%TekoaKey{}, %{
           tekoa_id: tekoa.id,
           pub: pub,

@@ -23,6 +23,13 @@ defmodule Ypy.Handle do
   end
 
   @doc """
+  O handle das partes: o `nome` de quem age e o `tekoa` (o dominio), no `@`.
+  Puro: so junta as partes, nao valida; elas nascem validadas onde nascem
+  (o username no Ava, o dominio no Tekoa).
+  """
+  def of(nome, tekoa) when is_binary(nome) and is_binary(tekoa), do: nome <> "@" <> tekoa
+
+  @doc """
   Valida e separa as partes de um handle na forma canonica.
 
       iex> Ypy.Handle.parse("maria@tekoa.example.org")
@@ -45,7 +52,8 @@ defmodule Ypy.Handle do
 
   @doc """
   Verifica se e um dominio de Tekoa valido (a parte depois do `@`).
-  E a mesma gramatica que `Ypy.Did.from_domain/1` cobra.
+  E a gramatica de dominio da Tekoa, uma so: o mesmo `valid_domain?/1`
+  serve o handle e o `domain` da Tekoa.
   """
   def valid_domain?(domain) when is_binary(domain) and byte_size(domain) <= @max_length do
     domain != "" and Enum.all?(String.split(domain, "."), &valid_label?/1)

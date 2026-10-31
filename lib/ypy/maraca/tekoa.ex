@@ -1,8 +1,8 @@
 defmodule Ypy.Maraca.Tekoa do
   @moduledoc """
   A comunidade: uma por caixa no box, N no hospedado (RFC_006 D11). A
-  identidade e o `did:web` derivado do `domain` (`Ypy.Did.from_domain/1`); a
-  trava de uma-Tekoa-por-box e politica do produto, nao invariante daqui.
+  identidade e o `did:web` derivado do `domain`; a trava de uma-Tekoa-por-box
+  e politica do produto, nao invariante daqui.
   """
 
   use Ecto.Schema

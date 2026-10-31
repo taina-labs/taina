@@ -13,7 +13,6 @@ defmodule Ypy.Ybira.Folder do
 
   alias Ypy.Maraca.Ava
   alias Ypy.Maraca.Tekoa
-  alias Ypy.Tid
 
   @type t :: %__MODULE__{
           id: integer() | nil,
@@ -62,28 +61,5 @@ defmodule Ypy.Ybira.Folder do
     |> cast(attrs, [:cid, :nome])
     |> validate_required([:cid, :nome])
     |> validate_length(:nome, min: 1, max: 255)
-  end
-
-  @doc "Muda a zona. Idempotente: a mesma zona e no-op valido."
-  def zona_changeset(folder, zona) when zona in [:casa, :praca] do
-    change(folder, zona: zona)
-  end
-
-  @doc "Lixeira."
-  def trash_changeset(folder, agora) do
-    change(folder, apagado_em: agora)
-  end
-
-  @doc "Ressuscita da lixeira."
-  def restore_changeset(folder) do
-    change(folder, apagado_em: nil)
-  end
-
-  @doc "O proximo rkey (TID) de pasta, a partir de agora."
-  def next_rkey do
-    micros = System.os_time(:microsecond)
-    clock = rem(:erlang.unique_integer([:positive]), 1024)
-    {rkey, _int} = Tid.next(0, micros, clock)
-    rkey
   end
 end

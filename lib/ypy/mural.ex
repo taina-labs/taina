@@ -17,15 +17,12 @@ defmodule Ypy.Mural do
   assinatura incluida, para a ordem das entradas ficar selada junto com o
   conteudo.
 
-  Puro: nenhuma funcao toca banco, relogio ou processo. Serializar escrita e
-  do banco (indice unico em tekoa_id e seq, com retry no Store); aqui ficam
-  so as respostas de exportacao e verificacao.
+  Toda a matematica da cadeia e pura: selar entradas, calcular CIDs e conferir
+  a ordem, os links e as assinaturas.
   """
 
   alias Ypy.Cbor
   alias Ypy.Cid
-  alias Ypy.Mural.Entry
-  alias Ypy.Mural.Queries
   alias Ypy.Secp256k1
 
   @typedoc "Uma entrada da cadeia: mapa de chaves de string com `seq` inteiro, `prev` como CID ou nil, `payload` de mapa e `signature` de 64 bytes."
@@ -86,13 +83,8 @@ defmodule Ypy.Mural do
   end
 
   # O que a assinatura cobre: o corpo sem a assinatura, nos mesmos tres
-  ## A projecao social
-
   # campos que o seal canonicou. Um campo estranho na entrada nao entra na
   # assinatura, e os tres precisam estar la com os tipos certos.
-  # A partir daqui a cadeia e lida do banco, com o repo sempre como primeiro
-  # argumento (RFC_006 D4). A matematica acima continua pura: verificar uma
-  # cadeia exportada nunca precisa de repo.
   defp body(%{"seq" => seq, "prev" => prev, "payload" => payload}) when is_integer(seq) and is_map(payload),
     do: Cbor.encode(%{"seq" => seq, "prev" => prev, "payload" => payload})
 
@@ -115,67 +107,4 @@ defmodule Ypy.Mural do
   end
 
   defp check_link(_entry, _expected_seq, _expected_prev), do: {:error, :bad_entry}
-
-  @doc """
-  O mural legivel: a projecao da cadeia, com filtro por tipo de entrada,
-  ordem da mais recente para a mais antiga e paginacao por cursor de `seq`.
-  Opcoes: `:tipo`, `:limit` (padrao 50), `:cursor` (seq do ultimo item).
-  """
-  @spec entradas(Ecto.Repo.t(), integer(), keyword()) :: [Entry.t()]
-  def entradas(repo, tekoa_id, opts \\ []) do
-    import Ecto.Query
-
-    query =
-      if tipo = opts[:tipo] do
-        Queries.por_tipo(tekoa_id, tipo)
-      else
-        Queries.entradas(tekoa_id)
-      end
-
-    query =
-      if cursor = opts[:cursor] do
-        where(query, [e], e.seq < ^cursor)
-      else
-        query
-      end
-
-    repo.all(limit(query, ^(opts[:limit] || 50)))
-  end
-
-  @doc "Uma entrada pelo seq, dentro da Tekoa."
-  @spec entrada(Ecto.Repo.t(), integer(), pos_integer()) :: Entry.t() | nil
-  def entrada(repo, tekoa_id, seq), do: repo.one(Queries.por_seq(tekoa_id, seq))
-
-  @doc """
-  Verifica a cadeia inteira da Tekoa contra a chave publica ativa dela, do
-  genesis a cabeca. Devolve :ok, {:error, {indice, motivo}} na entrada que
-  quebra, ou {:error, :not_found} quando a Tekoa nao tem chave ativa.
-  """
-  @spec verificar_cadeia(Ecto.Repo.t(), integer()) ::
-          :ok | {:error, {non_neg_integer(), atom()}} | {:error, :not_found}
-  def verificar_cadeia(repo, tekoa_id) do
-    case Ypy.Maraca.Store.chave_ativa(repo, tekoa_id) do
-      %Ypy.Maraca.TekoaKey{pub: pub} ->
-        entries =
-          repo
-          |> Ypy.Mural.Store.entradas(tekoa_id)
-          |> Enum.map(&reconstruct/1)
-
-        verify_chain(pub, entries)
-
-      nil ->
-        {:error, :not_found}
-    end
-  end
-
-  # A linha de volta ao mapa do fio CBOR: prev volta a ser link e a
-  # assinatura volta a ser byte string; a matematica pura confere o resto.
-  defp reconstruct(%Entry{} = row) do
-    %{
-      "seq" => row.seq,
-      "prev" => row.prev && Cid.parse(row.prev),
-      "payload" => row.payload,
-      "signature" => row.signature
-    }
-  end
 end

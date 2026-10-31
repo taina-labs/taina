@@ -36,7 +36,8 @@ defmodule Ypy.Mural.PersistenceTest do
     {:ok, ultima} = Store.append(TestRepo, keys, tekoa.id, "put", %{"rkey" => "rk3"})
 
     assert ultima.seq == 3
-    assert Mural.verificar_cadeia(TestRepo, tekoa.id) == :ok
+    assert Enum.map(Store.cadeia(TestRepo, tekoa.id), & &1.seq) == [1, 2, 3]
+    assert Store.verificar_cadeia(TestRepo, tekoa.id) == :ok
   end
 
   test "conflito de sequencia sob escritor concorrente: a transacao inteira recomeca e vence", %{
@@ -60,9 +61,9 @@ defmodule Ypy.Mural.PersistenceTest do
     assert Process.get(:escritas) == 2
     assert dado_contado(tekoa) == 1
 
-    assert Mural.verificar_cadeia(TestRepo, tekoa.id) == :ok
+    assert Store.verificar_cadeia(TestRepo, tekoa.id) == :ok
     assert Store.head(TestRepo, tekoa.id).seq == 2
-    assert Mural.entrada(TestRepo, tekoa.id, 2).prev == primeira.cid
+    assert Store.entrada(TestRepo, tekoa.id, 2).prev == primeira.cid
   end
 
   test "conflito em toda tentativa: tres transacoes inteiras e :chain_conflict", %{
@@ -82,7 +83,7 @@ defmodule Ypy.Mural.PersistenceTest do
     assert Process.get(:escritas) == 3
     assert dado_contado(tekoa) == 0
 
-    assert Mural.verificar_cadeia(TestRepo, tekoa.id) == :ok
+    assert Store.verificar_cadeia(TestRepo, tekoa.id) == :ok
     assert Store.head(TestRepo, tekoa.id).seq == 1
   end
 
@@ -92,7 +93,7 @@ defmodule Ypy.Mural.PersistenceTest do
     assert Store.append(TestRepo, sem_chave, tekoa.id, "put", %{"rkey" => "rk1"}) ==
              {:error, :not_found}
 
-    assert Mural.entradas(TestRepo, tekoa.id) == []
+    assert Store.cadeia(TestRepo, tekoa.id) == []
   end
 
   test "a projecao filtra por tipo e pagina por cursor de seq", %{tekoa: tekoa, keys: keys} do
@@ -100,14 +101,16 @@ defmodule Ypy.Mural.PersistenceTest do
     {:ok, _} = Store.append(TestRepo, keys, tekoa.id, "concessao", %{"rkey" => "rk2"})
     {:ok, e3} = Store.append(TestRepo, keys, tekoa.id, "publicar", %{"rkey" => "rk3"})
 
-    publica = Mural.entradas(TestRepo, tekoa.id, tipo: "publicar")
-    assert Enum.map(publica, & &1.seq) == [e1.seq, e3.seq]
+    publica = Store.entradas(TestRepo, tekoa.id, tipo: "publicar")
+    assert Enum.map(publica, & &1.seq) == [e3.seq, e1.seq]
 
-    do_meio = Mural.entradas(TestRepo, tekoa.id, cursor: e3.seq)
-    assert Enum.map(do_meio, & &1.seq) == [e1.seq, 2]
+    assert Enum.map(Store.entradas(TestRepo, tekoa.id), & &1.seq) == [3, 2, 1]
 
-    assert Mural.entrada(TestRepo, tekoa.id, 2).tipo == "concessao"
-    assert Mural.entrada(TestRepo, tekoa.id, 9) == nil
+    do_meio = Store.entradas(TestRepo, tekoa.id, cursor: e3.seq)
+    assert Enum.map(do_meio, & &1.seq) == [2, e1.seq]
+
+    assert Store.entrada(TestRepo, tekoa.id, 2).tipo == "concessao"
+    assert Store.entrada(TestRepo, tekoa.id, 9) == nil
   end
 
   test "verificar_cadeia sem chave ativa responde :not_found", %{tekoa: tekoa, keys: keys} do
@@ -119,7 +122,7 @@ defmodule Ypy.Mural.PersistenceTest do
       |> TekoaKey.retire_changeset(DateTime.truncate(DateTime.utc_now(), :second))
       |> TestRepo.update!()
 
-    assert Mural.verificar_cadeia(TestRepo, tekoa.id) == {:error, :not_found}
+    assert Store.verificar_cadeia(TestRepo, tekoa.id) == {:error, :not_found}
   end
 
   defp tekoa_pub(repo, tekoa_id) do
@@ -133,8 +136,7 @@ defmodule Ypy.Mural.PersistenceTest do
     Store.commit(repo, keys, tekoa.id, "publicar", %{"rkey" => "rk2"}, fn ->
       Process.put(:escritas, Process.get(:escritas, 0) + 1)
 
-      Store.insert(
-        repo,
+      repo.insert(
         Folder.changeset(%Folder{}, %{
           tekoa_id: tekoa.id,
           dono_id: dono.id,

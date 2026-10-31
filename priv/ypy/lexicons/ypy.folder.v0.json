@@ -1,1 +1,1 @@
-{"defs":{"main":{"record":{"properties":{"name":{"maxLength":100,"type":"string"}},"required":["name"],"type":"object"},"type":"record"}},"id":"ypy.folder.v0"}
+{"defs":{"main":{"record":{"properties":{"name":{"maxGraphemes":255,"maxLength":1020,"type":"string"}},"required":["name"],"type":"object"},"type":"record"}},"id":"ypy.folder.v0"}
