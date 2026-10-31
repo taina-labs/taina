@@ -173,6 +173,23 @@ defmodule TainaWeb.AccessRequestsLiveTest do
     assert has_element?(lv, ".list-row--dado", "Joana liberou o acesso")
   end
 
+  test "revoked access is not shown as currently released", %{
+    conn: conn,
+    tekoa: tekoa,
+    owner: owner,
+    requester: requester,
+    target_file: file
+  } do
+    req = request(requester, tekoa, file)
+    {:ok, grant} = Maraca.aprovar(Scope.new(owner, tekoa), req)
+    {:ok, _revoked} = Maraca.revogar(Scope.new(owner, tekoa), grant)
+
+    {:ok, lv, html} = conn |> log_in(requester) |> live(~p"/conta/pedidos")
+
+    assert html =~ "Nenhum pedido ainda"
+    refute has_element?(lv, ".list-row--dado", "Joana liberou o acesso")
+  end
+
   test "denial reaches the requester as a flash and a line", %{
     conn: conn,
     tekoa: tekoa,

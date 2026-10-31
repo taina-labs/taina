@@ -813,6 +813,14 @@ defmodule Taina.Maraca do
   """
   def list_my_recent_decisions(%Ypy.Scope{} = scope) do
     within_tekoa(scope, fn ->
+      active_grants =
+        from(c in Concessao,
+          where: c.tekoa_id == ^scope.tekoa.id and c.leitor_id == ^scope.ava.id and is_nil(c.revogada_em),
+          select: {c.dono_id, c.tipo, c.recurso}
+        )
+        |> Repo.all()
+        |> MapSet.new()
+
       decisions =
         from(p in Pedido,
           where: p.tekoa_id == ^scope.tekoa.id,
@@ -822,10 +830,29 @@ defmodule Taina.Maraca do
         )
         |> Repo.all()
         |> Repo.preload(:dono)
+        |> active_decisions(active_grants)
 
       {:ok, decisions}
     end)
   end
+
+  defp active_decisions(decisions, active_grants) do
+    latest_approved =
+      decisions
+      |> Enum.filter(fn decision ->
+        decision.status == :aprovado and MapSet.member?(active_grants, decision_key(decision))
+      end)
+      |> Enum.group_by(&decision_key/1)
+      |> Map.new(fn {key, rows} -> {key, Enum.max_by(rows, & &1.decidido_em).id} end)
+
+    Enum.filter(decisions, fn
+      %Pedido{status: :negado} -> true
+      %Pedido{status: :aprovado} = decision -> Map.get(latest_approved, decision_key(decision)) == decision.id
+      _pending -> false
+    end)
+  end
+
+  defp decision_key(%Pedido{dono_id: dono_id, tipo: tipo, recurso: recurso}), do: {dono_id, tipo, recurso}
 
   @doc """
   Os pedidos que `scope.ava` recusou na própria casa, para a seção decidida
