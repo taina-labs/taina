@@ -83,6 +83,21 @@ defmodule TainaWeb.StorageLiveTest do
     assert render(lv) =~ "10 GB livres"
   end
 
+  test "cota menor que um GiB não aparece como zero no campo", %{
+    conn: conn,
+    tekoa: tekoa,
+    admin: admin
+  } do
+    tekoa
+    |> Ecto.Changeset.change(storage_quota_bytes: 512 * 1024 * 1024)
+    |> Repo.update!()
+
+    {:ok, lv, _html} = conn |> log_in(admin) |> live(~p"/armazenamento")
+    lv |> element(~s(button[phx-click="open-quota-sheet"])) |> render_click()
+
+    assert has_element?(lv, ~s(#quota-sheet input[name="quota[gigabytes]"][value="1"]))
+  end
+
   # board `disco inteiro` (o card sem limite): o número grande diz que o
   # disco inteiro está em uso, com o tamanho lido do disco, e a folga real.
   test "disco inteiro: o card diz 'Usando o disco inteiro' com o tamanho do disco", %{

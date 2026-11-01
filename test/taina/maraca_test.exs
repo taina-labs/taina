@@ -91,15 +91,17 @@ defmodule Taina.MaracaTest do
       assert accepted.username == "maria"
     end
 
-    test "password confirmation mismatch is rejected", %{tekoa: tekoa, zelador: zelador} do
+    test "legacy confirmation data is ignored", %{tekoa: tekoa, zelador: zelador} do
       {:ok, %{token: token}} = Maraca.invite_user(zelador, tekoa)
 
-      assert {:error, :invalid_token} =
+      assert {:ok, accepted} =
                Maraca.accept_invite(token, %{
                  "username" => "maria",
                  "password" => "senhasegura123",
                  "password_confirmation" => "outra-coisa"
                })
+
+      assert accepted.username == "maria"
     end
 
     test "convite de conta desativada não é aceito", %{tekoa: tekoa, zelador: zelador} do
@@ -269,7 +271,7 @@ defmodule Taina.MaracaTest do
 
       assert {:ok, %{token: token}} = Maraca.mint_reset_link(scope, member)
 
-      assert {:ok, _} = Maraca.reset_password(token, "novasenha123", "novasenha123")
+      assert {:ok, _} = Maraca.reset_password(token, "novasenha123")
       assert {:ok, _} = Maraca.authenticate("maria", "novasenha123", tekoa)
     end
 
@@ -294,18 +296,7 @@ defmodule Taina.MaracaTest do
       end)
 
       assert {:error, :invalid_token} =
-               Maraca.reset_password("token_qualquer", "novasenha123", "novasenha123")
-    end
-
-    test "senhas diferentes sao erro do formulario, nao link vencido", %{
-      tekoa: tekoa,
-      zelador: zelador,
-      member: member
-    } do
-      {:ok, %{token: token}} = Maraca.mint_reset_link(Scope.new(zelador, tekoa), member)
-
-      assert {:error, :password_mismatch} =
-               Maraca.reset_password(token, "novasenha123", "outrasenha123")
+               Maraca.reset_password("token_qualquer", "novasenha123")
     end
 
     test "quem resetou perde os aparelhos: o reset nao tem aparelho de chamada", %{
@@ -320,7 +311,7 @@ defmodule Taina.MaracaTest do
       {:ok, %{token: raw}} = Maraca.create_device_token(member_scope, "celular da pessoa")
       assert {:ok, _} = Maraca.resolve_device_token(raw)
 
-      assert {:ok, _} = Maraca.reset_password(token, "novasenha123", "novasenha123")
+      assert {:ok, _} = Maraca.reset_password(token, "novasenha123")
 
       # o token do celular da pessoa cai junto (a web e o shell nao tem
       # aparelho de chamada: todos os aparelhos caem)
@@ -403,7 +394,7 @@ defmodule Taina.MaracaTest do
 
       assert {:ok, _} = Maraca.update_password(Scope.new(ava, tekoa), "senhasegura123", "senha-nova-456")
 
-      assert {:error, :invalid_token} = Maraca.reset_password(token, "terceira789", "terceira789")
+      assert {:error, :invalid_token} = Maraca.reset_password(token, "terceira789")
     end
   end
 

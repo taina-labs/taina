@@ -186,14 +186,13 @@ defmodule Taina.Maraca do
 
   @doc """
   O aceite do convite: username, display_name e senha; a conta ativa. Token
-  expirado, conta desativada ou confirmacao de senha errada recusam. O papel
+  expirado ou conta desativada recusam. O papel
   vai no registro do mural para o aceite de zelador ser legivel na cadeia.
   """
   def accept_invite(token, attrs) do
     with %Ava{} = ava <- find_by_token(:invite_token_hash, token),
          false <- token_expired?(ava.invite_sent_at, @invitation_max_age_seconds),
-         nil <- ava.deactivated_at,
-         :ok <- confirmation_ok?(attrs) do
+         nil <- ava.deactivated_at do
       result =
         Repo.with_tekoa(tekoa_public_id(ava), fn -> aceitar_convite(ava, attrs) end)
 
@@ -215,14 +214,6 @@ defmodule Taina.Maraca do
     with {:ok, accepted} <- Repo.update(Ava.accept_changeset(ava, attrs)) do
       {:ok, %{ava: accepted, tekoa: Repo.get!(Tekoa, accepted.tekoa_id)}}
     end
-  end
-
-  # A confirmacao de senha e fluxo do produto (o kernel cobra so a senha).
-  defp confirmation_ok?(attrs) do
-    password = fetch_attr(attrs, :password)
-    confirmation = fetch_attr(attrs, :password_confirmation)
-
-    if confirmation in [nil, password], do: :ok, else: {:error, :password_mismatch}
   end
 
   @doc "Um convite pendente cujo token ja passou da validade."
@@ -551,11 +542,9 @@ defmodule Taina.Maraca do
     end
   end
 
-  def reset_password(reset_token, new_password, password_confirmation) do
+  def reset_password(reset_token, new_password) do
     with %Ava{} = ava <- find_by_token(:reset_token_hash, reset_token),
          false <- token_expired?(ava.reset_sent_at, @reset_max_age_seconds),
-         :ok <-
-           confirmation_ok?(%{password: new_password, password_confirmation: password_confirmation}),
          {:ok, _ava} = result <-
            Repo.with_tekoa(tekoa_public_id(ava), fn ->
              Repo.update(Ava.reset_changeset(ava, %{password: new_password}))
@@ -570,10 +559,6 @@ defmodule Taina.Maraca do
       # aponta o campo (aqui nao existe "senha curta vira link invalido").
       {:error, %Ecto.Changeset{}} = changeset ->
         changeset
-
-      # As duas senhas não batem: é erro do formulário, não link vencido.
-      {:error, :password_mismatch} ->
-        {:error, :password_mismatch}
 
       _ ->
         {:error, :invalid_token}
@@ -1295,8 +1280,6 @@ defmodule Taina.Maraca do
   defp hash_token(raw_token) do
     :sha256 |> :crypto.hash(raw_token) |> Base.encode64(padding: false)
   end
-
-  defp fetch_attr(attrs, key) when is_map(attrs), do: Map.get(attrs, key) || Map.get(attrs, to_string(key))
 
   defp agora, do: DateTime.truncate(DateTime.utc_now(), :second)
 end

@@ -169,7 +169,7 @@ defmodule TainaWeb.StorageLive do
   defp quota_help(_disk_gb), do: gettext("Um número inteiro, em GB.")
 
   # O valor do campo quando a folha abre: o limite de hoje, em GB.
-  defp quota_gb(%{quota_bytes: quota}) when is_integer(quota), do: div(quota, @gigabyte)
+  defp quota_gb(%{quota_bytes: quota}) when is_integer(quota), do: max(div(quota, @gigabyte), 1)
   defp quota_gb(_stats), do: nil
 
   # As linhas do "O que ocupa espaço" (board), na ordem: casas (a soma das

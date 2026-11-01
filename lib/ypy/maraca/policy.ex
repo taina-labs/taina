@@ -11,8 +11,8 @@ defmodule Ypy.Maraca.Policy do
 
   @zonas [:casa, :praca]
   @papeis [:zelador, :morador]
-  @invite_max_age_seconds 2 * 24 * 60 * 60
-  @reset_max_age_seconds 30 * 60
+  @invite_max_age_seconds 7 * 24 * 60 * 60
+  @reset_max_age_seconds 60 * 60
 
   @doc "As duas zonas de todo conteudo (RFC_003 D2)."
   @spec zonas() :: [:casa | :praca]

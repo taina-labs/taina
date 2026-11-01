@@ -80,28 +80,28 @@ defmodule Ypy.Maraca.PolicyTest do
       assert Policy.reset_expired?(nil, agora)
     end
 
-    test "an invite lasts 2 days" do
+    test "an invite lasts 7 days" do
       emitido = DateTime.from_naive!(~N[2026-06-01 10:00:00], "Etc/UTC")
 
       refute Policy.invite_expired?(
                emitido,
-               DateTime.shift(emitido, second: 2 * 24 * 60 * 60 - 1)
+               DateTime.shift(emitido, second: 7 * 24 * 60 * 60 - 1)
              )
 
-      refute Policy.invite_expired?(emitido, DateTime.shift(emitido, day: 2))
+      refute Policy.invite_expired?(emitido, DateTime.shift(emitido, week: 1))
 
       assert Policy.invite_expired?(
                emitido,
-               DateTime.shift(emitido, second: 2 * 24 * 60 * 60 + 1)
+               DateTime.shift(emitido, second: 7 * 24 * 60 * 60 + 1)
              )
     end
 
-    test "a reset link lasts 30 minutes" do
+    test "a reset link lasts 1 hour" do
       emitido = DateTime.from_naive!(~N[2026-06-01 10:00:00], "Etc/UTC")
 
-      refute Policy.reset_expired?(emitido, DateTime.shift(emitido, second: 30 * 60 - 1))
-      refute Policy.reset_expired?(emitido, DateTime.shift(emitido, minute: 30))
-      assert Policy.reset_expired?(emitido, DateTime.shift(emitido, second: 30 * 60 + 1))
+      refute Policy.reset_expired?(emitido, DateTime.shift(emitido, second: 60 * 60 - 1))
+      refute Policy.reset_expired?(emitido, DateTime.shift(emitido, hour: 1))
+      assert Policy.reset_expired?(emitido, DateTime.shift(emitido, second: 60 * 60 + 1))
     end
 
     test "the generic predicate takes the bound" do

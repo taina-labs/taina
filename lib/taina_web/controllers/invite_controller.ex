@@ -41,22 +41,15 @@ defmodule TainaWeb.InviteController do
   # Tradução do changeset para a frase do campo com problema (o LiveView não
   # recebe o changeset, então a mensagem viaja no flash).
   defp accept_error_message(%Changeset{} = changeset) do
-    cond do
-      confirmation_mismatch?(changeset) -> gettext("As duas senhas não são iguais.")
-      username_taken?(changeset) -> gettext("Esse nome de usuário já existe. Escolha outro.")
-      true -> gettext("Não foi possível criar a conta. Revise os dados e tente de novo.")
+    if username_taken?(changeset) do
+      gettext("Esse nome de usuário já existe. Escolha outro.")
+    else
+      gettext("Não foi possível criar a conta. Revise os dados e tente de novo.")
     end
   end
 
   defp accept_error_message(_other) do
     gettext("Não foi possível criar a conta. Revise os dados e tente de novo.")
-  end
-
-  defp confirmation_mismatch?(%Changeset{} = changeset) do
-    Enum.any?(changeset.errors, fn
-      {:password, {_message, opts}} -> Keyword.get(opts, :validation) == :confirmation
-      _other -> false
-    end)
   end
 
   defp username_taken?(%Changeset{} = changeset) do

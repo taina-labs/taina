@@ -27,7 +27,7 @@ defmodule TainaWeb.API.PasswordController do
   def update(conn, %{"token" => token} = params) do
     password = params["password"]
 
-    with {:ok, ava} <- Maraca.reset_password(token, password, password),
+    with {:ok, ava} <- Maraca.reset_password(token, password),
          {:ok, tekoa} <- Maraca.get_tekoa(),
          scope = Scope.new(ava, tekoa),
          {:ok, %{device: device, token: raw}} <-

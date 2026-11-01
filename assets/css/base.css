@@ -128,18 +128,6 @@ button,
   color: var(--text-on-brand);
 }
 
-/* Sem barras de rolagem visíveis em nenhuma tela, o scroll continua,
-   só a barra some (Firefox + WebKit/Blink). */
-* {
-  scrollbar-width: none;
-}
-
-*::-webkit-scrollbar {
-  width: 0;
-  height: 0;
-  display: none;
-}
-
 /* ---------- estilos de tipo (tokens type.* do Penpot) ---------- */
 
 .type-display {

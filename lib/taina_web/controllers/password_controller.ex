@@ -11,7 +11,7 @@ defmodule TainaWeb.PasswordController do
   alias Taina.Maraca
 
   def update(conn, %{"token" => token, "account" => params}) do
-    case Maraca.reset_password(token, params["password"], params["password_confirmation"]) do
+    case Maraca.reset_password(token, params["password"]) do
       {:ok, ava} ->
         conn
         |> TainaWeb.Auth.log_in(ava)
@@ -23,11 +23,6 @@ defmodule TainaWeb.PasswordController do
         |> put_flash(:error, gettext("Este link expirou ou já foi usado. Peça um novo a quem cuida da comunidade."))
         |> redirect(to: ~p"/login")
 
-      {:error, :password_mismatch} ->
-        conn
-        |> put_flash(:error, gettext("As duas senhas não são iguais."))
-        |> redirect(to: ~p"/redefinir/#{token}")
-
       {:error, changeset} ->
         conn
         |> put_flash(:error, reset_error_message(changeset))
@@ -36,21 +31,9 @@ defmodule TainaWeb.PasswordController do
   end
 
   # Tradução do changeset para a frase do campo com problema (o LiveView não
-  # recebe o changeset, então a mensagem viaja no flash). O `reset_password/3`
+  # recebe o changeset, então a mensagem viaja no flash). O `reset_password/2`
   # só devolve changeset quando a senha nova viola uma regra: o link invalido
   # já sai com o próprio motivo.
-  defp reset_error_message(%Changeset{} = changeset) do
-    if confirmation_mismatch?(changeset) do
-      gettext("As duas senhas não são iguais.")
-    else
-      gettext("Não foi possível redefinir a senha. Revise os dados e tente de novo.")
-    end
-  end
-
-  defp confirmation_mismatch?(%Changeset{} = changeset) do
-    Enum.any?(changeset.errors, fn
-      {:password, {_message, opts}} -> Keyword.get(opts, :validation) == :confirmation
-      _other -> false
-    end)
-  end
+  defp reset_error_message(%Changeset{}),
+    do: gettext("Não foi possível redefinir a senha. Revise os dados e tente de novo.")
 end
