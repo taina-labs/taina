@@ -47,6 +47,7 @@ defmodule TainaWeb.GalleryLive do
      socket
      |> assign(:page_title, gettext("Galeria"))
      |> assign(:zona, :tudo)
+     |> assign(:last_tab, :grid)
      |> assign(:grid_zona, nil)
      |> assign(:timeline_zona, nil)
      |> assign(:photo_ids, [])
@@ -73,8 +74,8 @@ defmodule TainaWeb.GalleryLive do
     zona = parse_zona(params["zona"])
 
     case socket.assigns.live_action do
-      :grid -> {:noreply, socket |> assign(:zona, zona) |> ensure_grid()}
-      :timeline -> {:noreply, socket |> assign(:zona, zona) |> ensure_timeline()}
+      :grid -> {:noreply, socket |> assign(:zona, zona) |> assign(:last_tab, :grid) |> ensure_grid()}
+      :timeline -> {:noreply, socket |> assign(:zona, zona) |> assign(:last_tab, :timeline) |> ensure_timeline()}
       :viewer -> {:noreply, open_viewer(socket, params["id"])}
     end
   end
@@ -226,7 +227,7 @@ defmodule TainaWeb.GalleryLive do
   def handle_event("next", _params, socket), do: {:noreply, step(socket, +1)}
 
   def handle_event("close", _params, socket) do
-    {:noreply, Phoenix.LiveView.push_patch(socket, to: gallery_path(:grid, socket.assigns.zona))}
+    {:noreply, Phoenix.LiveView.push_patch(socket, to: gallery_path(socket.assigns.last_tab, socket.assigns.zona))}
   end
 
   def handle_event("retry", _params, socket) do
@@ -318,6 +319,9 @@ defmodule TainaWeb.GalleryLive do
   defp gallery_path(:grid, :tudo), do: ~p"/galeria"
   defp gallery_path(:grid, :praca), do: ~p"/galeria?#{[zona: "praca"]}"
   defp gallery_path(:grid, :casa), do: ~p"/galeria?#{[zona: "casa"]}"
+  defp gallery_path(:timeline, :tudo), do: ~p"/galeria/linha-do-tempo"
+  defp gallery_path(:timeline, :praca), do: ~p"/galeria/linha-do-tempo?#{[zona: "praca"]}"
+  defp gallery_path(:timeline, :casa), do: ~p"/galeria/linha-do-tempo?#{[zona: "casa"]}"
 
   # O estado vazio diz a verdade sobre o que está sendo lido: o board desenha
   # o conjunto inteiro; ?zona= segue filtrando na URL, então as palavras da

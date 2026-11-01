@@ -182,10 +182,25 @@ defmodule TainaWeb.FilePreviewLiveTest do
     end
 
     test "arquivo solto na raiz volta para o início", %{conn: conn, owner: owner, target_file: file} do
-      {:ok, _lv, html} = conn |> log_in(owner) |> live(~p"/documentos/#{file.rkey}")
+      {:ok, lv, html} = conn |> log_in(owner) |> live(~p"/documentos/#{file.rkey}")
 
       assert html =~ ~s(href="/documentos/casa")
+      assert has_element?(lv, ".page-header__back-label", "Casa")
       refute html =~ "/documentos/pasta/"
+    end
+
+    test "arquivo solto na praça volta para a praça", %{
+      conn: conn,
+      tekoa: tekoa,
+      owner: owner,
+      target_file: file
+    } do
+      {:ok, _} = Ybira.publicar_file(Scope.new(owner, tekoa), file.rkey)
+
+      {:ok, lv, html} = conn |> log_in(owner) |> live(~p"/documentos/#{file.rkey}")
+
+      assert html =~ ~s(href="/documentos")
+      assert has_element?(lv, ".page-header__back-label", "Praça")
     end
   end
 end

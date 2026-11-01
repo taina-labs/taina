@@ -59,7 +59,7 @@ defmodule TainaWeb.FilePreviewLive do
 
   # O voltar devolve para a pasta onde o arquivo mora, com o nome dela na
   # palavra (regra 1.5); arquivo da raiz (ou pasta que não se pode ver) volta
-  # para o início da casa.
+  # para o início da zona do arquivo.
   defp back_target(scope, file) do
     case Ybira.file_folder_rkey(scope, file) do
       {:ok, folder_rkey} ->
@@ -68,13 +68,16 @@ defmodule TainaWeb.FilePreviewLive do
             {~p"/documentos/pasta/#{folder.rkey}", back_label(folder.nome), folder.nome}
 
           _error ->
-            {~p"/documentos/casa", nil, nil}
+            root_target(file.zona)
         end
 
       _no_folder ->
-        {~p"/documentos/casa", nil, nil}
+        root_target(file.zona)
     end
   end
+
+  defp root_target(:praca), do: {~p"/documentos", gettext("Praça"), nil}
+  defp root_target(:casa), do: {~p"/documentos/casa", gettext("Casa"), nil}
 
   # Casa de outra pessoa: a pessoa não lê o conteúdo, mas vê o caminho (o
   # pedido de acesso). O nome do dono fica para o contexto validar; a tela

@@ -148,6 +148,20 @@ defmodule TainaWeb.GalleryLiveTest do
     assert_patch(lv, ~p"/galeria")
   end
 
+  test "fechar uma foto aberta pela linha do tempo volta para essa aba", %{
+    conn: conn,
+    ava: ava,
+    second: second
+  } do
+    {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/galeria/linha-do-tempo")
+
+    lv |> element(~s(a[href="/galeria/#{second.rkey}"])) |> render_click()
+    assert_patch(lv, ~p"/galeria/#{second.rkey}")
+
+    lv |> element("button[phx-click=close]") |> render_click()
+    assert_patch(lv, ~p"/galeria/linha-do-tempo")
+  end
+
   # Board "Visualizador / erro": o casco fica de pé com o cartão calmo
   # ("Tentar de novo" e "Falar com quem cuida") e a frase honesta; sem trilha
   # carregada (link direto), o contador cala em vez de inventar "1 de 1".
