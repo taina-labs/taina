@@ -144,13 +144,15 @@ defmodule TainaWeb.HomeLive do
     sentence <> ", " <> ago_label(event.inserted_at)
   end
 
-  # "12 pessoas na comunidade" (board): o mesmo número da tela Moradores
-  # (`Maraca.count_members/1`, todas as contas da comunidade).
+  # Convites não aceitos e contas desativadas não são moradores da comunidade.
   defp residents_meta(members) do
-    count = length(members)
+    count = Enum.count(members, &active_member?/1)
 
     ngettext("1 pessoa na comunidade", "%{count} pessoas na comunidade", count)
   end
+
+  defp active_member?(%{activated_at: activated_at, deactivated_at: deactivated_at}),
+    do: not is_nil(activated_at) and is_nil(deactivated_at)
 
   defp load_recent(scope) do
     with {:ok, files} <- Ybira.list_recent(scope, limit: @recent_limit) do

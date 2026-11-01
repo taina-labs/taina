@@ -119,7 +119,13 @@ defmodule Taina.Maraca do
 
   def count_members(%Ypy.Scope{} = scope) do
     within_tekoa(scope, fn ->
-      {:ok, Repo.aggregate(from(a in Ava, where: a.tekoa_id == ^scope.tekoa.id), :count)}
+      {:ok,
+       Repo.aggregate(
+         from(a in Ava,
+           where: a.tekoa_id == ^scope.tekoa.id and not is_nil(a.activated_at) and is_nil(a.deactivated_at)
+         ),
+         :count
+       )}
     end)
   end
 

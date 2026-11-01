@@ -39,6 +39,15 @@ defmodule TainaWeb.MembersLiveTest do
     refute html =~ "Quem cuida da nuvem só convida pessoas"
   end
 
+  test "morador não vê convites pendentes", %{conn: conn, tekoa: tekoa, zelador: zelador, member: member} do
+    {:ok, _invite} = Maraca.invite_user(zelador, tekoa)
+
+    {:ok, _lv, html} = conn |> log_in(member) |> live(~p"/moradores")
+
+    refute html =~ "Convites pendentes"
+    refute html =~ "Convite pendente"
+  end
+
   test "zelador: Convidar no cabeçalho e o rodapé explicando o papel", %{conn: conn, zelador: zelador} do
     {:ok, lv, html} = conn |> log_in(zelador) |> live(~p"/moradores")
 

@@ -23,8 +23,9 @@ defmodule TainaWeb.HomeLiveTest do
 
   test "padrão: cabeçalho, serviços, comunidade, espaço e recentes", %{conn: conn} do
     tekoa = tekoa_fixture(%{name: "Quilombo do Café"})
-    ana = active_ava_fixture(tekoa, %{display_name: "Ana"})
+    ana = zelador_fixture(tekoa, %{display_name: "Ana"})
     active_ava_fixture(tekoa, %{display_name: "Bruno"})
+    {:ok, _invite} = Maraca.invite_user(ana, tekoa)
     {:ok, file} = Ybira.upload(Scope.new(ana, tekoa), tmp_upload_fixture("oi", "ata.txt"))
 
     {:ok, lv, html} = conn |> log_in(ana) |> live(~p"/")

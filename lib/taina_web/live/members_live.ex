@@ -103,6 +103,7 @@ defmodule TainaWeb.MembersLive do
     # Convite pendente não é morador: a lista separa quem já entrou de quem
     # só foi convidado, cada um com as ações certas.
     {pendings, members} = Enum.split_with(all, &invite_pending?/1)
+    members = Enum.filter(members, &active_member?/1)
     assign(socket, members: members, pendings: pendings)
   end
 
@@ -154,6 +155,7 @@ defmodule TainaWeb.MembersLive do
 
   # Convite ainda não aceito: a linha existe, a pessoa ainda não entrou.
   defp invite_pending?(member), do: is_nil(member.activated_at)
+  defp active_member?(member), do: not is_nil(member.activated_at) and is_nil(member.deactivated_at)
 
   defp role_label(:zelador), do: gettext("Zelador(a)")
   defp role_label(:morador), do: gettext("Morador(a)")
@@ -194,7 +196,7 @@ defmodule TainaWeb.MembersLive do
           />
         </form>
 
-        <div :if={pendings != []} class="col gap-2">
+        <div :if={Maraca.zelador?(@current_scope.ava) and pendings != []} class="col gap-2">
           <p class="type-overline text-muted">{gettext("Convites pendentes")}</p>
           <ul class="list">
             <.list_row
