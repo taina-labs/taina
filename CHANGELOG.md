@@ -1,5 +1,80 @@
 # Changelog
 
+## [0.6.0](https://github.com/taina-labs/taina/compare/v0.5.1...v0.6.0) (2026-11-01)
+
+
+### Features
+
+* **web:** count folder items, gallery totals and owner refusals ([147f229](https://github.com/taina-labs/taina/commit/147f2292721c75ce7d430d5db9af3be32e0bcd0c))
+* **web:** refine navigation and community activity flows ([9b909f4](https://github.com/taina-labs/taina/commit/9b909f41bd1709295fb401d5e6826be03f0f5506))
+
+
+### Bug Fixes
+
+* **a11y:** correct labels contrast and landmarks ([748a082](https://github.com/taina-labs/taina/commit/748a0820f14731af2bf483bad13c83480db41bd1))
+* **access:** hide revoked grants from request history ([924cc44](https://github.com/taina-labs/taina/commit/924cc44ee51805c24c2fe97ba1d531246c6cc2e7))
+* **account:** distinguish sent and received requests ([e7fb9e1](https://github.com/taina-labs/taina/commit/e7fb9e1496929dbe49daa0f6012a15e02fb99705))
+* **account:** remove stale password and quota state ([9272a01](https://github.com/taina-labs/taina/commit/9272a012891d8609f1e29de2f0e02203581d2546))
+* **auth:** preserve login and setup form data ([8e78f42](https://github.com/taina-labs/taina/commit/8e78f420215798c971f4e14cb17fb0ca02720c4d))
+* **auth:** retain request URI in LiveView ([d662b43](https://github.com/taina-labs/taina/commit/d662b43fac2a8bb3a59a77f77e64b139e4a42e46))
+* **files:** keep folder contents visible across zones ([bec20c2](https://github.com/taina-labs/taina/commit/bec20c28dc0091c34ae5dc30bd698ad7433145f1))
+* **members:** hide pending invites from residents ([1663487](https://github.com/taina-labs/taina/commit/1663487ef00657795b869728afab754aaf00e0a3))
+* **mural:** name access recipients ([482a991](https://github.com/taina-labs/taina/commit/482a991f9c523823ab466c69f4c326c714a8d3bc))
+* **navigation:** preserve gallery and file return paths ([6888cf3](https://github.com/taina-labs/taina/commit/6888cf3dbddc6b6df85b0492ed3f4e5ce882ed9f))
+* **seeds:** publish community example content ([9ae8598](https://github.com/taina-labs/taina/commit/9ae8598b3c1c24ee76f3d39c9156dbd0233ca950))
+* **ui:** align badges and file actions with design ([49103b2](https://github.com/taina-labs/taina/commit/49103b2d697b4b7f09417f77d429939bd40de8c1))
+* **ui:** remove inert menu focus trap ([fd30404](https://github.com/taina-labs/taina/commit/fd30404db1e5058e6993ce625bd37659faf0e4b4))
+* **web:** add the error card contact action and use the penpot cota copy ([da1df92](https://github.com/taina-labs/taina/commit/da1df923b1bf014a092bb10d2060b36faa1835d9))
+* **web:** add the penpot warning icon and use it for warning states ([d961672](https://github.com/taina-labs/taina/commit/d96167296847073e85589bcac82f6c3c7db773e7))
+* **web:** align the auth screens with the penpot boards ([89097b0](https://github.com/taina-labs/taina/commit/89097b0985d05b2bc1f756c2c547f902c81d8447))
+* **web:** use the board's mostrar word for the password reveal ([a8358d7](https://github.com/taina-labs/taina/commit/a8358d7f5099baf87bccfe6037f49e0e48e60e27))
+
+
+### Documentation
+
+* **web:** point the shells and the ui prompts at the penpot file ([a468b44](https://github.com/taina-labs/taina/commit/a468b44920de127af4d63110c526a08c2e8e0698))
+
+
+### Miscellaneous Chores
+
+* **gettext:** extract the copy from the rebuilt screens ([1b31a10](https://github.com/taina-labs/taina/commit/1b31a107e857d02d2b0ff18ac9360215198663a1))
+* **gettext:** sync extracted messages ([98e8e65](https://github.com/taina-labs/taina/commit/98e8e65a081d85e6165e9e8131010fa7f46e42af))
+* **ui:** remove unused styles and components ([1cfae9a](https://github.com/taina-labs/taina/commit/1cfae9a131458c26a387529fce471693220d6f36))
+
+
+### Code Refactoring
+
+* **access:** batch names outside LiveView render ([9dd03c5](https://github.com/taina-labs/taina/commit/9dd03c5e73605701972f103523803b86d293dc5b))
+* components and css following penpot ([f24ba39](https://github.com/taina-labs/taina/commit/f24ba39e71d849e5ec1dd28d300bbeed3a369bed))
+* **core:** simplify batched resource queries ([cfe6eaa](https://github.com/taina-labs/taina/commit/cfe6eaa92ca6beea3c37d58766258f73895b289e))
+* fold the Ypy kernel back into the app ([645b0e6](https://github.com/taina-labs/taina/commit/645b0e6e51fed7f7f8cf7bbf0bc97a13ab26c102))
+* remove pwa ([6d0b42e](https://github.com/taina-labs/taina/commit/6d0b42ee75207979d5190ac7befddb2f3299d7e1))
+* remove redundant tests ([22e7ef8](https://github.com/taina-labs/taina/commit/22e7ef8a4ee2fe8b76961d49b66e6edf396826a0))
+* remove req for a single http request ([05bbfc8](https://github.com/taina-labs/taina/commit/05bbfc8171853d43558784957761df1dea51fa9e))
+* remove unecessary deps, update others ([217e743](https://github.com/taina-labs/taina/commit/217e743ef88f676e91030c37bc72833fa400aa37))
+* **ui:** consolidate shared view helpers ([2c7a976](https://github.com/taina-labs/taina/commit/2c7a9766342ffcf0bbb17c65ee1b1b0814898123))
+* **web:** add the hub, service, page, auth and viewer shells ([3cf0845](https://github.com/taina-labs/taina/commit/3cf0845a24776ebef8b4b0c801749bf9ff41fcf6))
+* **web:** align content and feedback components with penpot ([875e613](https://github.com/taina-labs/taina/commit/875e613a973a18fd8923d252de0cddfa31e29cd2))
+* **web:** align overlays, navigation and media with penpot ([8f80401](https://github.com/taina-labs/taina/commit/8f80401c8576a265e67b3e731cf1d22ba0dbb4fb))
+* **web:** align primitive components and icons with penpot ([c9c470b](https://github.com/taina-labs/taina/commit/c9c470b1753d50870c495cc22da4026b374f7afc))
+* **web:** delete the deprecated design system wrappers ([7ee9bb5](https://github.com/taina-labs/taina/commit/7ee9bb58b745264d8512361c0f17ca4c1c4b0ee1))
+* **web:** move every screen onto the new shells and drop the old one ([b190516](https://github.com/taina-labs/taina/commit/b19051662937e15bd1e287567130695f7f1643dc))
+* **web:** rebuild documentos from the penpot boards ([6126ec7](https://github.com/taina-labs/taina/commit/6126ec79a1d90e97ba7e419f5e7866a5c660a93a))
+* **web:** rebuild moradores, conta and pedidos from the boards ([43ebf9f](https://github.com/taina-labs/taina/commit/43ebf9f55a89553bf4176ea1a358ba4d46b4dc39))
+* **web:** rebuild mural, saude and armazenamento from the boards ([95c318b](https://github.com/taina-labs/taina/commit/95c318b0b07870adb940318d5a81e2e0f53d35d0))
+* **web:** rebuild the auth screens from the penpot boards ([6c0c49f](https://github.com/taina-labs/taina/commit/6c0c49fdd4802f1bd7f5d01cb2e7ba40a9160385))
+* **web:** rebuild the galeria and trim the viewer to the board ([1314d1d](https://github.com/taina-labs/taina/commit/1314d1defbf393a8a7eec9c48e554cc12ae9989b))
+* **web:** rebuild the hub from the penpot boards ([6e3823d](https://github.com/taina-labs/taina/commit/6e3823d7d97b32636f89973ea448ab3cbe60cea6))
+* **web:** remove the light theme ([f9c5b4f](https://github.com/taina-labs/taina/commit/f9c5b4fd84ded0dd4a72cb01bbd90c9d7488c556))
+* **web:** rename routes to the ui names and add the privacy and invite stubs ([7180d2e](https://github.com/taina-labs/taina/commit/7180d2ef201edd8889bb95e2816a97baeb6396d4))
+* **web:** share saude summary and add storage by zone ([cec79cb](https://github.com/taina-labs/taina/commit/cec79cbd7bc2b45a987b3dbf1e8b7e5bd1de77a0))
+* **ypy:** simplify the kernel and fix resource access ([454114c](https://github.com/taina-labs/taina/commit/454114c2369e6b8428bd1bdabb1088799fdfba3d))
+
+
+### Tests
+
+* **policy:** align member and expiry expectations ([b208f88](https://github.com/taina-labs/taina/commit/b208f88a0d0f45e5b451761541556ea158a054e4))
+
 ## [0.5.1](https://github.com/taina-labs/taina/compare/v0.5.0...v0.5.1) (2026-10-23)
 
 
