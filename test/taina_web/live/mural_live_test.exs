@@ -93,6 +93,21 @@ defmodule TainaWeb.MuralLiveTest do
     assert html =~ ~r/\d{2}:\d{2}/
   end
 
+  test "concessão no mural identifica a pessoa que recebeu acesso", %{
+    conn: conn,
+    tekoa: tekoa,
+    zelador: zelador,
+    morador: morador
+  } do
+    scope = Scope.new(zelador, tekoa)
+    {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("conteúdo", "ata.txt"))
+    {:ok, _grant} = Maraca.conceder(scope, "ypy.file.v0", file.rkey, morador)
+
+    {:ok, _lv, html} = conn |> log_in(zelador) |> live(~p"/mural")
+
+    assert html =~ "Ana abriu a casa para Bruno"
+  end
+
   test "zelador vê o mesmo mural, sem controle nenhum sobre o registro", %{conn: conn, tekoa: tekoa, zelador: zelador} do
     :ok = Maraca.record_event(Scope.new(zelador, tekoa), :invite_created, %{"role" => "morador"})
 

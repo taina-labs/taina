@@ -102,7 +102,11 @@ defmodule TainaWeb.MuralLive do
   # 09:12"). Datas no horário da comunidade (o banco grava em UTC; o dia de
   # quem lê não é o dia do banco).
   defp load_page_entries(scope, events) do
-    actor_ids = events |> Enum.map(& &1.payload["actor"]) |> Enum.reject(&is_nil/1) |> Enum.uniq()
+    actor_ids =
+      events
+      |> Enum.flat_map(&[&1.payload["actor"], &1.payload["leitor"]])
+      |> Enum.reject(&is_nil/1)
+      |> Enum.uniq()
 
     names =
       case Maraca.mural_actor_names(scope, actor_ids) do

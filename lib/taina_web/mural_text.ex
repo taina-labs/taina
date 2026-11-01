@@ -168,8 +168,17 @@ defmodule TainaWeb.MuralText do
   def sentence(%Entry{tipo: "renomear"} = event, names),
     do: gettext("%{actor} renomeou um arquivo.", actor: actor_label(event, names))
 
-  # A concessao nasce de um pedido aprovado ou do proprio dono abrindo a
-  # casa; o "leitor" (public_id) no payload para a auditoria.
+  # A concessão é sobre uma pessoa específica; seu nome vem da projeção social.
+  def sentence(%Entry{tipo: "concessao", payload: %{"leitor" => reader_id}} = event, names) do
+    case Map.get(Map.get(names, :actors, names), reader_id) do
+      reader when is_binary(reader) ->
+        gettext("%{actor} abriu a casa para %{reader}.", actor: actor_label(event, names), reader: reader)
+
+      _missing ->
+        gettext("%{actor} abriu a sua casa para a leitura de um morador.", actor: actor_label(event, names))
+    end
+  end
+
   def sentence(%Entry{tipo: "concessao"} = event, names),
     do: gettext("%{actor} abriu a sua casa para a leitura de um morador.", actor: actor_label(event, names))
 
