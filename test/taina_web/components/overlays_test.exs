@@ -106,11 +106,11 @@ defmodule TainaWeb.UI.OverlaysTest do
 
   # ---------- Sheet ----------
 
-  test "sheet actions: painel, grabber, título e Fechar visível com ModalTrap" do
+  test "sheet actions: painel, título e Fechar visível com ModalTrap" do
     html = sheet_html()
 
     assert html =~ ~s(class="sheet")
-    assert html =~ "sheet__grabber"
+    refute html =~ "sheet__grabber"
     assert html =~ "Ações do arquivo"
     assert html =~ "Fechar"
     assert html =~ ~s(phx-hook="ModalTrap")

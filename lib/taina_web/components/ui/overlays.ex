@@ -74,7 +74,6 @@ defmodule TainaWeb.UI.Overlays do
         tabindex="-1"
         phx-click-away={@on_cancel}
       >
-        <span class="sheet__grabber" aria-hidden="true"></span>
         <header class="sheet__head">
           <h2 :if={@title} id={"#{@id}-title"} class="sheet__title">{@title}</h2>
           <button type="button" class="sheet__close" phx-click={@on_cancel}>
@@ -112,7 +111,6 @@ defmodule TainaWeb.UI.Overlays do
         tabindex="-1"
         phx-click-away={@on_cancel}
       >
-        <span class="sheet__grabber" aria-hidden="true"></span>
         <header class="sheet__head">
           <h2 :if={@title} id={"#{@id}-title"} class="sheet__title">{@title}</h2>
           <button type="button" class="sheet__close" phx-click={@on_cancel}>
@@ -123,7 +121,7 @@ defmodule TainaWeb.UI.Overlays do
           <div :for={item <- @item}>
             <.link
               :if={item[:navigate]}
-              navigate={item.navigate}
+              navigate={item[:navigate]}
               class={["sheet__item", item[:danger] && "sheet__item--danger"]}
               phx-click={@on_cancel}
             >
@@ -261,6 +259,8 @@ defmodule TainaWeb.UI.Overlays do
     attr :icon, :string
     attr :click, :any
     attr :navigate, :string
+    attr :href, :string
+    attr :download, :boolean
     attr :kind, :string, values: ~w(default danger), doc: "Danger: linha de destruição (Remover)"
   end
 
@@ -301,21 +301,23 @@ defmodule TainaWeb.UI.Overlays do
         <div class="actions-menu__items">
           <div :for={item <- @item}>
             <.link
-              :if={item[:navigate]}
-              navigate={item.navigate}
+              :if={item[:navigate] || item[:href]}
+              navigate={item[:navigate]}
+              href={item[:href]}
+              download={Map.get(item, :download, false)}
               class={["actions-menu__item", item[:kind] == "danger" && "actions-menu__item--danger"]}
               phx-click={close_actions_menu(@id)}
             >
-              <.icon :if={item[:icon]} name={item.icon} size={20} />
+              <.icon :if={item[:icon]} name={item[:icon]} size={20} />
               <span class="actions-menu__item-label">{render_slot(item)}</span>
             </.link>
             <button
-              :if={!item[:navigate]}
+              :if={!item[:navigate] && !item[:href]}
               type="button"
               class={["actions-menu__item", item[:kind] == "danger" && "actions-menu__item--danger"]}
               phx-click={JS.concat(close_actions_menu(@id, true), item[:click] || %JS{})}
             >
-              <.icon :if={item[:icon]} name={item.icon} size={20} />
+              <.icon :if={item[:icon]} name={item[:icon]} size={20} />
               <span class="actions-menu__item-label">{render_slot(item)}</span>
             </button>
           </div>

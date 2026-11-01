@@ -315,7 +315,7 @@ defmodule TainaWeb.API.FatiaUsTest do
 
       body = conn |> get(~p"/api/v1/mural") |> json_response(200)
       assert is_list(body["items"])
-      assert Enum.any?(body["items"], &(&1["tipo"] == "invite_created"))
+      refute Enum.any?(body["items"], &(&1["tipo"] == "invite_created"))
     end
 
     test "o retrato do armazenamento", %{conn: conn, morador: morador} do

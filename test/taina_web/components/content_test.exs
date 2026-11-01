@@ -56,7 +56,12 @@ defmodule TainaWeb.UI.ContentTest do
 
       assert html =~ ~s(class="badge badge--#{unquote(kind)}")
       assert html =~ "Praça"
-      assert html =~ ~s(aria-hidden="true")
+
+      if unquote(kind) == "inactive" do
+        refute html =~ "<svg"
+      else
+        assert html =~ ~s(aria-hidden="true")
+      end
     end
   end
 

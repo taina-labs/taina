@@ -39,6 +39,7 @@ defmodule TainaWeb.GalleryLive do
 
   alias Taina.Jaci
   alias Taina.Ybira
+  alias TainaWeb.InternalPath
   alias TainaWeb.Layouts
 
   @impl true
@@ -70,13 +71,25 @@ defmodule TainaWeb.GalleryLive do
   end
 
   @impl true
-  def handle_params(params, _uri, socket) do
+  def handle_params(params, uri, socket) do
     zona = parse_zona(params["zona"])
+    return_to = InternalPath.from_uri(uri)
 
     case socket.assigns.live_action do
-      :grid -> {:noreply, socket |> assign(:zona, zona) |> assign(:last_tab, :grid) |> ensure_grid()}
-      :timeline -> {:noreply, socket |> assign(:zona, zona) |> assign(:last_tab, :timeline) |> ensure_timeline()}
-      :viewer -> {:noreply, open_viewer(socket, params["id"])}
+      :grid ->
+        {:noreply,
+         socket |> assign(:return_to, return_to) |> assign(:zona, zona) |> assign(:last_tab, :grid) |> ensure_grid()}
+
+      :timeline ->
+        {:noreply,
+         socket
+         |> assign(:return_to, return_to)
+         |> assign(:zona, zona)
+         |> assign(:last_tab, :timeline)
+         |> ensure_timeline()}
+
+      :viewer ->
+        {:noreply, socket |> assign(:return_to, return_to) |> open_viewer(params["id"])}
     end
   end
 
@@ -319,6 +332,8 @@ defmodule TainaWeb.GalleryLive do
   defp gallery_path(:timeline, :praca), do: ~p"/galeria/linha-do-tempo?#{[zona: "praca"]}"
   defp gallery_path(:timeline, :casa), do: ~p"/galeria/linha-do-tempo?#{[zona: "casa"]}"
 
+  defp upload_path(return_to), do: ~p"/documentos/enviar?#{[return_to: return_to]}"
+
   # O estado vazio diz a verdade sobre o que está sendo lido: o board desenha
   # o conjunto inteiro; ?zona= segue filtrando na URL, então as palavras da
   # casa e da praça continuam para quem chega por elas.
@@ -382,12 +397,12 @@ defmodule TainaWeb.GalleryLive do
       back={~p"/"}
     >
       <:actions>
-        <.button kind="primary" size="md" class="hide-mobile" navigate={~p"/documentos/enviar"}>
+        <.button kind="primary" size="md" class="hide-mobile" navigate={upload_path(@return_to)}>
           {gettext("Enviar")}
         </.button>
       </:actions>
       <:fab>
-        <.fab label={gettext("Enviar")} navigate={~p"/documentos/enviar"} />
+        <.fab label={gettext("Enviar")} navigate={upload_path(@return_to)} />
       </:fab>
 
       <.gallery_content g={@gallery} />
@@ -418,6 +433,7 @@ defmodule TainaWeb.GalleryLive do
   def gallery_content(assigns) do
     assigns =
       assigns
+      |> assign(:g, Map.put_new(assigns.g, :return_to, ~p"/galeria"))
       |> assign(:grade_count, grade_count(assigns.g))
       |> assign(:viewer_counter, viewer_counter(assigns.g.photo_ids, assigns.g.viewer_rkey))
 
@@ -460,7 +476,7 @@ defmodule TainaWeb.GalleryLive do
         body={empty_hint}
       >
         <:action>
-          <.button kind="primary" size="md" navigate={~p"/documentos/enviar"}>
+          <.button kind="primary" size="md" navigate={upload_path(@g.return_to)}>
             {gettext("Enviar uma foto")}
           </.button>
         </:action>
@@ -518,7 +534,7 @@ defmodule TainaWeb.GalleryLive do
         body={empty_hint}
       >
         <:action>
-          <.button kind="primary" size="md" navigate={~p"/documentos/enviar"}>
+          <.button kind="primary" size="md" navigate={upload_path(@g.return_to)}>
             {gettext("Enviar uma foto")}
           </.button>
         </:action>

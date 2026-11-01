@@ -20,6 +20,7 @@ defmodule TainaWeb.MembersLive do
   use TainaWeb, :live_view
 
   alias Taina.Maraca
+  alias TainaWeb.InternalPath
   alias TainaWeb.Layouts
   alias TainaWeb.Time
   alias Ypy.Maraca.Ava
@@ -34,6 +35,11 @@ defmodule TainaWeb.MembersLive do
      |> assign(:reset_member, nil)
      |> assign(:confirm_revoke, nil)
      |> assign_members()}
+  end
+
+  @impl true
+  def handle_params(_params, uri, socket) do
+    {:noreply, assign(socket, :return_to, InternalPath.from_uri(uri))}
   end
 
   @impl true
@@ -174,7 +180,7 @@ defmodule TainaWeb.MembersLive do
     ~H"""
     <Layouts.page flash={@flash} title={@page_title} back={~p"/"}>
       <:action :if={Maraca.zelador?(@current_scope.ava)}>
-        <.button kind="secondary" size="sm" navigate={~p"/moradores/convidar"}>
+        <.button kind="secondary" size="sm" navigate={invite_path(@return_to)}>
           {gettext("Convidar")}
         </.button>
       </:action>
@@ -261,14 +267,6 @@ defmodule TainaWeb.MembersLive do
           tag="h2"
         />
 
-        <%!-- O rodapé do board do zelador: o que o papel pode e o que ele
-        nao pode (nenhum acesso à casa de ninguém). --%>
-        <div :if={Maraca.zelador?(@current_scope.ava)} class="col gap-2">
-          <.badge kind="zelador">{gettext("zelador")}</.badge>
-          <p class="type-body-sm text-secondary">
-            {gettext("Quem cuida da nuvem só convida pessoas. Ninguém pode mexer nos arquivos de outra pessoa.")}
-          </p>
-        </div>
       </div>
 
       <.dialog id="reset-link-modal" show={@reset_link != nil} on_cancel={JS.push("close-reset")}>
@@ -311,4 +309,6 @@ defmodule TainaWeb.MembersLive do
   defp member_trailing(member, scope) do
     if can_reset?(member, scope), do: "action", else: "none"
   end
+
+  defp invite_path(return_to), do: ~p"/moradores/convidar?#{[return_to: return_to]}"
 end

@@ -225,12 +225,12 @@ defmodule Taina.IsolationSweepTest do
       {:ok, _lv, html} = live(conn, ~p"/documentos/casa")
       refute html =~ @casa_filename
 
-      {:ok, _lv, html} = live(conn, ~p"/documentos")
+      {:ok, _lv, html} = live(conn, ~p"/documentos/praca")
       refute html =~ @casa_filename
 
       {:ok, _} = Ybira.publicar_file(ctx.owner_scope, ctx.casa_file.rkey)
 
-      {:ok, _lv, html} = live(conn, ~p"/documentos")
+      {:ok, _lv, html} = live(conn, ~p"/documentos/praca")
       assert html =~ @casa_filename
     end
 

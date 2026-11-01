@@ -138,8 +138,7 @@ defmodule TainaWeb.UI.Content do
     "casa" => "casa",
     "zelador" => "shield",
     "morador" => "user",
-    "active" => "check",
-    "inactive" => "close"
+    "active" => "check"
   }
 
   defp mark_icon(mark), do: Map.fetch!(@mark_icons, mark)
@@ -156,7 +155,7 @@ defmodule TainaWeb.UI.Content do
   def badge(assigns) do
     ~H"""
     <span class={"badge badge--#{@kind}"}>
-      <.icon name={badge_icon(@kind)} size={14} />
+      <.icon :if={@kind != "inactive"} name={badge_icon(@kind)} size={14} />
       <span>{render_slot(@inner_block)}</span>
     </span>
     """
@@ -540,7 +539,7 @@ defmodule TainaWeb.UI.Content do
       <div class="qr-card" role="img" aria-label={gettext("QR code do link de convite")}>
         {@svg}
       </div>
-      <p class="type-mono-sm">{@link}</p>
+      <p class="type-mono-sm qr-card__link">{@link}</p>
       <p class="type-body-sm text-secondary">
         {gettext("Quem entrar vê a praça e ganha uma casa própria. Você pode cancelar quando quiser.")}
       </p>

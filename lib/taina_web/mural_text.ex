@@ -191,6 +191,15 @@ defmodule TainaWeb.MuralText do
   def sentence(%Entry{tipo: "mudar_papel"} = event, names),
     do: gettext("%{actor} tirou de um morador o cuidado da máquina.", actor: actor_label(event, names))
 
+  def sentence(%Entry{tipo: "backup_scheduled"} = event, names),
+    do: gettext("%{actor} agendou um backup.", actor: actor_label(event, names))
+
+  def sentence(%Entry{tipo: "backup_succeeded"} = event, names),
+    do: gettext("%{actor} concluiu um backup.", actor: actor_label(event, names))
+
+  def sentence(%Entry{tipo: "backup_failed"} = event, names),
+    do: gettext("%{actor} não conseguiu concluir um backup.", actor: actor_label(event, names))
+
   # Entrada de um tipo que o mural ainda não conhece (inclui os tipos do
   # kernel: concessao, publicar, put...): o mural e append-only e nao pode
   # derrubar por causa de uma frase faltando.

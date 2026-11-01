@@ -91,7 +91,7 @@ defmodule TainaWeb.FilePreviewLiveTest do
     assert has_element?(lv, ".page-header__back-label", "Atas")
   end
 
-  test "as ações: Baixar no cabeçalho e no corpo, Remover só para o dono", %{
+  test "o menu é o único ponto de ações e Baixar é um link de download", %{
     conn: conn,
     tekoa: tekoa,
     owner: owner,
@@ -102,10 +102,11 @@ defmodule TainaWeb.FilePreviewLiveTest do
 
     {:ok, owner_lv, _html} = conn |> log_in(owner) |> live(~p"/documentos/#{file.rkey}")
 
-    assert has_element?(owner_lv, ~s(a[aria-label="Baixar"]))
-    assert has_element?(owner_lv, "button", "Remover")
-    # o menu do cabeçalho: Baixar, Voltar para a casa (o arquivo está na
-    # praça), Remover
+    assert has_element?(owner_lv, ~s(#file-actions-panel a[href="/files/#{file.rkey}"][download]), "Baixar")
+    refute has_element?(owner_lv, ~s(a[aria-label="Baixar"]))
+    refute has_element?(owner_lv, ~s(button[phx-click="ask-delete"]))
+    refute has_element?(owner_lv, ".measure > .row")
+    # O menu contém Baixar, Voltar para a casa (o arquivo está na praça) e Remover.
     assert has_element?(owner_lv, "#file-actions-panel", "Baixar")
     assert has_element?(owner_lv, "#file-actions-panel", "Voltar para a casa")
     refute has_element?(owner_lv, "#file-actions-panel", "Publicar na praça")
@@ -115,8 +116,8 @@ defmodule TainaWeb.FilePreviewLiveTest do
 
     {:ok, other_lv, _html} = conn |> log_in(other) |> live(~p"/documentos/#{file.rkey}")
 
-    assert has_element?(other_lv, ~s(a[aria-label="Baixar"]))
-    refute has_element?(other_lv, "button", "Remover")
+    assert has_element?(other_lv, ~s(#file-actions-panel a[href="/files/#{file.rkey}"][download]), "Baixar")
+    refute has_element?(other_lv, "#file-actions-panel", "Remover")
     refute has_element?(other_lv, "#file-actions-panel", "Publicar na praça")
   end
 
@@ -138,7 +139,7 @@ defmodule TainaWeb.FilePreviewLiveTest do
   } do
     {:ok, lv, _html} = conn |> log_in(owner) |> live(~p"/documentos/#{file.rkey}")
 
-    lv |> element(~s(button[phx-click="ask-delete"])) |> render_click()
+    lv |> element(~s(button[phx-click*="ask-delete"])) |> render_click()
 
     assert has_element?(lv, ~s(#confirm-remove .dialog__title), "Remover particular.txt?")
 
@@ -149,7 +150,7 @@ defmodule TainaWeb.FilePreviewLiveTest do
            )
 
     # a tela navega de volta para a casa depois de remover
-    assert {:error, {:live_redirect, %{to: "/documentos/casa"}}} =
+    assert {:error, {:live_redirect, %{to: "/documentos"}}} =
              lv |> element(~s(#confirm-remove button[phx-click="confirm-delete"])) |> render_click()
 
     assert {:ok, %{items: [trashed]}} = Ybira.list_trash(Scope.new(owner, tekoa))
@@ -188,7 +189,7 @@ defmodule TainaWeb.FilePreviewLiveTest do
     test "arquivo solto na raiz volta para o início", %{conn: conn, owner: owner, target_file: file} do
       {:ok, lv, html} = conn |> log_in(owner) |> live(~p"/documentos/#{file.rkey}")
 
-      assert html =~ ~s(href="/documentos/casa")
+      assert html =~ ~s(href="/documentos")
       assert has_element?(lv, ".page-header__back-label", "Casa")
       refute html =~ "/documentos/pasta/"
     end
@@ -203,7 +204,7 @@ defmodule TainaWeb.FilePreviewLiveTest do
 
       {:ok, lv, html} = conn |> log_in(owner) |> live(~p"/documentos/#{file.rkey}")
 
-      assert html =~ ~s(href="/documentos")
+      assert html =~ ~s(href="/documentos/praca")
       assert has_element?(lv, ".page-header__back-label", "Praça")
     end
 

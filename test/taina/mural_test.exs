@@ -13,9 +13,11 @@ defmodule Taina.MuralTest do
   import Taina.Fixtures
 
   alias Taina.Maraca
+  alias Taina.Repo
   alias Taina.Scope
   alias Taina.Ybira
   alias Ypy.Mural.Entry
+  alias Ypy.Mural.Store, as: MuralStore
 
   describe "record_event/3 (atos do produto)" do
     setup do
@@ -28,7 +30,10 @@ defmodule Taina.MuralTest do
     test "grava o ato com o ator no payload e a entrada assinada", %{scope: scope} do
       assert :ok = Maraca.record_event(scope, :invite_created, %{"role" => "morador"})
 
-      assert {:ok, %{events: [%Entry{} = entry]}} = Maraca.list_events(scope)
+      assert {:ok, %{events: []}} = Maraca.list_events(scope)
+
+      assert {:ok, [entry]} =
+               Repo.with_tekoa(scope.tekoa.public_id, fn -> {:ok, MuralStore.cadeia(Repo, scope.tekoa.id)} end)
 
       assert entry.tipo == "invite_created"
       assert entry.payload["actor"] == scope.ava.public_id
@@ -89,6 +94,14 @@ defmodule Taina.MuralTest do
       assert Enum.map(events, & &1.payload["to"]) == [3, 2, 1]
     end
 
+    test "evento do sistema não atribui ator e entra na projeção pública", %{scope: scope} do
+      assert :ok = Maraca.record_system_event(:backup_succeeded, %{})
+
+      assert {:ok, %{events: [event]}} = Maraca.list_events(scope)
+      assert event.tipo == "backup_succeeded"
+      refute Map.has_key?(event.payload, "actor")
+    end
+
     test "pagina por offset e sinaliza a próxima página", %{scope: scope} do
       for i <- 1..3, do: :ok = Maraca.record_event(scope, :quota_changed, %{"to" => i})
 
@@ -97,6 +110,22 @@ defmodule Taina.MuralTest do
 
       assert {:ok, %{events: page2, next_offset: nil}} = Maraca.list_events(scope, limit: 2, offset: 2)
       assert Enum.map(page2, & &1.payload["to"]) == [1]
+    end
+
+    test "filtra eventos privados antes de paginar e calcular next_offset", %{scope: scope} do
+      :ok = Maraca.record_event(scope, :quota_changed, %{"to" => 1})
+      :ok = Maraca.record_event(scope, :put, %{"rkey" => "privado"})
+      :ok = Maraca.record_event(scope, :quota_changed, %{"to" => 2})
+      :ok = Maraca.record_event(scope, :concessao, %{"rkey" => "casa"})
+      :ok = Maraca.record_event(scope, :quota_changed, %{"to" => 3})
+      :ok = Maraca.record_event(scope, :invite_created, %{"role" => "morador"})
+
+      assert {:ok, %{events: page1, next_offset: 2}} = Maraca.list_events(scope, limit: 2)
+      assert Enum.map(page1, & &1.payload["to"]) == [3, 2]
+
+      assert {:ok, %{events: page2, next_offset: nil}} = Maraca.list_events(scope, limit: 2, offset: 2)
+      assert Enum.map(page2, & &1.payload["to"]) == [1]
+      assert Enum.all?(page1 ++ page2, &(&1.tipo == "quota_changed"))
     end
   end
 
@@ -123,7 +152,10 @@ defmodule Taina.MuralTest do
       assert {:ok, %{events: events}} = Maraca.list_events(scope)
       tipos = Enum.map(events, & &1.tipo)
       assert "invite_accepted" in tipos
-      assert "invite_created" in tipos
+      refute "invite_created" in tipos
+
+      assert {:ok, chain} = Repo.with_tekoa(tekoa.public_id, fn -> {:ok, MuralStore.cadeia(Repo, tekoa.id)} end)
+      assert "invite_created" in Enum.map(chain, & &1.tipo)
     end
 
     test "publicar e tirar da praca ficam na cadeia (verbos do kernel)", %{scope: scope} do
@@ -155,7 +187,9 @@ defmodule Taina.MuralTest do
 
       assert {:ok, _concessao} = Maraca.aprovar(scope, pedido)
 
-      assert {:ok, %{events: events}} = Maraca.list_events(scope)
+      assert {:ok, events} =
+               Repo.with_tekoa(scope.tekoa.public_id, fn -> {:ok, MuralStore.cadeia(Repo, scope.tekoa.id)} end)
+
       assert "concessao" in Enum.map(events, & &1.tipo)
     end
 

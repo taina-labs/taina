@@ -160,13 +160,13 @@ defmodule TainaWeb.UI.Navigation do
   # ---------- ServiceTabBar ----------
 
   # Mapa puro service -> abas (docs/web-revamp-spec.md, 4.1): rótulo, ícone e
-  # destino são VARIANTE, nunca decisão de tela. Praça/Casa são o mesmo
+  # destino são VARIANTE, nunca decisão de tela. Casa/Praça são o mesmo
   # FilesLive (`patch` guardian o estado); Lixeira é outra LiveView
   # (`navigate`). A tabela de rotas da W2.2 sobre nomes de caminho.
   @service_tabs %{
     "ybira" => [
-      %{key: "praca", label: "Praça", icon: "praca", patch: "/documentos"},
-      %{key: "casa", label: "Casa", icon: "casa", patch: "/documentos/casa"},
+      %{key: "casa", label: "Casa", icon: "casa", patch: "/documentos"},
+      %{key: "praca", label: "Praça", icon: "praca", patch: "/documentos/praca"},
       %{key: "lixeira", label: "Lixeira", icon: "lixeira", navigate: "/documentos/lixeira"}
     ],
     "jaci" => [
@@ -220,7 +220,7 @@ defmodule TainaWeb.UI.Navigation do
   e 4.3), separadores em chevron-right.
 
       <.breadcrumb>
-        <:crumb label={gettext("Praça")} navigate={~p"/documentos"} />
+        <:crumb label={gettext("Praça")} navigate={~p"/documentos/praca"} />
         <:crumb label={gettext("Atas")} navigate={~p"/documentos/pasta/\#{folder.rkey}"} />
         <:crumb label={folder.name} current />
       </.breadcrumb>

@@ -174,7 +174,8 @@ defmodule TainaWeb.Router do
 
       # Os caminhos especificos (/casa, /lixeira, /enviar, /pasta/:id) vem
       # antes de /:id, que e o pegatudo do preview de arquivo.
-      live "/documentos", FilesLive, :praca
+      live "/documentos", FilesLive, :casa
+      live "/documentos/praca", FilesLive, :praca
       live "/documentos/casa", FilesLive, :casa
       live "/documentos/pasta/:folder_id", FilesLive, :folder
       live "/documentos/lixeira", TrashLive
@@ -192,7 +193,6 @@ defmodule TainaWeb.Router do
       live "/saude", SaudeLive
       live "/conta", AccountLive
       live "/conta/pedidos", AccessRequestsLive
-      live "/conta/privacidade", PrivacyLive
     end
   end
 end

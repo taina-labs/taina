@@ -107,6 +107,11 @@ defmodule TainaWeb.InviteAcceptLive do
           <p class="type-body text-secondary">{invite_body(@community_name)}</p>
         </div>
 
+        <div class="col gap-2 mb-5">
+          <p class="type-label">{gettext("Sua casa é só sua")}</p>
+          <p class="type-label">{gettext("A praça é de todos")}</p>
+        </div>
+
         <.connection_notice :if={@secure_connection? == false} />
 
         <form id="invite-accept-form" action={~p"/convite/#{@token}"} method="post" class="col gap-5">

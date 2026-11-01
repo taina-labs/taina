@@ -28,7 +28,7 @@ defmodule TainaWeb.FilesLiveTest do
       {:ok, dela} = Ybira.upload(Scope.new(outra, scope.tekoa), tmp_upload_fixture("oi", "dela.txt"))
       {:ok, _} = Ybira.publicar_file(Scope.new(outra, scope.tekoa), dela.rkey)
 
-      {:ok, lv, html} = conn |> log_in(ava) |> live(~p"/documentos")
+      {:ok, lv, html} = conn |> log_in(ava) |> live(~p"/documentos/praca")
 
       assert html =~ "2 itens na praça"
       assert html =~ meu.nome
@@ -53,13 +53,17 @@ defmodule TainaWeb.FilesLiveTest do
       {:ok, praca} = Ybira.upload(scope, tmp_upload_fixture("oi", "na-praca.txt"))
       {:ok, _} = Ybira.publicar_file(scope, praca.rkey)
 
-      {:ok, lv, html} = conn |> log_in(ava) |> live(~p"/documentos/casa")
+      {:ok, lv, html} = conn |> log_in(ava) |> live(~p"/documentos")
 
       assert html =~ casa.nome
       refute html =~ praca.nome
       assert html =~ "Só você vê o que está na casa."
       assert html =~ "só você"
       assert has_element?(lv, ~s(.service-tab-bar__item[aria-current="page"]), "Casa")
+      assert has_element?(lv, ~s(.service-tab-bar__item[href="/documentos/praca"]), "Praça")
+
+      {:ok, alias_lv, _alias_html} = conn |> log_in(ava) |> live(~p"/documentos/casa")
+      assert has_element?(alias_lv, ~s(.service-tab-bar__item[aria-current="page"]), "Casa")
     end
 
     test "a zona da raiz é filtrada antes da paginação", %{scope: scope} do
@@ -123,7 +127,7 @@ defmodule TainaWeb.FilesLiveTest do
       assert has_element?(lv, ".service-header__back-label", "Raiz")
 
       # desktop: migalha enraizada na zona ("Casa > Raiz > Folha")
-      assert has_element?(lv, ~s(.breadcrumb a[href="/documentos/casa"]), "Casa")
+      assert has_element?(lv, ~s(.breadcrumb a[href="/documentos"]), "Casa")
       assert has_element?(lv, ~s(.breadcrumb a[href="/documentos/pasta/#{raiz.rkey}"]), "Raiz")
       assert has_element?(lv, ".breadcrumb .breadcrumb__current", "Folha")
 
@@ -212,7 +216,7 @@ defmodule TainaWeb.FilesLiveTest do
       assert {:error, {_kind, %{to: to}}} =
                conn |> log_in(ava) |> live(~p"/documentos/pasta/#{folder.rkey}")
 
-      assert to == "/documentos/casa"
+      assert to == "/documentos"
     end
   end
 
@@ -226,7 +230,7 @@ defmodule TainaWeb.FilesLiveTest do
     } do
       {:ok, _casa} = Ybira.upload(scope, tmp_upload_fixture("oi", "so-casa.txt"))
 
-      {:ok, lv, html} = conn |> log_in(ava) |> live(~p"/documentos")
+      {:ok, lv, html} = conn |> log_in(ava) |> live(~p"/documentos/praca")
 
       assert html =~ "A praça está vazia"
       assert html =~ "Quando alguém publicar um arquivo na praça, ele aparece aqui para toda a comunidade."
@@ -267,7 +271,7 @@ defmodule TainaWeb.FilesLiveTest do
     } do
       {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("oi", "comunicado.txt"))
       {:ok, _} = Ybira.publicar_file(scope, file.rkey)
-      {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos")
+      {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/praca")
 
       assert has_element?(lv, ~s(#item-file-#{file.rkey}-panel), "Voltar para a casa")
       refute has_element?(lv, ~s(#item-file-#{file.rkey}-panel), "Publicar na praça")
@@ -282,7 +286,7 @@ defmodule TainaWeb.FilesLiveTest do
       {:ok, file} = Ybira.upload(Scope.new(outra, scope.tekoa), tmp_upload_fixture("oi", "da-outra.txt"))
       {:ok, _} = Ybira.publicar_file(Scope.new(outra, scope.tekoa), file.rkey)
 
-      {:ok, lv, html} = conn |> log_in(ava) |> live(~p"/documentos")
+      {:ok, lv, html} = conn |> log_in(ava) |> live(~p"/documentos/praca")
 
       assert html =~ file.nome
       assert has_element?(lv, ~s(#item-file-#{file.rkey}-panel), "Abrir")
@@ -305,14 +309,14 @@ defmodule TainaWeb.FilesLiveTest do
       assert {:ok, updated} = Ybira.get_file(scope, file.rkey)
       assert updated.zona == :praca
 
-      {:ok, _lv, praca_html} = conn |> log_in(ava) |> live(~p"/documentos")
+      {:ok, _lv, praca_html} = conn |> log_in(ava) |> live(~p"/documentos/praca")
       assert praca_html =~ file.nome
     end
 
     test "tirar da praça devolve o arquivo para a casa", %{conn: conn, scope: scope, ava: ava} do
       {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("oi", "comunicado.txt"))
       {:ok, _} = Ybira.publicar_file(scope, file.rkey)
-      {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos")
+      {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/praca")
 
       lv
       |> element(~s(button[phx-click*="zona"][phx-click*="#{file.rkey}"]))

@@ -16,16 +16,18 @@ defmodule TainaWeb.InviteLive do
   use TainaWeb, :live_view
 
   alias Taina.Maraca
+  alias TainaWeb.InternalPath
   alias TainaWeb.Layouts
 
   @impl true
-  def mount(_params, _session, socket) do
+  def mount(params, _session, socket) do
     scope = socket.assigns.current_scope
 
     if Maraca.zelador?(scope.ava) do
       {:ok,
        socket
        |> assign(:page_title, gettext("Convidar moradores"))
+       |> assign(:return_to, InternalPath.return_to(params["return_to"], ~p"/moradores"))
        |> assign(:role, "morador")
        |> assign(:invite_url, nil)
        |> assign(:app_url, nil)}
@@ -98,6 +100,13 @@ defmodule TainaWeb.InviteLive do
     "taina://convite/#{token}?host=#{uri.authority}"
   end
 
+  defp return_label(return_to) do
+    case URI.parse(return_to).path do
+      "/conta" -> back_label(gettext("Conta"))
+      _ -> back_label(gettext("Moradores"))
+    end
+  end
+
   defp qr_svg(invite_url) do
     invite_url
     |> EQRCode.encode()
@@ -110,7 +119,7 @@ defmodule TainaWeb.InviteLive do
     assigns = assign(assigns, :form, to_form(%{"role" => assigns.role}, as: :invite))
 
     ~H"""
-    <Layouts.page flash={@flash} title={@page_title} back={~p"/moradores"} back_label={back_label("Moradores")}>
+    <Layouts.page flash={@flash} title={@page_title} back={@return_to} back_label={return_label(@return_to)}>
       <div class="col gap-6">
         <%= if @invite_url do %>
           <.qr_card

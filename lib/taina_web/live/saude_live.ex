@@ -79,6 +79,7 @@ defmodule TainaWeb.SaudeLive do
       # produção de `Taina.Nhaman.Backup.run/1`.
       case Oban.insert(Taina.Nhaman.Workers.Backup.new(%{})) do
         {:ok, _job} ->
+          :ok = Maraca.record_event(socket.assigns.current_scope, :backup_scheduled, %{})
           {:noreply, put_flash(socket, :info, gettext("Backup a caminho. Volte daqui a pouco para conferir."))}
 
         {:error, _reason} ->

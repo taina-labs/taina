@@ -4,7 +4,9 @@ defmodule Taina.MaracaMembersTest do
   import Taina.Fixtures
 
   alias Taina.Maraca
+  alias Taina.Repo
   alias Taina.Scope
+  alias Ypy.Mural.Store, as: MuralStore
 
   describe "bootstrapped?/0 e get_tekoa/0" do
     test "instância virgem não está bootstrapped" do
@@ -68,6 +70,9 @@ defmodule Taina.MaracaMembersTest do
       refute Enum.any?(members, &(&1.public_id == invited.public_id))
 
       assert {:ok, %{events: events}} = Maraca.list_events(scope)
+      refute Enum.any?(events, &(&1.tipo == "invite_revoked"))
+
+      assert {:ok, events} = Repo.with_tekoa(tekoa.public_id, fn -> {:ok, MuralStore.cadeia(Repo, tekoa.id)} end)
       assert Enum.any?(events, &(&1.tipo == "invite_revoked"))
     end
 

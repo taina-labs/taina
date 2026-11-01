@@ -3,7 +3,7 @@ defmodule TainaWeb.AccountLiveTest do
   Conta (spec 6.4, boards do Penpot): `morador`
   cc1037dc-e8ab-80cc-8008-d5e23c048bf9, `zelador`
   cc1037dc-e8ab-80cc-8008-d5e261192f2d e W cc1037dc-e8ab-80cc-8008-d5eaef8a5541.
-  Cartão da pessoa, linhas do dia a dia (Pedidos com a meta viva, Privacidade,
+  Cartão da pessoa, linhas do dia a dia (Pedidos com a meta viva,
   Convidar para quem cuida, Trocar senha no sheet, Dispositivos com revogação)
   e o Sair.
   """
@@ -34,10 +34,9 @@ defmodule TainaWeb.AccountLiveTest do
 
     # as linhas do board, com a meta dele
     assert has_element?(lv, ".list-row--civic", "Pedidos")
-    assert has_element?(lv, ".list-row--civic", "Privacidade")
     assert has_element?(lv, ".list-row--civic", "Trocar senha")
     assert has_element?(lv, ".list-row--civic", "Dispositivos")
-    assert html =~ "Como funciona o acesso"
+    refute html =~ "Privacidade"
     assert html =~ "Atualize a sua senha"
     assert html =~ "Aparelhos com acesso"
 
@@ -50,10 +49,15 @@ defmodule TainaWeb.AccountLiveTest do
     assert has_element?(lv, ~s(a[href="/logout"][data-method="delete"], button[data-method="delete"]), "Sair")
   end
 
-  test "zelador: a linha Convidar entra entre Privacidade e Trocar senha", %{conn: conn, zelador: zelador} do
-    {:ok, lv, html} = conn |> log_in(zelador) |> live(~p"/conta")
+  test "zelador: a linha Convidar volta para Conta", %{conn: conn, zelador: zelador} do
+    {:ok, lv, html} = conn |> log_in(zelador) |> live("/conta?aba=dispositivos")
 
-    assert has_element?(lv, ~s(.list-row a[href="/moradores/convidar"]), "Convidar")
+    assert has_element?(
+             lv,
+             ~s(.list-row a[href="/moradores/convidar?return_to=%2Fconta%3Faba%3Ddispositivos"]),
+             "Convidar"
+           )
+
     assert html =~ "Criar um convite"
     assert html =~ "Zelador(a), Quilombo do Café"
   end

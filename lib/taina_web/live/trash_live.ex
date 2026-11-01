@@ -150,12 +150,12 @@ defmodule TainaWeb.TrashLive do
     ~H"""
     <Layouts.service flash={@flash} service="ybira" current="lixeira" title={gettext("Documentos")} back={~p"/"}>
       <:actions>
-        <.button kind="primary" size="md" class="hide-mobile" navigate={~p"/documentos/enviar"}>
+        <.button kind="primary" size="md" class="hide-mobile" navigate={~p"/documentos/enviar?#{[return_to: ~p"/documentos/lixeira"]}"}>
           {gettext("Enviar")}
         </.button>
       </:actions>
       <:fab>
-        <.fab label={gettext("Enviar")} navigate={~p"/documentos/enviar"} />
+        <.fab label={gettext("Enviar")} navigate={~p"/documentos/enviar?#{[return_to: ~p"/documentos/lixeira"]}"} />
       </:fab>
 
       <.breadcrumb class="mb-3">

@@ -45,8 +45,8 @@ defmodule TainaWeb.GalleryLiveTest do
 
     # FAB "Enviar" leva ao envio (toda foto nasce na casa); o mesmo "Enviar"
     # mora no cabeçalho do desktop (a troca é do CSS, os dois ficam no DOM)
-    assert has_element?(lv, ~s(.fab[href="/documentos/enviar"]), "Enviar")
-    assert has_element?(lv, ~s(.service-header a[href="/documentos/enviar"]))
+    assert has_element?(lv, ~s(.fab[href="/documentos/enviar?return_to=%2Fgaleria"]), "Enviar")
+    assert has_element?(lv, ~s(.service-header a[href="/documentos/enviar?return_to=%2Fgaleria"]))
 
     # abas são rotas na barra de serviço, não segmented
     assert has_element?(lv, ~s(.service-tab-bar__item[href="/galeria"]), "Grade")
@@ -73,7 +73,7 @@ defmodule TainaWeb.GalleryLiveTest do
 
     assert has_element?(lv, ".empty-state", "Ainda não há fotos")
     assert html =~ "Quando alguém enviar uma foto, ela aparece aqui para toda a comunidade."
-    assert has_element?(lv, ~s(.empty-state a[href="/documentos/enviar"]), "Enviar uma foto")
+    assert has_element?(lv, ~s(.empty-state a[href="/documentos/enviar?return_to=%2Fgaleria"]), "Enviar uma foto")
     refute has_element?(lv, ".photo-grid__item")
     refute has_element?(lv, ".skeleton")
   end
@@ -123,7 +123,7 @@ defmodule TainaWeb.GalleryLiveTest do
     assert html =~ dia_escrito(Date.utc_today())
     assert has_element?(lv, ~s(.service-tab-bar__item[aria-current="page"]), "Linha do tempo")
     refute html =~ "2 fotos"
-    assert has_element?(lv, ~s(.fab[href="/documentos/enviar"]), "Enviar")
+    assert has_element?(lv, ~s(.fab[href="/documentos/enviar?return_to=%2Fgaleria%2Flinha-do-tempo"]), "Enviar")
   end
 
   # Board "Visualizador / padrao": fullscreen, media com FullSwap, navegação
@@ -251,10 +251,11 @@ defmodule TainaWeb.GalleryLiveTest do
     } do
       {:ok, _} = Ybira.publicar_file(scope, first.rkey)
 
-      {:ok, _lv, casa_html} = conn |> log_in(ava) |> live(~p"/galeria?zona=casa")
+      {:ok, casa_lv, casa_html} = conn |> log_in(ava) |> live(~p"/galeria?zona=casa")
 
       refute casa_html =~ "primeira.jpg"
       assert casa_html =~ "segunda.jpg"
+      assert has_element?(casa_lv, ~s(.fab[href="/documentos/enviar?return_to=%2Fgaleria%3Fzona%3Dcasa"]))
 
       {:ok, _lv, praca_html} = conn |> log_in(ava) |> live(~p"/galeria?zona=praca")
 
@@ -265,7 +266,9 @@ defmodule TainaWeb.GalleryLiveTest do
     test "a linha do tempo acompanha o filtro da zona", %{conn: conn, ava: ava, scope: scope, first: first} do
       {:ok, _} = Ybira.publicar_file(scope, first.rkey)
 
-      {:ok, _lv, html} = conn |> log_in(ava) |> live(~p"/galeria/linha-do-tempo?zona=praca")
+      {:ok, lv, html} = conn |> log_in(ava) |> live(~p"/galeria/linha-do-tempo?zona=praca")
+
+      assert has_element?(lv, ~s(.fab[href="/documentos/enviar?return_to=%2Fgaleria%2Flinha-do-tempo%3Fzona%3Dpraca"]))
 
       assert html =~ "primeira.jpg"
       refute html =~ "segunda.jpg"

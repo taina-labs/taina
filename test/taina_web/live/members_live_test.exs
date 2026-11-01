@@ -2,8 +2,8 @@ defmodule TainaWeb.MembersLiveTest do
   @moduledoc """
   Moradores (spec 6.4, boards do Penpot): `morador`
   cc1037dc-e8ab-80cc-8008-d5e1bc7a5a02 (lista com busca, sem ação),
-  `zelador` cc1037dc-e8ab-80cc-8008-d5e1c8a5c025 (Convidar no cabeçalho e o
-  rodapé do papel), `busca vazia` cc1037dc-e8ab-80cc-8008-d5e1cd378b7e
+  `zelador` cc1037dc-e8ab-80cc-8008-d5e1c8a5c025 (Convidar no cabeçalho),
+  `busca vazia` cc1037dc-e8ab-80cc-8008-d5e1cd378b7e
   ("Ninguém com esse nome") e `acoes da pessoa`
   cc1037dc-e8ab-80cc-8008-d5e1d5f3b551 (menu com o link de redefinição). Os
   convites pendentes ficam em seção própria, com revogação.
@@ -35,9 +35,9 @@ defmodule TainaWeb.MembersLiveTest do
     refute has_element?(lv, ".list-row__chevron")
 
     refute html =~ "/moradores/convidar"
-    # morador não vê o menu de ações nem o rodapé do papel
+    # morador não vê o menu de ações nem um rodapé de papel
     refute html =~ "Ações da conta"
-    refute html =~ "Quem cuida da nuvem só convida pessoas"
+    refute html =~ "badge--zelador"
   end
 
   test "morador não vê convites pendentes", %{conn: conn, tekoa: tekoa, zelador: zelador, member: member} do
@@ -49,12 +49,17 @@ defmodule TainaWeb.MembersLiveTest do
     refute html =~ "Convite pendente"
   end
 
-  test "zelador: Convidar no cabeçalho e o rodapé explicando o papel", %{conn: conn, zelador: zelador} do
-    {:ok, lv, html} = conn |> log_in(zelador) |> live(~p"/moradores")
+  test "zelador: Convidar no cabeçalho volta para Moradores sem rodapé de papel", %{conn: conn, zelador: zelador} do
+    {:ok, lv, html} = conn |> log_in(zelador) |> live("/moradores?filtro=zeladores")
 
-    assert has_element?(lv, ~s(.page-header a[href="/moradores/convidar"]), "Convidar")
-    assert has_element?(lv, ".badge--zelador", "zelador")
-    assert html =~ "Quem cuida da nuvem só convida pessoas. Ninguém pode mexer nos arquivos de outra pessoa."
+    assert has_element?(
+             lv,
+             ~s(.page-header a[href="/moradores/convidar?return_to=%2Fmoradores%3Ffiltro%3Dzeladores"]),
+             "Convidar"
+           )
+
+    refute html =~ "badge--zelador"
+    refute html =~ "Quem cuida da nuvem só convida pessoas"
   end
 
   test "busca filtra a lista", %{conn: conn, zelador: zelador} do
@@ -122,6 +127,7 @@ defmodule TainaWeb.MembersLiveTest do
 
     assert html =~ "Convites pendentes"
     assert has_element?(lv, ".actions-menu", "Revogar convite")
+    refute has_element?(lv, ".badge--inactive svg")
     assert html =~ "aguardando a pessoa aceitar"
   end
 

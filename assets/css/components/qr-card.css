@@ -19,3 +19,10 @@
   width: 100%;
   height: 100%;
 }
+
+.qr-card__link {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  text-align: center;
+}

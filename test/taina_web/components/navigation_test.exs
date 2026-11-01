@@ -208,7 +208,8 @@ defmodule TainaWeb.UI.NavigationTest do
     assert html =~ "Lixeira"
     assert html =~ ~s(aria-current="page")
     assert html =~ "data-phx-link=\"patch\""
-    assert html =~ ~s(href="/documentos/casa")
+    assert html =~ ~s(href="/documentos")
+    assert html =~ ~s(href="/documentos/praca")
     assert html =~ ~s(href="/documentos/lixeira")
     # lixeira é outra LiveView: navigate em vez de patch
     assert html =~ "data-phx-link=\"redirect\""
@@ -235,15 +236,15 @@ defmodule TainaWeb.UI.NavigationTest do
 
   test "service_tab_bar: mapa puro por serviço, testável fora do markup" do
     # ---------- Breadcrumb ----------
-    assert [%{key: "praca"}, %{key: "casa"}, %{key: "lixeira"}] = service_tabs("ybira")
+    assert [%{key: "casa"}, %{key: "praca"}, %{key: "lixeira"}] = service_tabs("ybira")
 
     assert [%{key: "grid"}, %{key: "timeline"}] = service_tabs("jaci")
-    assert service_tab_keys("ybira") == ~w(praca casa lixeira)
+    assert service_tab_keys("ybira") == ~w(casa praca lixeira)
   end
 
   test "breadcrumb: elos com separador chevron-right e elo corrente" do
     crumbs = [
-      %{label: "Praça", navigate: "/documentos"},
+      %{label: "Praça", navigate: "/documentos/praca"},
       %{label: "Documentos", navigate: "/documentos"},
       %{label: "Atas", current: true}
     ]

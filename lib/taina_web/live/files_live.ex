@@ -1,7 +1,7 @@
 defmodule TainaWeb.FilesLive do
   @moduledoc """
   Navegador de Documentos (Ybira): pastas e arquivos da zona corrente. A zona
-  é a aba: `/documentos` é a praça e `/documentos/casa` é a casa. Dentro de uma
+  é a aba: `/documentos` é a casa e `/documentos/praca` é a praça. Dentro de uma
   pasta, cada item legível aparece sem herdar a zona da pasta. Não há seletor
   de zona na tela e não há badge de zona por linha (a aba inteira já é a zona). Boards
   "Servico / Ybira Praca / padrao" cc1037dc-e8ab-80cc-8008-d5e07c15fbae,
@@ -24,6 +24,7 @@ defmodule TainaWeb.FilesLive do
 
   alias Taina.Maraca
   alias Taina.Ybira
+  alias TainaWeb.InternalPath
   alias TainaWeb.Layouts
   alias Ypy.Ybira.File
   alias Ypy.Ybira.Folder
@@ -34,9 +35,10 @@ defmodule TainaWeb.FilesLive do
   end
 
   @impl true
-  def handle_params(params, _uri, socket) do
+  def handle_params(params, uri, socket) do
     scope = socket.assigns.current_scope
     folder_rkey = params["folder_id"]
+    return_to = InternalPath.from_uri(uri)
 
     case load_folder(scope, folder_rkey) do
       {:ok, folder} ->
@@ -44,20 +46,20 @@ defmodule TainaWeb.FilesLive do
 
         case load_page(scope, folder_rkey, zona) do
           {:ok, page} ->
-            {:noreply, assign_page(socket, folder, zona, folder_rkey, page)}
+            {:noreply, assign_page(socket, folder, zona, folder_rkey, page, return_to)}
 
           {:error, _reason} ->
             {:noreply,
              socket
              |> put_flash(:error, gettext("Não foi possível carregar a pasta."))
-             |> push_navigate(to: ~p"/documentos/casa")}
+             |> push_navigate(to: ~p"/documentos")}
         end
 
       {:error, :not_found} ->
         {:noreply,
          socket
          |> put_flash(:error, gettext("Pasta não encontrada."))
-         |> push_navigate(to: ~p"/documentos/casa")}
+         |> push_navigate(to: ~p"/documentos")}
 
       # Casa de outra pessoa: a pasta em si não é para os nossos olhos, volta
       # ao início com o porquê.
@@ -68,7 +70,7 @@ defmodule TainaWeb.FilesLive do
            :error,
            gettext("Esta pasta é particular. Só quem a guardou, e quem essa pessoa deixar, vê.")
          )
-         |> push_navigate(to: ~p"/documentos/casa")}
+         |> push_navigate(to: ~p"/documentos")}
     end
   end
 
@@ -100,7 +102,7 @@ defmodule TainaWeb.FilesLive do
 
   # --- casca imperativa: o handle_params só assign/stream ---
 
-  defp assign_page(socket, folder, zona, folder_rkey, page) do
+  defp assign_page(socket, folder, zona, folder_rkey, page, return_to) do
     breadcrumb =
       case folder do
         nil ->
@@ -121,6 +123,7 @@ defmodule TainaWeb.FilesLive do
     |> assign(:folder, folder)
     |> assign(:folder_rkey, folder_rkey)
     |> assign(:zona, zona)
+    |> assign(:return_to, return_to)
     |> assign(:breadcrumb, breadcrumb)
     |> assign(:crumbs, crumbs(zona, breadcrumb))
     |> assign(:folders, page.folders)
@@ -199,7 +202,7 @@ defmodule TainaWeb.FilesLive do
   # atual. O guard de preventDefault mora no hook DnD (JS); sem ele, o
   # navegador navega para fora do app quando o arrasto vem do sistema.
   def handle_event("drop-files", _params, socket) do
-    {:noreply, push_navigate(socket, to: upload_path(socket.assigns.folder_rkey))}
+    {:noreply, push_navigate(socket, to: upload_path(socket.assigns.folder_rkey, socket.assigns.return_to))}
   end
 
   def handle_event("create-folder", %{"folder" => %{"name" => name}}, socket) do
@@ -405,8 +408,8 @@ defmodule TainaWeb.FilesLive do
   defp zone_label(:praca), do: gettext("Praça")
   defp zone_label(:casa), do: gettext("Casa")
 
-  defp zone_path(:praca), do: ~p"/documentos"
-  defp zone_path(:casa), do: ~p"/documentos/casa"
+  defp zone_path(:praca), do: ~p"/documentos/praca"
+  defp zone_path(:casa), do: ~p"/documentos"
 
   # Voltar da casca: na raiz, o hub ("Início"); dentro de pasta, o parente
   # (a penúltima elo da mesma cadeia da migalha) ou, a um nível do topo, a
@@ -475,8 +478,10 @@ defmodule TainaWeb.FilesLive do
   defp normalize_target(target) when target in [nil, ""], do: nil
   defp normalize_target(target), do: target
 
-  defp upload_path(nil), do: ~p"/documentos/enviar"
-  defp upload_path(folder_id), do: ~p"/documentos/enviar?#{[pasta: folder_id]}"
+  defp upload_path(folder_id, return_to) do
+    params = [return_to: return_to] ++ if(folder_id, do: [pasta: folder_id], else: [])
+    ~p"/documentos/enviar?#{params}"
+  end
 
   # Meta da linha (boards): "PDF, 1,2 MB, só você" na casa; na praça quem
   # enviou, "enviado por Maria" (ou "enviado por você").
@@ -576,13 +581,13 @@ defmodule TainaWeb.FilesLive do
             phx-click="open-modal"
             phx-value-modal="new-folder"
           />
-          <.button kind="primary" size="md" class="hide-mobile" navigate={upload_path(@folder_rkey)}>
+          <.button kind="primary" size="md" class="hide-mobile" navigate={upload_path(@folder_rkey, @return_to)}>
             {gettext("Enviar")}
           </.button>
         </div>
       </:actions>
       <:fab>
-        <.fab label={gettext("Enviar")} navigate={upload_path(@folder_rkey)} />
+        <.fab label={gettext("Enviar")} navigate={upload_path(@folder_rkey, @return_to)} />
       </:fab>
 
       <.breadcrumb class="mb-3">
@@ -681,7 +686,7 @@ defmodule TainaWeb.FilesLive do
 
       <.empty_state :if={@item_count == 0} icon="folder" title={empty_title} body={empty_body}>
         <:action :if={@zona == :casa and (is_nil(@folder) or own?(@current_scope, @folder))}>
-          <.button kind="primary" size="md" navigate={upload_path(@folder_rkey)}>
+          <.button kind="primary" size="md" navigate={upload_path(@folder_rkey, @return_to)}>
             {gettext("Enviar um arquivo")}
           </.button>
         </:action>

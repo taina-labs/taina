@@ -14,27 +14,30 @@ defmodule Taina.Nhaman.Workers.Backup do
 
   use Oban.Worker, queue: :default, max_attempts: 3
 
+  alias Taina.Maraca
   alias Taina.Nhaman.Backup
 
   require Logger
 
   @impl Oban.Worker
-  def perform(%Oban.Job{}) do
+  def perform(%Oban.Job{} = job) do
     if Backup.enabled?() do
-      do_backup()
+      do_backup(job)
     else
       :ok
     end
   end
 
-  defp do_backup do
+  defp do_backup(job) do
     case Backup.run() do
       {:ok, %{archive: path, bytes: bytes}} ->
         Logger.info("Backup concluído", path: path, bytes: bytes)
+        :ok = Maraca.record_system_event(:backup_succeeded, %{})
         :ok
 
       {:error, reason} = error ->
         Logger.error("Backup falhou", reason: inspect(reason))
+        if job.attempt >= job.max_attempts, do: Maraca.record_system_event(:backup_failed, %{})
         error
     end
   end

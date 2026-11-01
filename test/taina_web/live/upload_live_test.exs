@@ -41,6 +41,24 @@ defmodule TainaWeb.UploadLiveTest do
 
     assert has_element?(lv, ".page-header__title", "Documentos")
     assert has_element?(lv, ".page-header__back-label", "Atas")
+    assert has_element?(lv, ~s(.page-header__back[href="/documentos/pasta/#{folder.rkey}"]))
+  end
+
+  test "return_to interno mantém a origem de Grade e Linha do tempo", %{conn: conn, ava: ava} do
+    for origin <- ["/galeria?zona=casa", "/galeria/linha-do-tempo?zona=praca"] do
+      path = "/documentos/enviar?return_to=" <> URI.encode_www_form(origin)
+      {:ok, lv, _html} = conn |> log_in(ava) |> live(path)
+
+      assert has_element?(lv, ~s(.page-header__back[href="#{origin}"]))
+    end
+  end
+
+  test "return_to externo usa o fallback Casa", %{conn: conn, ava: ava} do
+    path = "/documentos/enviar?return_to=" <> URI.encode_www_form("https://example.com/fora")
+    {:ok, lv, _html} = conn |> log_in(ava) |> live(path)
+
+    assert has_element?(lv, ~s(.page-header__back[href="/documentos"]))
+    refute render(lv) =~ "example.com"
   end
 
   test "envia para a pasta indicada em ?pasta=", %{conn: conn, scope: scope, ava: ava} do
@@ -94,7 +112,7 @@ defmodule TainaWeb.UploadLiveTest do
     assert file.nome == "foto-da-roca.jpg"
   end
 
-  test "a linha concluída oferece o publicar na praça, e publicar muda a zona", %{
+  test "a linha concluída mostra sucesso sem ação de publicar", %{
     conn: conn,
     scope: scope,
     ava: ava
@@ -104,19 +122,14 @@ defmodule TainaWeb.UploadLiveTest do
     input = file_input(lv, "#dropzone", :files, [%{name: "ata.txt", content: "ata da assembleia", type: "text/plain"}])
     render_upload(input, "ata.txt")
 
-    # a linha concluída nasce na casa, com a alavanca a um toque
-    assert has_element?(lv, ~s(button[phx-click="publish"]), "Publicar na praça")
-
-    lv |> element(~s(button[phx-click="publish"])) |> render_click()
-
     html = render(lv)
-    assert html =~ "Publicado na praça."
-    assert html =~ "Na praça"
-    refute has_element?(lv, ~s(button[phx-click="publish"]))
+    assert has_element?(lv, ".list-row .text-success")
+    refute html =~ "Publicar na praça"
+    refute html =~ "Na praça"
+    refute html =~ "Você pode continuar usando o app enquanto envia."
 
-    # a zona mudou de verdade, não só na tela
     assert {:ok, %{items: [file]}} = Ybira.list_files(scope)
-    assert file.zona == :praca
+    assert file.zona == :casa
   end
 
   # --- board "Enviar / erro cota" ---

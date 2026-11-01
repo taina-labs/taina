@@ -26,7 +26,7 @@ defmodule TainaWeb.MuralLiveTest do
   end
 
   # board `padrao`
-  test "atos do kernel viram linhas com o dia no meta, e a lista acaba no 'Fim do mural.'", %{
+  test "atos públicos viram linhas com o dia no meta, e a lista acaba no 'Fim do mural.'", %{
     conn: conn,
     tekoa: tekoa,
     zelador: zelador
@@ -41,8 +41,8 @@ defmodule TainaWeb.MuralLiveTest do
     # as linhas são ListRow mural, quadradinho à esquerda
     assert html =~ "list-row--mural"
     assert html =~ "service-square--mural"
-    assert html =~ "Ana guardou estatuto.pdf na caixa"
     assert html =~ "Ana publicou estatuto.pdf na praça"
+    refute html =~ "Ana guardou estatuto.pdf na caixa"
 
     # o meta do board: dia e hora juntos, "Hoje, 09:12"
     assert html =~ ~r/Hoje, \d{2}:\d{2}/
@@ -88,12 +88,12 @@ defmodule TainaWeb.MuralLiveTest do
 
     {:ok, _lv, html} = conn |> log_in(zelador) |> live(~p"/mural")
 
-    assert html =~ "Ana guardou estatuto.pdf na caixa"
     assert html =~ "Ana publicou estatuto.pdf na praça"
+    refute html =~ "Ana guardou estatuto.pdf na caixa"
     assert html =~ ~r/\d{2}:\d{2}/
   end
 
-  test "concessão no mural identifica a pessoa que recebeu acesso", %{
+  test "concessão fica na auditoria, fora da projeção pública do mural", %{
     conn: conn,
     tekoa: tekoa,
     zelador: zelador,
@@ -105,7 +105,7 @@ defmodule TainaWeb.MuralLiveTest do
 
     {:ok, _lv, html} = conn |> log_in(zelador) |> live(~p"/mural")
 
-    assert html =~ "Ana abriu a casa para Bruno"
+    refute html =~ "Ana abriu a casa para Bruno"
   end
 
   test "zelador vê o mesmo mural, sem controle nenhum sobre o registro", %{conn: conn, tekoa: tekoa, zelador: zelador} do
@@ -113,7 +113,7 @@ defmodule TainaWeb.MuralLiveTest do
 
     {:ok, lv, html} = conn |> log_in(zelador) |> live(~p"/mural")
 
-    assert html =~ "Ana convidou uma nova pessoa para a comunidade"
+    refute html =~ "Ana convidou uma nova pessoa para a comunidade"
     # Somente leitura: sem um único controle na tela.
     refute has_element?(lv, "#mural-events button")
     refute has_element?(lv, "#mural-events a")
@@ -140,7 +140,7 @@ defmodule TainaWeb.MuralLiveTest do
     assert html =~ "Joana entrou na comunidade para cuidar da máquina"
   end
 
-  test "revogação de convite nomeia o cuidado da máquina", %{
+  test "revogação de convite fica fora da projeção pública", %{
     conn: conn,
     tekoa: tekoa,
     zelador: zelador
@@ -149,7 +149,7 @@ defmodule TainaWeb.MuralLiveTest do
 
     {:ok, _lv, html} = conn |> log_in(zelador) |> live(~p"/mural")
 
-    assert html =~ "Ana revogou um convite para cuidar da máquina"
+    refute html =~ "Ana revogou um convite para cuidar da máquina"
   end
 
   test "aceite antigo (sem papel no registro) continua com a frase genérica", %{
@@ -164,7 +164,7 @@ defmodule TainaWeb.MuralLiveTest do
     assert html =~ "Bruno entrou na comunidade"
   end
 
-  test "link de nova senha vira frase com quem gerou e para quem", %{
+  test "link de nova senha fica fora da projeção pública", %{
     conn: conn,
     tekoa: tekoa,
     zelador: zelador,
@@ -175,7 +175,7 @@ defmodule TainaWeb.MuralLiveTest do
 
     {:ok, _lv, html} = conn |> log_in(zelador) |> live(~p"/mural")
 
-    assert html =~ "Ana gerou um link de nova senha para Bruno"
+    refute html =~ "Ana gerou um link de nova senha para Bruno"
   end
 
   test "atos do zelador sobre papéis viram frases de cuidado da máquina", %{

@@ -36,6 +36,7 @@ defmodule TainaWeb.RouterTest do
     [
       ~p"/",
       ~p"/documentos",
+      ~p"/documentos/praca",
       ~p"/documentos/casa",
       ~p"/documentos/pasta/#{folder.rkey}",
       ~p"/documentos/lixeira",
@@ -49,8 +50,7 @@ defmodule TainaWeb.RouterTest do
       ~p"/moradores",
       ~p"/armazenamento",
       ~p"/conta",
-      ~p"/conta/pedidos",
-      ~p"/conta/privacidade"
+      ~p"/conta/pedidos"
     ]
   end
 
@@ -73,19 +73,19 @@ defmodule TainaWeb.RouterTest do
              ctx.conn |> log_in(ctx.morador) |> live(~p"/moradores/convidar")
   end
 
-  # A zona é a rota: /documentos é a praça, /documentos/casa é a casa, e o
+  # A zona é a rota: /documentos é a casa, /documentos/praca é a praça, e o
   # `?zona=` é ignorado nelas (a aba acesa na barra de abas reflete a rota).
   test "a zona vem da rota, não de query", ctx do
     conn = log_in(ctx.conn, ctx.zelador)
 
-    {:ok, _pview, praca_html} = live(conn, ~p"/documentos")
-    {:ok, praca_view, _} = live(conn, ~p"/documentos?zona=casa")
-    {:ok, casa_view, _} = live(conn, ~p"/documentos/casa")
+    {:ok, root_casa_view, _casa_html} = live(conn, ~p"/documentos")
+    {:ok, praca_view, _} = live(conn, ~p"/documentos/praca?zona=casa")
+    {:ok, alias_casa_view, _} = live(conn, ~p"/documentos/casa")
 
-    # o ?zona=casa na rota da praca e ignorado: a aba e a praça
-    assert praca_html =~ "A praça está vazia"
+    # o ?zona=casa na rota da praça e ignorado: a aba e a praça
+    assert has_element?(root_casa_view, ~s(.service-tab-bar__item[aria-current="page"]), "Casa")
     assert has_element?(praca_view, ~s(.service-tab-bar__item[aria-current="page"]), "Praça")
-    assert has_element?(casa_view, ~s(.service-tab-bar__item[aria-current="page"]), "Casa")
+    assert has_element?(alias_casa_view, ~s(.service-tab-bar__item[aria-current="page"]), "Casa")
   end
 
   test "/convite (público, sem sessão) monta com o formulário", ctx do

@@ -8,8 +8,7 @@ defmodule TainaWeb.UploadLive do
 
   LiveView uploads com `auto_upload`; cada arquivo concluído vai direto para
   `Ybira.upload/3` (validação por magic bytes e cota acontecem lá) e nasce na
-  casa, com o "Publicar na praça" a um toque na linha concluída (RFC_003). A
-  câmera do celular é uma segunda entrada (RFC 002, fase 3) para o mesmo
+  casa. A câmera do celular é uma segunda entrada (RFC 002, fase 3) para o mesmo
   destino, para não tirar da pessoa a escolha de arquivos existentes.
 
   `?pasta=<rkey>` define a pasta de destino.
@@ -18,6 +17,7 @@ defmodule TainaWeb.UploadLive do
   use TainaWeb, :live_view
 
   alias Taina.Ybira
+  alias TainaWeb.InternalPath
   alias TainaWeb.Layouts
 
   @max_file_size 2 * 1024 * 1024 * 1024
@@ -31,6 +31,7 @@ defmodule TainaWeb.UploadLive do
       socket
       |> assign(:page_title, gettext("Documentos"))
       |> assign(:folder, folder)
+      |> assign(:return_to, InternalPath.return_to(params["return_to"], back_path(folder)))
       |> assign(:quota_error?, false)
       |> assign(:done, [])
       |> assign(:failed, [])
@@ -112,32 +113,6 @@ defmodule TainaWeb.UploadLive do
   @impl true
   def handle_event("validate", _params, socket), do: {:noreply, socket}
 
-  # Publicar na linha concluída: o reverso do destino casa, a um toque do
-  # momento em que a pessoa decide. O contexto valida dono e zona; a linha
-  # só espelha o estado que voltou.
-  def handle_event("publish", %{"rkey" => rkey}, socket) do
-    case Ybira.publicar_file(socket.assigns.current_scope, rkey) do
-      {:ok, _file} ->
-        {:noreply,
-         socket
-         |> mark_published(rkey)
-         |> put_flash(:info, gettext("Publicado na praça."))}
-
-      {:error, _reason} ->
-        {:noreply, put_flash(socket, :error, gettext("Não foi possível publicar na praça."))}
-    end
-  end
-
-  # Core puro: a linha do arquivo publicado passa a mostrar o estado novo.
-  defp mark_published(socket, rkey) do
-    update(socket, :done, fn done ->
-      Enum.map(done, fn
-        %{rkey: ^rkey} = file -> %{file | zona: :praca}
-        file -> file
-      end)
-    end)
-  end
-
   # O shell inscreve o morador nos eventos do Ava; esta tela não reage a eles,
   # mas precisa ignorar o que não trata.
   @impl true
@@ -150,10 +125,30 @@ defmodule TainaWeb.UploadLive do
   defp folder_back_label(nil), do: nil
   defp folder_back_label(folder), do: back_label(folder.nome)
 
+  defp return_label(return_to, folder) do
+    return_to
+    |> URI.parse()
+    |> Map.fetch!(:path)
+    |> return_label_from_path(folder)
+    |> back_label()
+  end
+
+  defp return_label_from_path(path, _folder) when path in ["/galeria", "/galeria/linha-do-tempo"], do: gettext("Galeria")
+
+  defp return_label_from_path("/documentos/praca", _folder), do: gettext("Praça")
+  defp return_label_from_path("/documentos/lixeira", _folder), do: gettext("Lixeira")
+
+  defp return_label_from_path("/documentos/pasta/" <> _folder_id, folder),
+    do: folder_back_label(folder) || gettext("Documentos")
+
+  defp return_label_from_path("/moradores", _folder), do: gettext("Moradores")
+  defp return_label_from_path("/conta", _folder), do: gettext("Conta")
+  defp return_label_from_path(_path, folder), do: folder_back_label(folder) || gettext("Casa")
+
   # Onde os arquivos caíram: na pasta alvo, ou no início já na casa (o
   # destino de quem chega pela raiz). Cair na praça faria o recém-chegado
   # "sumir" da tela.
-  defp back_path(nil), do: ~p"/documentos/casa"
+  defp back_path(nil), do: ~p"/documentos"
   defp back_path(folder), do: ~p"/documentos/pasta/#{folder.rkey}"
 
   # State da caixa (board): estourou a cota, o painel explica e aponta o
@@ -164,8 +159,6 @@ defmodule TainaWeb.UploadLive do
     if uploads.files.entries == [], do: "idle", else: "uploading"
   end
 
-  defp uploading?(uploads), do: uploads.files.entries != [] or uploads.camera.entries != []
-
   # Erros de configuração (tamanho, quantidade) somados dos dois envios.
   defp config_errors(uploads), do: upload_errors(uploads.files) ++ upload_errors(uploads.camera)
 
@@ -175,8 +168,8 @@ defmodule TainaWeb.UploadLive do
     <Layouts.page
       flash={@flash}
       title={gettext("Documentos")}
-      back={back_path(@folder)}
-      back_label={folder_back_label(@folder)}
+      back={@return_to}
+      back_label={return_label(@return_to, @folder)}
     >
       <div class="col gap-6 mx-auto w-full measure-md">
         <form id="upload-form" phx-change="validate" phx-submit="validate">
@@ -201,10 +194,6 @@ defmodule TainaWeb.UploadLive do
             {upload_config_error(err)}
           </p>
         </form>
-
-        <p :if={uploading?(@uploads)} class="type-body-sm text-muted">
-          {gettext("Você pode continuar usando o app enquanto envia.")}
-        </p>
 
         <div :if={@failed != []}>
           <p class="type-overline text-error mb-2">{gettext("Falharam (%{count})", count: length(@failed))}</p>
@@ -231,14 +220,7 @@ defmodule TainaWeb.UploadLive do
                 <.service_square mark={file_mark(file.mime)} />
               </:leading>
               <:actions>
-                <%= if file.zona == :casa do %>
-                  <.button kind="secondary" size="sm" phx-click="publish" phx-value-rkey={file.rkey}>
-                    {gettext("Publicar na praça")}
-                  </.button>
-                <% else %>
-                  <span class="type-caption text-success">{gettext("Na praça")}</span>
-                  <.icon name="check" size={20} class="text-success" />
-                <% end %>
+                <.icon name="check" size={20} class="text-success" />
               </:actions>
             </.list_row>
           </ul>

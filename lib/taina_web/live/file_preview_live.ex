@@ -5,9 +5,9 @@ defmodule TainaWeb.FilePreviewLive do
   empurrada, sem abas. Título é o nome do arquivo; o voltar devolve para a
   pasta onde ele mora, com o nome dela na palavra. No corpo: a mídia inline
   (imagem/vídeo/áudio/PDF via `/files/:id`, que já fala `Range`), o badge de
-  zona, quem enviou, quando e onde, e as ações Baixar / Remover (o destructive
-  dialog do board "Overlay / Dialog remover"). As ações do menu (publicar /
-  voltar para a casa, remover) são função pura do (arquivo, escopo).
+  zona, quem enviou, quando e onde. Todas as ações do arquivo ficam no menu,
+  incluindo o download e o diálogo destrutivo de remoção. As ações disponíveis
+  são função pura do (arquivo, escopo).
 
   Casa de outra pessoa: o nome do arquivo não vaza para quem não pode lê lo
   (o board intitula a tela "Documento", genérico); a saída é pedir acesso.
@@ -49,13 +49,13 @@ defmodule TainaWeb.FilePreviewLive do
         {:ok,
          socket
          |> put_flash(:error, gettext("Arquivo não encontrado."))
-         |> redirect(to: ~p"/documentos/casa")}
+         |> redirect(to: ~p"/documentos")}
 
       {:error, _reason} ->
         {:ok,
          socket
          |> put_flash(:error, gettext("Não foi possível abrir o arquivo agora."))
-         |> redirect(to: ~p"/documentos/casa")}
+         |> redirect(to: ~p"/documentos")}
     end
   end
 
@@ -78,8 +78,8 @@ defmodule TainaWeb.FilePreviewLive do
     end
   end
 
-  defp root_target(:praca), do: {~p"/documentos", gettext("Praça"), nil}
-  defp root_target(:casa), do: {~p"/documentos/casa", gettext("Casa"), nil}
+  defp root_target(:praca), do: {~p"/documentos/praca", gettext("Praça"), nil}
+  defp root_target(:casa), do: {~p"/documentos", gettext("Casa"), nil}
 
   # Casa de outra pessoa: a pessoa não lê o conteúdo, mas vê o caminho (o
   # pedido de acesso). O nome do dono fica para o contexto validar; a tela
@@ -97,7 +97,7 @@ defmodule TainaWeb.FilePreviewLive do
       {:error, :not_found} ->
         socket
         |> put_flash(:error, gettext("Arquivo não encontrado."))
-        |> redirect(to: ~p"/documentos/casa")
+        |> redirect(to: ~p"/documentos")
     end
   end
 
@@ -198,7 +198,7 @@ defmodule TainaWeb.FilePreviewLive do
         {:noreply,
          socket
          |> put_flash(:info, gettext("Arquivo movido para a lixeira."))
-         |> push_navigate(to: ~p"/documentos/casa")}
+         |> push_navigate(to: ~p"/documentos")}
 
       {:error, _reason} ->
         {:noreply, put_flash(socket, :error, gettext("Não foi possível remover o arquivo."))}
@@ -357,7 +357,6 @@ defmodule TainaWeb.FilePreviewLive do
     ~H"""
     <Layouts.page flash={@flash} title={@page_title} back={@back} back_label={@back_label}>
       <:action>
-        <.icon_button name="download" label={gettext("Baixar")} href={~p"/files/#{@file.rkey}"} download />
         <.preview_menu file={@file} scope={@current_scope} />
       </:action>
 
@@ -411,20 +410,6 @@ defmodule TainaWeb.FilePreviewLive do
           </div>
         </div>
 
-        <div class="row gap-3">
-          <.button kind="secondary" size="md" class="flex-1" href={~p"/files/#{@file.rkey}"} download>
-            {gettext("Baixar")}
-          </.button>
-          <.button
-            :if={own?(@current_scope, @file)}
-            kind="danger"
-            size="md"
-            class="flex-1"
-            phx-click="ask-delete"
-          >
-            {gettext("Remover")}
-          </.button>
-        </div>
       </div>
 
       <.dialog
@@ -483,7 +468,7 @@ defmodule TainaWeb.FilePreviewLive do
   defp zone_word_lower(:praca), do: gettext("praça")
   defp zone_word_lower(:casa), do: gettext("casa")
 
-  # Ações do arquivo aberto (spec 6.2: cabeçalho com Baixar + actions_menu).
+  # Ações do arquivo aberto. Sem "Abrir" (o arquivo já está aberto).
   # Sem "Abrir" (o arquivo já está aberto); publicar e remover são do dono, e
   # a ação de zona é sempre a oposta (consentimento, RFC_003).
   attr :file, :any, required: true
@@ -498,7 +483,7 @@ defmodule TainaWeb.FilePreviewLive do
       label={gettext("Mais opções para %{name}", name: @file.nome)}
       title={gettext("Ações do arquivo")}
     >
-      <:item icon="download" navigate={~p"/files/#{@file.rkey}"}>{gettext("Baixar")}</:item>
+      <:item icon="download" href={~p"/files/#{@file.rkey}"} download>{gettext("Baixar")}</:item>
       <:item
         :if={@own? and @file.zona == :casa}
         icon="share"

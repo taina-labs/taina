@@ -47,6 +47,10 @@ defmodule Taina.Maraca do
   @login_rate_limit 5
 
   @event_page_limit 50
+  @public_event_types ~w(
+    publicar tirar_da_praca invite_accepted member_deactivated member_reactivated
+    quota_changed mudar_papel backup_scheduled backup_succeeded backup_failed
+  )
 
   @kernel_tipos ["ypy.file.v0", "ypy.folder.v0"]
 
@@ -1006,6 +1010,35 @@ defmodule Taina.Maraca do
       :ok
   end
 
+  @doc "Registra um ato do sistema sem atribuir um morador como ator."
+  def record_system_event(type, payload) when is_map(payload) do
+    case get_tekoa() do
+      {:ok, %Tekoa{} = tekoa} ->
+        result =
+          Repo.with_tekoa(tekoa.public_id, fn ->
+            MuralStore.append(Repo, Keys.new(), tekoa.id, to_string(type), payload)
+          end)
+
+        case result do
+          {:ok, _entry} ->
+            :telemetry.execute([:taina, :maraca, :event], %{count: 1}, %{type: type})
+            :ok
+
+          {:error, reason} ->
+            Logger.warning("Mural: falha ao registrar evento do sistema, #{inspect(type)}", reason: inspect(reason))
+            :ok
+        end
+
+      {:error, reason} ->
+        Logger.warning("Mural: não foi possível resolver a comunidade para #{inspect(type)}", reason: inspect(reason))
+        :ok
+    end
+  rescue
+    error ->
+      Logger.warning("Mural: exceção ao registrar evento do sistema, #{inspect(type)}", reason: inspect(error))
+      :ok
+  end
+
   @doc """
   A projecao legivel do mural: as entradas da cadeia, da mais recente para a
   mais antiga, com paginação por offset. O `payload` de cada entrada traz o
@@ -1019,6 +1052,7 @@ defmodule Taina.Maraca do
       query =
         from(e in Ypy.Mural.Entry,
           where: e.tekoa_id == ^scope.tekoa.id,
+          where: e.tipo in ^@public_event_types,
           order_by: [desc: e.seq]
         )
 

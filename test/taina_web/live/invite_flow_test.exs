@@ -22,12 +22,30 @@ defmodule TainaWeb.InviteFlowTest do
   test "papel: RadioCards do board com o que cada papel pode", %{conn: conn, zelador: zelador} do
     {:ok, lv, html} = conn |> log_in(zelador) |> live(~p"/moradores/convidar")
 
+    assert has_element?(lv, ~s(.page-header__back[href="/moradores"]))
     assert has_element?(lv, ".radio-card", "Morador")
     assert has_element?(lv, ".radio-card", "Zelador")
     assert html =~ "Vê a praça e ganha uma casa própria."
     assert html =~ "Cuida da máquina: disco, backups e convites. Para abrir uma casa, pede como todo mundo."
     assert has_element?(lv, ~s(#invite-form button[type="submit"]), "Criar convite")
     assert html =~ "Você cria convites só quando quiser. Dá para cancelar depois."
+  end
+
+  test "return_to válido volta para Conta e um valor externo volta para Moradores", %{
+    conn: conn,
+    zelador: zelador
+  } do
+    {:ok, conta_lv, _html} =
+      conn |> log_in(zelador) |> live("/moradores/convidar?return_to=%2Fconta%3Faba%3Ddispositivos")
+
+    assert has_element?(conta_lv, ~s(.page-header__back[href="/conta?aba=dispositivos"]))
+    assert has_element?(conta_lv, ".page-header__back-label", "Conta")
+
+    {:ok, moradores_lv, _html} =
+      conn |> log_in(zelador) |> live("/moradores/convidar?return_to=https%3A%2F%2Fevil.example")
+
+    assert has_element?(moradores_lv, ~s(.page-header__back[href="/moradores"]))
+    refute render(moradores_lv) =~ "evil.example"
   end
 
   test "zelador gera convite com link + QR, sem e-mail", %{conn: conn, zelador: zelador} do
@@ -37,6 +55,7 @@ defmodule TainaWeb.InviteFlowTest do
 
     assert html =~ "/convite/"
     assert html =~ "<svg"
+    assert has_element?(lv, ".qr-card__link")
     assert html =~ "Copiar link"
     assert html =~ "Convite criado. Envie o link para a pessoa."
     assert html =~ "O convite vale por 7 dias."
@@ -67,6 +86,12 @@ defmodule TainaWeb.InviteFlowTest do
 
     assert html =~ "Você recebeu um convite"
     assert html =~ tekoa.name
+    assert html =~ "Sua casa é só sua"
+    assert html =~ "A praça é de todos"
+
+    assert elem(:binary.match(html, "A praça é de todos"), 1) <
+             elem(:binary.match(html, "id=\"invite-accept-form\""), 1)
+
     refute html =~ "account[password_confirmation]"
     assert has_element?(lv, ~s(a[href="/login"]), "Entrar")
 

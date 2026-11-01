@@ -14,7 +14,9 @@ defmodule TainaWeb.SaudeLiveTest do
   import Taina.Fixtures
 
   alias Ecto.Changeset
+  alias Taina.Maraca
   alias Taina.Repo
+  alias Taina.Scope
 
   @gb 1024 * 1024 * 1024
 
@@ -116,7 +118,11 @@ defmodule TainaWeb.SaudeLiveTest do
     refute has_element?(lv, ~s(button[phx-click="run-backup"]))
   end
 
-  test "zelador com backup configurado ganha o passo 'Fazer backup agora'", %{conn: conn, zelador: zelador} do
+  test "zelador com backup configurado ganha o passo 'Fazer backup agora'", %{
+    conn: conn,
+    tekoa: tekoa,
+    zelador: zelador
+  } do
     Application.put_env(:taina, :backup, enabled: true, dir: backup_dir())
 
     {:ok, lv, html} = conn |> log_in(zelador) |> live(~p"/saude")
@@ -127,6 +133,11 @@ defmodule TainaWeb.SaudeLiveTest do
     lv |> element(~s(button[phx-click="run-backup"])) |> render_click()
 
     assert render(lv) =~ "Backup a caminho. Volte daqui a pouco para conferir."
+    assert {:ok, %{events: events}} = Maraca.list_events(Scope.new(zelador, tekoa))
+    event = Enum.find(events, &(&1.tipo == "backup_scheduled"))
+    assert event
+    assert event.tipo == "backup_scheduled"
+    assert event.payload["actor"] == zelador.public_id
   end
 
   test "zelador sem backup configurado ouve isso, sem botão de beco sem saída", %{conn: conn, zelador: zelador} do

@@ -47,7 +47,7 @@ defmodule TainaWeb.HomeLiveTest do
 
     # Da comunidade: as três linhas cívicas com meta viva.
     assert has_element?(lv, ".list-row--civic", "Mural")
-    assert html =~ "Ana guardou um arquivo na caixa, hoje"
+    assert html =~ "Nada aconteceu ainda"
     assert has_element?(lv, ".list-row--civic", "Saúde da comunidade")
     assert has_element?(lv, ".list-row--civic", "Moradores")
     assert html =~ "2 pessoas na comunidade"

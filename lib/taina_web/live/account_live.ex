@@ -5,7 +5,7 @@ defmodule TainaWeb.AccountLive do
   cc1037dc-e8ab-80cc-8008-d5e261192f2d e W cc1037dc-e8ab-80cc-8008-d5eaef8a5541.
 
   O cartão da pessoa (avatar, nome, papel e comunidade) e as linhas do dia a
-  dia: Pedidos (com o que está esperando), Privacidade, Convidar (só quem
+  dia: Pedidos (com o que está esperando), Convidar (só quem
   cuida), Trocar senha (sobe no sheet com o formulário) e Dispositivos (os
   aparelhos com acesso, cada um revogável). "Sair" encerra a sessão. O que o
   board tirou daqui (Lixeira, Moradores, Armazenamento, Convites) mora nas
@@ -15,6 +15,7 @@ defmodule TainaWeb.AccountLive do
   use TainaWeb, :live_view
 
   alias Taina.Maraca
+  alias TainaWeb.InternalPath
   alias TainaWeb.Layouts
 
   @impl true
@@ -29,6 +30,11 @@ defmodule TainaWeb.AccountLive do
       |> assign(:password_errors, %{})
 
     {:ok, socket}
+  end
+
+  @impl true
+  def handle_params(_params, uri, socket) do
+    {:noreply, assign(socket, :return_to, InternalPath.from_uri(uri))}
   end
 
   # A meta distingue o que o morador precisa responder dos pedidos que enviou.
@@ -197,22 +203,12 @@ defmodule TainaWeb.AccountLive do
           </.list_row>
 
           <.list_row
-            kind="civic"
-            trailing="chevron"
-            title={gettext("Privacidade")}
-            meta={gettext("Como funciona o acesso")}
-            navigate={~p"/conta/privacidade"}
-          >
-            <:leading><.service_square mark="privacidade" /></:leading>
-          </.list_row>
-
-          <.list_row
             :if={Maraca.zelador?(@current_scope.ava)}
             kind="civic"
             trailing="chevron"
             title={gettext("Convidar")}
             meta={gettext("Criar um convite")}
-            navigate={~p"/moradores/convidar"}
+            navigate={invite_path(@return_to)}
           >
             <:leading><.service_square mark="moradores" /></:leading>
           </.list_row>
@@ -330,4 +326,6 @@ defmodule TainaWeb.AccountLive do
     </Layouts.page>
     """
   end
+
+  defp invite_path(return_to), do: ~p"/moradores/convidar?#{[return_to: return_to]}"
 end
