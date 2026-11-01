@@ -888,68 +888,77 @@ defmodule Taina.Maraca do
 
   @doc "Resolve nomes de arquivos e pastas ligados a pedidos e concessoes da tela de acesso."
   def access_resource_names(%Ypy.Scope{} = scope, requests, grants) when is_list(requests) and is_list(grants) do
-    request_ids = requests |> Enum.map(& &1.id) |> Enum.reject(&is_nil/1) |> Enum.uniq()
-    grant_ids = grants |> Enum.map(& &1.id) |> Enum.reject(&is_nil/1) |> Enum.uniq()
+    request_ids = record_ids(requests)
+    grant_ids = record_ids(grants)
 
     within_tekoa(scope, fn ->
-      request_resources =
-        if request_ids == [] do
-          []
-        else
-          Repo.all(
-            from(p in Pedido,
-              where:
-                p.tekoa_id == ^scope.tekoa.id and p.id in ^request_ids and
-                  (p.pedinte_id == ^scope.ava.id or p.dono_id == ^scope.ava.id),
-              select: {p.tipo, p.recurso}
-            )
-          )
-        end
-
-      grant_resources =
-        if grant_ids == [] do
-          []
-        else
-          Repo.all(
-            from(c in Concessao,
-              where:
-                c.tekoa_id == ^scope.tekoa.id and c.id in ^grant_ids and
-                  (c.leitor_id == ^scope.ava.id or c.dono_id == ^scope.ava.id),
-              select: {c.tipo, c.recurso}
-            )
-          )
-        end
-
-      resources = Enum.uniq(request_resources ++ grant_resources)
-      file_rkeys = for {"ypy.file.v0", rkey} <- resources, do: rkey
-      folder_rkeys = for {"ypy.folder.v0", rkey} <- resources, do: rkey
-
-      file_names =
-        if file_rkeys == [] do
-          []
-        else
-          Repo.all(
-            from(f in File,
-              where: f.tekoa_id == ^scope.tekoa.id and is_nil(f.apagado_em) and f.rkey in ^file_rkeys,
-              select: {{"ypy.file.v0", f.rkey}, f.nome}
-            )
-          )
-        end
-
-      folder_names =
-        if folder_rkeys == [] do
-          []
-        else
-          Repo.all(
-            from(f in Folder,
-              where: f.tekoa_id == ^scope.tekoa.id and is_nil(f.apagado_em) and f.rkey in ^folder_rkeys,
-              select: {{"ypy.folder.v0", f.rkey}, f.nome}
-            )
-          )
-        end
-
-      {:ok, Map.new(file_names ++ folder_names)}
+      resources = request_resource_refs(scope, request_ids) ++ grant_resource_refs(scope, grant_ids)
+      {:ok, resources |> resource_names(scope) |> Map.new()}
     end)
+  end
+
+  defp record_ids(records), do: records |> Enum.map(& &1.id) |> Enum.reject(&is_nil/1) |> Enum.uniq()
+
+  defp request_resource_refs(_scope, []), do: []
+
+  defp request_resource_refs(scope, ids) do
+    Repo.all(
+      from(p in Pedido,
+        where:
+          p.tekoa_id == ^scope.tekoa.id and p.id in ^ids and
+            (p.pedinte_id == ^scope.ava.id or p.dono_id == ^scope.ava.id),
+        select: {p.tipo, p.recurso}
+      )
+    )
+  end
+
+  defp grant_resource_refs(_scope, []), do: []
+
+  defp grant_resource_refs(scope, ids) do
+    Repo.all(
+      from(c in Concessao,
+        where:
+          c.tekoa_id == ^scope.tekoa.id and c.id in ^ids and
+            (c.leitor_id == ^scope.ava.id or c.dono_id == ^scope.ava.id),
+        select: {c.tipo, c.recurso}
+      )
+    )
+  end
+
+  defp resource_names(resources, scope) do
+    resources = Enum.uniq(resources)
+    file_rkeys = resource_rkeys(resources, "ypy.file.v0")
+    folder_rkeys = resource_rkeys(resources, "ypy.folder.v0")
+
+    file_names = file_names(scope, file_rkeys)
+    folder_names = folder_names(scope, folder_rkeys)
+    file_names ++ folder_names
+  end
+
+  defp resource_rkeys(resources, tipo) do
+    for {^tipo, rkey} <- resources, do: rkey
+  end
+
+  defp file_names(_scope, []), do: []
+
+  defp file_names(scope, rkeys) do
+    Repo.all(
+      from(f in File,
+        where: f.tekoa_id == ^scope.tekoa.id and is_nil(f.apagado_em) and f.rkey in ^rkeys,
+        select: {{"ypy.file.v0", f.rkey}, f.nome}
+      )
+    )
+  end
+
+  defp folder_names(_scope, []), do: []
+
+  defp folder_names(scope, rkeys) do
+    Repo.all(
+      from(f in Folder,
+        where: f.tekoa_id == ^scope.tekoa.id and is_nil(f.apagado_em) and f.rkey in ^rkeys,
+        select: {{"ypy.folder.v0", f.rkey}, f.nome}
+      )
+    )
   end
 
   def subscribe_to_my_events(%Ava{public_id: pid}) do

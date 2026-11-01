@@ -434,14 +434,14 @@ defmodule Taina.Ybira do
         folders =
           scope
           |> folders_query(folder && folder.id)
-          |> maybe_filter_zone(if(is_nil(folder), do: zona))
+          |> maybe_filter_zone(root_listing_zone(folder, zona))
           |> apply_folder_sort(sort)
           |> Repo.all()
 
         {files, next_cursor} =
           scope
           |> files_query(folder)
-          |> maybe_filter_zone(if(is_nil(folder), do: zona))
+          |> maybe_filter_zone(root_listing_zone(folder, zona))
           |> apply_file_sort(sort)
           |> paginate_offset(limit, offset)
 
@@ -1099,6 +1099,9 @@ defmodule Taina.Ybira do
 
   defp maybe_filter_zone(query, nil), do: query
   defp maybe_filter_zone(query, zona), do: where(query, [item], item.zona == ^zona)
+
+  defp root_listing_zone(nil, zona), do: zona
+  defp root_listing_zone(_folder, _zona), do: nil
 
   defp base(%Scope{} = scope) do
     KernelQueries.readable(
