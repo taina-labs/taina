@@ -257,7 +257,7 @@ defmodule TainaWeb.UI.OverlaysTest do
     assert html =~ "Ações do arquivo"
     assert html =~ "actions-menu__close"
     assert html =~ "Fechar"
-    assert html =~ ~s(phx-hook="ModalTrap")
+    refute html =~ ~s(phx-hook="ModalTrap")
   end
 
   test "actions_menu: itens com link e com kind danger" do

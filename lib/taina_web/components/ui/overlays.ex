@@ -50,9 +50,9 @@ defmodule TainaWeb.UI.Overlays do
     <div
       class="menu"
       id={@id}
-      phx-click-away={JS.hide(to: "##{@id}-list")}
-      phx-keydown={JS.hide(to: "##{@id}-list") |> JS.focus(to: "##{@id}-trigger")}
-      phx-window-keydown={JS.hide(to: "##{@id}-list")}
+      phx-click-away={close_menu(@id)}
+      phx-keydown={close_menu(@id, true)}
+      phx-window-keydown={close_menu(@id)}
       phx-key="escape"
     >
       <button
@@ -75,7 +75,7 @@ defmodule TainaWeb.UI.Overlays do
             :if={item[:navigate]}
             navigate={item.navigate}
             class={["menu__item", item[:danger] && "menu__item--danger"]}
-            phx-click={JS.hide(to: "##{@id}-list")}
+            phx-click={close_menu(@id)}
           >
             <.icon :if={item[:icon]} name={item.icon} size={18} />
             {render_slot(item)}
@@ -84,7 +84,7 @@ defmodule TainaWeb.UI.Overlays do
             :if={!item[:navigate]}
             type="button"
             class={["menu__item", item[:danger] && "menu__item--danger"]}
-            phx-click={JS.concat(JS.hide(to: "##{@id}-list"), item[:click] || %JS{})}
+            phx-click={JS.concat(close_menu(@id, true), item[:click] || %JS{})}
           >
             <.icon :if={item[:icon]} name={item.icon} size={18} />
             {render_slot(item)}
@@ -93,6 +93,15 @@ defmodule TainaWeb.UI.Overlays do
       </div>
     </div>
     """
+  end
+
+  defp close_menu(id, restore_focus? \\ false) do
+    js =
+      [to: "##{id}-list"]
+      |> JS.hide()
+      |> JS.set_attribute({"aria-expanded", "false"}, to: "##{id}-trigger")
+
+    if restore_focus?, do: JS.focus(js, to: "##{id}-trigger"), else: js
   end
 
   # ---------- sheet ----------
@@ -321,8 +330,8 @@ defmodule TainaWeb.UI.Overlays do
   Ações de linha (composição do Penpot: Sheet + Menu). Um único markup: o
   painel é bottom sheet (com título e "Fechar") abaixo de 768 e popover
   âncora no kebab a partir de 768 - a troca é toda do CSS, sem JS de viewport
-  (spec 4.3). Fecha por clique fora (`phx-click-away`) e Esc; o painel mobile
-  entra no foco (`ModalTrap`).
+  (spec 4.3). Fecha por clique fora (`phx-click-away`) e Esc; ao fechar, o
+  estado acessível do gatilho volta para recolhido.
 
       <.actions_menu id={"file-\#{file.rkey}"} label={gettext("Mais opções para %{name}", name: file.nome)} title={gettext("Ações do arquivo")}>
         <:item icon="file" navigate={~p"/documentos/\#{file.rkey}"}>{gettext("Abrir")}</:item>
@@ -345,8 +354,8 @@ defmodule TainaWeb.UI.Overlays do
     <div
       class="actions-menu"
       id={@id}
-      phx-click-away={JS.hide(to: "##{@id}-panel")}
-      phx-window-keydown={JS.hide(to: "##{@id}-panel") |> JS.focus(to: "##{@id}-trigger")}
+      phx-click-away={close_actions_menu(@id)}
+      phx-window-keydown={close_actions_menu(@id, true)}
       phx-key="escape"
     >
       <button
@@ -363,13 +372,13 @@ defmodule TainaWeb.UI.Overlays do
       >
         <.icon name="kebab" size={20} />
       </button>
-      <div id={"#{@id}-panel"} class="actions-menu__panel" phx-hook="ModalTrap">
+      <div id={"#{@id}-panel"} class="actions-menu__panel">
         <div class="actions-menu__head">
           <p :if={@title} class="actions-menu__title">{@title}</p>
           <button
             type="button"
             class="actions-menu__close"
-            phx-click={JS.hide(to: "##{@id}-panel") |> JS.focus(to: "##{@id}-trigger")}
+            phx-click={close_actions_menu(@id, true)}
           >
             {gettext("Fechar")}
           </button>
@@ -380,6 +389,7 @@ defmodule TainaWeb.UI.Overlays do
               :if={item[:navigate]}
               navigate={item.navigate}
               class={["actions-menu__item", item[:kind] == "danger" && "actions-menu__item--danger"]}
+              phx-click={close_actions_menu(@id)}
             >
               <.icon :if={item[:icon]} name={item.icon} size={20} />
               <span class="actions-menu__item-label">{render_slot(item)}</span>
@@ -388,7 +398,7 @@ defmodule TainaWeb.UI.Overlays do
               :if={!item[:navigate]}
               type="button"
               class={["actions-menu__item", item[:kind] == "danger" && "actions-menu__item--danger"]}
-              phx-click={JS.concat(JS.hide(to: "##{@id}-panel") |> JS.focus(to: "##{@id}-trigger"), item[:click] || %JS{})}
+              phx-click={JS.concat(close_actions_menu(@id, true), item[:click] || %JS{})}
             >
               <.icon :if={item[:icon]} name={item.icon} size={20} />
               <span class="actions-menu__item-label">{render_slot(item)}</span>
@@ -398,5 +408,14 @@ defmodule TainaWeb.UI.Overlays do
       </div>
     </div>
     """
+  end
+
+  defp close_actions_menu(id, restore_focus? \\ false) do
+    js =
+      [to: "##{id}-panel"]
+      |> JS.hide()
+      |> JS.set_attribute({"aria-expanded", "false"}, to: "##{id}-trigger")
+
+    if restore_focus?, do: JS.focus(js, to: "##{id}-trigger"), else: js
   end
 end

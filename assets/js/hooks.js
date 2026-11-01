@@ -263,9 +263,8 @@ const FlashAutoDismiss = {
 
 // Armadilha de foco do modal: Tab circula só entre os controles do diálogo e
 // o gatilho que abriu o modal recebe o foco de volta quando ele sai da árvore.
-// Ampla (spec 7: usado por sheet, dialog e actions_menu): o painel pode ser
-// o .dialog__panel, .sheet__panel ou .actions-menu__panel além do .modal
-// legado (deprecated, até a W4.1).
+// O painel pode ser .dialog__panel, .sheet__panel ou o .modal legado
+// (deprecated, até a W4.1).
 const ModalTrap = {
   mounted() {
     this.trigger = document.activeElement;
