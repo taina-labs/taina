@@ -6,7 +6,7 @@
    >= 768: a barra some e a fileira de abas sob o ServiceHeader assume
    (palavra + underline de --border-thick na selecionada). */
 
-.service-tab-bar--bar {
+.service-tab-bar {
   position: fixed;
   inset-inline: 0;
   bottom: 0;
@@ -17,10 +17,6 @@
   padding-inline: env(safe-area-inset-left) env(safe-area-inset-right);
   background: var(--surface-default);
   border-top: var(--border-hairline) solid var(--border-subtle);
-}
-
-.service-tab-bar--row {
-  display: none;
 }
 
 .service-tab-bar__item {
@@ -49,16 +45,19 @@
 }
 
 @media (min-width: 768px) {
-  .service-tab-bar--bar {
-    display: none;
-  }
-
-  .service-tab-bar--row {
+  .service-tab-bar {
+    position: static;
+    inset: auto;
+    z-index: auto;
     display: flex;
+    height: auto;
+    padding-bottom: 0;
     gap: var(--space-6);
     align-items: center;
-    border-bottom: var(--border-hairline) solid var(--border-subtle);
     padding: 0 var(--space-4);
+    background: transparent;
+    border-top: 0;
+    border-bottom: var(--border-hairline) solid var(--border-subtle);
   }
 
   .service-tab-bar__item {

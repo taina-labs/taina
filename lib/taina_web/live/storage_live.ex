@@ -188,16 +188,7 @@ defmodule TainaWeb.StorageLive do
   defp caretaker_names(members) do
     members
     |> Enum.filter(&(&1.papel == :zelador and is_nil(&1.deactivated_at)))
-    |> Enum.map(&(&1.display_name || &1.username))
-  end
-
-  # Lista de nomes em pt-BR: "Ana", "Ana e Bruno", "Ana, Bruno e Carol".
-  defp list_in_portuguese([name]), do: name
-  defp list_in_portuguese([first, second]), do: "#{first} #{gettext("e")} #{second}"
-
-  defp list_in_portuguese(names) do
-    [last | rest] = Enum.reverse(names)
-    Enum.join(Enum.reverse(rest), ", ") <> " #{gettext("e")} #{last}"
+    |> Enum.map(&person_name/1)
   end
 
   # --- shell imperativo: assign/render ---

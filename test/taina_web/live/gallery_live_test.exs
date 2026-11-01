@@ -157,6 +157,8 @@ defmodule TainaWeb.GalleryLiveTest do
 
     lv |> element(~s(a[href="/galeria/#{second.rkey}"])) |> render_click()
     assert_patch(lv, ~p"/galeria/#{second.rkey}")
+    assert has_element?(lv, "#timeline-groups")
+    refute has_element?(lv, "#photo-grid")
 
     lv |> element("button[phx-click=close]") |> render_click()
     assert_patch(lv, ~p"/galeria/linha-do-tempo")

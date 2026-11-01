@@ -178,10 +178,9 @@ defmodule TainaWeb.UI.Navigation do
   @doc """
   Abas de serviço (Penpot: ServiceTabBar, Service ybira/jaci, Selected 1-3,
   3fd18cd2-90f8-80f3-8008-d5c554eb274f). As abas saem do mapa puro
-  `service_tabs/1`, nunca da tela. Renderiza as DUAS formas do Penpot de uma
-  vez e troca só com media query (spec 4.3): barra fixa no pé do mobile
-  (`--size-nav-mobile`, safe-area) e fileira de abas sob o `service_header`
-  no desktop, que o slot `:tabs` do cabeçalho recebe.
+  `service_tabs/1`, nunca da tela. Um único nav muda de posição com media query
+  (spec 4.3): barra fixa no pé do mobile (`--size-nav-mobile`, safe-area) e
+  fileira de abas sob o `service_header` no desktop.
 
       <.service_tab_bar service="ybira" current="praca" />
   """
@@ -192,19 +191,7 @@ defmodule TainaWeb.UI.Navigation do
     assigns = assign(assigns, :tabs, service_tabs(assigns.service))
 
     ~H"""
-    <nav class="service-tab-bar service-tab-bar--bar" aria-label={gettext("Navegação")}>
-      <.link
-        :for={tab <- @tabs}
-        navigate={tab[:navigate]}
-        patch={tab[:patch]}
-        class={["service-tab-bar__item", @current == tab.key && "service-tab-bar__item--selected"]}
-        aria-current={@current == tab.key && "page"}
-      >
-        <.icon name={tab.icon} size={20} class="service-tab-bar__icon" />
-        <span class="service-tab-bar__label">{tab.label}</span>
-      </.link>
-    </nav>
-    <nav class="service-tab-bar service-tab-bar--row" aria-label={gettext("Navegação")}>
+    <nav class="service-tab-bar" aria-label={gettext("Navegação")}>
       <.link
         :for={tab <- @tabs}
         navigate={tab[:navigate]}

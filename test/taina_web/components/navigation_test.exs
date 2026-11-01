@@ -192,12 +192,12 @@ defmodule TainaWeb.UI.NavigationTest do
       service_header_html(
         service: "jaci",
         title: "Galeria",
-        tabs: "<nav class=\"service-tab-bar service-tab-bar--row\"></nav>"
+        tabs: "<nav class=\"service-tab-bar\"></nav>"
       )
 
     assert html =~ "Galeria"
     assert html =~ "service-header__tabs"
-    assert html =~ "service-tab-bar--row"
+    assert html =~ "service-tab-bar&quot;"
   end
 
   test "service_tab_bar ybira: Praça/Casa/Lixeira do mapa puro, aria-current na corrente" do
@@ -215,11 +215,11 @@ defmodule TainaWeb.UI.NavigationTest do
     assert html =~ ~s(href="/documentos/lixeira")
   end
 
-  test "service_tab_bar ybira: duas formas em um só markup (barra fixa e fileira)" do
+  test "service_tab_bar ybira: um único nav serve para mobile e desktop" do
     html = tab_bar_html()
 
-    assert html =~ ~s(class="service-tab-bar service-tab-bar--bar")
-    assert html =~ ~s(class="service-tab-bar service-tab-bar--row")
+    assert html =~ ~s(class="service-tab-bar")
+    assert length(String.split(html, "<nav")) - 1 == 1
     assert html =~ "aria-label=\"Navegação"
   end
 

@@ -80,13 +80,9 @@ defmodule TainaWeb.GalleryLive do
     end
   end
 
-  # A grade e a linha do tempo dividem a mesma tela: quando uma entra, a
-  # outra sai do DOM (o `:if` desmonta o container do stream) e o LiveView
-  # poda os itens pendentes, então a flag `*_stale` obriga o refetch na
-  # volta. O visualizador é a exceção: os dois containers seguem montados
-  # embaixo dele (`:if` inclui :viewer), então fechar e trocar de aba volta
-  # sem refetch, com o scroll onde estava. Trocar a zona na URL é o outro
-  # caminho de refetch: o fast path só vale com a MESMA zona carregada.
+  # Cada aba mantém seu cache de stream. No visualizador, só a aba de origem
+  # fica montada, para preservar o scroll sem duplicar os dois fluxos no DOM.
+  # Trocar de zona invalida o cache da aba e exige uma nova leitura.
   defp ensure_grid(%{assigns: %{grid_stale: false, grid_zona: zona, zona: zona}} = socket) do
     socket
     |> assign(:current, nil)
@@ -374,7 +370,7 @@ defmodule TainaWeb.GalleryLive do
 
   @impl true
   def render(assigns) do
-    assigns = assign(assigns, :gallery, gallery_content_attrs(assigns))
+    assigns = assign(assigns, :gallery, assigns)
 
     ~H"""
     <Layouts.service
@@ -410,56 +406,30 @@ defmodule TainaWeb.GalleryLive do
   defp service_tab(:grid), do: "grid"
   defp service_tab(:timeline), do: "timeline"
 
-  # O conteúdo do `<.gallery_content>` entra no attr `g` (spread HEEx não
-  # existe para assigns): extrair daqui o que a tela usa (nem todo assign do
-  # socket entra).
-  defp gallery_content_attrs(assigns) do
-    Map.take(assigns, [
-      :current_scope,
-      :live_action,
-      :zona,
-      :next_cursor,
-      :counts,
-      :photo_ids,
-      :loaded,
-      :grid_error,
-      :timeline_cursor,
-      :timeline_empty,
-      :timeline_error,
-      :current,
-      :viewer_error,
-      :viewer_rkey,
-      :streams
-    ])
-  end
-
   @doc """
-  Corpo da Galeria: componente puro, recebe os assigns que a tela usa (ver
-  `gallery_content_attrs/1`) e devolve HEEx. É aqui que cada estado dos
-  boards escolhe a sua branch: grade, linha do tempo, visualizador e o
-  visualizador de erro, nenhum estado de fora (spec 1.3).
+  Corpo da Galeria: componente puro, recebe os assigns da tela e devolve HEEx.
+  É aqui que cada estado dos boards escolhe a sua branch: grade, linha do
+  tempo, visualizador e o visualizador de erro (spec 1.3).
   """
   attr :g, :map,
     required: true,
-    doc: "assigns de que a tela precisa (ver gallery_content_attrs/1); quanto o socket passa"
+    doc: "assigns da tela"
 
   def gallery_content(assigns) do
-    assigns = assign(assigns, assigns.g)
-
     assigns =
       assigns
-      |> assign(:grade_count, grade_count(assigns))
-      |> assign(:viewer_counter, viewer_counter(assigns.photo_ids, assigns.viewer_rkey))
+      |> assign(:grade_count, grade_count(assigns.g))
+      |> assign(:viewer_counter, viewer_counter(assigns.g.photo_ids, assigns.g.viewer_rkey))
 
     ~H"""
-    <div :if={@live_action in [:grid, :viewer]} class="mt-4">
-      <.skeleton :if={not @loaded} kind="photo_grid" count={12} />
+    <div :if={@g.live_action == :grid or (@g.live_action == :viewer and @g.last_tab == :grid)} class="mt-4">
+      <.skeleton :if={not @g.loaded} kind="photo_grid" count={12} />
 
       <p :if={@grade_count} class="type-caption text-muted mb-2">{@grade_count}</p>
 
-      <div :if={@loaded} id="photo-grid" class="photo-grid" phx-update="stream">
+      <div :if={@g.loaded} id="photo-grid" class="photo-grid" phx-update="stream">
         <.link
-          :for={{dom_id, photo} <- @streams.photos}
+          :for={{dom_id, photo} <- @g.streams.photos}
           id={dom_id}
           patch={~p"/galeria/#{photo.rkey}"}
           class="photo-grid__item"
@@ -477,14 +447,14 @@ defmodule TainaWeb.GalleryLive do
         </.link>
       </div>
 
-      <div :if={@loaded && @next_cursor} id="grid-load-more" phx-viewport-bottom="load-more" class="mt-4">
+      <div :if={@g.loaded && @g.next_cursor} id="grid-load-more" phx-viewport-bottom="load-more" class="mt-4">
         <.skeleton kind="photo_grid" count={6} />
       </div>
 
-      <% {empty_title, empty_hint} = photo_empty_copy(@zona) %>
+      <% {empty_title, empty_hint} = photo_empty_copy(@g.zona) %>
 
       <.empty_state
-        :if={@loaded && @photo_ids == [] and not @grid_error}
+        :if={@g.loaded && @g.photo_ids == [] and not @g.grid_error}
         icon="image"
         title={empty_title}
         body={empty_hint}
@@ -497,7 +467,7 @@ defmodule TainaWeb.GalleryLive do
       </.empty_state>
 
       <.empty_state
-        :if={@grid_error}
+        :if={@g.grid_error}
         icon="alert"
         title={gettext("Não foi possível carregar")}
         body={gettext("As fotos não responderam agora.")}
@@ -508,9 +478,9 @@ defmodule TainaWeb.GalleryLive do
       </.empty_state>
     </div>
 
-    <div :if={@live_action in [:timeline, :viewer]} class="mt-4 col gap-5">
+    <div :if={@g.live_action == :timeline or (@g.live_action == :viewer and @g.last_tab == :timeline)} class="mt-4 col gap-5">
       <div id="timeline-groups" phx-update="stream" class="col gap-5">
-        <section :for={{dom_id, group} <- @streams.timeline_groups} id={dom_id}>
+        <section :for={{dom_id, group} <- @g.streams.timeline_groups} id={dom_id}>
           <h2 class="type-h3 mb-2">
             {group_title(group.date)}
           </h2>
@@ -535,14 +505,14 @@ defmodule TainaWeb.GalleryLive do
         </section>
       </div>
 
-      <div :if={@timeline_cursor} id="timeline-load-more" phx-viewport-bottom="load-more">
+      <div :if={@g.timeline_cursor} id="timeline-load-more" phx-viewport-bottom="load-more">
         <.skeleton kind="photo_grid" count={6} />
       </div>
 
-      <% {empty_title, empty_hint} = photo_empty_copy(@zona) %>
+      <% {empty_title, empty_hint} = photo_empty_copy(@g.zona) %>
 
       <.empty_state
-        :if={@live_action == :timeline and @timeline_empty and not @timeline_error}
+        :if={@g.live_action == :timeline and @g.timeline_empty and not @g.timeline_error}
         icon="image"
         title={empty_title}
         body={empty_hint}
@@ -555,7 +525,7 @@ defmodule TainaWeb.GalleryLive do
       </.empty_state>
 
       <.empty_state
-        :if={@live_action == :timeline and @timeline_error}
+        :if={@g.live_action == :timeline and @g.timeline_error}
         icon="alert"
         title={gettext("Não foi possível carregar")}
         body={gettext("As fotos não responderam agora.")}
@@ -567,17 +537,17 @@ defmodule TainaWeb.GalleryLive do
     </div>
 
     <.viewer
-      :if={@current}
-      file={@current}
-      photo_ids={@photo_ids}
-      zona={@current.zona}
-      link={url(~p"/files/#{@current.rkey}")}
-      src={~p"/files/#{@current.rkey}"}
-      src_md={~p"/files/#{@current.rkey}/thumbnail/md"}
+      :if={@g.current}
+      file={@g.current}
+      photo_ids={@g.photo_ids}
+      zona={@g.current.zona}
+      link={url(~p"/files/#{@g.current.rkey}")}
+      src={~p"/files/#{@g.current.rkey}"}
+      src_md={~p"/files/#{@g.current.rkey}/thumbnail/md"}
     />
 
     <div
-      :if={@viewer_error && @live_action == :viewer}
+      :if={@g.viewer_error && @g.live_action == :viewer}
       id="viewer"
       class="viewer"
       role="dialog"

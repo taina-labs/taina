@@ -249,10 +249,6 @@ defmodule TainaWeb.UploadLive do
   end
 
   # O quadradinho da linha concluída: o mesmo mapa do hub e do navegador.
-  defp file_mark("image/" <> _rest), do: "jaci"
-  defp file_mark("video/" <> _rest), do: "video"
-  defp file_mark(_mime), do: "doc"
-
   defp upload_config_error(:too_large), do: gettext("O arquivo passa de 2 GB, o limite por arquivo.")
 
   defp upload_config_error(:too_many_files), do: gettext("São no máximo 10 arquivos por vez. Envie o resto em seguida.")

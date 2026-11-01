@@ -106,10 +106,6 @@ defmodule TainaWeb.FilePreviewLive do
     end
   end
 
-  defp person_name(%{display_name: name}) when is_binary(name) and name != "", do: name
-  defp person_name(%{username: name}) when is_binary(name), do: name
-  defp person_name(_ava), do: ""
-
   # As rendições (dimensões, EXIF, thumbnails) moram nos metadados do produto;
   # o arquivo do kernel só carrega o conteúdo.
   defp load_photo_metadata(scope, file) do

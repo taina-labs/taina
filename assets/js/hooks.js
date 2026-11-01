@@ -234,9 +234,8 @@ const DnD = {
   },
 };
 
-// Auto-fecha o flash acionando o phx-click do botão de fechar (que limpa no
-// servidor e esconde). Cancela o timer se o elemento sair antes e re-arma
-// quando a mensagem muda.
+// Auto-fecha o flash pelo evento LiveView, sem simular clique ou alterar
+// estilos inline. Cancela o timer se o elemento sair e re-arma se a mensagem mudar.
 const FlashAutoDismiss = {
   mounted() {
     this.arm();
@@ -251,11 +250,8 @@ const FlashAutoDismiss = {
   },
   arm() {
     clearTimeout(this.timer);
-    // Aviso novo no mesmo elemento: o `JS.hide()` de um clique anterior deixou
-    // `display: none` inline, que o patch do LiveView não remove.
-    this.el.style.display = "";
     this.timer = setTimeout(
-      () => this.el.querySelector("button")?.click(),
+      () => this.pushEvent("lv:clear-flash", { key: this.el.dataset.kind }),
       Number(this.el.dataset.timeout) || 4000,
     );
   },

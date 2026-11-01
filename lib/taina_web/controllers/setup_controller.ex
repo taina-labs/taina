@@ -15,11 +15,12 @@ defmodule TainaWeb.SetupController do
   use TainaWeb, :controller
 
   alias Taina.Maraca
+  alias TainaWeb.Disk
 
   @gigabyte 1024 * 1024 * 1024
 
   def create(conn, %{"setup" => params}) do
-    case parse_quota(params, disk_size()) do
+    case parse_quota(params, Disk.total_bytes()) do
       {:ok, storage_quota_bytes} ->
         tekoa_attrs = %{name: params["community_name"], storage_quota_bytes: storage_quota_bytes}
 
@@ -101,22 +102,5 @@ defmodule TainaWeb.SetupController do
 
   defp within_disk?(_bytes, disk_size) do
     {:error, gettext("O disco tem %{gb} GB. Escolha um limite menor.", gb: div(disk_size, @gigabyte))}
-  end
-
-  # Tamanho total do disco do storage, melhor esforço (`df` POSIX): a segunda
-  # coluna do df é o total, a que o `free_space` do LiveView não lê.
-  defp disk_size do
-    storage_root = Application.fetch_env!(:taina, :storage_root)
-
-    with {out, 0} <- System.cmd("df", ["-k", storage_root], stderr_to_stdout: true),
-         [_header, line | _rest] <- String.split(out, "\n"),
-         [_fs, blocks | _] <- String.split(line, ~r/\s+/, trim: true),
-         {kbytes, ""} <- Integer.parse(blocks) do
-      kbytes * 1024
-    else
-      _ -> nil
-    end
-  rescue
-    _e in ErlangError -> nil
   end
 end

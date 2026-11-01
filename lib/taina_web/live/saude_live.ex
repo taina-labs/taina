@@ -29,7 +29,6 @@ defmodule TainaWeb.SaudeLive do
   alias Taina.Ybira
   alias TainaWeb.Layouts
   alias TainaWeb.Saude
-  alias Ypy.Maraca.Ava
 
   @impl true
   def mount(_params, _session, socket) do
@@ -230,19 +229,8 @@ defmodule TainaWeb.SaudeLive do
   defp zelador_names(members) do
     members
     |> Enum.filter(&(&1.papel == :zelador and is_nil(&1.deactivated_at)))
-    |> Enum.map(&ava_name/1)
+    |> Enum.map(&person_name/1)
   end
-
-  # Lista de nomes em pt-BR: "Ana", "Ana e Bruno", "Ana, Bruno e Carol".
-  defp list_in_portuguese([name]), do: name
-  defp list_in_portuguese([first, second]), do: "#{first} #{gettext("e")} #{second}"
-
-  defp list_in_portuguese(names) do
-    [last | rest] = Enum.reverse(names)
-    Enum.join(Enum.reverse(rest), ", ") <> " #{gettext("e")} #{last}"
-  end
-
-  defp ava_name(%Ava{} = ava), do: ava.display_name || ava.username
 
   defp checking_status, do: %{running: Update.running_version(), result: :checking}
 

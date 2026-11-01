@@ -13,6 +13,7 @@ defmodule TainaWeb.CoreComponents do
   import TainaWeb.Icons
 
   alias Phoenix.LiveView.JS
+  alias TainaWeb.Time
 
   # ---------- flash ----------
 
@@ -36,6 +37,7 @@ defmodule TainaWeb.CoreComponents do
       :if={message = Phoenix.Flash.get(@flash, @kind)}
       id={"flash-#{@kind}"}
       class={"flash flash--#{@kind}"}
+      data-kind={@kind}
       phx-hook={if @kind == :info, do: "FlashAutoDismiss"}
     >
       <.icon name={if @kind == :error, do: "alert", else: "info"} size={20} />
@@ -51,7 +53,7 @@ defmodule TainaWeb.CoreComponents do
         class="flash__dismiss"
         aria-label={gettext("Fechar aviso")}
         title={gettext("Fechar aviso")}
-        phx-click={JS.push("lv:clear-flash", value: %{key: @kind}) |> JS.hide(to: "#flash-#{@kind}")}
+        phx-click={JS.push("lv:clear-flash", value: %{key: @kind})}
       >
         <.icon name="close" size={18} />
       </button>
@@ -61,17 +63,24 @@ defmodule TainaWeb.CoreComponents do
 
   # ---------- helpers de formatação ----------
 
-  @doc """
-  Aparência do arquivo por MIME: `{serviço, ícone}` para o `service_square/1`.
-  Segue a paleta do Penpot: imagem=Jaci (dourado), vídeo=azul, PDF=ember,
-  planilha/texto=verde, resto neutro.
-  """
-  def file_visual("image/" <> _rest), do: {"jaci", "image"}
-  def file_visual("video/" <> _rest), do: {"video", "file"}
-  def file_visual("audio/" <> _rest), do: {"video", "play"}
-  def file_visual("application/pdf"), do: {"doc", "file"}
-  def file_visual("text/" <> _rest), do: {"ybira", "file"}
-  def file_visual(_mime), do: {"neutral", "file"}
+  @doc "Marca de serviço para um arquivo em uma linha de lista."
+  def file_mark("image/" <> _rest), do: "jaci"
+  def file_mark("video/" <> _rest), do: "video"
+  def file_mark(_mime), do: "doc"
+
+  @doc "Nome social para exibição, com o nome de usuário como reserva."
+  def person_name(%{display_name: name}) when is_binary(name) and name != "", do: name
+  def person_name(%{username: name}) when is_binary(name), do: name
+  def person_name(_ava), do: ""
+
+  @doc "Lista nomes em pt-BR, com vírgulas e 'e' antes do último nome."
+  def list_in_portuguese(names) when is_list(names) do
+    case Enum.reverse(names) do
+      [] -> ""
+      [name] -> name
+      [last | rest] -> Enum.join(Enum.reverse(rest), ", ") <> " #{gettext("e")} #{last}"
+    end
+  end
 
   @doc """
   Rótulo curto do tipo de arquivo para as linhas de lista ("PDF", "Imagem"...).
@@ -112,9 +121,11 @@ defmodule TainaWeb.CoreComponents do
   @doc """
   Tempo relativo curto em pt-BR: "hoje", "ontem", "há 3 dias", "há 2 semanas".
   """
-  def relative_time(%NaiveDateTime{} = at) do
-    days = Date.diff(Date.utc_today(), NaiveDateTime.to_date(at))
+  def relative_time(%DateTime{} = at), do: relative_time_days(Date.diff(Time.local_today(), Time.local_date(at)))
+  def relative_time(%NaiveDateTime{} = at), do: relative_time_days(Date.diff(Time.local_today(), Time.local_date(at)))
+  def relative_time(_other), do: ""
 
+  defp relative_time_days(days) do
     cond do
       days <= 0 -> gettext("hoje")
       days == 1 -> gettext("ontem")
@@ -125,8 +136,6 @@ defmodule TainaWeb.CoreComponents do
       true -> gettext("há %{count} meses", count: div(days, 30))
     end
   end
-
-  def relative_time(_other), do: ""
 
   @doc """
   Tradução de erros de changeset. As mensagens do Ecto chegam em inglês com

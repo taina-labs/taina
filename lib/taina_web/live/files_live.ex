@@ -98,10 +98,6 @@ defmodule TainaWeb.FilesLive do
 
   defp name_map(members), do: Map.new(members, &{&1.id, person_name(&1)})
 
-  defp person_name(%{display_name: name}) when is_binary(name) and name != "", do: name
-  defp person_name(%{username: name}) when is_binary(name), do: name
-  defp person_name(_ava), do: ""
-
   # --- casca imperativa: o handle_params só assign/stream ---
 
   defp assign_page(socket, folder, zona, folder_rkey, page) do
@@ -504,26 +500,12 @@ defmodule TainaWeb.FilesLive do
 
   # O quadradinho da linha: foto leva o acento do Jaci, vídeo o do vídeo, o
   # resto o documento (o mesmo mapa do hub).
-  defp file_mark("image/" <> _rest), do: "jaci"
-  defp file_mark("video/" <> _rest), do: "video"
-  defp file_mark(_mime), do: "doc"
-
   # "3 arquivos, atualizados ontem" (board pasta): a contagem de arquivos da
   # listagem corrente e o dia relativo da pasta no fuso da comunidade.
   defp folder_meta(file_count, updated_at) do
     ngettext("1 arquivo, atualizado %{when}", "%{count} arquivos, atualizados %{when}", file_count,
-      when: updated_line(updated_at)
+      when: relative_time(updated_at)
     )
-  end
-
-  defp updated_line(at) do
-    days = Date.diff(Date.utc_today(), DateTime.to_date(at))
-
-    cond do
-      days <= 0 -> gettext("hoje")
-      days == 1 -> gettext("ontem")
-      true -> gettext("há %{count} dias", count: days)
-    end
   end
 
   # O estado vazio diz a verdade sobre onde a pessoa está (boards "vazio"):

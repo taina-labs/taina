@@ -25,7 +25,6 @@ defmodule TainaWeb.HomeLive do
   alias TainaWeb.Layouts
   alias TainaWeb.MuralText
   alias TainaWeb.Saude
-  alias TainaWeb.Time
 
   # A lista de Recentes é limitada a 4 itens (nota do board do hub).
   @recent_limit 4
@@ -141,7 +140,7 @@ defmodule TainaWeb.HomeLive do
   defp mural_meta([event | _rest], names) do
     sentence = event |> MuralText.sentence(names) |> String.trim_trailing(".")
 
-    sentence <> ", " <> ago_label(event.inserted_at)
+    sentence <> ", " <> relative_time(event.inserted_at)
   end
 
   # Convites não aceitos e contas desativadas não são moradores da comunidade.
@@ -171,31 +170,11 @@ defmodule TainaWeb.HomeLive do
     }
   end
 
-  defp file_mark("image/" <> _rest), do: "jaci"
-  defp file_mark("video/" <> _rest), do: "video"
-  defp file_mark(_mime), do: "doc"
-
   # "PDF, 2,4 MB, hoje" (spec 1.6: metadados separados por vírgula).
   defp recent_meta(file) do
-    [file_kind(file.mime), format_bytes(file.tamanho), ago_label(file.inserted_at)]
+    [file_kind(file.mime), format_bytes(file.tamanho), relative_time(file.inserted_at)]
     |> Enum.reject(&(&1 == ""))
     |> Enum.join(", ")
-  end
-
-  # Dia relativo no horário da comunidade: o banco grava em UTC, o "hoje" é o
-  # de quem lê.
-  defp ago_label(at) do
-    days = Date.diff(Time.local_today(), Time.local_date(at))
-
-    cond do
-      days <= 0 -> gettext("hoje")
-      days == 1 -> gettext("ontem")
-      days < 7 -> ngettext("há %{count} dia", "há %{count} dias", days)
-      days < 14 -> gettext("há 1 semana")
-      days < 30 -> ngettext("há %{count} semana", "há %{count} semanas", div(days, 7))
-      days < 60 -> gettext("há 1 mês")
-      true -> ngettext("há %{count} mês", "há %{count} meses", div(days, 30))
-    end
   end
 
   # Saudação pelo relógio da caixa: o servidor mora na casa da comunidade,
@@ -208,10 +187,6 @@ defmodule TainaWeb.HomeLive do
   defp period(hour) when hour in 5..11, do: gettext("Bom dia")
   defp period(hour) when hour in 12..17, do: gettext("Boa tarde")
   defp period(_hour), do: gettext("Boa noite")
-
-  defp person_name(%{display_name: name}) when is_binary(name) and name != "", do: name
-  defp person_name(%{username: name}) when is_binary(name), do: name
-  defp person_name(_ava), do: ""
 
   # --- shell imperativo: assign/render ---
 

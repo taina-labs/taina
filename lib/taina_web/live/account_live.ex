@@ -151,8 +151,6 @@ defmodule TainaWeb.AccountLive do
 
   # --- core puro: dados -> dados ---
 
-  defp person_name(ava), do: ava.display_name || ava.username
-
   # "Moradora, Quilombo do Café" (board): papel e comunidade no cartão.
   defp person_meta(scope) do
     gettext("%{role}, %{community}",

@@ -113,8 +113,7 @@ defmodule TainaWeb.LayoutsTest do
 
       assert html =~ ~s(class="shell shell--service")
       assert count(html, ~s(class="service-header")) == 1
-      assert count(html, "service-tab-bar service-tab-bar--bar") == 1
-      assert count(html, "service-tab-bar service-tab-bar--row") == 1
+      assert count(html, "class=\"service-tab-bar\"") == 1
     end
 
     test "aba corrente leva aria-current, main#main-content e skip-link" do
@@ -139,7 +138,7 @@ defmodule TainaWeb.LayoutsTest do
       html = service_html(service: "jaci", current: "timeline")
 
       assert count(html, ~s(class="service-header")) == 1
-      assert count(html, "service-tab-bar service-tab-bar--bar") == 1
+      assert count(html, "class=\"service-tab-bar\"") == 1
       assert html =~ "Linha do tempo"
     end
   end
