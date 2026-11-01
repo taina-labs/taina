@@ -61,7 +61,7 @@ else
 
   {:ok, documentos} = Ybira.create_folder(scope, %{name: "Documentos"})
   {:ok, fotos} = Ybira.create_folder(scope, %{name: "Fotos da comunidade"})
-  {:ok, _videos} = Ybira.create_folder(scope, %{name: "Vídeos"})
+  {:ok, videos} = Ybira.create_folder(scope, %{name: "Vídeos"})
 
   # --- Geração de arquivos reais num diretório temporário ---
   #
@@ -139,7 +139,15 @@ else
 
     # Um arquivo na raiz (logo), para a Home ter "recentes" variados.
     logo = gera_foto.("logo-da-radio.png", [255, 217, 163])
-    {:ok, _} = Ybira.upload(scope, logo, filename: "Logo da rádio.png")
+    {:ok, logo_file} = Ybira.upload(scope, logo, filename: "Logo da rádio.png")
+
+    # Pastas comunitárias são compartilhadas como unidade, incluindo os itens
+    # que já estão dentro delas. Arquivos soltos também precisam de publicação.
+    Enum.each([documentos, fotos, videos], fn folder ->
+      {:ok, _folder} = Ybira.publicar_folder(scope, folder.rkey)
+    end)
+
+    {:ok, _logo} = Ybira.publicar_file(scope, logo_file.rkey)
   after
     File.rm_rf!(tmp)
   end
