@@ -45,13 +45,13 @@ defmodule Taina.MaracaMembersTest do
   end
 
   describe "count_members/1" do
-    test "conta todas as contas da tekoa" do
+    test "conta moradores ativos, sem convites pendentes" do
       tekoa = tekoa_fixture()
       zelador = zelador_fixture(tekoa)
       _morador = active_ava_fixture(tekoa)
       _pending = ava_fixture(tekoa)
 
-      assert {:ok, 3} = Maraca.count_members(Scope.new(zelador, tekoa))
+      assert {:ok, 2} = Maraca.count_members(Scope.new(zelador, tekoa))
     end
   end
 

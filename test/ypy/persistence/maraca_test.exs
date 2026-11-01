@@ -259,7 +259,7 @@ defmodule Ypy.Maraca.PersistenceTest do
     assert Bcrypt.verify_pass("senhaforte123", ativo.password_hash)
 
     # Expiracao do convite (politica pura sobre a coluna).
-    assert Policy.invite_expired?(agora, DateTime.shift(agora, day: 3)) == true
+    assert Policy.invite_expired?(agora, DateTime.shift(agora, day: 8)) == true
     assert Policy.invite_expired?(agora, agora) == false
   end
 
