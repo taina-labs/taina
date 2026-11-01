@@ -30,7 +30,7 @@ defmodule TainaWeb.FilePreviewLive do
 
         {:ok,
          socket
-         |> assign(:page_title, file.nome)
+         |> assign(:page_title, gettext("Documentos"))
          |> assign(:file, file)
          |> assign(:back, back)
          |> assign(:back_label, back_label)
@@ -38,6 +38,8 @@ defmodule TainaWeb.FilePreviewLive do
          |> assign(:names, load_names(scope))
          |> assign(:photo_metadata, load_photo_metadata(scope, file))
          |> assign(:text_preview, load_text_preview(file))
+         |> assign(:modal, nil)
+         |> assign(:all_folders, [])
          |> assign(:show_confirm, false)}
 
       {:error, :forbidden} ->
@@ -145,6 +147,51 @@ defmodule TainaWeb.FilePreviewLive do
     {:noreply, assign(socket, :show_confirm, false)}
   end
 
+  def handle_event("open-rename", _params, socket), do: {:noreply, assign(socket, :modal, "rename")}
+
+  def handle_event("rename-file", %{"file" => %{"name" => name}}, socket) do
+    case Ybira.rename_file(socket.assigns.current_scope, socket.assigns.file.rkey, name) do
+      {:ok, file} ->
+        {:noreply,
+         socket
+         |> assign_file(file)
+         |> assign(:modal, nil)
+         |> put_flash(:info, gettext("Renomeado."))}
+
+      {:error, _reason} ->
+        {:noreply, put_flash(socket, :error, gettext("Não foi possível renomear."))}
+    end
+  end
+
+  def handle_event("open-move", _params, socket) do
+    case Ybira.list_folders(socket.assigns.current_scope) do
+      {:ok, folders} ->
+        own_folders = Enum.filter(folders, &(&1.dono_id == socket.assigns.current_scope.ava.id))
+        {:noreply, socket |> assign(:modal, "move") |> assign(:all_folders, own_folders)}
+
+      {:error, _reason} ->
+        {:noreply, put_flash(socket, :error, gettext("Não foi possível abrir as pastas."))}
+    end
+  end
+
+  def handle_event("move-file", %{"target" => target}, socket) do
+    folder_rkey = if target == "", do: nil, else: target
+
+    case Ybira.move_file(socket.assigns.current_scope, socket.assigns.file.rkey, folder_rkey) do
+      {:ok, file} ->
+        {:noreply,
+         socket
+         |> assign_file(file)
+         |> assign(:modal, nil)
+         |> put_flash(:info, gettext("Movido."))}
+
+      {:error, _reason} ->
+        {:noreply, put_flash(socket, :error, gettext("Não foi possível mover."))}
+    end
+  end
+
+  def handle_event("close-modal", _params, socket), do: {:noreply, assign(socket, :modal, nil)}
+
   def handle_event("confirm-delete", _params, socket) do
     case Ybira.delete_file(socket.assigns.current_scope, socket.assigns.file.rkey) do
       {:ok, _file} ->
@@ -173,7 +220,7 @@ defmodule TainaWeb.FilePreviewLive do
       {:ok, updated} ->
         {:noreply,
          socket
-         |> assign(:file, updated)
+         |> assign_file(updated)
          |> put_flash(:info, zona_flash(action, :ok))}
 
       {:error, _reason} ->
@@ -204,6 +251,16 @@ defmodule TainaWeb.FilePreviewLive do
       {:error, _reason} ->
         {:noreply, put_flash(socket, :error, gettext("Não foi possível enviar o pedido agora."))}
     end
+  end
+
+  defp assign_file(socket, file) do
+    {back, back_label, folder_name} = back_target(socket.assigns.current_scope, file)
+
+    socket
+    |> assign(:file, file)
+    |> assign(:back, back)
+    |> assign(:back_label, back_label)
+    |> assign(:folder_name, folder_name)
   end
 
   # O shell inscreve o morador nos eventos do Ava; esta tela não reage a eles,
@@ -379,6 +436,45 @@ defmodule TainaWeb.FilePreviewLive do
         on_confirm="confirm-delete"
         on_cancel={JS.push("close-confirm")}
       />
+
+      <.dialog id="rename-file-modal" show={@modal == "rename"} on_cancel={JS.push("close-modal")}>
+        <h2 id="rename-file-modal-title" class="type-h3 mb-4">{gettext("Renomear")}</h2>
+        <form id="rename-file-form" phx-submit="rename-file" class="col gap-4">
+          <.field label={gettext("Novo nome")} name="file[name]" id="rename_file_name" value={@file.nome} required autofocus />
+          <div class="row gap-3">
+            <.button kind="secondary" size="md" class="flex-1" phx-click="close-modal">
+              {gettext("Cancelar")}
+            </.button>
+            <.button type="submit" kind="primary" size="md" class="flex-1">{gettext("Renomear")}</.button>
+          </div>
+        </form>
+      </.dialog>
+
+      <.dialog id="move-file-modal" show={@modal == "move"} on_cancel={JS.push("close-modal")}>
+        <h2 id="move-file-modal-title" class="type-h3 mb-1">{gettext("Mover para...")}</h2>
+        <p class="type-body-sm text-muted mb-4">{@file.nome}</p>
+        <ul class="list">
+          <li>
+            <button type="button" class="list-row" phx-click={JS.push("move-file", value: %{target: ""})}>
+              <.service_square mark="casa" />
+              <span class="list-row__body type-label">{gettext("Início (raiz)")}</span>
+            </button>
+          </li>
+          <li :for={folder <- @all_folders} :if={folder.id != @file.folder_id}>
+            <button
+              type="button"
+              class="list-row"
+              phx-click={JS.push("move-file", value: %{target: folder.rkey})}
+            >
+              <.service_square mark="ybira" />
+              <span class="list-row__body type-label">{folder.nome}</span>
+            </button>
+          </li>
+        </ul>
+        <.button kind="secondary" size="md" class="w-full mt-4" phx-click="close-modal">
+          {gettext("Cancelar")}
+        </.button>
+      </.dialog>
     </Layouts.page>
     """
   end
@@ -416,6 +512,12 @@ defmodule TainaWeb.FilePreviewLive do
         click={JS.push("zona", value: %{action: "voltar"})}
       >
         {gettext("Voltar para a casa")}
+      </:item>
+      <:item :if={@own?} icon="move" click={JS.push("open-move")}>
+        {gettext("Mover")}
+      </:item>
+      <:item :if={@own?} icon="pencil" click={JS.push("open-rename")}>
+        {gettext("Renomear")}
       </:item>
       <:item :if={@own?} icon="trash" kind="danger" click={JS.push("ask-delete")}>
         {gettext("Remover")}

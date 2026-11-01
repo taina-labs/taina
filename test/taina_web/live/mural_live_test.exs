@@ -40,8 +40,9 @@ defmodule TainaWeb.MuralLiveTest do
 
     # as linhas são ListRow mural, quadradinho à esquerda
     assert html =~ "list-row--mural"
-    assert html =~ "Ana guardou um arquivo na caixa"
-    assert html =~ "Ana publicou um arquivo na praça"
+    assert html =~ "service-square--mural"
+    assert html =~ "Ana guardou estatuto.pdf na caixa"
+    assert html =~ "Ana publicou estatuto.pdf na praça"
 
     # o meta do board: dia e hora juntos, "Hoje, 09:12"
     assert html =~ ~r/Hoje, \d{2}:\d{2}/
@@ -87,8 +88,8 @@ defmodule TainaWeb.MuralLiveTest do
 
     {:ok, _lv, html} = conn |> log_in(zelador) |> live(~p"/mural")
 
-    assert html =~ "Ana guardou um arquivo na caixa"
-    assert html =~ "Ana publicou um arquivo na praça"
+    assert html =~ "Ana guardou estatuto.pdf na caixa"
+    assert html =~ "Ana publicou estatuto.pdf na praça"
     assert html =~ ~r/\d{2}:\d{2}/
   end
 

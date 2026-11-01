@@ -13,7 +13,7 @@ defmodule TainaWeb.FilePreviewLiveTest do
     owner = active_ava_fixture(tekoa)
     other = active_ava_fixture(tekoa, %{username: "carla", display_name: "Carla"})
     {:ok, file} = Ybira.upload(Scope.new(owner, tekoa), tmp_upload_fixture("oi", "particular.txt"))
-    %{tekoa: tekoa, owner: owner, other: other, target_file: file}
+    %{tekoa: tekoa, owner: owner, other: other, target_file: file, scope: Scope.new(owner, tekoa)}
   end
 
   # --- board "Arquivo / casa alheia" ---
@@ -54,14 +54,16 @@ defmodule TainaWeb.FilePreviewLiveTest do
 
   # --- board "Arquivo / padrao" (M e Web) ---
 
-  test "o dono vê o título com o nome do arquivo, o badge de zona e os detalhes", %{
+  test "o dono vê o título de Documentos, o nome uma vez e os detalhes", %{
     conn: conn,
     owner: owner,
     target_file: file
   } do
     {:ok, lv, html} = conn |> log_in(owner) |> live(~p"/documentos/#{file.rkey}")
 
-    assert has_element?(lv, ".page-header__title", file.nome)
+    assert has_element?(lv, ".page-header__title", "Documentos")
+    assert has_element?(lv, ".media-frame h2", file.nome)
+    refute has_element?(lv, ".page-header__title", file.nome)
     assert html =~ "Enviado por"
     assert html =~ "você"
     assert html =~ "Quando"
@@ -108,6 +110,8 @@ defmodule TainaWeb.FilePreviewLiveTest do
     assert has_element?(owner_lv, "#file-actions-panel", "Voltar para a casa")
     refute has_element?(owner_lv, "#file-actions-panel", "Publicar na praça")
     assert has_element?(owner_lv, "#file-actions-panel", "Remover")
+    assert has_element?(owner_lv, "#file-actions-panel", "Mover")
+    assert has_element?(owner_lv, "#file-actions-panel", "Renomear")
 
     {:ok, other_lv, _html} = conn |> log_in(other) |> live(~p"/documentos/#{file.rkey}")
 
@@ -201,6 +205,38 @@ defmodule TainaWeb.FilePreviewLiveTest do
 
       assert html =~ ~s(href="/documentos")
       assert has_element?(lv, ".page-header__back-label", "Praça")
+    end
+
+    test "o menu do preview renomeia o arquivo", %{conn: conn, owner: owner, target_file: file} do
+      {:ok, lv, _html} = conn |> log_in(owner) |> live(~p"/documentos/#{file.rkey}")
+
+      lv |> element(~s(button[phx-click*="open-rename"])) |> render_click()
+      assert has_element?(lv, "#rename-file-modal .dialog__panel[aria-labelledby=\"rename-file-modal-title\"]")
+
+      lv
+      |> form("#rename-file-form", %{"file" => %{"name" => "estatuto.txt"}})
+      |> render_submit()
+
+      assert render(lv) =~ "Renomeado."
+      assert has_element?(lv, ".media-frame h2", "estatuto.txt")
+    end
+
+    test "o menu do preview move o arquivo para uma pasta", %{
+      conn: conn,
+      scope: scope,
+      owner: owner,
+      target_file: file
+    } do
+      {:ok, folder} = Ybira.create_folder(scope, %{name: "Documentos"})
+      folder_rkey = folder.rkey
+      {:ok, lv, _html} = conn |> log_in(owner) |> live(~p"/documentos/#{file.rkey}")
+
+      lv |> element(~s(button[phx-click*="open-move"])) |> render_click()
+      lv |> element("#move-file-modal button.list-row", "Documentos") |> render_click()
+
+      assert render(lv) =~ "Movido."
+      assert {:ok, moved} = Ybira.get_file(scope, file.rkey)
+      assert {:ok, ^folder_rkey} = Ybira.file_folder_rkey(scope, moved)
     end
   end
 end

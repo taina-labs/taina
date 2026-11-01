@@ -5,8 +5,9 @@
 .badge {
   display: inline-flex;
   align-items: center;
+  gap: var(--space-1);
   height: var(--size-badge);
-  padding-inline: var(--space-3);
+  padding-inline: var(--space-2);
   border-radius: var(--radius-pill);
   background: var(--surface-raised);
   border: var(--border-hairline) solid var(--border-default);
@@ -17,26 +18,32 @@
 /* zonas (docs / fotos) */
 .badge--praca {
   color: var(--badge-zone-praca);
+  border-color: var(--badge-zone-praca);
 }
 
 .badge--casa {
   color: var(--badge-zone-casa);
+  border-color: var(--badge-zone-casa);
 }
 
 /* papéis (moradores) */
 .badge--zelador {
   color: var(--badge-role-zelador);
+  border-color: var(--badge-role-zelador);
 }
 
 .badge--morador {
   color: var(--badge-role-morador);
+  border-color: var(--badge-role-morador);
 }
 
 /* estados */
 .badge--active {
   color: var(--badge-state-active);
+  border-color: var(--badge-state-active);
 }
 
 .badge--inactive {
   color: var(--badge-state-inactive);
+  border-color: var(--badge-state-inactive);
 }

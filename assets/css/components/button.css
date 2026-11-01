@@ -8,7 +8,7 @@
   gap: var(--space-2);
   height: var(--size-control-lg);
   padding-inline: var(--space-6);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   font-family: var(--font-family-body);
   font-size: var(--font-size-md);
   font-weight: var(--font-weight-semibold);
@@ -32,7 +32,7 @@
 }
 
 .button--secondary {
-  background: transparent;
+  background: var(--surface-default);
   border: var(--border-hairline) solid var(--border-strong);
   color: var(--text-primary);
 }
@@ -53,7 +53,8 @@
 
 .button--danger {
   background: transparent;
-  color: var(--feedback-error);
+  border: var(--border-hairline) solid var(--action-danger);
+  color: var(--action-danger);
 }
 
 .button--danger:hover {

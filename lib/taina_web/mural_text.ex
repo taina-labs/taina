@@ -28,6 +28,16 @@ defmodule TainaWeb.MuralText do
   fallback mantém a linha no ar e o log marca o tipo para alguém escrever a
   frase dele.
   """
+  def resource_refs(events) when is_list(events) do
+    events
+    |> Enum.map(fn event -> {event.payload["collection"], event.payload["rkey"]} end)
+    |> Enum.filter(fn
+      {type, rkey} when type in ["ypy.file.v0", "ypy.folder.v0"] and is_binary(rkey) -> true
+      _other -> false
+    end)
+    |> Enum.uniq()
+  end
+
   def sentence(%Entry{tipo: "invite_created"} = event, names) do
     if event.payload["role"] == "zelador" do
       gettext("%{actor} convidou uma nova pessoa para cuidar da máquina.", actor: actor_label(event, names))
@@ -94,17 +104,45 @@ defmodule TainaWeb.MuralText do
   # Verbos do kernel na cadeia: o payload deles carrega o ator e a coleção
   # (o rkey do recurso fica no payload para a auditoria, não para a frase),
   # então a frase nomeia quem fez e o que fez, sem o nome do recurso.
-  def sentence(%Entry{tipo: "put", payload: %{"collection" => "ypy.folder.v0"}} = event, names),
-    do: gettext("%{actor} criou uma pasta.", actor: actor_label(event, names))
+  def sentence(%Entry{tipo: "put", payload: %{"collection" => "ypy.folder.v0"}} = event, names) do
+    case resource_name(event, names) do
+      name when is_binary(name) ->
+        gettext("%{actor} guardou a pasta %{resource} na caixa.", actor: actor_label(event, names), resource: name)
 
-  def sentence(%Entry{tipo: "put"} = event, names),
-    do: gettext("%{actor} guardou um arquivo na caixa.", actor: actor_label(event, names))
+      _missing ->
+        gettext("%{actor} criou uma pasta.", actor: actor_label(event, names))
+    end
+  end
 
-  def sentence(%Entry{tipo: "publicar", payload: %{"collection" => "ypy.folder.v0"}} = event, names),
-    do: gettext("%{actor} publicou uma pasta na praça.", actor: actor_label(event, names))
+  def sentence(%Entry{tipo: "put"} = event, names) do
+    case resource_name(event, names) do
+      name when is_binary(name) ->
+        gettext("%{actor} guardou %{resource} na caixa.", actor: actor_label(event, names), resource: name)
 
-  def sentence(%Entry{tipo: "publicar"} = event, names),
-    do: gettext("%{actor} publicou um arquivo na praça.", actor: actor_label(event, names))
+      _missing ->
+        gettext("%{actor} guardou um arquivo na caixa.", actor: actor_label(event, names))
+    end
+  end
+
+  def sentence(%Entry{tipo: "publicar", payload: %{"collection" => "ypy.folder.v0"}} = event, names) do
+    case resource_name(event, names) do
+      name when is_binary(name) ->
+        gettext("%{actor} publicou a pasta %{resource} na praça.", actor: actor_label(event, names), resource: name)
+
+      _missing ->
+        gettext("%{actor} publicou uma pasta na praça.", actor: actor_label(event, names))
+    end
+  end
+
+  def sentence(%Entry{tipo: "publicar"} = event, names) do
+    case resource_name(event, names) do
+      name when is_binary(name) ->
+        gettext("%{actor} publicou %{resource} na praça.", actor: actor_label(event, names), resource: name)
+
+      _missing ->
+        gettext("%{actor} publicou um arquivo na praça.", actor: actor_label(event, names))
+    end
+  end
 
   def sentence(%Entry{tipo: "tirar_da_praca", payload: %{"collection" => "ypy.folder.v0"}} = event, names),
     do: gettext("%{actor} tirou uma pasta da praça.", actor: actor_label(event, names))
@@ -154,6 +192,12 @@ defmodule TainaWeb.MuralText do
   end
 
   defp actor_label(event, names) do
-    Map.get(names, event.payload["actor"], gettext("O sistema"))
+    actors = Map.get(names, :actors, names)
+    Map.get(actors, event.payload["actor"], gettext("O sistema"))
+  end
+
+  defp resource_name(event, names) do
+    resources = Map.get(names, :resources, %{})
+    Map.get(resources, {event.payload["collection"], event.payload["rkey"]})
   end
 end

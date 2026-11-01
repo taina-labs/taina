@@ -450,6 +450,54 @@ defmodule Taina.Ybira do
     end)
   end
 
+  @doc "Nomes legiveis na praca para recursos citados por uma pagina do mural."
+  def public_resource_names(%Scope{} = scope, resources) when is_list(resources) do
+    file_rkeys = resource_rkeys(resources, @tipo_file)
+    folder_rkeys = resource_rkeys(resources, @tipo_folder)
+
+    within_tekoa(scope, fn ->
+      file_names =
+        if file_rkeys == [] do
+          []
+        else
+          Repo.all(
+            from(f in File,
+              where:
+                f.tekoa_id == ^scope.tekoa.id and f.rkey in ^file_rkeys and f.zona == :praca and
+                  is_nil(f.apagado_em),
+              select: {{@tipo_file, f.rkey}, f.nome}
+            )
+          )
+        end
+
+      folder_names =
+        if folder_rkeys == [] do
+          []
+        else
+          Repo.all(
+            from(f in Folder,
+              where:
+                f.tekoa_id == ^scope.tekoa.id and f.rkey in ^folder_rkeys and f.zona == :praca and
+                  is_nil(f.apagado_em),
+              select: {{@tipo_folder, f.rkey}, f.nome}
+            )
+          )
+        end
+
+      {:ok, Map.new(file_names ++ folder_names)}
+    end)
+  end
+
+  defp resource_rkeys(resources, tipo) do
+    resources
+    |> Enum.filter(fn
+      {^tipo, rkey} when is_binary(rkey) -> true
+      _other -> false
+    end)
+    |> Enum.map(&elem(&1, 1))
+    |> Enum.uniq()
+  end
+
   @doc """
   Quantos itens cada pasta da listagem tem, para o meta "Pasta, 4 itens" do
   board: subpastas mais arquivos, sem a lixeira, na mesma regra de leitura da

@@ -133,7 +133,17 @@ defmodule TainaWeb.UI.Content do
     "sair" => "sair"
   }
 
+  @badge_icons %{
+    "praca" => "praca",
+    "casa" => "casa",
+    "zelador" => "shield",
+    "morador" => "user",
+    "active" => "check",
+    "inactive" => "close"
+  }
+
   defp mark_icon(mark), do: Map.fetch!(@mark_icons, mark)
+  defp badge_icon(kind), do: Map.fetch!(@badge_icons, kind)
 
   @doc """
   Badge do design system (Penpot Badge: Kind praca/casa/zelador/morador/
@@ -145,7 +155,10 @@ defmodule TainaWeb.UI.Content do
 
   def badge(assigns) do
     ~H"""
-    <span class={"badge badge--#{@kind}"}>{render_slot(@inner_block)}</span>
+    <span class={"badge badge--#{@kind}"}>
+      <.icon name={badge_icon(@kind)} size={14} />
+      <span>{render_slot(@inner_block)}</span>
+    </span>
     """
   end
 

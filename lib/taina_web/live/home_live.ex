@@ -103,12 +103,19 @@ defmodule TainaWeb.HomeLive do
     with {:ok, storage} <- storage_result,
          {:ok, members} <- Maraca.list_members(scope),
          {:ok, %{events: events}} <- Maraca.list_events(scope, limit: 1) do
-      {:ok, community_rows(members, events, storage)}
+      resource_names =
+        case Ybira.public_resource_names(scope, MuralText.resource_refs(events)) do
+          {:ok, names} -> names
+          {:error, _reason} -> %{}
+        end
+
+      {:ok, community_rows(members, events, storage, resource_names)}
     end
   end
 
-  defp community_rows(members, events, storage) do
-    names = Map.new(members, &{&1.public_id, person_name(&1)})
+  defp community_rows(members, events, storage, resource_names) do
+    actor_names = Map.new(members, &{&1.public_id, person_name(&1)})
+    names = %{actors: actor_names, resources: resource_names}
     summary = Saude.summary_line(%{storage: storage, backup: Backup.last_backup()})
 
     [

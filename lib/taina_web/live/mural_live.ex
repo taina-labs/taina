@@ -22,6 +22,7 @@ defmodule TainaWeb.MuralLive do
   use TainaWeb, :live_view
 
   alias Taina.Maraca
+  alias Taina.Ybira
   alias TainaWeb.Layouts
   alias TainaWeb.MuralText
   alias TainaWeb.Time
@@ -109,7 +110,13 @@ defmodule TainaWeb.MuralLive do
         {:error, _reason} -> %{}
       end
 
-    page_entries(events, names)
+    resources =
+      case Ybira.public_resource_names(scope, MuralText.resource_refs(events)) do
+        {:ok, resources} -> resources
+        {:error, _reason} -> %{}
+      end
+
+    page_entries(events, %{actors: names, resources: resources})
   end
 
   defp page_entries(events, names) do
@@ -186,7 +193,7 @@ defmodule TainaWeb.MuralLive do
           title={entry.sentence}
           meta={entry.meta}
         >
-          <:leading><.service_square mark="moradores" /></:leading>
+          <:leading><.service_square mark="mural" /></:leading>
         </.list_row>
       </ul>
 
