@@ -47,17 +47,6 @@
   border-color: var(--brand-primary);
 }
 
-.field__control > .icon {
-  position: absolute;
-  right: var(--space-4);
-  color: var(--text-faint);
-  pointer-events: none;
-}
-
-.field__control:has(.icon) input {
-  padding-right: var(--space-12);
-}
-
 /* "Mostrar" do board: a palavra mora dentro da caixa, à direita; o input
    reserva o espaço no padding (72 = 64 + 8) para o texto curto caber. */
 .field__control:has(.field__toggle) input {
@@ -115,7 +104,7 @@
   pointer-events: none;
 }
 
-/* ícone na ponta esquerda da caixa; o input abre espaço no padding */
+/* Ícone na ponta esquerda da caixa; o input abre espaço no padding. */
 .field__control > .field__icon--leading {
   position: absolute;
   right: auto;
@@ -124,13 +113,6 @@
 
 .field--address .field__control input {
   padding-left: var(--space-12);
-}
-
-/* o ícone decorativo (à direita) abre o padding; os kinds com ícone à
-   esquerda voltam ao padrão e colocam o ícone no fluxo da busca */
-.field--search .field__control input,
-.field--address .field__control input {
-  padding-right: var(--space-4);
 }
 
 /* o input vive num container `.search` (components.css): a caixa é do
@@ -143,4 +125,3 @@
   background: none;
   border: none;
 }
-

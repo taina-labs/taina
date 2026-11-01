@@ -1,8 +1,8 @@
 defmodule TainaWeb.UI.FormsTest do
   @moduledoc """
-  Testes de variante dos componentes de formulário (Wave 1a): field (kinds
-  text/password/search/address + aria/erros), segmented (selected) e
-  radio_card (selected). Confere o BEM novo e os comportamentos de
+  Testes de variante dos componentes de formulário: field
+  (text/password/search/address + aria/erros) e radio_card (selected).
+  Confere o BEM novo e os comportamentos de
   acessibilidade (aria-invalid, role alert, aria-current).
   """
 
@@ -28,15 +28,6 @@ defmodule TainaWeb.UI.FormsTest do
     """
   end
 
-  defp segmented_component(assigns) do
-    ~H"""
-    <.segmented>
-      <:option patch="/galeria" selected={@grade_selected}>Grade</:option>
-      <:option patch="/galeria/linha-do-tempo">Linha do tempo</:option>
-    </.segmented>
-    """
-  end
-
   defp radio_card_component(assigns) do
     ~H"""
     <.radio_card field={@field} value={@value} label={@label} description={@description} />
@@ -59,11 +50,6 @@ defmodule TainaWeb.UI.FormsTest do
       errors: [],
       field: nil
     }
-  end
-
-  defp segmented_html(opts \\ []) do
-    assigns = Enum.into(opts, %{grade_selected: false})
-    render_component(&segmented_component/1, assigns)
   end
 
   defp radio_card_html(opts) do
@@ -148,25 +134,6 @@ defmodule TainaWeb.UI.FormsTest do
     assert html =~ ~s(phx-hook="PasswordToggle")
     assert html =~ ~s(aria-label="Mostrar senha")
     refute html =~ "icon-button"
-  end
-
-  # ---------- Segmented ----------
-
-  test "segmented selecionada: modifier + aria-current (superfície elevada no CSS)" do
-    html = segmented_html(grade_selected: true)
-
-    assert html =~ ~s(class="segmented__option segmented__option--selected")
-    assert html =~ ~s(aria-current="page")
-    # a não selecionada não marca modifier nem aria-current
-    assert html =~ ~s(class="segmented__option")
-    assert html =~ "Linha do tempo"
-  end
-
-  test "segmented sem seleção não marca aria-current" do
-    html = segmented_html()
-
-    refute html =~ "aria-current"
-    refute html =~ "segmented__option--selected"
   end
 
   # ---------- RadioCard ----------

@@ -79,6 +79,9 @@
 .py-4 {
   padding-block: var(--space-4);
 }
+.pb-3 {
+  padding-bottom: var(--space-3);
+}
 
 /* margin */
 .mt-2 {
@@ -113,6 +116,9 @@
 }
 .mb-8 {
   margin-bottom: var(--space-8);
+}
+.my-6 {
+  margin-block: var(--space-6);
 }
 .mx-auto {
   margin-inline: auto;

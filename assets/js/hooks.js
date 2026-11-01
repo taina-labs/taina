@@ -101,14 +101,6 @@ const ViewerNav = {
       { passive: true },
     );
   },
-  updated() {
-    // Mantém a foto atual visível no meio da trilha. Aqui é só posicionamento
-    // de scroll, sem animação (o movimento é do CSS).
-    const current = this.el.querySelector(
-      '.viewer__rail-item[aria-current="true"]',
-    );
-    if (current) current.scrollIntoView({ inline: "center", block: "nearest" });
-  },
   destroyed() {
     window.removeEventListener("keydown", this.onKey);
   },

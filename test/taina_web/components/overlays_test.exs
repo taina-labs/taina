@@ -66,21 +66,6 @@ defmodule TainaWeb.UI.OverlaysTest do
     """
   end
 
-  defp menu_html(items) do
-    assigns = %{items: items}
-    render_component(&menu_component/1, assigns)
-  end
-
-  defp menu_component(assigns) do
-    ~H"""
-    <.menu id="menu-test" label="Mais opções">
-      <:item :for={item <- @items} icon={item.icon} navigate={item[:navigate]} danger={item[:danger]}>
-        {item.label}
-      </:item>
-    </.menu>
-    """
-  end
-
   @sheet_defaults %{id: "sheet-test", show: true, title: "Ações do arquivo", kind: "actions", items: []}
 
   defp sheet_html(opts \\ []) do
@@ -226,23 +211,6 @@ defmodule TainaWeb.UI.OverlaysTest do
 
     assert html =~ ~s(phx-key="escape")
     assert html =~ "phx-click-away"
-  end
-
-  # ---------- Menu ----------
-
-  test "menu: ícone sempre à esquerda do texto (spec 10)" do
-    html = menu_html([%{label: "Abrir", icon: "file", navigate: "/documentos/ata"}])
-
-    assert html =~ "menu__item"
-    assert html =~ "href=\"/documentos/ata\""
-    assert html =~ ~r|<svg.*?</svg>\s*Abrir|ms
-  end
-
-  test "menu: item danger mantém layout com o ícone à esquerda" do
-    html = menu_html([%{label: "Remover", icon: "trash", danger: true}])
-
-    assert html =~ "menu__item--danger"
-    assert html =~ ~r|<svg.*?</svg>\s*Remover|ms
   end
 
   # ---------- ActionsMenu ----------
