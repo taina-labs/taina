@@ -21,8 +21,6 @@ defmodule TainaWeb.MuralLive do
 
   use TainaWeb, :live_view
 
-  import Ecto.Query
-
   alias Taina.Maraca
   alias TainaWeb.Layouts
   alias TainaWeb.MuralText
@@ -46,7 +44,7 @@ defmodule TainaWeb.MuralLive do
     if offset = socket.assigns.next_offset do
       case Maraca.list_events(socket.assigns.current_scope, offset: offset) do
         {:ok, %{events: events, next_offset: next}} ->
-          entries = page_entries(socket.assigns.current_scope, events)
+          entries = load_page_entries(socket.assigns.current_scope, events)
 
           {:noreply,
            socket
@@ -82,7 +80,7 @@ defmodule TainaWeb.MuralLive do
   defp assign_events(socket) do
     case Maraca.list_events(socket.assigns.current_scope) do
       {:ok, %{events: events, next_offset: next}} ->
-        entries = page_entries(socket.assigns.current_scope, events)
+        entries = load_page_entries(socket.assigns.current_scope, events)
 
         socket
         |> assign(:next_offset, next)
@@ -102,8 +100,19 @@ defmodule TainaWeb.MuralLive do
   # Modela a página para o render: frase pronta e o meta do board ("Hoje,
   # 09:12"). Datas no horário da comunidade (o banco grava em UTC; o dia de
   # quem lê não é o dia do banco).
-  defp page_entries(scope, events) do
-    names = actor_names(scope, events)
+  defp load_page_entries(scope, events) do
+    actor_ids = events |> Enum.map(& &1.payload["actor"]) |> Enum.reject(&is_nil/1) |> Enum.uniq()
+
+    names =
+      case Maraca.mural_actor_names(scope, actor_ids) do
+        {:ok, names} -> names
+        {:error, _reason} -> %{}
+      end
+
+    page_entries(events, names)
+  end
+
+  defp page_entries(events, names) do
     Enum.map(events, &entry(&1, names))
   end
 
@@ -127,28 +136,6 @@ defmodule TainaWeb.MuralLive do
       end
 
     day_label <> ", " <> Time.local_clock(at)
-  end
-
-  # O nome social do ator, resolvido da projecao: nome de exibição quando
-  # existe, senão o nome de usuário. A cadeia guarda o public_id; a tela é
-  # quem traduz para gente. Sem ator (ato do sistema), "O sistema".
-  defp actor_names(%Ypy.Scope{} = scope, events) do
-    pids = events |> Enum.map(& &1.payload["actor"]) |> Enum.reject(&is_nil/1) |> Enum.uniq()
-
-    {:ok, pairs} =
-      Taina.Repo.with_tekoa(scope.tekoa.public_id, fn ->
-        pairs =
-          Taina.Repo.all(
-            from(a in Ypy.Maraca.Ava,
-              where: a.public_id in ^pids,
-              select: {a.public_id, {a.display_name, a.username}}
-            )
-          )
-
-        {:ok, pairs}
-      end)
-
-    Map.new(pairs, fn {pid, {display, username}} -> {pid, display || username} end)
   end
 
   # --- shell imperativo: assign/render ---

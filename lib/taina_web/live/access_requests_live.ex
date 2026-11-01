@@ -20,7 +20,6 @@ defmodule TainaWeb.AccessRequestsLive do
   use TainaWeb, :live_view
 
   alias Taina.Maraca
-  alias Taina.Ybira
   alias TainaWeb.Layouts
   alias TainaWeb.Time
 
@@ -39,7 +38,7 @@ defmodule TainaWeb.AccessRequestsLive do
   @impl true
   def handle_event("approve", %{"id" => id}, socket) do
     pedido = Enum.find(socket.assigns.requests, &("#{&1.id}" == id))
-    message = approved_message(socket.assigns.incoming_names, pedido)
+    message = approved_message(socket.assigns.resource_names, pedido)
 
     case pedido && Maraca.aprovar(socket.assigns.current_scope, pedido) do
       {:ok, _concessao} ->
@@ -138,7 +137,7 @@ defmodule TainaWeb.AccessRequestsLive do
   end
 
   def handle_info({:access_request_approved, concessao}, socket) do
-    message = outgoing_approved_message(socket.assigns.outgoing_names, concessao.recurso)
+    message = outgoing_approved_message(socket.assigns.resource_names, concessao.tipo, concessao.recurso)
 
     {:noreply,
      socket
@@ -163,37 +162,38 @@ defmodule TainaWeb.AccessRequestsLive do
     {:ok, outgoing} = Maraca.pedidos_enviados(scope)
     {:ok, decisions} = Maraca.list_my_recent_decisions(scope)
     {:ok, refusals} = Maraca.list_owner_recent_refusals(scope)
+    resource_requests = requests ++ outgoing ++ decisions ++ refusals
 
     socket
     |> assign(:requests, requests)
-    |> assign(:incoming_names, incoming_names(scope, requests))
     |> assign(:outgoing, outgoing)
-    |> assign(:outgoing_names, outgoing_names(scope, outgoing))
     |> assign(:decisions, decisions)
     |> assign(:refusals, refusals)
-    |> assign(:refusal_names, incoming_names(scope, refusals))
-    |> assign_grants()
+    |> assign_grants(resource_requests)
   end
 
   # A seção concedida ("João recebeu acesso", board) carrega por último e
   # decai sozinha: se falhar, o resto da tela continua no ar, com o estado de
   # erro (e a saída) só nela.
-  defp assign_grants(socket) do
+  defp assign_grants(socket, resource_requests) do
     scope = socket.assigns.current_scope
 
-    case load_grants(scope) do
-      {:ok, grants} ->
-        socket
-        |> assign(:grants, grants)
-        |> assign(:grant_names, grant_names(scope, grants))
-        |> assign(:grants_error, false)
+    {grants, grants_error} =
+      case load_grants(scope) do
+        {:ok, grants} -> {grants, false}
+        {:error, _reason} -> {[], true}
+      end
 
-      {:error, _reason} ->
-        socket
-        |> assign(:grants, [])
-        |> assign(:grant_names, %{})
-        |> assign(:grants_error, true)
-    end
+    resource_names =
+      case Maraca.access_resource_names(scope, resource_requests, grants) do
+        {:ok, names} -> names
+        {:error, _reason} -> %{}
+      end
+
+    socket
+    |> assign(:grants, grants)
+    |> assign(:resource_names, resource_names)
+    |> assign(:grants_error, grants_error)
   end
 
   # O Maraca devolve `{:ok, lista}` (e `{:error, motivo}` em falha de banco);
@@ -244,93 +244,20 @@ defmodule TainaWeb.AccessRequestsLive do
     concessao.leitor.display_name || concessao.leitor.username
   end
 
-  # Nome do arquivo de cada pedido recebido, resolvido no escopo do dono (ele
-  # pode ler o próprio arquivo). Arquivo que não existe mais vira rótulo
-  # neutro, nunca erro de tela.
-  defp incoming_names(scope, requests) do
-    requests
-    |> Enum.filter(&(&1.tipo == "ypy.file.v0"))
-    |> Enum.uniq_by(& &1.recurso)
-    |> Map.new(fn request -> {request.recurso, resolve_owned_name(scope, request.recurso)} end)
-  end
-
-  # Quem pediu não tem leitura (o pedido é justamente para ler), então o nome
-  # vem do caminho de pedido do Ybira, que devolve o nome sem liberar o
-  # arquivo. Sem resposta, rótulo neutro.
-  defp outgoing_names(scope, requests) do
-    requests
-    |> Enum.filter(&(&1.tipo == "ypy.file.v0"))
-    |> Enum.uniq_by(& &1.recurso)
-    |> Map.new(fn request -> {request.recurso, resolve_requested_name(scope, request.recurso)} end)
-  end
-
-  defp resolve_owned_name(scope, rkey) do
-    case Ybira.get_file(scope, rkey) do
-      {:ok, file} -> file.nome
-      _error -> gettext("arquivo apagado")
+  defp resource_display_name(names, resource) do
+    case Map.fetch(names, {resource.tipo, resource.recurso}) do
+      {:ok, name} -> name
+      :error -> deleted_resource_label(resource.tipo)
     end
   end
 
-  defp resolve_requested_name(scope, rkey) do
-    case Ybira.fetch_access_target(scope, rkey) do
-      {:ok, %{nome: nome}} -> nome
-      _error -> gettext("arquivo apagado")
-    end
-  end
-
-  defp file_display_name(names, request) do
-    Map.get(names, request.recurso, gettext("arquivo apagado"))
-  end
-
-  # Nome do recurso concedido, resolvido no escopo do dono (ele pode ler o que
-  # concedeu). Recurso que não existe mais vira rótulo neutro: a linha segue
-  # valendo, para limpar o acesso que ficou órfão.
-  defp grant_names(scope, concessoes) do
-    concessoes
-    |> Enum.uniq_by(& &1.recurso)
-    |> Map.new(fn concessao -> {concessao.recurso, resolve_resource_name(scope, concessao)} end)
-  end
-
-  defp resolve_resource_name(scope, %{tipo: "ypy.file.v0", recurso: rkey}) do
-    case Ybira.get_file(scope, rkey) do
-      {:ok, file} -> file.nome
-      _error -> gettext("arquivo apagado")
-    end
-  end
-
-  defp resolve_resource_name(scope, %{tipo: "ypy.folder.v0", recurso: rkey}) do
-    case Ybira.get_folder(scope, rkey) do
-      {:ok, folder} -> folder.nome
-      _error -> gettext("pasta apagada")
-    end
-  end
-
-  defp resolve_resource_name(_scope, _concessao), do: gettext("arquivo apagado")
-
-  defp decision_names(scope, decisions) do
-    decisions
-    |> Enum.filter(&(&1.tipo == "ypy.file.v0"))
-    |> Enum.uniq_by(& &1.recurso)
-    |> Map.new(fn decision -> {decision.recurso, resolve_decision_name(scope, decision.recurso)} end)
-  end
-
-  defp resolve_decision_name(scope, rkey) do
-    case Ybira.get_file(scope, rkey) do
-      {:ok, file} ->
-        file.nome
-
-      _error ->
-        case Ybira.fetch_access_target(scope, rkey) do
-          {:ok, %{nome: nome}} -> nome
-          _other -> gettext("arquivo apagado")
-        end
-    end
-  end
+  defp deleted_resource_label("ypy.folder.v0"), do: gettext("pasta apagada")
+  defp deleted_resource_label(_kind), do: gettext("arquivo apagado")
 
   # "doc.txt, hoje 09:12" (board: metadados separados por vírgula, o relógio
   # da comunidade).
   defp row_meta(names, resource) do
-    Enum.join([file_display_name(names, resource), day_clock(acted_at(resource))], ", ")
+    Enum.join([resource_display_name(names, resource), day_clock(acted_at(resource))], ", ")
   end
 
   # Pedido tem o instante no `inserted_at`; concessão, no `concedida_em`.
@@ -376,17 +303,17 @@ defmodule TainaWeb.AccessRequestsLive do
   # Flash da aprovação nomeia o arquivo: a decisão é sobre aquele arquivo, não
   # sobre "um pedido".
   defp approved_message(names, pedido) do
-    case pedido && Map.fetch(names, pedido.recurso) do
-      {:ok, file} -> gettext("Acesso a %{file} liberado. A pessoa já pode ler.", file: file)
+    case pedido && Map.get(names, {pedido.tipo, pedido.recurso}) do
+      file when is_binary(file) -> gettext("Acesso a %{file} liberado. A pessoa já pode ler.", file: file)
       _other -> gettext("Acesso liberado. A pessoa já pode ler.")
     end
   end
 
   # Aprovação chegando pelo PubSub nomeia o arquivo quando o nome já está na
   # tela (pedido que veio depois do mount deixa o flash genérico).
-  defp outgoing_approved_message(names, rkey) do
-    case names && Map.fetch(names, rkey) do
-      {:ok, file} -> gettext("Pedido aprovado: agora você pode abrir %{file}.", file: file)
+  defp outgoing_approved_message(names, kind, rkey) do
+    case Map.get(names, {kind, rkey}) do
+      file when is_binary(file) -> gettext("Pedido aprovado: agora você pode abrir %{file}.", file: file)
       _other -> gettext("Seu pedido foi aprovado. Você já pode abrir.")
     end
   end
@@ -468,17 +395,15 @@ defmodule TainaWeb.AccessRequestsLive do
 
   @impl true
   def render(assigns) do
-    scope = assigns.current_scope
-
     assigns =
       assigns
       |> assign(:state, board_state(assigns))
-      |> assign(:decided_grants, granted_rows(assigns.grants, assigns.grant_names))
+      |> assign(:decided_grants, granted_rows(assigns.grants, assigns.resource_names))
       |> assign(
         :decided_sent,
-        decided_sent_rows(assigns.decisions, decision_names(scope, assigns.decisions))
+        decided_sent_rows(assigns.decisions, assigns.resource_names)
       )
-      |> assign(:decided_refused, refused_rows(assigns.refusals, assigns.refusal_names))
+      |> assign(:decided_refused, refused_rows(assigns.refusals, assigns.resource_names))
 
     ~H"""
     <Layouts.page flash={@flash} title={@page_title} back={~p"/conta"} back_label={back_label("Conta")}>
@@ -512,7 +437,7 @@ defmodule TainaWeb.AccessRequestsLive do
               state="esperando"
               trailing="action"
               title={gettext("%{name} pediu acesso", name: requester_name(request))}
-              meta={request_meta(request, @incoming_names)}
+              meta={request_meta(request, @resource_names)}
               meta_class="list-row__meta--wrap"
             >
               <:leading>

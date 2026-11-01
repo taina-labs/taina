@@ -32,6 +32,8 @@ defmodule Taina.Maraca do
   alias Ypy.Maraca.Tekoa
   alias Ypy.Mural.Store, as: MuralStore
   alias Ypy.PublicId
+  alias Ypy.Ybira.File
+  alias Ypy.Ybira.Folder
 
   require Logger
 
@@ -126,6 +128,23 @@ defmodule Taina.Maraca do
          ),
          :count
        )}
+    end)
+  end
+
+  @doc "Resolve os nomes sociais dos atores presentes em uma página do mural."
+  def mural_actor_names(%Ypy.Scope{} = scope, public_ids) when is_list(public_ids) do
+    ids = public_ids |> Enum.reject(&is_nil/1) |> Enum.uniq()
+
+    within_tekoa(scope, fn ->
+      pairs =
+        Repo.all(
+          from(a in Ava,
+            where: a.tekoa_id == ^scope.tekoa.id and a.public_id in ^ids,
+            select: {a.public_id, {a.display_name, a.username}}
+          )
+        )
+
+      {:ok, Map.new(pairs, fn {pid, {display_name, username}} -> {pid, display_name || username} end)}
     end)
   end
 
@@ -879,6 +898,72 @@ defmodule Taina.Maraca do
         |> Repo.preload(:pedinte)
 
       {:ok, refusals}
+    end)
+  end
+
+  @doc "Resolve nomes de arquivos e pastas ligados a pedidos e concessoes da tela de acesso."
+  def access_resource_names(%Ypy.Scope{} = scope, requests, grants) when is_list(requests) and is_list(grants) do
+    request_ids = requests |> Enum.map(& &1.id) |> Enum.reject(&is_nil/1) |> Enum.uniq()
+    grant_ids = grants |> Enum.map(& &1.id) |> Enum.reject(&is_nil/1) |> Enum.uniq()
+
+    within_tekoa(scope, fn ->
+      request_resources =
+        if request_ids == [] do
+          []
+        else
+          Repo.all(
+            from(p in Pedido,
+              where:
+                p.tekoa_id == ^scope.tekoa.id and p.id in ^request_ids and
+                  (p.pedinte_id == ^scope.ava.id or p.dono_id == ^scope.ava.id),
+              select: {p.tipo, p.recurso}
+            )
+          )
+        end
+
+      grant_resources =
+        if grant_ids == [] do
+          []
+        else
+          Repo.all(
+            from(c in Concessao,
+              where:
+                c.tekoa_id == ^scope.tekoa.id and c.id in ^grant_ids and
+                  (c.leitor_id == ^scope.ava.id or c.dono_id == ^scope.ava.id),
+              select: {c.tipo, c.recurso}
+            )
+          )
+        end
+
+      resources = Enum.uniq(request_resources ++ grant_resources)
+      file_rkeys = for {"ypy.file.v0", rkey} <- resources, do: rkey
+      folder_rkeys = for {"ypy.folder.v0", rkey} <- resources, do: rkey
+
+      file_names =
+        if file_rkeys == [] do
+          []
+        else
+          Repo.all(
+            from(f in File,
+              where: f.tekoa_id == ^scope.tekoa.id and is_nil(f.apagado_em) and f.rkey in ^file_rkeys,
+              select: {{"ypy.file.v0", f.rkey}, f.nome}
+            )
+          )
+        end
+
+      folder_names =
+        if folder_rkeys == [] do
+          []
+        else
+          Repo.all(
+            from(f in Folder,
+              where: f.tekoa_id == ^scope.tekoa.id and is_nil(f.apagado_em) and f.rkey in ^folder_rkeys,
+              select: {{"ypy.folder.v0", f.rkey}, f.nome}
+            )
+          )
+        end
+
+      {:ok, Map.new(file_names ++ folder_names)}
     end)
   end
 
