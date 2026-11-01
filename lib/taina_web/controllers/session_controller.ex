@@ -22,7 +22,7 @@ defmodule TainaWeb.SessionController do
       {:error, _reason} ->
         conn
         |> put_flash(:error, gettext("Não conseguimos entrar."))
-        |> redirect(to: ~p"/login")
+        |> redirect(to: ~p"/login?#{[username: username]}")
     end
   end
 

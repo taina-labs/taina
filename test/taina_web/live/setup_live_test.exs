@@ -4,6 +4,8 @@ defmodule TainaWeb.SetupLiveTest do
   import Phoenix.LiveViewTest
   import Taina.Fixtures
 
+  alias TainaWeb.Disk
+
   test "instância já inicializada redireciona para o login", %{conn: conn} do
     tekoa_fixture()
 
@@ -58,14 +60,14 @@ defmodule TainaWeb.SetupLiveTest do
     html =
       lv
       |> element("form#setup-step-3")
-      |> render_change(%{"setup" => %{"storage_quota" => "limite", "quota_gb" => "50"}})
+      |> render_change(%{"setup" => %{"storage_quota" => "limite", "quota_gb" => "1"}})
 
     assert html =~ "Um limite"
     assert has_element?(lv, ~s(input[name="setup[quota_gb]"]))
 
     html = lv |> element("form#setup-step-3") |> render_submit()
 
-    assert html =~ "Disco interno, limite: 50 GB."
+    assert html =~ "Disco interno, limite: 1 GB."
   end
 
   test "limite sem número de GB volta para o passo 3 com o erro no campo", %{conn: conn} do
@@ -82,6 +84,32 @@ defmodule TainaWeb.SetupLiveTest do
 
     assert html =~ "O limite precisa ser um número de GB maior que zero."
     assert has_element?(lv, ~s(.field--invalid input[name="setup[quota_gb]"]))
+  end
+
+  test "limite acima do tamanho do disco mostra o erro sem perder os dados anteriores", %{conn: conn} do
+    disk_size = Disk.total_bytes()
+    assert is_integer(disk_size)
+    quota_gb = div(disk_size, 1024 * 1024 * 1024) + 1
+
+    {:ok, lv, _html} = live(conn, ~p"/setup")
+
+    lv |> element("form") |> render_submit(%{"setup" => %{"community_name" => "Quilombo do Café"}})
+
+    lv
+    |> element("form")
+    |> render_submit(%{"setup" => %{"username" => "ana", "password" => "frase-longa-segura"}})
+
+    html =
+      lv
+      |> element("form#setup-step-3")
+      |> render_change(%{
+        "setup" => %{"storage_quota" => "limite", "quota_gb" => Integer.to_string(quota_gb)}
+      })
+
+    assert html =~ "O disco tem"
+    assert has_element?(lv, ~s(.field--invalid input[name="setup[quota_gb]"]))
+    assert has_element?(lv, ~s(input[name="setup[community_name]"][value="Quilombo do Café"]))
+    assert has_element?(lv, ~s(input[name="setup[username]"][value="ana"]))
   end
 
   test "o passo vive na URL: ?passo=2 abre no passo certo", %{conn: conn} do

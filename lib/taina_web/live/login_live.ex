@@ -31,11 +31,18 @@ defmodule TainaWeb.LoginLive do
         {:ok,
          socket
          |> assign(:page_title, gettext("Entrar"))
+         |> assign(:username, "")
          |> assign(:show_password_help, false)
          |> assign(:password_error, login_password_error(socket.assigns.flash))
          |> assign(:login_error, not is_nil(Phoenix.Flash.get(socket.assigns.flash, :error)))}
     end
   end
+
+  @impl true
+  def handle_params(%{"username" => username}, _uri, socket) when is_binary(username),
+    do: {:noreply, assign(socket, :username, username)}
+
+  def handle_params(_params, _uri, socket), do: {:noreply, assign(socket, :username, "")}
 
   @impl true
   def handle_event("toggle-password-help", _params, socket) do
@@ -73,7 +80,7 @@ defmodule TainaWeb.LoginLive do
           label={gettext("Seu nome de usuário")}
           name="username"
           id="login_username"
-          value=""
+          value={@username}
           placeholder={gettext("seu nome de usuário")}
           help={gettext("É com ele que você entra.")}
           autocomplete="username"

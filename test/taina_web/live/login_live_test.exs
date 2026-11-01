@@ -39,6 +39,14 @@ defmodule TainaWeb.LoginLiveTest do
     refute html =~ "Mínimo 8"
   end
 
+  test "o nome de usuário continua preenchido após erro de senha", %{conn: conn} do
+    tekoa_fixture()
+
+    {:ok, lv, _html} = live(conn, ~p"/login?username=ana")
+
+    assert has_element?(lv, ~s(input#login_username[value="ana"]))
+  end
+
   test "o aviso de conexão insegura continua após o LiveView conectar", %{conn: conn} do
     tekoa_fixture()
 

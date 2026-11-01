@@ -22,7 +22,7 @@ defmodule TainaWeb.SessionControllerTest do
     test "senha errada volta para o login com aviso", %{conn: conn, ava: ava} do
       conn = post(conn, ~p"/login", %{"username" => ava.username, "password" => "senha-errada-123"})
 
-      assert redirected_to(conn) == ~p"/login"
+      assert redirected_to(conn) == ~p"/login?#{[username: ava.username]}"
       assert Phoenix.Flash.get(conn.assigns.flash, :error) == "Não conseguimos entrar."
       refute get_session(conn, :ava_id)
     end

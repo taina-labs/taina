@@ -27,6 +27,8 @@ defmodule TainaWeb.SetupLive do
   alias TainaWeb.Disk
   alias TainaWeb.Layouts
 
+  @gigabyte 1024 * 1024 * 1024
+
   @impl true
   def mount(_params, _session, socket) do
     if Maraca.bootstrapped?() do
@@ -50,7 +52,8 @@ defmodule TainaWeb.SetupLive do
        )
        |> assign(:errors, %{})
        |> assign(:trigger_submit, false)
-       |> assign(:free_space, free_space())}
+       |> assign(:free_space, free_space())
+       |> assign(:disk_size_bytes, Disk.total_bytes())}
     end
   end
 
@@ -68,13 +71,21 @@ defmodule TainaWeb.SetupLive do
   @impl true
   def handle_event("validate", %{"setup" => params}, socket) do
     data = normalize_data(Map.merge(socket.assigns.data, params))
-    {:noreply, socket |> assign(:data, data) |> assign(:errors, Map.drop(socket.assigns.errors, Map.keys(params)))}
+
+    errors =
+      if socket.assigns.step == 3 and Enum.any?(Map.keys(params), &(&1 in ["storage_quota", "quota_gb"])) do
+        validate_step(3, data, socket.assigns.disk_size_bytes)
+      else
+        Map.drop(socket.assigns.errors, Map.keys(params))
+      end
+
+    {:noreply, socket |> assign(:data, data) |> assign(:errors, errors)}
   end
 
   def handle_event("next", %{"setup" => params}, socket) do
     data = normalize_data(Map.merge(socket.assigns.data, params))
 
-    case validate_step(socket.assigns.step, data) do
+    case validate_step(socket.assigns.step, data, socket.assigns.disk_size_bytes) do
       %{} = errors when map_size(errors) == 0 ->
         next_step = min(socket.assigns.step + 1, 3)
 
@@ -95,7 +106,7 @@ defmodule TainaWeb.SetupLive do
   def handle_event("final", %{"setup" => params}, socket) do
     data = normalize_data(Map.merge(socket.assigns.data, params))
 
-    case validate_all_steps(data) do
+    case validate_all_steps(data, socket.assigns.disk_size_bytes) do
       %{} = errors when map_size(errors) == 0 ->
         {:noreply, assign(socket, :trigger_submit, true)}
 
@@ -131,35 +142,48 @@ defmodule TainaWeb.SetupLive do
     end
   end
 
-  defp validate_step(1, data) do
+  defp validate_step(1, data, _disk_size_bytes) do
     %{}
     |> validate_presence(data, "community_name", gettext("dê um nome à comunidade"))
     |> validate_length_in(data, "community_name", 3..100, gettext("de 3 a 100 caracteres"))
   end
 
-  defp validate_step(2, data) do
+  defp validate_step(2, data, _disk_size_bytes) do
     %{}
     |> validate_username(data)
     |> validate_length_in(data, "display_name", 0..80, gettext("de no máximo 80 caracteres"))
     |> validate_password(data)
   end
 
-  # Espelha o `parse_quota/2` do SetupController para o erro ficar no campo:
-  # "Um limite" exige um número de GB inteiro e positivo. O teto do tamanho
-  # do disco é conferido lá, com o disco na mão.
-  defp validate_step(3, data), do: validate_quota(data)
+  # A escolha exige GB inteiro e positivo, sem ultrapassar o disco disponível.
+  defp validate_step(3, data, disk_size_bytes), do: validate_quota(data, disk_size_bytes)
 
-  defp validate_step(_step, _data), do: %{}
+  defp validate_step(_step, _data, _disk_size_bytes), do: %{}
 
-  defp validate_quota(%{"storage_quota" => "limite"} = data) do
-    if positive_integer?(data["quota_gb"] || "") do
-      %{}
-    else
-      %{"quota_gb" => gettext("O limite precisa ser um número de GB maior que zero.")}
+  defp validate_quota(%{"storage_quota" => "limite"} = data, disk_size_bytes) do
+    quota_gb = data["quota_gb"] || ""
+
+    cond do
+      not positive_integer?(quota_gb) ->
+        %{"quota_gb" => gettext("O limite precisa ser um número de GB maior que zero.")}
+
+      exceeds_disk?(quota_gb, disk_size_bytes) ->
+        disk_gb = div(disk_size_bytes, @gigabyte)
+        %{"quota_gb" => gettext("O disco tem %{gb} GB. Escolha um limite menor.", gb: disk_gb)}
+
+      true ->
+        %{}
     end
   end
 
-  defp validate_quota(_data), do: %{}
+  defp validate_quota(_data, _disk_size_bytes), do: %{}
+
+  defp exceeds_disk?(_quota_gb, nil), do: false
+
+  defp exceeds_disk?(quota_gb, disk_size_bytes) do
+    {gb, ""} = Integer.parse(quota_gb)
+    gb * @gigabyte > disk_size_bytes
+  end
 
   defp positive_integer?(value) do
     case Integer.parse(value) do
@@ -199,11 +223,11 @@ defmodule TainaWeb.SetupLive do
       else: errors
   end
 
-  defp validate_all_steps(data) do
+  defp validate_all_steps(data, disk_size_bytes) do
     1
-    |> validate_step(data)
-    |> Map.merge(validate_step(2, data))
-    |> Map.merge(validate_step(3, data))
+    |> validate_step(data, disk_size_bytes)
+    |> Map.merge(validate_step(2, data, disk_size_bytes))
+    |> Map.merge(validate_step(3, data, disk_size_bytes))
   end
 
   # Primeiro passo que tem problema: para onde a validação final manda de volta.
