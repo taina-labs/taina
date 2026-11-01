@@ -78,8 +78,10 @@ defmodule TainaWeb.Layouts do
         <:actions>{render_slot(@actions)}</:actions>
         <:tabs><.service_tab_bar service={@service} current={@current} /></:tabs>
       </.service_header>
-      <main class="shell__content" id="main-content">{render_slot(@inner_block)}</main>
-      {render_slot(@fab)}
+      <main class="shell__content" id="main-content">
+        {render_slot(@inner_block)}
+        {render_slot(@fab)}
+      </main>
     </div>
     """
   end

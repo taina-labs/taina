@@ -523,7 +523,7 @@ defmodule TainaWeb.UI.Content do
   def qr_card(assigns) do
     ~H"""
     <div class="card card--raised col gap-4">
-      <p class="type-overline text-faint">{gettext("LINK DO CONVITE")}</p>
+      <p class="type-overline text-muted">{gettext("LINK DO CONVITE")}</p>
       <div class="qr-card" role="img" aria-label={gettext("QR code do link de convite")}>
         {@svg}
       </div>

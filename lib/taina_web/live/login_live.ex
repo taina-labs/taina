@@ -108,7 +108,7 @@ defmodule TainaWeb.LoginLive do
 
       <div class="row gap-4 my-6">
         <hr class="divider flex-1" />
-        <span class="type-caption text-faint">{gettext("ou")}</span>
+        <span class="type-caption text-muted">{gettext("ou")}</span>
         <hr class="divider flex-1" />
       </div>
 

@@ -139,7 +139,6 @@ defmodule TainaWeb.UI.Actions do
       :if={@navigate}
       navigate={@navigate}
       class={["fab", @uploading && "fab--uploading"]}
-      aria-label={@label}
       aria-busy={@uploading && "true" || nil}
       {@rest}
     >
@@ -151,7 +150,6 @@ defmodule TainaWeb.UI.Actions do
       type="button"
       class={["fab", @uploading && "fab--uploading"]}
       disabled={@uploading || nil}
-      aria-label={@label}
       aria-busy={@uploading && "true" || nil}
       {@rest}
     >

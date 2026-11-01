@@ -122,7 +122,7 @@ defmodule TainaWeb.InviteLive do
           />
 
           <div class="col gap-2">
-            <p class="type-overline text-faint">{gettext("Pelo aplicativo")}</p>
+            <p class="type-overline text-muted">{gettext("Pelo aplicativo")}</p>
             <div class="qr-card" role="img" aria-label={gettext("QR code do convite para o aplicativo")}>
               {qr_svg(@app_url)}
             </div>

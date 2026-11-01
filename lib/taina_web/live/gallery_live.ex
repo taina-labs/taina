@@ -599,7 +599,7 @@ defmodule TainaWeb.GalleryLive do
 
       <div class="viewer__caption row between gap-3">
         <span class="truncate">{gettext("Não conseguimos abrir esta foto")}</span>
-        <span :if={@viewer_counter} class="text-faint">{@viewer_counter}</span>
+        <span :if={@viewer_counter} class="text-muted">{@viewer_counter}</span>
       </div>
     </div>
 

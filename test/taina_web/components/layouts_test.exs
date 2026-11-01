@@ -132,7 +132,7 @@ defmodule TainaWeb.LayoutsTest do
 
       cheio = service_html(action: "Enviar", fab: "FAB-acao")
       assert cheio =~ "Enviar"
-      assert cheio =~ "FAB-acao"
+      assert cheio =~ ~r/<main[^>]*>.*FAB-acao.*<\/main>/s
     end
 
     test "jaci segue o mesmo casco" do

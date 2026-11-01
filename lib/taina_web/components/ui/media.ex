@@ -113,7 +113,7 @@ defmodule TainaWeb.UI.Media do
 
       <div class="viewer__caption row between gap-3">
         <span class="truncate">{viewer_caption(@file, @zona)}</span>
-        <span class="text-faint">
+        <span class="text-muted">
           {gettext("%{index} de %{total}", index: viewer_index(@photo_ids, @file), total: length(@photo_ids))}
         </span>
       </div>

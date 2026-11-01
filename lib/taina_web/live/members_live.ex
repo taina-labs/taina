@@ -272,7 +272,7 @@ defmodule TainaWeb.MembersLive do
       </div>
 
       <.dialog id="reset-link-modal" show={@reset_link != nil} on_cancel={JS.push("close-reset")}>
-        <h2 class="type-h3 mb-3">{gettext("Link de redefinição de senha")}</h2>
+        <h2 id="reset-link-modal-title" class="type-h3 mb-3">{gettext("Link de redefinição de senha")}</h2>
         <p class="type-body text-secondary mb-4">
           {gettext(
             "Entregue este link para %{name} pelo mesmo canal do convite. Com ele, a pessoa cria uma senha nova. O link expira em 1 hora.",
@@ -309,6 +309,6 @@ defmodule TainaWeb.MembersLive do
   # O trilho da direita: quem não tem menu (morador comum, conta própria)
   # fica com o chevron do board; quem tem ações leva o kebab delas.
   defp member_trailing(member, scope) do
-    if can_reset?(member, scope), do: "action", else: "chevron"
+    if can_reset?(member, scope), do: "action", else: "none"
   end
 end

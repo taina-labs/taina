@@ -370,6 +370,12 @@ defmodule TainaWeb.FilesLiveTest do
       {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/casa")
 
       lv |> element("button[phx-value-modal=new-folder]") |> render_click()
+
+      assert has_element?(
+               lv,
+               ~s(#new-folder-modal .dialog__panel[aria-labelledby="new-folder-modal-title"] h2#new-folder-modal-title)
+             )
+
       lv |> form("#new-folder-modal form") |> render_submit(%{"folder" => %{"name" => "Vídeos"}})
 
       assert render(lv) =~ "Vídeos"

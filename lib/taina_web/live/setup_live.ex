@@ -455,7 +455,7 @@ defmodule TainaWeb.SetupLive do
           </div>
 
           <.card class="mt-2">
-            <p class="type-overline text-faint mb-2">{gettext("Resumo")}</p>
+            <p class="type-overline text-muted mb-2">{gettext("Resumo")}</p>
             <p class="type-body">{resumo(@data)}</p>
             <p class="type-body-sm text-muted">{gettext("Quem cuida pode mudar o limite depois.")}</p>
           </.card>

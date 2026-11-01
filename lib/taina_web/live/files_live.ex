@@ -706,7 +706,7 @@ defmodule TainaWeb.FilesLive do
       </.empty_state>
 
       <.dialog id="new-folder-modal" show={@modal == "new-folder"} on_cancel={JS.push("close-modal")}>
-        <h2 class="type-h3 mb-4">{gettext("Nova pasta")}</h2>
+        <h2 id="new-folder-modal-title" class="type-h3 mb-4">{gettext("Nova pasta")}</h2>
         <form id="create-folder-form" phx-submit="create-folder" class="col gap-4">
           <.field
             label={gettext("Nome da pasta")}
@@ -729,7 +729,7 @@ defmodule TainaWeb.FilesLive do
       </.dialog>
 
       <.dialog id="rename-modal" show={@modal == "rename"} on_cancel={JS.push("close-modal")}>
-        <h2 class="type-h3 mb-4">{gettext("Renomear")}</h2>
+        <h2 id="rename-modal-title" class="type-h3 mb-4">{gettext("Renomear")}</h2>
         <form id="rename-form" :if={@rename_target} phx-submit="rename-item" class="col gap-4">
           <.field
             label={gettext("Novo nome")}
@@ -749,7 +749,7 @@ defmodule TainaWeb.FilesLive do
       </.dialog>
 
       <.dialog id="move-modal" show={@modal == "move"} on_cancel={JS.push("close-modal")}>
-        <h2 class="type-h3 mb-1">{gettext("Mover para...")}</h2>
+        <h2 id="move-modal-title" class="type-h3 mb-1">{gettext("Mover para...")}</h2>
         <p :if={@move_target} class="type-body-sm text-muted mb-4">{@move_target.name}</p>
         <ul :if={@move_target} class="list">
           <li>

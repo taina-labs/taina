@@ -143,6 +143,7 @@ defmodule TainaWeb.UI.ActionsTest do
 
     assert html =~ "fab"
     assert html =~ "fab__label"
+    refute html =~ "aria-label"
     assert html =~ "Enviar"
   end
 

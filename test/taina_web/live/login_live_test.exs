@@ -26,6 +26,7 @@ defmodule TainaWeb.LoginLiveTest do
     assert html =~ "É com ele que você entra."
     assert has_element?(lv, ".auth-title", "Tainá")
     assert has_element?(lv, "button.auth-link", "Esqueci minha senha")
+    assert has_element?(lv, ".type-caption.text-muted", "ou")
     assert has_element?(lv, ~s(form[action="/login"]))
     assert has_element?(lv, ~s(input[name="username"]))
     assert has_element?(lv, ~s(input[name="password"]))

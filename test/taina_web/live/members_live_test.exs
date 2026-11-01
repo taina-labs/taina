@@ -32,6 +32,7 @@ defmodule TainaWeb.MembersLiveTest do
     assert html =~ "Zelador(a), entrou em"
     assert has_element?(lv, ".list-row--person", "João Mendes")
     assert has_element?(lv, "input[placeholder=\"Buscar pessoa\"]")
+    refute has_element?(lv, ".list-row__chevron")
 
     refute html =~ "/moradores/convidar"
     # morador não vê o menu de ações nem o rodapé do papel
@@ -97,6 +98,11 @@ defmodule TainaWeb.MembersLiveTest do
 
     assert html =~ "Link de redefinição de senha"
     assert html =~ "/redefinir/"
+
+    assert has_element?(
+             lv,
+             ~s(#reset-link-modal .dialog__panel[aria-labelledby="reset-link-modal-title"] h2#reset-link-modal-title)
+           )
   end
 
   test "a própria conta do zelador não ganha menu de ações", %{conn: conn, zelador: zelador} do
