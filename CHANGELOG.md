@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/taina-labs/taina/compare/v0.6.0...v0.6.1) (2026-11-02)
+
+
+### Bug Fixes
+
+* nix fod deps hash ([d6da132](https://github.com/taina-labs/taina/commit/d6da132affe75013da043528635c9b1cc38e3719))
+
 ## [0.6.0](https://github.com/taina-labs/taina/compare/v0.5.1...v0.6.0) (2026-11-01)
 
 
