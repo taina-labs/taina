@@ -71,7 +71,7 @@ in
     mixFodDeps = packages.fetchMixDeps {
       pname = "taina-deps";
       inherit version src;
-      hash = "sha256-M4SYxC4VleFBcVNGD0QVtFIS0SPxYptA4EYivs2KIT0=";
+      hash = "sha256-YB9wncIhRh099nHefw2w04lti5EAGRT3OUwoO3EJuOc=";
     };
 
     nativeBuildInputs = [pkg-config];
