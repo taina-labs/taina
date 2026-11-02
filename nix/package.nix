@@ -1,7 +1,7 @@
 # The taina release, built from source with the beam toolchain nixpkgs ships.
 #
 # taina needs Elixir 1.20 on OTP 28. The pinned nixpkgs' beam scope predates
-# 1.20 (it tops out at 1.18), so the elixir-overlay input builds both and the
+# 1.20 (it tops out at 1.18), so the beam-overlay input builds both and the
 # scope is extended to use them. `extend` is makeExtensible's API, stable
 # across nixpkgs versions, unlike overrideScope which the beam scope did not
 # have yet in the pinned release.
