@@ -140,6 +140,7 @@ defmodule TainaWeb.Router do
   scope "/", TainaWeb do
     pipe_through :authenticated
 
+    get "/files/trash/:rkey", FileController, :trash_download
     get "/files/:rkey", FileController, :download
     get "/files/:rkey/thumbnail/:size", FileController, :thumbnail
   end
@@ -179,6 +180,7 @@ defmodule TainaWeb.Router do
       live "/documentos/casa", FilesLive, :casa
       live "/documentos/pasta/:folder_id", FilesLive, :folder
       live "/documentos/lixeira", TrashLive
+      live "/documentos/lixeira/:id", TrashPreviewLive
       live "/documentos/enviar", UploadLive
       live "/documentos/:id", FilePreviewLive
 

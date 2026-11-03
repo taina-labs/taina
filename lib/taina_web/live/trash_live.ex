@@ -196,6 +196,7 @@ defmodule TainaWeb.TrashLive do
           title={file.nome}
           meta={trash_meta(file)}
           meta_class={warning?(file) && "text-warning"}
+          navigate={~p"/documentos/lixeira/#{file.rkey}"}
         >
           <:leading>
             <.service_square mark="lixeira" />

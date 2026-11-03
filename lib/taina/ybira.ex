@@ -161,6 +161,18 @@ defmodule Taina.Ybira do
     within_tekoa(scope, fn -> Kernel.get_file(Repo, scope, rkey) end)
   end
 
+  @doc "O arquivo apagado do proprio morador, para o preview da lixeira."
+  def get_trashed_file(%Scope{} = scope, rkey) when is_binary(rkey) do
+    within_tekoa(scope, fn -> trashed_file(scope, rkey) end)
+  end
+
+  defp trashed_file(%Scope{} = scope, rkey) do
+    case KernelStore.get_file(Repo, scope.tekoa.id, rkey, true) do
+      %File{dono_id: dono_id} = file when dono_id == scope.ava.id -> {:ok, file}
+      _ -> {:error, :not_found}
+    end
+  end
+
   @doc """
   O alvo de um pedido de acesso: o dono resolvido (para o PubSub e a frase da
   tela) quando quem pergunta ainda nao le o arquivo; quem ja le recebe

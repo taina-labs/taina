@@ -94,4 +94,17 @@ defmodule TainaWeb.FileControllerTest do
     assert conn.status == 200
     assert response(conn, 200) == @contents
   end
+
+  test "owner can serve a trashed file through the trash preview route", %{
+    conn: conn,
+    owner: owner,
+    ybira_file: ybira_file
+  } do
+    assert {:ok, _} = Ybira.delete_file(owner, ybira_file.rkey)
+
+    conn = conn |> authed(owner.ava) |> get(~p"/files/trash/#{ybira_file.rkey}")
+
+    assert conn.status == 200
+    assert response(conn, 200) == @contents
+  end
 end

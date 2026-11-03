@@ -30,6 +30,18 @@ defmodule TainaWeb.FileController do
     end
   end
 
+  def trash_download(conn, %{"rkey" => rkey}) do
+    with {:ok, ava} <- Maraca.get_session_user(conn),
+         scope = Scope.for_ava(ava),
+         {:ok, file} <- Ybira.get_trashed_file(scope, rkey),
+         {:ok, path} <- Ybira.blob_path(file) do
+      FileServing.serve(conn, file, path)
+    else
+      {:error, :not_authenticated} -> redirect(conn, to: ~p"/login")
+      {:error, :not_found} -> send_resp(conn, 404, "")
+    end
+  end
+
   def thumbnail(conn, %{"rkey" => rkey, "size" => size}) do
     with {:ok, ava} <- Maraca.get_session_user(conn),
          scope = Scope.for_ava(ava),

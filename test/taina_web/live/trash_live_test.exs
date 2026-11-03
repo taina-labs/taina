@@ -32,6 +32,7 @@ defmodule TainaWeb.TrashLiveTest do
     assert html =~ "restam 30 dias"
     # ação rotulada em cada linha (nota do board), não botão de ícone
     assert has_element?(lv, ~s(button[phx-value-id="#{file.rkey}"]), "Restaurar")
+    assert has_element?(lv, ~s(a[href="/documentos/lixeira/#{file.rkey}"]), file.nome)
     # quadradinho da lixeira em todas as linhas
     assert has_element?(lv, ".service-square--lixeira")
     assert has_element?(lv, ~s(.service-tab-bar__item[aria-current="page"]), "Lixeira")
