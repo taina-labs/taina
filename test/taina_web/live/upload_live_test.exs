@@ -34,6 +34,13 @@ defmodule TainaWeb.UploadLiveTest do
     assert file.nome == "ata.txt"
   end
 
+  test "a seleção publica o limite de 10 arquivos", %{conn: conn, ava: ava} do
+    {:ok, _lv, html} = conn |> log_in(ava) |> live(~p"/documentos/enviar")
+
+    assert html =~ ~s(phx-hook="UploadSelectionLimit")
+    assert html =~ ~s(data-upload-max-entries="10")
+  end
+
   test "o voltar aponta a pasta de destino, pelo nome", %{conn: conn, scope: scope, ava: ava} do
     {:ok, folder} = Ybira.create_folder(scope, %{name: "Atas"})
 

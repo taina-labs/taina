@@ -145,6 +145,54 @@ const DragClass = {
   },
 };
 
+// O upload em segundo plano fica para outra etapa. Por enquanto a seleção é
+// limitada antes de chegar ao LiveView, para que um décimo primeiro arquivo não
+// vire uma entrada presa em 0% no cliente.
+const UploadSelectionLimit = {
+  mounted() {
+    this.limit = Math.max(1, Number(this.el.dataset.uploadMaxEntries) || 10);
+    this.onInput = (event) => {
+      const input = event.target;
+      if (!this.fileInput(input)) return;
+      this.setFiles(input, Array.from(input.files || []));
+    };
+    this.onDrop = (event) => {
+      const files = Array.from(event.dataTransfer?.files || []);
+      if (files.length <= this.limit) return;
+
+      const target = event.target?.closest?.("[phx-drop-target]");
+      const input = target && document.getElementById(target.getAttribute("phx-drop-target"));
+      if (!this.fileInput(input)) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      this.setFiles(input, files);
+      input.dispatchEvent(new Event("input", {bubbles: true}));
+    };
+
+    this.el.addEventListener("input", this.onInput, true);
+    this.el.addEventListener("change", this.onInput, true);
+    this.el.addEventListener("drop", this.onDrop, true);
+  },
+
+  destroyed() {
+    this.el.removeEventListener("input", this.onInput, true);
+    this.el.removeEventListener("change", this.onInput, true);
+    this.el.removeEventListener("drop", this.onDrop, true);
+  },
+
+  fileInput(input) {
+    return input instanceof HTMLInputElement && input.type === "file";
+  },
+
+  setFiles(input, files) {
+    if (files.length <= this.limit) return;
+    const transfer = new DataTransfer();
+    files.slice(0, this.limit).forEach((file) => transfer.items.add(file));
+    input.files = transfer.files;
+  },
+};
+
 const VideoFallback = {
   mounted() {
     this.reported = false;
@@ -346,6 +394,7 @@ export default {
   ViewerNav,
   FullSwap,
   DragClass,
+  UploadSelectionLimit,
   VideoFallback,
   Share,
   FlashAutoDismiss,

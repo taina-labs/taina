@@ -172,7 +172,13 @@ defmodule TainaWeb.UploadLive do
       back_label={return_label(@return_to, @folder)}
     >
       <div class="col gap-6 mx-auto w-full measure-md">
-        <form id="upload-form" phx-change="validate" phx-submit="validate">
+        <form
+          id="upload-form"
+          phx-change="validate"
+          phx-submit="validate"
+          phx-hook="UploadSelectionLimit"
+          data-upload-max-entries="10"
+        >
           <.dropzone
             id="dropzone"
             upload={@uploads.files}
