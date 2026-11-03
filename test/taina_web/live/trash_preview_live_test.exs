@@ -25,10 +25,14 @@ defmodule TainaWeb.TrashPreviewLiveTest do
 
     assert html =~ file.nome
     assert html =~ "Este arquivo está na lixeira."
-    assert has_element?(lv, ~s(a[href="/files/trash/#{file.rkey}"][download]))
+    assert has_element?(lv, "#trash-file-actions .actions-menu__trigger")
+    assert has_element?(lv, "#trash-file-actions-panel", "Baixar")
+    assert has_element?(lv, "#trash-file-actions-panel", "Restaurar")
+    refute has_element?(lv, ".page-header__zone--end > button", "Baixar")
+    refute has_element?(lv, ".page-header__zone--end > button", "Restaurar")
 
     assert {:error, {:live_redirect, %{to: "/documentos/lixeira"}}} =
-             lv |> element("button", "Restaurar") |> render_click()
+             lv |> element("#trash-file-actions-panel button", "Restaurar") |> render_click()
 
     assert {:ok, restored} = Ybira.get_file(Scope.new(owner, tekoa), file.rkey)
     assert is_nil(restored.apagado_em)

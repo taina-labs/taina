@@ -87,12 +87,16 @@ defmodule TainaWeb.TrashPreviewLive do
       back_label={gettext("Lixeira")}
     >
       <:action>
-        <div class="row gap-2">
-          <.button kind="secondary" size="md" href={~p"/files/trash/#{@file.rkey}"} download>
+        <.actions_menu
+          id="trash-file-actions"
+          label={gettext("Mais opções para %{name}", name: @file.nome)}
+          title={gettext("Ações do arquivo")}
+        >
+          <:item icon="download" href={~p"/files/trash/#{@file.rkey}"} download>
             {gettext("Baixar")}
-          </.button>
-          <.button kind="primary" size="md" phx-click="restore">{gettext("Restaurar")}</.button>
-        </div>
+          </:item>
+          <:item icon="restore" click={JS.push("restore")}>{gettext("Restaurar")}</:item>
+        </.actions_menu>
       </:action>
 
       <div class="col gap-4 mx-auto w-full measure">
