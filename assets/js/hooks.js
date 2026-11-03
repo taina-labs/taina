@@ -175,6 +175,8 @@ const UploadQueue = {
     this.onChange = (event) => {
       if (this.releasing) return;
       if (this.skipChange) {
+        event.preventDefault();
+        event.stopPropagation();
         this.skipChange = false;
         return;
       }
