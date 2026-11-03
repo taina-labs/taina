@@ -20,7 +20,8 @@ defmodule TainaWeb.TrashPreviewLive do
          |> assign(:file, file)
          |> assign(:photo_metadata, load_photo_metadata(scope, file))
          |> assign(:text_preview, load_text_preview(file))
-         |> assign(:video_preview_unavailable, false)}
+         |> assign(:video_preview_unavailable, false)
+         |> assign(:show_purge_confirm, false)}
 
       {:error, :not_found} ->
         {:ok,
@@ -52,6 +53,26 @@ defmodule TainaWeb.TrashPreviewLive do
 
   def handle_event("video-preview-unavailable", _params, socket) do
     {:noreply, assign(socket, :video_preview_unavailable, true)}
+  end
+
+  def handle_event("ask-purge", _params, socket), do: {:noreply, assign(socket, :show_purge_confirm, true)}
+  def handle_event("close-purge", _params, socket), do: {:noreply, assign(socket, :show_purge_confirm, false)}
+
+  def handle_event("confirm-purge", _params, socket) do
+    case Ybira.purge_trash_file(socket.assigns.current_scope, socket.assigns.file.rkey) do
+      {:ok, _file} ->
+        {:noreply,
+         socket
+         |> assign(:show_purge_confirm, false)
+         |> put_flash(:info, gettext("O arquivo foi apagado definitivamente."))
+         |> push_navigate(to: ~p"/documentos/lixeira")}
+
+      {:error, _reason} ->
+        {:noreply,
+         socket
+         |> assign(:show_purge_confirm, false)
+         |> put_flash(:error, gettext("Não foi possível apagar o arquivo definitivamente."))}
+    end
   end
 
   defp load_photo_metadata(scope, file) do
@@ -96,6 +117,9 @@ defmodule TainaWeb.TrashPreviewLive do
             {gettext("Baixar")}
           </:item>
           <:item icon="restore" click={JS.push("restore")}>{gettext("Restaurar")}</:item>
+          <:item icon="trash" kind="danger" click={JS.push("ask-purge")}>
+            {gettext("Apagar definitivamente")}
+          </:item>
         </.actions_menu>
       </:action>
 
@@ -116,6 +140,17 @@ defmodule TainaWeb.TrashPreviewLive do
           {gettext("Este arquivo está na lixeira. Ele será apagado depois do prazo de retenção.")}
         </p>
       </div>
+
+      <.dialog
+        id="confirm-trash-purge"
+        show={@show_purge_confirm}
+        kind="destructive"
+        title={gettext("Apagar %{name} de vez?", name: @file.nome)}
+        body={gettext("Este arquivo não poderá ser restaurado.")}
+        confirm_label={gettext("Apagar definitivamente")}
+        on_confirm="confirm-purge"
+        on_cancel={JS.push("close-purge")}
+      />
     </Layouts.page>
     """
   end

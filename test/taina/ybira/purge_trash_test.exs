@@ -136,6 +136,51 @@ defmodule Taina.Ybira.Workers.PurgeTrashTest do
     assert Repo.all(BlobGc, skip_tekoa_id: true) == []
   end
 
+  test "permanently purges an owner's trashed file and reclaims its quota" do
+    scope = scope_fixture()
+    {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("apagar", "arquivo.txt"))
+    {:ok, _} = Ybira.delete_file(scope, file.rkey)
+
+    assert {:ok, purged} = Ybira.purge_trash_file(scope, file.rkey)
+    assert purged.id == file.id
+    refute Repo.get(YbiraFile, file.id, skip_tekoa_id: true)
+    assert blob_on_disk?(file)
+    assert gc_row?(file.blob_cid)
+
+    tekoa = Repo.get!(Tekoa, scope.tekoa.id, skip_tekoa_id: true)
+    assert tekoa.storage_used_bytes == 0
+  end
+
+  test "permanently purging a trashed folder removes its subtree and queues its blobs" do
+    scope = scope_fixture()
+    {:ok, root} = Ybira.create_folder(scope, %{name: "raiz"})
+    {:ok, child} = Ybira.create_folder(scope, %{name: "filha", parent_rkey: root.rkey})
+    {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("conteudo", "arquivo.txt"), folder_rkey: child.rkey)
+    {:ok, :deleted} = Ybira.delete_folder(scope, root.rkey)
+
+    assert {:ok, %{folders: 2, files: 1}} = Ybira.purge_trash_folder(scope, root.rkey)
+    refute Repo.get(Folder, root.id, skip_tekoa_id: true)
+    refute Repo.get(Folder, child.id, skip_tekoa_id: true)
+    refute Repo.get(YbiraFile, file.id, skip_tekoa_id: true)
+    assert blob_on_disk?(file)
+    assert gc_row?(file.blob_cid)
+
+    tekoa = Repo.get!(Tekoa, scope.tekoa.id, skip_tekoa_id: true)
+    assert tekoa.storage_used_bytes == 0
+  end
+
+  test "permanent purge is restricted to trashed resources owned by the caller" do
+    scope = scope_fixture()
+    other = ava_fixture(scope.tekoa)
+    other_scope = Scope.new(other, scope.tekoa)
+    {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("arquivo", "arquivo.txt"))
+
+    assert {:error, :invalid_status} = Ybira.purge_trash_file(scope, file.rkey)
+    assert {:ok, _} = Ybira.delete_file(scope, file.rkey)
+    assert {:error, :not_found} = Ybira.purge_trash_file(other_scope, file.rkey)
+    assert {:ok, _} = Ybira.get_trashed_file(scope, file.rkey)
+  end
+
   defp days_ago(n), do: DateTime.shift(DateTime.utc_now(), second: -n * @seconds_per_day)
 
   defp backdate(schema, id, apagado_em) do

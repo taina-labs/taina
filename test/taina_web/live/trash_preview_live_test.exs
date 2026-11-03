@@ -28,6 +28,7 @@ defmodule TainaWeb.TrashPreviewLiveTest do
     assert has_element?(lv, "#trash-file-actions .actions-menu__trigger")
     assert has_element?(lv, "#trash-file-actions-panel", "Baixar")
     assert has_element?(lv, "#trash-file-actions-panel", "Restaurar")
+    assert has_element?(lv, "#trash-file-actions-panel", "Apagar definitivamente")
     refute has_element?(lv, ".page-header__zone--end > button", "Baixar")
     refute has_element?(lv, ".page-header__zone--end > button", "Restaurar")
 
@@ -45,5 +46,22 @@ defmodule TainaWeb.TrashPreviewLiveTest do
     other = active_ava_fixture(tekoa, %{username: "outra"})
 
     assert {:error, :not_found} = Ybira.get_trashed_file(Scope.new(other, tekoa), file.rkey)
+  end
+
+  test "permanently purges from the trash file preview after confirmation", %{
+    conn: conn,
+    tekoa: tekoa,
+    owner: owner,
+    trashed_file: file
+  } do
+    {:ok, lv, _html} = conn |> log_in(owner) |> live(~p"/documentos/lixeira/#{file.rkey}")
+
+    lv |> element("#trash-file-actions-panel button", "Apagar definitivamente") |> render_click()
+    assert has_element?(lv, "#confirm-trash-purge .dialog__title", "Apagar apagado.txt de vez?")
+
+    assert {:error, {:live_redirect, %{to: "/documentos/lixeira"}}} =
+             lv |> element("#confirm-trash-purge button[phx-click=\"confirm-purge\"]") |> render_click()
+
+    assert {:error, :not_found} = Ybira.get_trashed_file(Scope.new(owner, tekoa), file.rkey)
   end
 end

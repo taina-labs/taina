@@ -251,6 +251,30 @@ defmodule Taina.Ybira do
     end)
   end
 
+  @doc "Apaga de vez um arquivo da lixeira do proprio morador."
+  def purge_trash_file(%Scope{} = scope, rkey) when is_binary(rkey) do
+    within_tekoa(scope, fn ->
+      with {:ok, file} <- fetch_trashed_owned_file(scope, rkey),
+           {:ok, 1} <- purge_files(scope.tekoa.id, [file]) do
+        {:ok, file}
+      end
+    end)
+  end
+
+  @doc "Apaga de vez uma pasta da lixeira e toda a subarvore dela."
+  def purge_trash_folder(%Scope{} = scope, rkey) when is_binary(rkey) do
+    within_tekoa(scope, fn ->
+      with {:ok, folder} <- fetch_trashed_owned_folder(scope, rkey),
+           {:ok, folder_ids} <- owned_subtree_folder_ids(scope, folder.id),
+           {:ok, files} <- trashed_subtree_files(scope, folder_ids),
+           {:ok, _folders} <- trashed_subtree_folders(scope, folder_ids),
+           {:ok, _file_count} <- purge_files(scope.tekoa.id, files),
+           {:ok, folder_count} <- purge_folders(scope.tekoa.id, folder_ids) do
+        {:ok, %{folder: folder, folders: folder_count, files: length(files)}}
+      end
+    end)
+  end
+
   @doc "A lixeira do próprio morador (só o dono vê o lixo dele, nem o kernel lista)."
   def list_trash(%Scope{} = scope, opts \\ []) do
     within_tekoa(scope, fn ->
@@ -989,6 +1013,93 @@ defmodule Taina.Ybira do
       [inc: [storage_used_bytes: delta]],
       skip_tekoa_id: true
     )
+  end
+
+  defp fetch_trashed_owned_file(%Scope{} = scope, rkey) do
+    case KernelStore.get_file(Repo, scope.tekoa.id, rkey, true) do
+      nil ->
+        {:error, :not_found}
+
+      %File{} = file ->
+        cond do
+          file.dono_id != scope.ava.id -> {:error, :not_found}
+          is_nil(file.apagado_em) -> {:error, :invalid_status}
+          true -> {:ok, file}
+        end
+    end
+  end
+
+  # A purga de uma pasta remove a subarvore inteira. O CTE coleta os IDs dentro
+  # da mesma comunidade; ownership e estado da lixeira sao verificados antes
+  # dos deletes, dentro da mesma transacao.
+  defp owned_subtree_folder_ids(%Scope{} = scope, root_id) do
+    {:ok, %{rows: rows}} =
+      Repo.query(
+        """
+        WITH RECURSIVE subtree AS (
+          SELECT id, parent_id, dono_id FROM ybira_folders
+          WHERE id = $1 AND tekoa_id = $2
+          UNION ALL
+          SELECT f.id, f.parent_id, f.dono_id FROM ybira_folders f
+          JOIN subtree s ON f.parent_id = s.id
+          WHERE f.tekoa_id = $2
+        )
+        SELECT id, dono_id FROM subtree
+        """,
+        [root_id, scope.tekoa.id]
+      )
+
+    if Enum.all?(rows, fn [_id, owner_id] -> owner_id == scope.ava.id end) do
+      {:ok, Enum.map(rows, fn [id, _owner_id] -> id end)}
+    else
+      {:error, :not_found}
+    end
+  end
+
+  defp trashed_subtree_files(%Scope{} = scope, folder_ids) do
+    files = Repo.all(from(f in File, where: f.tekoa_id == ^scope.tekoa.id and f.folder_id in ^folder_ids))
+
+    if Enum.all?(files, &(&1.dono_id == scope.ava.id and not is_nil(&1.apagado_em))) do
+      {:ok, files}
+    else
+      {:error, :invalid_status}
+    end
+  end
+
+  defp trashed_subtree_folders(%Scope{} = scope, folder_ids) do
+    folders = Repo.all(from(f in Folder, where: f.tekoa_id == ^scope.tekoa.id and f.id in ^folder_ids))
+
+    if length(folders) == length(folder_ids) and
+         Enum.all?(folders, &(&1.dono_id == scope.ava.id and not is_nil(&1.apagado_em))) do
+      {:ok, folders}
+    else
+      {:error, :invalid_status}
+    end
+  end
+
+  defp purge_files(_tekoa_id, []), do: {:ok, 0}
+
+  defp purge_files(tekoa_id, files) do
+    ids = Enum.map(files, & &1.id)
+    bytes = Enum.reduce(files, 0, &(&1.tamanho + &2))
+
+    {count, _deleted} =
+      Repo.delete_all(from(f in File, where: f.tekoa_id == ^tekoa_id and f.id in ^ids))
+
+    if count == length(files) do
+      adjust_storage_used(tekoa_id, -bytes)
+      {:ok, _queued} = enqueue_blob_gc(Enum.map(files, & &1.blob_cid))
+      {:ok, count}
+    else
+      {:error, :not_found}
+    end
+  end
+
+  defp purge_folders(tekoa_id, folder_ids) do
+    {count, _deleted} =
+      Repo.delete_all(from(f in Folder, where: f.tekoa_id == ^tekoa_id and f.id in ^folder_ids))
+
+    if count == length(folder_ids), do: {:ok, count}, else: {:error, :not_found}
   end
 
   @doc "O caminho no disco dos bytes do arquivo (endereçados pelo CID do blob)."

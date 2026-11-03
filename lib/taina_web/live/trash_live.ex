@@ -23,7 +23,11 @@ defmodule TainaWeb.TrashLive do
 
   @impl true
   def mount(_params, _session, socket) do
-    {:ok, socket |> assign(:page_title, gettext("Documentos")) |> load_trash()}
+    {:ok,
+     socket
+     |> assign(:page_title, gettext("Documentos"))
+     |> assign(:purge_target, nil)
+     |> load_trash()}
   end
 
   defp load_trash(socket) do
@@ -51,6 +55,36 @@ defmodule TainaWeb.TrashLive do
 
   @impl true
   def handle_event("retry-load", _params, socket), do: {:noreply, load_trash(socket)}
+
+  def handle_event("ask-purge", %{"id" => rkey, "type" => type}, socket) when type in ["file", "folder"] do
+    case trash_item(socket.assigns, type, rkey) do
+      nil -> {:noreply, put_flash(socket, :error, gettext("Este item não está mais na lixeira."))}
+      item -> {:noreply, assign(socket, :purge_target, %{type: type, id: rkey, name: item.nome})}
+    end
+  end
+
+  def handle_event("close-purge", _params, socket), do: {:noreply, assign(socket, :purge_target, nil)}
+
+  def handle_event("confirm-purge", _params, %{assigns: %{purge_target: %{type: type, id: rkey}}} = socket) do
+    result = purge_item(socket.assigns.current_scope, type, rkey)
+
+    case result do
+      {:ok, _item} ->
+        {:noreply,
+         socket
+         |> assign(:purge_target, nil)
+         |> put_flash(:info, gettext("O item foi apagado definitivamente."))
+         |> load_trash()}
+
+      {:error, _reason} ->
+        {:noreply,
+         socket
+         |> assign(:purge_target, nil)
+         |> put_flash(:error, gettext("Não foi possível apagar o item definitivamente."))}
+    end
+  end
+
+  def handle_event("confirm-purge", _params, socket), do: {:noreply, socket}
 
   def handle_event("restore", %{"id" => rkey, "type" => "folder"}, socket) do
     case Ybira.restore_folder(socket.assigns.current_scope, rkey) do
@@ -136,6 +170,22 @@ defmodule TainaWeb.TrashLive do
 
   defp warning?(item), do: days_left(item) <= @warning_days
 
+  defp trash_item(assigns, "file", rkey), do: Enum.find(assigns.items, &(&1.rkey == rkey))
+  defp trash_item(assigns, "folder", rkey), do: Enum.find(assigns.folders, &(&1.rkey == rkey))
+
+  defp purge_item(scope, "file", rkey), do: Ybira.purge_trash_file(scope, rkey)
+  defp purge_item(scope, "folder", rkey), do: Ybira.purge_trash_folder(scope, rkey)
+
+  defp purge_title(%{type: "file", name: name}), do: gettext("Apagar %{name} de vez?", name: name)
+  defp purge_title(%{type: "folder", name: name}), do: gettext("Apagar a pasta %{name} de vez?", name: name)
+  defp purge_title(_target), do: nil
+
+  defp purge_body(%{type: "file"}), do: gettext("Este arquivo não poderá ser restaurado.")
+
+  defp purge_body(%{type: "folder"}), do: gettext("A pasta e tudo o que está dentro dela não poderão ser restaurados.")
+
+  defp purge_body(_target), do: nil
+
   # Cópia de ensino do board, com o mesmo número que o worker usa para
   # expurgar. Função (não assign) porque `@retention_days` no template viria
   # de `assigns`, não do módulo.
@@ -177,15 +227,22 @@ defmodule TainaWeb.TrashLive do
             <.service_square mark="lixeira" />
           </:leading>
           <:actions>
-            <.button
-              kind="ghost"
-              size="sm"
-              phx-click="restore"
-              phx-value-id={folder.rkey}
-              phx-value-type="folder"
+            <.actions_menu
+              id={"trash-folder-#{folder.rkey}"}
+              label={gettext("Mais opções para %{name}", name: folder.nome)}
+              title={gettext("Ações da pasta")}
             >
-              {gettext("Restaurar")}
-            </.button>
+              <:item icon="restore" click={JS.push("restore", value: %{id: folder.rkey, type: "folder"})}>
+                {gettext("Restaurar")}
+              </:item>
+              <:item
+                icon="trash"
+                kind="danger"
+                click={JS.push("ask-purge", value: %{id: folder.rkey, type: "folder"})}
+              >
+                {gettext("Apagar definitivamente")}
+              </:item>
+            </.actions_menu>
           </:actions>
         </.list_row>
 
@@ -202,15 +259,22 @@ defmodule TainaWeb.TrashLive do
             <.service_square mark="lixeira" />
           </:leading>
           <:actions>
-            <.button
-              kind="ghost"
-              size="sm"
-              phx-click="restore"
-              phx-value-id={file.rkey}
-              phx-value-type="file"
+            <.actions_menu
+              id={"trash-file-#{file.rkey}"}
+              label={gettext("Mais opções para %{name}", name: file.nome)}
+              title={gettext("Ações do arquivo")}
             >
-              {gettext("Restaurar")}
-            </.button>
+              <:item icon="restore" click={JS.push("restore", value: %{id: file.rkey, type: "file"})}>
+                {gettext("Restaurar")}
+              </:item>
+              <:item
+                icon="trash"
+                kind="danger"
+                click={JS.push("ask-purge", value: %{id: file.rkey, type: "file"})}
+              >
+                {gettext("Apagar definitivamente")}
+              </:item>
+            </.actions_menu>
           </:actions>
         </.list_row>
       </ul>
@@ -224,6 +288,17 @@ defmodule TainaWeb.TrashLive do
         :if={@items == [] and @folders == [] and @load_error}
         title={gettext("Não deu para abrir a lixeira")}
         retry_event="retry-load"
+      />
+
+      <.dialog
+        id="confirm-purge"
+        show={@purge_target != nil}
+        kind="destructive"
+        title={purge_title(@purge_target)}
+        body={purge_body(@purge_target)}
+        confirm_label={gettext("Apagar definitivamente")}
+        on_confirm="confirm-purge"
+        on_cancel={JS.push("close-purge")}
       />
 
       <.empty_state
