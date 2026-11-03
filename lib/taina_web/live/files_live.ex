@@ -590,7 +590,7 @@ defmodule TainaWeb.FilesLive do
         <.fab label={gettext("Enviar")} navigate={upload_path(@folder_rkey, @return_to)} />
       </:fab>
 
-      <.breadcrumb class="mb-3">
+      <.breadcrumb :if={@folder} class="mb-3">
         <:crumb
           :for={crumb <- @crumbs}
           label={crumb.label}

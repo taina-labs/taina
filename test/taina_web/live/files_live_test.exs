@@ -61,6 +61,7 @@ defmodule TainaWeb.FilesLiveTest do
       assert html =~ "só você"
       assert has_element?(lv, ~s(.service-tab-bar__item[aria-current="page"]), "Casa")
       assert has_element?(lv, ~s(.service-tab-bar__item[href="/documentos/praca"]), "Praça")
+      refute has_element?(lv, ".breadcrumb")
 
       {:ok, alias_lv, _alias_html} = conn |> log_in(ava) |> live(~p"/documentos/casa")
       assert has_element?(alias_lv, ~s(.service-tab-bar__item[aria-current="page"]), "Casa")
