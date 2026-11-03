@@ -464,5 +464,43 @@ defmodule TainaWeb.FilesLiveTest do
       assert {:ok, %{files: [movido]}} = Ybira.list_folder_contents(scope, destino.rkey)
       assert movido.id == file.id
     end
+
+    test "move destinations follow the folder tree", %{conn: conn, scope: scope, ava: ava} do
+      {:ok, parent} = Ybira.create_folder(scope, %{name: "Documentos"})
+      {:ok, child} = Ybira.create_folder(scope, %{name: "Atas", parent_rkey: parent.rkey})
+      {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("ata", "ata.txt"))
+      {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/casa")
+
+      lv
+      |> element(~s(button[phx-click*="open-move"][phx-click*="#{file.rkey}"]))
+      |> render_click()
+
+      assert has_element?(lv, "#move-modal .move-tree__node > .list-row", "Documentos")
+      assert has_element?(lv, "#move-modal .move-tree--nested .move-tree__node > .list-row", "Atas")
+
+      lv
+      |> element(~s(button[phx-click*="move-item"][phx-click*="#{child.rkey}"]))
+      |> render_click()
+
+      assert {:ok, %{files: [moved]}} = Ybira.list_folder_contents(scope, child.rkey)
+      assert moved.rkey == file.rkey
+    end
+
+    test "folder move tree omits the source and its descendants", %{conn: conn, scope: scope, ava: ava} do
+      {:ok, parent} = Ybira.create_folder(scope, %{name: "Pai"})
+      {:ok, child} = Ybira.create_folder(scope, %{name: "Filha", parent_rkey: parent.rkey})
+      {:ok, other} = Ybira.create_folder(scope, %{name: "Destino"})
+      {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/casa")
+
+      lv
+      |> element(~s(button[phx-click*="open-move"][phx-click*="#{parent.rkey}"]))
+      |> render_click()
+
+      refute has_element?(lv, "#move-modal .move-tree__node > .list-row", "Pai")
+      refute has_element?(lv, "#move-modal .move-tree__node > .list-row", "Filha")
+      assert has_element?(lv, "#move-modal .move-tree__node > .list-row", "Destino")
+      assert {:ok, _} = Ybira.get_folder(scope, other.rkey)
+      assert {:ok, _} = Ybira.get_folder(scope, child.rkey)
+    end
   end
 end

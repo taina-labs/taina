@@ -139,7 +139,7 @@ defmodule TainaWeb.FilesLive do
     |> assign(:modal, nil)
     |> assign(:rename_target, nil)
     |> assign(:move_target, nil)
-    |> assign(:all_folders, [])
+    |> assign(:move_tree, [])
     |> assign(:confirm, nil)
     |> stream(:files, page.files, reset: true)
   end
@@ -203,12 +203,13 @@ defmodule TainaWeb.FilesLive do
         case Ybira.list_folders(socket.assigns.current_scope) do
           {:ok, folders} ->
             owned_folders = Enum.filter(folders, &own?(socket.assigns.current_scope, &1))
+            excluded_ids = folder_exclusions(owned_folders, selected_folder_ids(items))
 
             {:noreply,
              socket
              |> assign(:modal, "move")
              |> assign(:move_target, %{kind: "selection", id: nil, name: selection_name(length(items))})
-             |> assign(:all_folders, owned_folders)}
+             |> assign(:move_tree, folder_tree(owned_folders, excluded_ids))}
 
           {:error, _reason} ->
             {:noreply, put_flash(socket, :error, gettext("Não foi possível abrir as pastas."))}
@@ -255,11 +256,23 @@ defmodule TainaWeb.FilesLive do
     # recusa, então a UI não pode oferecer.
     case Ybira.list_folders(socket.assigns.current_scope) do
       {:ok, folders} ->
+        owned_folders = Enum.filter(folders, &own?(socket.assigns.current_scope, &1))
+
+        excluded_ids =
+          if kind == "folder" do
+            case Enum.find(owned_folders, &(&1.rkey == id)) do
+              nil -> MapSet.new()
+              folder -> folder_exclusions(owned_folders, [folder.id])
+            end
+          else
+            MapSet.new()
+          end
+
         {:noreply,
          socket
          |> assign(:modal, "move")
          |> assign(:move_target, %{kind: kind, id: id, name: name})
-         |> assign(:all_folders, Enum.filter(folders, &own?(socket.assigns.current_scope, &1)))}
+         |> assign(:move_tree, folder_tree(owned_folders, excluded_ids))}
 
       {:error, _reason} ->
         {:noreply, put_flash(socket, :error, gettext("Não foi possível abrir as pastas."))}
@@ -272,6 +285,7 @@ defmodule TainaWeb.FilesLive do
      |> assign(:modal, nil)
      |> assign(:rename_target, nil)
      |> assign(:move_target, nil)
+     |> assign(:move_tree, [])
      |> assign(:confirm, nil)}
   end
 
@@ -546,6 +560,44 @@ defmodule TainaWeb.FilesLive do
         {:ok, item} -> [%{kind: kind, id: id, item: item}]
         {:error, _reason} -> []
       end
+    end)
+  end
+
+  defp selected_folder_ids(items) do
+    for %{kind: "folder", item: %Folder{id: id}} <- items, do: id
+  end
+
+  defp folder_exclusions(folders, root_ids) do
+    children = Enum.group_by(folders, & &1.parent_id)
+
+    Enum.reduce(root_ids, MapSet.new(), fn root_id, excluded ->
+      root_id
+      |> folder_subtree_ids(children)
+      |> Enum.reduce(excluded, &MapSet.put(&2, &1))
+    end)
+  end
+
+  defp folder_subtree_ids(folder_id, children) do
+    descendants =
+      children
+      |> Map.get(folder_id, [])
+      |> Enum.flat_map(&folder_subtree_ids(&1.id, children))
+
+    [folder_id | descendants]
+  end
+
+  defp folder_tree(folders, excluded_ids) do
+    visible = Enum.reject(folders, &MapSet.member?(excluded_ids, &1.id))
+    children = Enum.group_by(visible, & &1.parent_id)
+    folder_tree_nodes(nil, children)
+  end
+
+  defp folder_tree_nodes(parent_id, children) do
+    children
+    |> Map.get(parent_id, [])
+    |> Enum.sort_by(&String.downcase(&1.nome))
+    |> Enum.map(fn folder ->
+      %{folder: folder, children: folder_tree_nodes(folder.id, children)}
     end)
   end
 
@@ -958,7 +1010,7 @@ defmodule TainaWeb.FilesLive do
       <.dialog id="move-modal" show={@modal == "move"} on_cancel={JS.push("close-modal")}>
         <h2 id="move-modal-title" class="type-h3 mb-1">{gettext("Mover para...")}</h2>
         <p :if={@move_target} class="type-body-sm text-muted mb-4">{@move_target.name}</p>
-        <ul :if={@move_target} class="list">
+        <ul :if={@move_target} class="list move-tree__destinations">
           <li>
             <button
               type="button"
@@ -969,15 +1021,8 @@ defmodule TainaWeb.FilesLive do
               <span class="list-row__body type-label">{gettext("Início (raiz)")}</span>
             </button>
           </li>
-          <li :for={folder <- @all_folders} :if={folder.rkey != @move_target.id}>
-            <button
-              type="button"
-              class="list-row"
-              phx-click={move_command(@move_target, folder.rkey)}
-            >
-              <.service_square mark="ybira" />
-              <span class="list-row__body type-label">{folder.nome}</span>
-            </button>
+          <li :if={@move_tree != []} class="move-tree__container">
+            <.move_folder_tree nodes={@move_tree} move_target={@move_target} />
           </li>
         </ul>
         <.button kind="secondary" size="md" class="w-full mt-4" phx-click="close-modal">
@@ -1062,6 +1107,39 @@ defmodule TainaWeb.FilesLive do
         {gettext("Remover")}
       </:item>
     </.actions_menu>
+    """
+  end
+
+  attr :nodes, :list, required: true
+  attr :move_target, :map, required: true
+  attr :depth, :integer, default: 0
+
+  defp move_folder_tree(assigns) do
+    assigns = assign(assigns, :tree_class, if(assigns.depth == 0, do: "move-tree", else: "move-tree move-tree--nested"))
+
+    ~H"""
+    <ul class={@tree_class} role="group">
+      <li :for={node <- @nodes} class="move-tree__node">
+        <.list_row kind="folder" tag="div" title={node.folder.nome} class="move-tree__row">
+          <:leading><.service_square mark="ybira" /></:leading>
+          <:actions>
+            <.button
+              kind="ghost"
+              size="sm"
+              phx-click={move_command(@move_target, node.folder.rkey)}
+            >
+              {gettext("Mover")}
+            </.button>
+          </:actions>
+        </.list_row>
+        <.move_folder_tree
+          :if={node.children != []}
+          nodes={node.children}
+          move_target={@move_target}
+          depth={@depth + 1}
+        />
+      </li>
+    </ul>
     """
   end
 end
