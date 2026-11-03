@@ -23,6 +23,8 @@ let
     "url_port = ${toString cfg.urlPort}"
     "bind_ip = 0.0.0.0"
     "port = ${toString cfg.containerPort}"
+    "max_blob_size = ${toString cfg.maxBlobSize}"
+    "max_concurrent_uploads = ${toString cfg.maxConcurrentUploads}"
     "data_dir = /app/data"
     "storage_dir = /app/storage"
     "backup_dir = /app/backups"
@@ -38,6 +40,8 @@ let
     "url_port"
     "bind_ip"
     "port"
+    "max_blob_size"
+    "max_concurrent_uploads"
     "data_dir"
     "storage_dir"
     "backup_dir"
@@ -77,6 +81,8 @@ in {
     port = mkOption { type = types.port; default = 4000; };
     containerPort = mkOption { type = types.port; default = 4000; };
     listenAddress = mkOption { type = types.str; default = "127.0.0.1"; };
+    maxBlobSize = mkOption { type = types.int; default = 2 * 1024 * 1024 * 1024; };
+    maxConcurrentUploads = mkOption { type = types.int; default = 10; };
     uid = mkOption { type = types.int; example = 993; };
     gid = mkOption { type = types.int; example = 993; };
     dataDir = mkOption { type = types.path; default = "/var/lib/taina"; };
@@ -96,6 +102,8 @@ in {
     assertions = [
       { assertion = imagePinned; message = "services.taina.image must select an explicit tag or digest, not latest."; }
       { assertion = collisions == [ ]; message = "services.taina.settings must not set module-owned keys: ${concatStringsSep ", " collisions}."; }
+      { assertion = cfg.maxBlobSize > 0; message = "services.taina.maxBlobSize must be positive."; }
+      { assertion = cfg.maxConcurrentUploads > 0; message = "services.taina.maxConcurrentUploads must be positive."; }
     ];
 
     users.users.taina = {

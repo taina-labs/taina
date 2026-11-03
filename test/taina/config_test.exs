@@ -22,6 +22,8 @@ defmodule Taina.ConfigTest do
     assert {:ok, settings} = Config.effective(write_config(@valid))
     assert settings.port == 4000
     assert settings.bind_ip == {0, 0, 0, 0}
+    assert settings.max_blob_size == 2 * 1024 * 1024 * 1024
+    assert settings.max_concurrent_uploads == 10
     assert settings.url_scheme == :https
   end
 
@@ -36,6 +38,20 @@ defmodule Taina.ConfigTest do
     assert Config.describe({:invalid_value, "port", 5}) =~ "port on line 5"
   end
 
+  test "parses configured upload limits" do
+    text = String.replace(@valid, "port = 4000", "port = 4000\nmax_blob_size = 104857600\nmax_concurrent_uploads = 3")
+
+    assert {:ok, settings} = Config.effective(write_config(text))
+    assert settings.max_blob_size == 104_857_600
+    assert settings.max_concurrent_uploads == 3
+  end
+
+  test "rejects non-positive upload limits" do
+    path = write_config(String.replace(@valid, "port = 4000", "port = 4000\nmax_blob_size = 0"))
+
+    assert {:error, {:invalid, ^path, {:invalid_value, "max_blob_size", 6}}} = Config.effective(path)
+  end
+
   test "loads the release settings under the taina application" do
     path = write_config(@valid)
     System.put_env("TAINA_CONFIG_TEST", path)
@@ -44,6 +60,8 @@ defmodule Taina.ConfigTest do
     config = Config.load([], {:system, "TAINA_CONFIG_TEST"})
 
     assert config[:taina][:config].port == 4000
+    assert config[:taina][:config].max_blob_size == 2 * 1024 * 1024 * 1024
+    assert config[:taina][:upload][:max_concurrent_uploads] == 10
     assert config[:taina][Taina.Repo][:database] == "/data/taina.db"
     assert config[:taina][:storage_root] == "/storage"
   end

@@ -20,8 +20,9 @@ let
           storageDir = "/zdata/ybira";
           backupDir = "/zdata/backups/taina";
           requiredMounts = [ "/zdata/taina" "/zdata/ybira" "/zdata/backups" ];
-          settings.blob_upload_limit = "104857600";
-          backup.enable = true;
+           maxBlobSize = 104857600;
+           maxConcurrentUploads = 3;
+           backup.enable = true;
         };
       }
     ];
@@ -42,7 +43,8 @@ in {
     assert container.environment.TAINA_CONFIG == "/app/taina.conf";
     assert container.ports == [ "127.0.0.1:4014:4000" ];
     assert nixpkgs.lib.any (x: nixpkgs.lib.hasInfix ":/app/data" x) container.volumes;
-    assert nixpkgs.lib.hasInfix "blob_upload_limit = 104857600" (builtins.readFile confFile);
+     assert nixpkgs.lib.hasInfix "max_blob_size = 104857600" (builtins.readFile confFile);
+     assert nixpkgs.lib.hasInfix "max_concurrent_uploads = 3" (builtins.readFile confFile);
     assert config.users.users.taina.uid == 993;
     assert config.users.groups.taina.gid == 993;
     assert nixpkgs.lib.hasInfix "mountpoint -q /zdata/taina" config.systemd.services.taina.preStart;

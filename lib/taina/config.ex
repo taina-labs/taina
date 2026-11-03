@@ -3,11 +3,17 @@ defmodule Taina.Config do
 
   @behaviour Config.Provider
 
+  @default_max_blob_size 2 * 1024 * 1024 * 1024
+  @default_max_concurrent_uploads 10
+  @max_integer 9_223_372_036_854_775_807
+
   defstruct url_scheme: :https,
             hostname: nil,
             url_port: nil,
             bind_ip: {0, 0, 0, 0},
             port: 4000,
+            max_blob_size: @default_max_blob_size,
+            max_concurrent_uploads: @default_max_concurrent_uploads,
             data_dir: "/app/data",
             storage_dir: "/app/storage",
             backup_dir: "/app/backups",
@@ -15,7 +21,21 @@ defmodule Taina.Config do
             update_check: false,
             secret_key_base_file: nil
 
-  @keys ~w(url_scheme hostname url_port bind_ip port data_dir storage_dir backup_dir backup_enabled update_check secret_key_base_file)
+  @keys ~w(
+    url_scheme
+    hostname
+    url_port
+    bind_ip
+    port
+    max_blob_size
+    max_concurrent_uploads
+    data_dir
+    storage_dir
+    backup_dir
+    backup_enabled
+    update_check
+    secret_key_base_file
+  )
   @template """
   # Public URL, after TLS termination.
   url_scheme = https
@@ -25,6 +45,10 @@ defmodule Taina.Config do
   # HTTP listener inside the container.
   bind_ip = 0.0.0.0
   port = 4000
+
+  # Upload limits.
+  max_blob_size = 2147483648
+  max_concurrent_uploads = 10
 
   # Persistent application paths.
   data_dir = /app/data
@@ -99,7 +123,13 @@ defmodule Taina.Config do
 
   defp resolve(file) do
     scheme = fetch(file, "url_scheme", "https")
-    defaults = %{"url_port" => {if(scheme == "http", do: "80", else: "443"), nil}}
+
+    defaults = %{
+      "url_port" => {if(scheme == "http", do: "80", else: "443"), nil},
+      "max_blob_size" => {to_string(@default_max_blob_size), nil},
+      "max_concurrent_uploads" => {to_string(@default_max_concurrent_uploads), nil}
+    }
+
     values = Map.merge(defaults, file)
 
     with {:ok, url_scheme} <- enum(values, "url_scheme", ~w(http https)),
@@ -107,6 +137,8 @@ defmodule Taina.Config do
          {:ok, url_port} <- integer(values, "url_port", 1, 65_535),
          {:ok, bind_ip} <- ip(values, "bind_ip", "0.0.0.0"),
          {:ok, port} <- integer(values, "port", 1, 65_535),
+         {:ok, max_blob_size} <- integer(values, "max_blob_size", 1, @max_integer),
+         {:ok, max_concurrent_uploads} <- integer(values, "max_concurrent_uploads", 1, 1_000),
          {:ok, data_dir} <- required(values, "data_dir"),
          {:ok, storage_dir} <- required(values, "storage_dir"),
          {:ok, backup_dir} <- required(values, "backup_dir"),
@@ -119,6 +151,8 @@ defmodule Taina.Config do
          url_port: url_port,
          bind_ip: bind_ip,
          port: port,
+         max_blob_size: max_blob_size,
+         max_concurrent_uploads: max_concurrent_uploads,
          data_dir: data_dir,
          storage_dir: storage_dir,
          backup_dir: backup_dir,
@@ -194,6 +228,10 @@ defmodule Taina.Config do
          check_origin: false
        ]},
       storage_root: settings.storage_dir,
+      upload: [
+        max_blob_size: settings.max_blob_size,
+        max_concurrent_uploads: settings.max_concurrent_uploads
+      ],
       backup: [enabled: settings.backup_enabled, dir: settings.backup_dir],
       update_check: [enabled: settings.update_check],
       data_dir: settings.data_dir,
