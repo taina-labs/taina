@@ -156,6 +156,8 @@ const UploadQueue = {
     this.active = 0;
     this.releasing = false;
     this.skipChange = false;
+    this.boundInputs = new WeakSet();
+    this.bindUploadInputs();
 
     this.handleEvent("upload-entry-finished", () => {
       this.active = Math.max(this.active - 1, 0);
@@ -202,6 +204,18 @@ const UploadQueue = {
     this.el.removeEventListener("drop", this.onDrop, true);
   },
 
+  updated() {
+    this.bindUploadInputs();
+  },
+
+  bindUploadInputs() {
+    this.el.querySelectorAll('input[type="file"]').forEach((input) => {
+      if (this.boundInputs.has(input)) return;
+      this.boundInputs.add(input);
+      input.addEventListener("phx:live-file:updated", () => this.pump());
+    });
+  },
+
   fileInput(input) {
     return input instanceof HTMLInputElement && input.type === "file";
   },
@@ -216,6 +230,7 @@ const UploadQueue = {
 
   pump() {
     if (this.active > 0 || this.queue.length === 0) return;
+    if (this.inputsHaveActiveRefs()) return;
 
     const batch = this.queue.splice(0, this.limit);
     const accepted = [];
@@ -243,6 +258,12 @@ const UploadQueue = {
     this.releasing = true;
     Object.entries(grouped).forEach(([name, files]) => this.upload(name, files));
     this.releasing = false;
+  },
+
+  inputsHaveActiveRefs() {
+    return [...this.el.querySelectorAll('input[type="file"]')].some(
+      (input) => input.getAttribute("data-phx-active-refs"),
+    );
   },
 };
 
