@@ -209,6 +209,7 @@ const UploadQueue = {
   capture(event, input, files) {
     event.preventDefault();
     event.stopPropagation();
+    input.value = "";
     this.queue.push(...files.map((file) => ({ file, name: input.name })));
     this.pump();
   },
