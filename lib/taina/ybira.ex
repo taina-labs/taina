@@ -59,9 +59,18 @@ defmodule Taina.Ybira do
   require Logger
 
   @default_limit 50
+  @default_max_blob_size 2 * 1024 * 1024 * 1024
 
   @tipo_file "ypy.file.v0"
   @tipo_folder "ypy.folder.v0"
+
+  @doc "O limite configurado por arquivo, em bytes."
+  @spec max_blob_size() :: pos_integer()
+  def max_blob_size do
+    :taina
+    |> Application.get_env(:upload, [])
+    |> Keyword.get(:max_blob_size, @default_max_blob_size)
+  end
 
   @doc """
   O upload: o kernel le o arquivo, confere cota e MIME, guarda os bytes no
@@ -85,11 +94,17 @@ defmodule Taina.Ybira do
         folder: Keyword.get(opts, :folder_rkey)
       ]
 
-    with {:ok, cid} <- blob_cid(tmp_path),
+    with {:ok, %{size: size}} <- Elixir.File.stat(tmp_path),
+         :ok <- blob_size_allowed?(size),
+         {:ok, cid} <- blob_cid(tmp_path),
          {:ok, file} <- locked_upload(scope, tmp_path, opts, cid) do
       maybe_enqueue_rendition(scope, file)
       {:ok, file}
     end
+  end
+
+  defp blob_size_allowed?(size) do
+    if size <= max_blob_size(), do: :ok, else: {:error, :blob_too_large}
   end
 
   # O kernel inteiro sob a travessa do CID dos bytes: os bytes entram no disco

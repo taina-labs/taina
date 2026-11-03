@@ -20,12 +20,11 @@ defmodule TainaWeb.UploadLive do
   alias TainaWeb.InternalPath
   alias TainaWeb.Layouts
 
-  @max_file_size 2 * 1024 * 1024 * 1024
-
   @impl true
   def mount(params, _session, socket) do
     scope = socket.assigns.current_scope
     {folder, folder_note} = resolve_folder(scope, params["pasta"])
+    max_blob_size = Ybira.max_blob_size()
 
     socket =
       socket
@@ -33,20 +32,21 @@ defmodule TainaWeb.UploadLive do
       |> assign(:folder, folder)
       |> assign(:return_to, InternalPath.return_to(params["return_to"], back_path(folder)))
       |> assign(:quota_error?, false)
+      |> assign(:max_blob_size, max_blob_size)
       |> assign(:done, [])
       |> assign(:failed, [])
       |> maybe_flash_folder_note(folder_note)
       |> allow_upload(:files,
         accept: :any,
         max_entries: 10,
-        max_file_size: @max_file_size,
+        max_file_size: max_blob_size,
         auto_upload: true,
         progress: &handle_progress/3
       )
       |> allow_upload(:camera,
         accept: :any,
         max_entries: 10,
-        max_file_size: @max_file_size,
+        max_file_size: max_blob_size,
         auto_upload: true,
         progress: &handle_progress/3
       )
@@ -190,8 +190,8 @@ defmodule TainaWeb.UploadLive do
             <.live_file_input upload={@uploads.camera} capture="environment" class="sr-only" />
           </label>
 
-          <p :for={err <- config_errors(@uploads)} class="field__error mt-2">
-            {upload_config_error(err)}
+           <p :for={err <- config_errors(@uploads)} class="field__error mt-2">
+             {upload_config_error(err, @max_blob_size)}
           </p>
         </form>
 
@@ -231,9 +231,11 @@ defmodule TainaWeb.UploadLive do
   end
 
   # O quadradinho da linha concluída: o mesmo mapa do hub e do navegador.
-  defp upload_config_error(:too_large), do: gettext("O arquivo passa de 2 GB, o limite por arquivo.")
+  defp upload_config_error(:too_large, max_blob_size),
+    do: gettext("O arquivo passa de %{size}, o limite por arquivo.", size: format_bytes(max_blob_size))
 
-  defp upload_config_error(:too_many_files), do: gettext("São no máximo 10 arquivos por vez. Envie o resto em seguida.")
+  defp upload_config_error(:too_many_files, _max_blob_size),
+    do: gettext("São no máximo 10 arquivos por vez. Envie o resto em seguida.")
 
-  defp upload_config_error(_err), do: gettext("O envio falhou. Toque na caixa acima para tentar de novo.")
+  defp upload_config_error(_err, _max_blob_size), do: gettext("O envio falhou. Toque na caixa acima para tentar de novo.")
 end
