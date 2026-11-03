@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.7.0](https://github.com/taina-labs/taina/compare/v0.6.1...v0.7.0) (2026-11-03)
+
+
+### Features
+
+* add release operator API and OCI deployment ([c067ef4](https://github.com/taina-labs/taina/commit/c067ef417888e03eae1b0fc52740f59eab7e6ce0))
+* **config:** expose upload limits ([ec019d1](https://github.com/taina-labs/taina/commit/ec019d1b6980e56fe8b5e1a64e6c182e345f32fa))
+* **devices:** mark current access ([c712c84](https://github.com/taina-labs/taina/commit/c712c8497282694a6d3291a85ad671d16ac3ecf3))
+* **trash:** add owner-only file previews ([5435509](https://github.com/taina-labs/taina/commit/5435509f391505338da5a923e311d99d937941f6))
+* **upload:** enforce configured blob size ([08307c2](https://github.com/taina-labs/taina/commit/08307c22089aea3765470741a962e223e3d6f968))
+
+
+### Bug Fixes
+
+* **preview:** explain unsupported video formats ([f260984](https://github.com/taina-labs/taina/commit/f2609843ff84a871bd257208152df39844c10291))
+* **upload:** cap file selection at ten ([a844b46](https://github.com/taina-labs/taina/commit/a844b462b7803f92a7149c69c9e5b22bd65eede1))
+* **upload:** clear captured file input ([accf506](https://github.com/taina-labs/taina/commit/accf506dbda77914b8d37db2e435100509e5d66e))
+* **upload:** ignore duplicate native change events ([9b7fd35](https://github.com/taina-labs/taina/commit/9b7fd35ef06c6cc7fcab9de0956c3216b5415676))
+* **upload:** queue concurrent file batches ([013359a](https://github.com/taina-labs/taina/commit/013359a7d16241c3c347736020b3197952a40296))
+* **upload:** stop paired change propagation ([b491fc9](https://github.com/taina-labs/taina/commit/b491fc969bc387b35e27e05e9dcd0aaebb68b0c2))
+* **upload:** wait for refs before next batch ([a76c883](https://github.com/taina-labs/taina/commit/a76c88302328eeeb93a25f9ba1ca46a99389f13f))
+* **web:** keep downloads outside live navigation ([5e8af1b](https://github.com/taina-labs/taina/commit/5e8af1b46136eb0fddc333c6041c8f0f2c3823a1))
+
+
+### Miscellaneous Chores
+
+* **nix:** migrate dev shell to beam-overlay ([79b88a2](https://github.com/taina-labs/taina/commit/79b88a20bc978f7a0d5d47df2c2bfa3315fc5372))
+
+
+### Code Refactoring
+
+* **upload:** defer background queue ([7042b8a](https://github.com/taina-labs/taina/commit/7042b8a383a1d7f5e85e926fa957744510e80c72))
+
 ## [0.6.1](https://github.com/taina-labs/taina/compare/v0.6.0...v0.6.1) (2026-11-02)
 
 
