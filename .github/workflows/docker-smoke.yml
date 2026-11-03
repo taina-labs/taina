@@ -13,8 +13,8 @@ name: docker smoke
 # nobody, e o backup agendado falhava com :eacces registrando só "Backup
 # falhou". Nenhum teste pegou isso, porque nenhum teste subia o container.
 #
-# O que este job faz, espelhando o que o oka/install.sh faz na máquina do
-# operador: sobe o release conectado a um arquivo SQLite num volume montado,
+# O que este job faz, espelhando o deployment Compose do Oka: sobe o release
+# conectado a um arquivo SQLite num volume montado,
 # deixa as migrações rodarem no boot, bootstrapa a comunidade sem interface
 # (headless), loga pela interface e confere que os volumes são graváveis. O
 # isolamento entre comunidades é coberto pela tripwire de aplicação
@@ -60,21 +60,24 @@ jobs:
 
       - name: Run the release's own start command
         run: |
-          # Mesmo comando do CMD do Dockerfile: migrações no boot e depois o
-          # servidor. Banco num volume montado, exatamente como em produção —
-          # se alguma migração falhar num diretório sem dono, falha aqui.
-          #
-          # SECRET_KEY_BASE com >= 64 bytes: Plug.Session.COOKIE recusa menos
-          # que isso e a primeira rota que grava sessão (/login) devolve 500.
+          # The release reads one strict configuration file. bin/server creates
+          # the persistent secret, runs migrations and only then starts Phoenix.
+          cat > taina-smoke.conf <<'EOF'
+          url_scheme = http
+          hostname = localhost
+          url_port = 4000
+          bind_ip = 0.0.0.0
+          port = 4000
+          data_dir = /app/data
+          storage_dir = /app/storage
+          backup_dir = /app/backups
+          backup_enabled = false
+          update_check = false
+          EOF
+
           docker run -d --name smoke_app \
-            -e DATABASE_PATH=/app/data/taina.db \
-            -e SECRET_KEY_BASE=smoke-test-secret-key-base-0123456789abcdef0123456789abcdef0123456789 \
-            -e PHX_HOST=localhost \
-            -e PHX_SERVER=true \
-            -e PORT=4000 \
-            -e STORAGE_ROOT=/app/storage \
-            -e BACKUP_ENABLED=false \
-            -e BACKUP_DIR=/app/backups \
+            -e TAINA_CONFIG=/app/taina.conf \
+            -v "$PWD/taina-smoke.conf:/app/taina.conf:ro" \
             -v taina_smoke_data:/app/data \
             -v taina_smoke_storage:/app/storage \
             -v taina_smoke_backups:/app/backups \
@@ -82,8 +85,8 @@ jobs:
 
       - name: Wait for the app to report healthy
         run: |
-          # Mesmo caminho do install.sh: de dentro do container, porque a porta
-          # 4000 não é publicada e o /health só responde 200 quando o banco
+          # De dentro do container, porque a porta 4000 não é publicada e o
+          # /health só responde 200 quando o banco
           # (o arquivo SQLite) também respondeu.
           for i in $(seq 1 60); do
             if docker exec smoke_app curl -fsS http://localhost:4000/health; then
@@ -162,3 +165,4 @@ jobs:
         run: |
           docker rm -f smoke_app 2>/dev/null || true
           docker volume rm -f taina_smoke_data taina_smoke_storage taina_smoke_backups 2>/dev/null || true
+          rm -f taina-smoke.conf login.html

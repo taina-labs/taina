@@ -122,4 +122,4 @@ USER nobody
 # RUN chmod +x /tini
 # ENTRYPOINT ["/tini", "--"]
 
-CMD ["sh", "-c", "/app/bin/taina eval 'Taina.Release.migrate' && exec /app/bin/server"]
+ENTRYPOINT ["/app/bin/server"]

@@ -1,5 +1,7 @@
 #!/bin/sh
 set -eu
-cd -P -- "$(dirname -- "$0")"
-export PHX_SERVER=true
-exec ./taina start
+
+bin_dir=$(CDPATH='' cd -P "$(dirname "$0")" && pwd)
+
+"$bin_dir/taina" eval 'Taina.Release.prepare()' || exit 1
+PHX_SERVER=true exec "$bin_dir/taina" start

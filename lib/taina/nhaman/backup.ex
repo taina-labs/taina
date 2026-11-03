@@ -104,7 +104,7 @@ defmodule Taina.Nhaman.Backup do
            dump_path = Path.join(workdir, "db.dump"),
            :ok <- snapshot_db(db_path, dump_path),
            archive_path = Path.join(dir, archive_filename(now)),
-           :ok <- package_archive(archive_path, dump_path, storage_root) do
+           :ok <- package_archive(archive_path, dump_path, storage_root, secret_path()) do
         {:ok, %{archive: archive_path, bytes: file_size(archive_path)}}
       end
     after
@@ -128,8 +128,10 @@ defmodule Taina.Nhaman.Backup do
 
     try do
       with :ok <- extract_archive(archive_path, workdir),
+           :ok <- validate_restore_contents(workdir),
            :ok <- restore_db(Path.join(workdir, "db.dump"), db_path),
-           :ok <- restore_storage(Path.join(workdir, "storage"), storage_root) do
+           :ok <- restore_storage(Path.join(workdir, "storage"), storage_root),
+           :ok <- restore_secret(Path.join(workdir, "secret_key_base"), secret_path()) do
         {:ok, :restored}
       end
     after
@@ -145,7 +147,16 @@ defmodule Taina.Nhaman.Backup do
   com caminhos relativos determinísticos.
   """
   def package_archive(archive_path, dump_path, storage_root) do
-    entries = [{~c"db.dump", String.to_charlist(dump_path)} | storage_entries(storage_root)]
+    package_archive(archive_path, dump_path, storage_root, nil)
+  end
+
+  def package_archive(archive_path, dump_path, storage_root, secret_path) do
+    secret_entries =
+      if is_binary(secret_path) and File.exists?(secret_path),
+        do: [{~c"secret_key_base", String.to_charlist(secret_path)}],
+        else: []
+
+    entries = [{~c"db.dump", String.to_charlist(dump_path)} | secret_entries ++ storage_entries(storage_root)]
 
     case :erl_tar.create(String.to_charlist(archive_path), entries, [:compressed]) do
       :ok -> :ok
@@ -157,6 +168,13 @@ defmodule Taina.Nhaman.Backup do
   def extract_archive(archive_path, dest) do
     :ok = File.mkdir_p(dest)
 
+    with {:ok, names} <- :erl_tar.table(String.to_charlist(archive_path), [:compressed]),
+         :ok <- safe_members(names) do
+      extract(archive_path, dest)
+    end
+  end
+
+  defp extract(archive_path, dest) do
     case :erl_tar.extract(String.to_charlist(archive_path), [
            :compressed,
            {:cwd, String.to_charlist(dest)}
@@ -164,6 +182,28 @@ defmodule Taina.Nhaman.Backup do
       :ok -> :ok
       {:error, reason} -> {:error, {:extract_failed, reason}}
     end
+  end
+
+  defp safe_members(names) do
+    members = Enum.map(names, &to_string/1)
+
+    if "db.dump" in members and Enum.all?(members, &safe_member?/1), do: :ok, else: {:error, :unsafe_archive}
+  end
+
+  defp validate_restore_contents(workdir) do
+    secret = Path.join(workdir, "secret_key_base")
+
+    cond do
+      not File.regular?(Path.join(workdir, "db.dump")) -> {:error, :missing_database}
+      not File.regular?(secret) -> {:error, :missing_secret}
+      String.trim(File.read!(secret)) == "" -> {:error, :invalid_secret}
+      true -> :ok
+    end
+  end
+
+  defp safe_member?(name) do
+    not String.starts_with?(name, "/") and ".." not in Path.split(name) and
+      (name in ["db.dump", "secret_key_base"] or String.starts_with?(name, "storage/"))
   end
 
   @doc """
@@ -185,6 +225,20 @@ defmodule Taina.Nhaman.Backup do
       :ok
     end
   end
+
+  defp restore_secret(path, destination) do
+    if File.regular?(path) do
+      with :ok <- File.mkdir_p(Path.dirname(destination)),
+           :ok <- File.cp(path, destination),
+           :ok <- File.chmod(destination, 0o600) do
+        validate_secret(destination)
+      end
+    else
+      :ok
+    end
+  end
+
+  defp validate_secret(path), do: if(String.trim(File.read!(path)) == "", do: {:error, :invalid_secret}, else: :ok)
 
   ## Construtores puros (testáveis isoladamente)
 
@@ -331,4 +385,9 @@ defmodule Taina.Nhaman.Backup do
   end
 
   defp storage_root, do: Application.fetch_env!(:taina, :storage_root)
+
+  defp secret_path do
+    settings = Application.get_env(:taina, :config, %{})
+    Map.get(settings, :secret_key_base_file) || Path.join(Map.get(settings, :data_dir, "/app/data"), "secret_key_base")
+  end
 end

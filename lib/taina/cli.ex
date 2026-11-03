@@ -35,7 +35,8 @@ defmodule Taina.CLI do
 
   defstruct verb: nil, opts: []
 
-  @type verb :: :backup | :restore | :doctor | :version
+  @type verb ::
+          :backup | :restore | :doctor | :version | :config_validate | :config_template | :reset_password | :thumbnails
   @type t :: %__MODULE__{verb: verb(), opts: keyword()}
   @type exit_code :: 0 | 1 | 2 | 3
 
@@ -52,6 +53,10 @@ defmodule Taina.CLI do
     restore <arquivo.tar.gz>  restaura um backup; a instância da caixa deve estar parada
     doctor                    diagnóstico da caixa (só leitura, não muda nada)
     version                   imprime a versão do Tainá
+    config validate           valida a configuração
+    config template [--out PATH]
+    account reset-password USERNAME
+    thumbnails regenerate
   """
 
   @doc "Roda o verbo e encerra o processo com o código de saída."
@@ -69,19 +74,34 @@ defmodule Taina.CLI do
   def parse(["restore", archive]), do: {:ok, %__MODULE__{verb: :restore, opts: [archive: archive]}}
   def parse(["doctor"]), do: {:ok, %__MODULE__{verb: :doctor}}
   def parse(["version"]), do: {:ok, %__MODULE__{verb: :version}}
+  def parse(["config", "validate"]), do: {:ok, %__MODULE__{verb: :config_validate}}
+  def parse(["config", "template"]), do: {:ok, %__MODULE__{verb: :config_template}}
+  def parse(["config", "template", "--out", path]), do: {:ok, %__MODULE__{verb: :config_template, opts: [out: path]}}
+
+  def parse(["account", "reset-password", username]),
+    do: {:ok, %__MODULE__{verb: :reset_password, opts: [username: username]}}
+
+  def parse(["thumbnails", "regenerate"]), do: {:ok, %__MODULE__{verb: :thumbnails}}
+  def parse(["thumbnails", "regenerate", "--tekoa", id]), do: {:ok, %__MODULE__{verb: :thumbnails, opts: [tekoa: id]}}
   def parse(_argv), do: {:error, :usage}
 
   @doc "Roda o verbo e devolve o código de saída, sem encerrar o processo."
   @spec run([String.t()]) :: exit_code()
   def run(argv) do
     case parse(argv) do
-      {:ok, %__MODULE__{verb: :backup, opts: opts}} -> backup(opts)
-      {:ok, %__MODULE__{verb: :restore, opts: opts}} -> restore(opts)
-      {:ok, %__MODULE__{verb: :doctor}} -> doctor()
-      {:ok, %__MODULE__{verb: :version}} -> version()
+      {:ok, command} -> dispatch(command)
       {:error, :usage} -> usage()
     end
   end
+
+  defp dispatch(%__MODULE__{verb: :backup, opts: opts}), do: backup(opts)
+  defp dispatch(%__MODULE__{verb: :restore, opts: opts}), do: restore(opts)
+  defp dispatch(%__MODULE__{verb: :doctor}), do: doctor()
+  defp dispatch(%__MODULE__{verb: :version}), do: version()
+  defp dispatch(%__MODULE__{verb: :config_validate}), do: config_validate()
+  defp dispatch(%__MODULE__{verb: :config_template, opts: opts}), do: config_template(opts)
+  defp dispatch(%__MODULE__{verb: :reset_password, opts: opts}), do: reset_password(opts)
+  defp dispatch(%__MODULE__{verb: :thumbnails, opts: opts}), do: thumbnails(opts)
 
   ## Verbos
 
@@ -303,6 +323,142 @@ defmodule Taina.CLI do
   end
 
   defp version_string, do: to_string(Application.spec(:taina, :vsn))
+
+  defp config_validate do
+    case Taina.Config.effective() do
+      {:ok, settings} ->
+        Enum.each(Map.from_struct(settings), fn {key, value} -> IO.puts("#{key} = #{inspect(value)}") end)
+        @exit_ok
+
+      {:error, reason} ->
+        error(Taina.Config.describe(reason))
+        @exit_environment
+    end
+  end
+
+  defp config_template(opts) do
+    output = Taina.Config.template()
+
+    case opts[:out] do
+      nil ->
+        IO.write(output)
+        @exit_ok
+
+      path ->
+        case File.write(path, output, [:exclusive]) do
+          :ok ->
+            IO.puts(path)
+            @exit_ok
+
+          {:error, :eexist} ->
+            error("arquivo já existe: #{path}")
+            @exit_domain_failure
+
+          {:error, reason} ->
+            error(inspect(reason))
+            @exit_environment
+        end
+    end
+  end
+
+  defp reset_password(opts) do
+    with :ok <- ensure_repo(),
+         {:ok, password} <- read_password(),
+         {:ok, _ava} <- Taina.AccountOperator.reset_password(opts[:username], password) do
+      IO.puts("senha atualizada")
+      @exit_ok
+    else
+      {:error, :not_found} ->
+        error("usuário não encontrado")
+        @exit_domain_failure
+
+      {:error, :invalid_password} ->
+        error("a senha precisa ter pelo menos 8 caracteres")
+        @exit_domain_failure
+
+      {:error, :not_bootstrapped} ->
+        error("a comunidade ainda não foi criada")
+        @exit_domain_failure
+
+      {:error, reason} ->
+        error("reset falhou: #{inspect(reason)}")
+        @exit_environment
+    end
+  end
+
+  defp thumbnails(opts) do
+    with :ok <- ensure_repo(), {:ok, results} <- Taina.ThumbnailOperator.regenerate(opts[:tekoa]) do
+      Enum.each(results, fn {tekoa, counts} ->
+        IO.puts(
+          "#{tekoa.name}: #{Map.get(counts, :rendered, 0)} geradas, #{Map.get(counts, :gone, 0)} ausentes, #{Map.get(counts, :failed, 0)} falharam"
+        )
+      end)
+
+      @exit_ok
+    else
+      {:error, reason} ->
+        error("miniaturas falharam: #{inspect(reason)}")
+        @exit_domain_failure
+    end
+  end
+
+  defp ensure_repo do
+    with {:ok, _} <- Application.ensure_all_started(:ecto_sqlite3) do
+      start_repo_if_needed()
+    end
+  end
+
+  defp start_repo_if_needed do
+    case Process.whereis(Taina.Repo) do
+      nil -> start_repo()
+      _pid -> :ok
+    end
+  end
+
+  defp start_repo do
+    case Taina.Repo.start_link() do
+      {:ok, _} -> :ok
+      error -> error
+    end
+  end
+
+  @doc "Reads and confirms a password without accepting argv or environment input."
+  def read_password do
+    password = prompt_password("Nova senha (minimo 8 caracteres): ")
+    confirm = prompt_password("Confirme a senha nova: ")
+
+    password = String.trim_trailing(password, "\n")
+    confirm = String.trim_trailing(confirm, "\n")
+    if password == confirm and byte_size(password) >= 8, do: {:ok, password}, else: {:error, :invalid_password}
+  end
+
+  defp prompt_password(prompt) do
+    IO.write(:stderr, prompt)
+    prompt_input()
+  rescue
+    _ -> stdin_input()
+  end
+
+  defp prompt_input do
+    if function_exported?(:io, :get_password, 0), do: terminal_input(), else: stdin_input()
+  end
+
+  defp terminal_input do
+    case :io.get_password() do
+      :eof -> stdin_input()
+      input -> to_binary(input)
+    end
+  end
+
+  defp stdin_input do
+    case IO.gets("") do
+      :eof -> ""
+      {:error, _reason} -> ""
+      input -> to_binary(input)
+    end
+  end
+
+  defp to_binary(input), do: IO.iodata_to_binary(input)
 
   ## Borda com o sistema
 

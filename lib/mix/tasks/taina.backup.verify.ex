@@ -1,24 +1,10 @@
 defmodule Mix.Tasks.Taina.Backup.Verify do
-  @shortdoc "Round-trip real de backup → destruição → restore, com asserção"
+  @shortdoc "Verify a real backup, destruction and restore round trip"
 
   @moduledoc """
-  Verifica que um backup gerado por `Taina.Nhaman.Backup` realmente restaura
-  (RFC 002, Fase 4 — "restore testado automaticamente em CI").
-
-  Faz um ciclo completo contra um **banco real** (não o sandbox de teste):
-
-    1. semeia um marcador no banco (`maraca_mural`) e no storage;
-    2. roda `Backup.run/1`;
-    3. destrói os dados (apaga a linha e o storage);
-    4. roda `Backup.restore/1`;
-    5. confere que marcador de banco **e** de storage voltaram.
-
-  Fala com o SQLite por conexões Exqlite próprias, sem subir a árvore de
-  supervisão da app (sem pool do Ecto, sem Oban): o restore substitui o arquivo
-  do banco inteiro, então nada dele pode estar aberto no processo.
-
-  > **Destrutivo.** Roda contra o banco apontado por `Taina.Repo`/`DATABASE_PATH`.
-  > Use só em CI ou num banco descartável.
+  Exercises a complete backup and restore cycle against a real, disposable
+  SQLite database. This task is destructive and belongs only in development
+  and CI. It is not part of the release operator API.
 
       MIX_ENV=dev mix taina.backup.verify
   """
@@ -36,6 +22,7 @@ defmodule Mix.Tasks.Taina.Backup.Verify do
     uniq = System.unique_integer([:positive])
     storage = Path.join(System.tmp_dir!(), "taina_backup_verify_storage_#{uniq}")
     backup_dir = Path.join(System.tmp_dir!(), "taina_backup_verify_dir_#{uniq}")
+    secret = Path.join(System.tmp_dir!(), "taina_backup_verify_secret_#{uniq}")
     marker_rel = "verify/marker.txt"
     marker_path = Path.join(storage, marker_rel)
     token = "marker-#{uniq}"
@@ -44,32 +31,39 @@ defmodule Mix.Tasks.Taina.Backup.Verify do
 
     File.mkdir_p!(Path.dirname(marker_path))
     File.write!(marker_path, token)
+    File.write!(secret, "verify-secret-#{uniq}")
+    File.chmod!(secret, 0o600)
+
+    Application.put_env(:taina, :config, %{
+      data_dir: System.tmp_dir!(),
+      secret_key_base_file: secret
+    })
 
     {:ok, conn} = Exqlite.Sqlite3.open(db_path)
     seed(conn, marker)
 
     {:ok, %{archive: archive}} = Backup.run(dir: backup_dir, storage_root: storage)
-    info("backup gerado: #{archive}")
+    info("backup generated: #{archive}")
 
     destroy(conn, marker, storage)
+    File.rm!(secret)
     :ok = Exqlite.Sqlite3.close(conn)
-    info("dados destruídos")
+    info("data destroyed")
 
     {:ok, :restored} = Backup.restore(archive, storage_root: storage, database_path: db_path)
-    info("restore concluído")
+    info("restore completed")
 
     assert_db_restored!(db_path, marker)
     assert_storage_restored!(marker_path, token)
+    assert_secret_restored!(secret, uniq)
 
     File.rm_rf(storage)
     File.rm_rf(backup_dir)
+    File.rm(secret)
 
     Mix.shell().info([:green, "backup/restore round-trip OK", :reset])
   end
 
-  # O marcador vai pro mural (append-only, N entradas por Tekoa). A Tekoa em si
-  # e unica por box (`single_tekoa_enforcement`), entao reusamos a existente ou
-  # criamos uma so quando o banco esta vazio (CI).
   defp seed(conn, marker) do
     now = "strftime('%Y-%m-%dT%H:%M:%SZ', 'now')"
     seq = System.unique_integer([:positive])
@@ -103,8 +97,6 @@ defmodule Mix.Tasks.Taina.Backup.Verify do
     File.rm_rf!(storage)
   end
 
-  # Conexão nova: o restore substituiu o arquivo do banco inteiro, então o
-  # handle anterior não serve mais.
   defp assert_db_restored!(db_path, marker) do
     {:ok, conn} = Exqlite.Sqlite3.open(db_path)
 
@@ -114,7 +106,7 @@ defmodule Mix.Tasks.Taina.Backup.Verify do
       {:ok, [[count]]} = Exqlite.Sqlite3.fetch_all(conn, stmt)
 
       if count != 1 do
-        Mix.raise("restore do banco falhou: marcador do mural nao voltou (count=#{count})")
+        Mix.raise("database restore failed: mural marker did not return (count=#{count})")
       end
     after
       Exqlite.Sqlite3.close(conn)
@@ -133,19 +125,29 @@ defmodule Mix.Tasks.Taina.Backup.Verify do
   defp assert_storage_restored!(marker_path, token) do
     case File.read(marker_path) do
       {:ok, ^token} -> :ok
-      other -> Mix.raise("restore do storage falhou: marcador ausente/divergente (#{inspect(other)})")
+      other -> Mix.raise("storage restore failed: marker is missing or different (#{inspect(other)})")
+    end
+  end
+
+  defp assert_secret_restored!(path, uniq) do
+    case File.read(path) do
+      {:ok, "verify-secret-" <> suffix} ->
+        if suffix != Integer.to_string(uniq), do: Mix.raise("secret restore returned a different secret")
+
+      other ->
+        Mix.raise("secret restore failed: #{inspect(other)}")
     end
   end
 
   defp db_path do
     Application.fetch_env!(:taina, Taina.Repo)[:database] ||
-      Mix.raise("Taina.Repo sem :database; aponte DATABASE_PATH para um arquivo SQLite")
+      Mix.raise("Taina.Repo has no :database; point DATABASE_PATH at a SQLite file")
   end
 
   defp exec!(conn, sql) do
     case Exqlite.Sqlite3.execute(conn, sql) do
       :ok -> :ok
-      {:error, reason} -> Mix.raise("falha no SQLite: #{inspect(reason)} (#{sql})")
+      {:error, reason} -> Mix.raise("SQLite failure: #{inspect(reason)} (#{sql})")
     end
   end
 

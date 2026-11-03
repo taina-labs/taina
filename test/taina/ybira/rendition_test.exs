@@ -1,17 +1,18 @@
 defmodule Taina.Ybira.Workers.RenditionTest do
   use Taina.DataCase, async: true
 
-  import ExUnit.CaptureIO
   import Taina.Fixtures
 
+  alias Taina.ThumbnailOperator
   alias Taina.Ybira
-  alias Taina.Ybira.Workers.Rendition
-
-  @moduletag capture_log: true
 
   # Oban roda `:inline` em teste, então o job de rendition acontece durante o
   # `upload/2`, daí podermos reler o arquivo logo em seguida. Os metadados de
   # rendição moram na tabela do produto (`Taina.Jaci.Photo`).
+
+  alias Taina.Ybira.Workers.Rendition
+
+  @moduletag capture_log: true
 
   defp metadata!(scope, file) do
     {:ok, metadata} = Ybira.photo_metadata(scope, file)
@@ -156,7 +157,7 @@ defmodule Taina.Ybira.Workers.RenditionTest do
     end
   end
 
-  describe "mix taina.thumbnails.regenerate" do
+  describe "regenerate thumbnails" do
     setup do
       %{scope: scope_fixture()}
     end
@@ -169,14 +170,7 @@ defmodule Taina.Ybira.Workers.RenditionTest do
       File.rm!(sm)
       File.rm!(md)
 
-      # A tarefa escreve o resumo no terminal (`Mix.shell().info`); capturamos
-      # para o `mix test` não virar eco da tarefa. `rerun`: a tarefa pode já
-      # ter corrido neste VM (outro teste), e `run` não a invoca de novo.
-      # `--tekoa=<id>`: o public_id pode começar com "-" e o OptionParser
-      # o tomaria por opção.
-      capture_io(fn ->
-        Mix.Task.rerun("taina.thumbnails.regenerate", ["--tekoa=#{scope.tekoa.public_id}"])
-      end)
+      ThumbnailOperator.regenerate(scope.tekoa.public_id)
 
       assert File.exists?(sm)
       assert File.exists?(md)
@@ -195,11 +189,7 @@ defmodule Taina.Ybira.Workers.RenditionTest do
 
       File.write!(path, good)
 
-      # A tarefa reusa o caminho do worker: sucesso substitui os metadados e
-      # limpa o erro, do mesmo jeito que na fila.
-      capture_io(fn ->
-        Mix.Task.rerun("taina.thumbnails.regenerate", ["--tekoa=#{scope.tekoa.public_id}"])
-      end)
+      ThumbnailOperator.regenerate(scope.tekoa.public_id)
 
       metadata = metadata!(scope, photo)
       refute Map.has_key?(metadata, "rendition_error")

@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+
+bin_dir=$(CDPATH='' cd -P "$(dirname "$0")" && pwd)
+exec "$bin_dir/taina" eval 'Taina.CLI.main(System.argv())' "$@"

@@ -8,6 +8,7 @@ defmodule Taina.MixProject do
       elixir: "~> 1.20",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
+      releases: [taina: [config_providers: [{Taina.Config, {:system, "TAINA_CONFIG"}}]]],
       aliases: aliases(),
       deps: deps(),
       listeners: [Phoenix.CodeReloader],

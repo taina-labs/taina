@@ -177,6 +177,41 @@ jobs:
       - name: Run tests
         run: mix test
 
+  nixos-module:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Check operator shell scripts
+        run: |
+          sh -n nix/operator.sh rel/overlays/bin/cli rel/overlays/bin/server
+          nix shell nixpkgs#shellcheck -c shellcheck \
+            nix/operator.sh rel/overlays/bin/cli rel/overlays/bin/server
+
+      - name: Evaluate the module and build its wrapper
+        run: |
+          set -eu
+          expr='
+            let
+              flake = builtins.getFlake (toString ./.);
+              check = import ./nix/module-check.nix {
+                nixpkgs = flake.inputs.nixpkgs;
+                module = flake.nixosModules.taina;
+              };
+            in
+          '
+          nix eval --raw --impure --expr "$expr check.result"
+          wrapper=$(nix build --no-link --print-out-paths --impure --expr "$expr check.wrapper")
+          "$wrapper/bin/taina" --help >/dev/null
+
   # Verifica que um backup gerado pelo Taina.Nhaman.Backup realmente restaura
   # (RFC 002, Fase 4 — "restore testado automaticamente em CI"). Roda contra um
   # banco real e descartável (o SQLite de dev), fora do sandbox de teste.

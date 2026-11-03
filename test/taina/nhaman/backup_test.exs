@@ -1,5 +1,7 @@
 defmodule Taina.Nhaman.BackupTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
+
+  import Bitwise
 
   alias Taina.Nhaman.Backup
   alias Taina.Nhaman.Workers.Backup, as: BackupWorker
@@ -36,6 +38,55 @@ defmodule Taina.Nhaman.BackupTest do
       assert :ok = Backup.restore_storage(Path.join(extracted, "storage"), dest)
       assert File.read!(Path.join(dest, "tekoaA/files/2026/06/x.txt")) == "hello"
       assert File.read!(Path.join(dest, "root.txt")) == "top"
+    end
+
+    test "backup and restore round-trip the persistent secret" do
+      root = tmp_dir()
+      storage = Path.join(root, "storage")
+      File.mkdir_p!(storage)
+      File.write!(Path.join(storage, "file.txt"), "new")
+      dump = Path.join(root, "db.dump")
+      File.write!(dump, "new-db")
+      secret = Path.join(root, "secret_key_base")
+      File.write!(secret, "persistent-secret")
+      archive = Path.join(root, "backup.tar.gz")
+      db = Path.join(root, "taina.db")
+      restored_storage = Path.join(root, "restored-storage")
+      restored_secret = Path.join(root, "restored/secret_key_base")
+      File.write!(db, "old-db")
+      File.mkdir_p!(restored_storage)
+      File.write!(Path.join(restored_storage, "old.txt"), "old")
+
+      Application.put_env(:taina, :config, %{
+        data_dir: Path.dirname(restored_secret),
+        secret_key_base_file: restored_secret
+      })
+
+      on_exit(fn -> Application.delete_env(:taina, :config) end)
+
+      assert :ok = Backup.package_archive(archive, dump, storage, secret)
+      assert {:ok, :restored} = Backup.restore(archive, storage_root: restored_storage, database_path: db)
+      assert File.read!(db) == "new-db"
+      assert File.read!(Path.join(restored_storage, "file.txt")) == "new"
+      assert File.read!(restored_secret) == "persistent-secret"
+      assert (File.stat!(restored_secret).mode &&& 0o777) == 0o600
+    end
+
+    test "restore rejects a missing secret before changing existing data" do
+      root = tmp_dir()
+      dump = Path.join(root, "db.dump")
+      File.write!(dump, "new-db")
+      archive = Path.join(root, "missing-secret.tar.gz")
+      assert :ok = Backup.package_archive(archive, dump, Path.join(root, "missing-storage"))
+      db = Path.join(root, "taina.db")
+      File.write!(db, "old-db")
+      storage = Path.join(root, "storage")
+      File.mkdir_p!(storage)
+      File.write!(Path.join(storage, "old.txt"), "old")
+
+      assert {:error, :missing_secret} = Backup.restore(archive, storage_root: storage, database_path: db)
+      assert File.read!(db) == "old-db"
+      assert File.read!(Path.join(storage, "old.txt")) == "old"
     end
 
     test "restore_storage replaces prior contents" do
