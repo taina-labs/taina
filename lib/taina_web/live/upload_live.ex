@@ -25,6 +25,7 @@ defmodule TainaWeb.UploadLive do
     scope = socket.assigns.current_scope
     {folder, folder_note} = resolve_folder(scope, params["pasta"])
     max_blob_size = Ybira.max_blob_size()
+    max_concurrent_uploads = Taina.Config.max_concurrent_uploads()
 
     socket =
       socket
@@ -33,19 +34,20 @@ defmodule TainaWeb.UploadLive do
       |> assign(:return_to, InternalPath.return_to(params["return_to"], back_path(folder)))
       |> assign(:quota_error?, false)
       |> assign(:max_blob_size, max_blob_size)
+      |> assign(:max_concurrent_uploads, max_concurrent_uploads)
       |> assign(:done, [])
       |> assign(:failed, [])
       |> maybe_flash_folder_note(folder_note)
       |> allow_upload(:files,
         accept: :any,
-        max_entries: 10,
+        max_entries: max_concurrent_uploads,
         max_file_size: max_blob_size,
         auto_upload: true,
         progress: &handle_progress/3
       )
       |> allow_upload(:camera,
         accept: :any,
-        max_entries: 10,
+        max_entries: max_concurrent_uploads,
         max_file_size: max_blob_size,
         auto_upload: true,
         progress: &handle_progress/3
@@ -74,11 +76,11 @@ defmodule TainaWeb.UploadLive do
   # Consome cada arquivo assim que termina de subir, de qualquer um dos dois
   # envios (arquivos ou câmera); o resultado vai para a lista concluído (ou
   # para os erros, sem derrubar os demais envios).
-  defp handle_progress(_name, entry, socket) do
-    if entry.done?, do: finish_upload(entry, socket), else: {:noreply, socket}
+  defp handle_progress(name, entry, socket) do
+    if entry.done?, do: finish_upload(name, entry, socket), else: {:noreply, socket}
   end
 
-  defp finish_upload(entry, socket) do
+  defp finish_upload(name, entry, socket) do
     scope = socket.assigns.current_scope
 
     result =
@@ -88,16 +90,29 @@ defmodule TainaWeb.UploadLive do
 
     case result do
       {:ok, file} ->
-        {:noreply, update(socket, :done, &[file | &1])}
+        {:noreply,
+         socket
+         |> update(:done, &[file | &1])
+         |> upload_finished(name)}
 
       {:error, :storage_quota_exceeded} ->
         # Board "erro cota": a caixa explica o espaço e aponta a saída ("Ver
         # espaço"); sem repetir a falha em lista.
-        {:noreply, assign(socket, :quota_error?, true)}
+        {:noreply,
+         socket
+         |> assign(:quota_error?, true)
+         |> upload_finished(name)}
 
       {:error, reason} ->
-        {:noreply, update(socket, :failed, &[{entry.client_name, upload_error(reason)} | &1])}
+        {:noreply,
+         socket
+         |> update(:failed, &[{entry.client_name, upload_error(reason)} | &1])
+         |> upload_finished(name)}
     end
+  end
+
+  defp upload_finished(socket, name) do
+    push_event(socket, "upload-entry-finished", %{upload: Atom.to_string(name)})
   end
 
   defp upload_opts(entry, nil), do: [filename: entry.client_name]
@@ -112,6 +127,11 @@ defmodule TainaWeb.UploadLive do
 
   @impl true
   def handle_event("validate", _params, socket), do: {:noreply, socket}
+
+  def handle_event("upload-rejected", %{"name" => name, "reason" => "too_large"}, socket) do
+    reason = upload_config_error(:too_large, socket.assigns.max_blob_size)
+    {:noreply, update(socket, :failed, &[{name, reason} | &1])}
+  end
 
   # O shell inscreve o morador nos eventos do Ava; esta tela não reage a eles,
   # mas precisa ignorar o que não trata.
@@ -172,7 +192,14 @@ defmodule TainaWeb.UploadLive do
       back_label={return_label(@return_to, @folder)}
     >
       <div class="col gap-6 mx-auto w-full measure-md">
-        <form id="upload-form" phx-change="validate" phx-submit="validate">
+        <form
+          id="upload-form"
+          phx-change="validate"
+          phx-submit="validate"
+          phx-hook="UploadQueue"
+          data-upload-concurrency={@max_concurrent_uploads}
+          data-upload-max-size={@max_blob_size}
+        >
           <.dropzone
             id="dropzone"
             upload={@uploads.files}
@@ -235,7 +262,10 @@ defmodule TainaWeb.UploadLive do
     do: gettext("O arquivo passa de %{size}, o limite por arquivo.", size: format_bytes(max_blob_size))
 
   defp upload_config_error(:too_many_files, _max_blob_size),
-    do: gettext("São no máximo 10 arquivos por vez. Envie o resto em seguida.")
+    do:
+      gettext("São no máximo %{count} arquivos por vez. Envie o resto em seguida.",
+        count: Taina.Config.max_concurrent_uploads()
+      )
 
   defp upload_config_error(_err, _max_blob_size), do: gettext("O envio falhou. Toque na caixa acima para tentar de novo.")
 end

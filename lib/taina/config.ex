@@ -77,6 +77,22 @@ defmodule Taina.Config do
 
   def template, do: @template
 
+  @doc "O limite configurado por arquivo, em bytes."
+  @spec max_blob_size() :: pos_integer()
+  def max_blob_size do
+    :taina
+    |> Application.get_env(:upload, [])
+    |> Keyword.get(:max_blob_size, @default_max_blob_size)
+  end
+
+  @doc "A quantidade de arquivos que uma tela pode enviar em paralelo."
+  @spec max_concurrent_uploads() :: pos_integer()
+  def max_concurrent_uploads do
+    :taina
+    |> Application.get_env(:upload, [])
+    |> Keyword.get(:max_concurrent_uploads, @default_max_concurrent_uploads)
+  end
+
   def effective(path \\ path()) do
     with {:ok, text} <- File.read(path),
          {:ok, entries} <- parse(text),

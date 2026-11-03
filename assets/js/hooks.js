@@ -145,6 +145,100 @@ const DragClass = {
   },
 };
 
+// Mantém a fila de arquivos selecionados em lotes. O LiveView inicia todos os
+// entries que recebe no preflight; entregar somente um lote por vez limita a
+// concorrência sem alterar o transporte padrão ou manter bytes no servidor.
+const UploadQueue = {
+  mounted() {
+    this.limit = Math.max(1, Number(this.el.dataset.uploadConcurrency) || 1);
+    this.maxSize = Number(this.el.dataset.uploadMaxSize) || Infinity;
+    this.queue = [];
+    this.active = 0;
+    this.releasing = false;
+
+    this.handleEvent("upload-entry-finished", () => {
+      this.active = Math.max(this.active - 1, 0);
+      this.pump();
+    });
+
+    this.onInput = (event) => {
+      if (this.releasing) return;
+      const input = event.target;
+      if (!this.fileInput(input) || !input.files?.length) return;
+      this.capture(event, input, Array.from(input.files));
+    };
+
+    this.onChange = (event) => {
+      if (this.releasing) return;
+      const input = event.target;
+      if (!this.fileInput(input) || !input.files?.length) return;
+      this.capture(event, input, Array.from(input.files));
+    };
+
+    this.onDrop = (event) => {
+      const files = Array.from(event.dataTransfer?.files || []);
+      if (!files.length) return;
+
+      const target = event.target?.closest?.("[phx-drop-target]");
+      const input = target && document.getElementById(target.getAttribute("phx-drop-target"));
+      if (!this.fileInput(input)) return;
+      this.capture(event, input, files);
+    };
+
+    this.el.addEventListener("input", this.onInput, true);
+    this.el.addEventListener("change", this.onChange, true);
+    this.el.addEventListener("drop", this.onDrop, true);
+  },
+
+  destroyed() {
+    this.el.removeEventListener("input", this.onInput, true);
+    this.el.removeEventListener("change", this.onChange, true);
+    this.el.removeEventListener("drop", this.onDrop, true);
+  },
+
+  fileInput(input) {
+    return input instanceof HTMLInputElement && input.type === "file";
+  },
+
+  capture(event, input, files) {
+    event.preventDefault();
+    event.stopPropagation();
+    this.queue.push(...files.map((file) => ({ file, name: input.name })));
+    this.pump();
+  },
+
+  pump() {
+    if (this.active > 0 || this.queue.length === 0) return;
+
+    const batch = this.queue.splice(0, this.limit);
+    const accepted = [];
+
+    batch.forEach(({ file, name }) => {
+      if (file.size > this.maxSize) {
+        this.pushEvent("upload-rejected", { name: file.name, reason: "too_large" });
+      } else {
+        accepted.push({ file, name });
+      }
+    });
+
+    if (accepted.length === 0) {
+      queueMicrotask(() => this.pump());
+      return;
+    }
+
+    this.active = accepted.length;
+    const grouped = accepted.reduce((groups, item) => {
+      groups[item.name] ||= [];
+      groups[item.name].push(item.file);
+      return groups;
+    }, {});
+
+    this.releasing = true;
+    Object.entries(grouped).forEach(([name, files]) => this.upload(name, files));
+    this.releasing = false;
+  },
+};
+
 // Web Share API (mobile): compartilha o link do convite pelo app que a
 // comunidade já usa. Sem suporte (desktop), o LiveView esconde o botão? Não,
 // degradamos copiando o link.
@@ -327,6 +421,7 @@ export default {
   ViewerNav,
   FullSwap,
   DragClass,
+  UploadQueue,
   Share,
   FlashAutoDismiss,
   DnD,

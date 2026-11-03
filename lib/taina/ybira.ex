@@ -59,18 +59,12 @@ defmodule Taina.Ybira do
   require Logger
 
   @default_limit 50
-  @default_max_blob_size 2 * 1024 * 1024 * 1024
-
   @tipo_file "ypy.file.v0"
   @tipo_folder "ypy.folder.v0"
 
   @doc "O limite configurado por arquivo, em bytes."
   @spec max_blob_size() :: pos_integer()
-  def max_blob_size do
-    :taina
-    |> Application.get_env(:upload, [])
-    |> Keyword.get(:max_blob_size, @default_max_blob_size)
-  end
+  def max_blob_size, do: Taina.Config.max_blob_size()
 
   @doc """
   O upload: o kernel le o arquivo, confere cota e MIME, guarda os bytes no

@@ -34,6 +34,19 @@ defmodule TainaWeb.UploadLiveTest do
     assert file.nome == "ata.txt"
   end
 
+  test "a tela publica os limites da fila de upload", %{conn: conn, ava: ava} do
+    {:ok, lv, html} = conn |> log_in(ava) |> live(~p"/documentos/enviar")
+
+    assert html =~ ~s(phx-hook="UploadQueue")
+    assert html =~ ~s(data-upload-concurrency="10")
+    assert html =~ ~s(data-upload-max-size="2147483648")
+
+    html = render_hook(lv, "upload-rejected", %{"name" => "grande.bin", "reason" => "too_large"})
+
+    assert html =~ "Falharam"
+    assert html =~ "grande.bin"
+  end
+
   test "o voltar aponta a pasta de destino, pelo nome", %{conn: conn, scope: scope, ava: ava} do
     {:ok, folder} = Ybira.create_folder(scope, %{name: "Atas"})
 
