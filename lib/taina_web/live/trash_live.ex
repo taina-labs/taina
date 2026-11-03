@@ -242,26 +242,24 @@ defmodule TainaWeb.TrashLive do
 
     assigns.selection
     |> Enum.sort()
-    |> Enum.flat_map(fn {type, rkey} ->
-      case trash_item(assigns, type, rkey) do
-        %Folder{} = folder ->
-          if selected_folder_ancestor?(selected_folder_rkeys, folders_by_id, folder.parent_id) do
-            []
-          else
-            [%{type: type, id: rkey, item: folder}]
-          end
+    |> Enum.flat_map(&selected_trash_item(assigns, &1, selected_folder_rkeys, folders_by_id))
+  end
 
-        %File{} = file ->
-          if selected_folder_ancestor?(selected_folder_rkeys, folders_by_id, file.folder_id) do
-            []
-          else
-            [%{type: type, id: rkey, item: file}]
-          end
+  defp selected_trash_item(assigns, {type, rkey}, selected_folder_rkeys, folders_by_id) do
+    case trash_item(assigns, type, rkey) do
+      %Folder{} = folder ->
+        if selected_folder_ancestor?(selected_folder_rkeys, folders_by_id, folder.parent_id),
+          do: [],
+          else: [%{type: type, id: rkey, item: folder}]
 
-        nil ->
-          []
-      end
-    end)
+      %File{} = file ->
+        if selected_folder_ancestor?(selected_folder_rkeys, folders_by_id, file.folder_id),
+          do: [],
+          else: [%{type: type, id: rkey, item: file}]
+
+      nil ->
+        []
+    end
   end
 
   defp selected_folder_ancestor?(_selected_rkeys, _folders_by_id, nil), do: false
