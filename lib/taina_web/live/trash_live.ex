@@ -26,6 +26,7 @@ defmodule TainaWeb.TrashLive do
     {:ok,
      socket
      |> assign(:page_title, gettext("Documentos"))
+     |> assign(:selection, MapSet.new())
      |> assign(:purge_target, nil)
      |> load_trash()}
   end
@@ -56,6 +57,40 @@ defmodule TainaWeb.TrashLive do
   @impl true
   def handle_event("retry-load", _params, socket), do: {:noreply, load_trash(socket)}
 
+  def handle_event("toggle-selection", %{"id" => rkey, "type" => type}, socket) when type in ["file", "folder"] do
+    if trash_item(socket.assigns, type, rkey) do
+      selection = toggle_selection(socket.assigns.selection, {type, rkey})
+      {:noreply, assign(socket, :selection, selection)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  def handle_event("clear-selection", _params, socket) do
+    {:noreply, assign(socket, :selection, MapSet.new())}
+  end
+
+  def handle_event("restore-selected", _params, socket) do
+    {restored, failed} =
+      apply_trash_selection(socket.assigns.current_scope, selected_trash_items(socket.assigns), :restore)
+
+    {:noreply,
+     socket
+     |> assign(:selection, MapSet.new())
+     |> selection_flash(:restore, restored, failed)
+     |> load_trash()}
+  end
+
+  def handle_event("ask-purge-selected", _params, socket) do
+    items = selected_trash_items(socket.assigns)
+
+    if items == [] do
+      {:noreply, socket}
+    else
+      {:noreply, assign(socket, :purge_target, %{type: "selection", count: length(items), items: items})}
+    end
+  end
+
   def handle_event("ask-purge", %{"id" => rkey, "type" => type}, socket) when type in ["file", "folder"] do
     case trash_item(socket.assigns, type, rkey) do
       nil -> {:noreply, put_flash(socket, :error, gettext("Este item não está mais na lixeira."))}
@@ -65,6 +100,17 @@ defmodule TainaWeb.TrashLive do
 
   def handle_event("close-purge", _params, socket), do: {:noreply, assign(socket, :purge_target, nil)}
 
+  def handle_event("confirm-purge", _params, %{assigns: %{purge_target: %{type: "selection", items: items}}} = socket) do
+    {purged, failed} = apply_trash_selection(socket.assigns.current_scope, items, :purge)
+
+    {:noreply,
+     socket
+     |> assign(:purge_target, nil)
+     |> assign(:selection, MapSet.new())
+     |> selection_flash(:purge, purged, failed)
+     |> load_trash()}
+  end
+
   def handle_event("confirm-purge", _params, %{assigns: %{purge_target: %{type: type, id: rkey}}} = socket) do
     result = purge_item(socket.assigns.current_scope, type, rkey)
 
@@ -73,6 +119,7 @@ defmodule TainaWeb.TrashLive do
         {:noreply,
          socket
          |> assign(:purge_target, nil)
+         |> deselect_item(type, rkey)
          |> put_flash(:info, gettext("O item foi apagado definitivamente."))
          |> load_trash()}
 
@@ -92,6 +139,7 @@ defmodule TainaWeb.TrashLive do
         {:noreply,
          socket
          |> put_flash(:info, gettext("Pasta restaurada com o que tinha dentro."))
+         |> deselect_item("folder", rkey)
          |> load_trash()}
 
       {:error, _reason} ->
@@ -105,6 +153,7 @@ defmodule TainaWeb.TrashLive do
         {:noreply,
          socket
          |> put_flash(:info, gettext("Arquivo restaurado."))
+         |> deselect_item("file", rkey)
          |> load_trash()}
 
       {:error, _reason} ->
@@ -173,16 +222,118 @@ defmodule TainaWeb.TrashLive do
   defp trash_item(assigns, "file", rkey), do: Enum.find(assigns.items, &(&1.rkey == rkey))
   defp trash_item(assigns, "folder", rkey), do: Enum.find(assigns.folders, &(&1.rkey == rkey))
 
+  defp selected?(selection, type, rkey), do: MapSet.member?(selection, {type, rkey})
+
+  defp deselect_item(socket, type, rkey) do
+    assign(socket, :selection, MapSet.delete(socket.assigns.selection, {type, rkey}))
+  end
+
+  defp toggle_selection(selection, item) do
+    if MapSet.member?(selection, item), do: MapSet.delete(selection, item), else: MapSet.put(selection, item)
+  end
+
+  defp selected_trash_items(assigns) do
+    selected_folder_rkeys =
+      assigns.selection
+      |> Enum.filter(fn {type, _rkey} -> type == "folder" end)
+      |> MapSet.new(&elem(&1, 1))
+
+    folders_by_id = Map.new(assigns.folders, &{&1.id, &1})
+
+    assigns.selection
+    |> Enum.sort()
+    |> Enum.flat_map(fn {type, rkey} ->
+      case trash_item(assigns, type, rkey) do
+        %Folder{} = folder ->
+          if selected_folder_ancestor?(selected_folder_rkeys, folders_by_id, folder.parent_id) do
+            []
+          else
+            [%{type: type, id: rkey, item: folder}]
+          end
+
+        %File{} = file ->
+          if selected_folder_ancestor?(selected_folder_rkeys, folders_by_id, file.folder_id) do
+            []
+          else
+            [%{type: type, id: rkey, item: file}]
+          end
+
+        nil ->
+          []
+      end
+    end)
+  end
+
+  defp selected_folder_ancestor?(_selected_rkeys, _folders_by_id, nil), do: false
+
+  defp selected_folder_ancestor?(selected_rkeys, folders_by_id, folder_id) do
+    case Map.get(folders_by_id, folder_id) do
+      nil ->
+        false
+
+      folder ->
+        MapSet.member?(selected_rkeys, folder.rkey) or
+          selected_folder_ancestor?(selected_rkeys, folders_by_id, folder.parent_id)
+    end
+  end
+
+  defp apply_trash_selection(scope, items, action) do
+    Enum.reduce(items, {0, 0}, fn %{type: type, id: id}, {succeeded, failed} ->
+      if match?({:ok, _}, trash_operation(scope, type, id, action)) do
+        {succeeded + 1, failed}
+      else
+        {succeeded, failed + 1}
+      end
+    end)
+  end
+
+  defp trash_operation(scope, "file", rkey, :restore), do: Ybira.restore_file(scope, rkey)
+  defp trash_operation(scope, "folder", rkey, :restore), do: Ybira.restore_folder(scope, rkey)
+  defp trash_operation(scope, "file", rkey, :purge), do: Ybira.purge_trash_file(scope, rkey)
+  defp trash_operation(scope, "folder", rkey, :purge), do: Ybira.purge_trash_folder(scope, rkey)
+
+  defp selection_flash(socket, _action, 0, 0), do: socket
+
+  defp selection_flash(socket, action, succeeded, 0) do
+    message =
+      case action do
+        :restore ->
+          ngettext("1 item restaurado.", "%{count} itens restaurados.", succeeded, count: succeeded)
+
+        :purge ->
+          ngettext("1 item apagado definitivamente.", "%{count} itens apagados definitivamente.", succeeded,
+            count: succeeded
+          )
+      end
+
+    put_flash(socket, :info, message)
+  end
+
+  defp selection_flash(socket, _action, succeeded, failed) do
+    put_flash(
+      socket,
+      :error,
+      gettext("%{done} itens concluídos, %{failed} não puderam ser processados.", done: succeeded, failed: failed)
+    )
+  end
+
   defp purge_item(scope, "file", rkey), do: Ybira.purge_trash_file(scope, rkey)
   defp purge_item(scope, "folder", rkey), do: Ybira.purge_trash_folder(scope, rkey)
 
   defp purge_title(%{type: "file", name: name}), do: gettext("Apagar %{name} de vez?", name: name)
   defp purge_title(%{type: "folder", name: name}), do: gettext("Apagar a pasta %{name} de vez?", name: name)
+
+  defp purge_title(%{type: "selection", count: count}),
+    do: ngettext("Apagar 1 item de vez?", "Apagar %{count} itens de vez?", count, count: count)
+
   defp purge_title(_target), do: nil
 
   defp purge_body(%{type: "file"}), do: gettext("Este arquivo não poderá ser restaurado.")
 
   defp purge_body(%{type: "folder"}), do: gettext("A pasta e tudo o que está dentro dela não poderão ser restaurados.")
+
+  defp purge_body(%{type: "selection"}),
+    do: gettext("Os itens selecionados não poderão ser restaurados. Pastas apagam também o que está dentro delas.")
 
   defp purge_body(_target), do: nil
 
@@ -214,6 +365,15 @@ defmodule TainaWeb.TrashLive do
 
       <p class="type-body-sm text-muted mb-4">{retention_line()}</p>
 
+      <div :if={MapSet.size(@selection) > 0} id="trash-selection-toolbar" class="selection-toolbar row between mb-4">
+        <span class="selection-toolbar__count">{ngettext("1 item selecionado", "%{count} itens selecionados", MapSet.size(@selection))}</span>
+        <div class="row gap-2">
+          <.button kind="secondary" size="sm" phx-click="restore-selected">{gettext("Restaurar")}</.button>
+          <.button kind="danger" size="sm" phx-click="ask-purge-selected">{gettext("Apagar definitivamente")}</.button>
+          <.button kind="ghost" size="sm" phx-click="clear-selection">{gettext("Cancelar")}</.button>
+        </div>
+      </div>
+
       <ul :if={@folders != [] or @items != []} class="list">
         <.list_row
           :for={folder <- @folders}
@@ -224,7 +384,20 @@ defmodule TainaWeb.TrashLive do
           meta_class={warning?(folder) && "text-warning"}
         >
           <:leading>
-            <.service_square mark="lixeira" />
+            <div class="row gap-2">
+              <label class="selection-checkbox__target">
+                <input
+                  type="checkbox"
+                  class="selection-checkbox"
+                  checked={selected?(@selection, "folder", folder.rkey)}
+                  aria-label={gettext("Selecionar %{name}", name: folder.nome)}
+                  phx-click="toggle-selection"
+                  phx-value-type="folder"
+                  phx-value-id={folder.rkey}
+                />
+              </label>
+              <.service_square mark="lixeira" />
+            </div>
           </:leading>
           <:actions>
             <.actions_menu
@@ -256,7 +429,20 @@ defmodule TainaWeb.TrashLive do
           navigate={~p"/documentos/lixeira/#{file.rkey}"}
         >
           <:leading>
-            <.service_square mark="lixeira" />
+            <div class="row gap-2">
+              <label class="selection-checkbox__target">
+                <input
+                  type="checkbox"
+                  class="selection-checkbox"
+                  checked={selected?(@selection, "file", file.rkey)}
+                  aria-label={gettext("Selecionar %{name}", name: file.nome)}
+                  phx-click="toggle-selection"
+                  phx-value-type="file"
+                  phx-value-id={file.rkey}
+                />
+              </label>
+              <.service_square mark="lixeira" />
+            </div>
           </:leading>
           <:actions>
             <.actions_menu

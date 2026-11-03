@@ -370,6 +370,50 @@ defmodule TainaWeb.FilesLiveTest do
     end
   end
 
+  describe "seleção múltipla" do
+    test "move vários arquivos para a mesma pasta", %{conn: conn, scope: scope, ava: ava} do
+      {:ok, folder} = Ybira.create_folder(scope, %{name: "Destino"})
+      {:ok, first} = Ybira.upload(scope, tmp_upload_fixture("um", "um.txt"))
+      {:ok, second} = Ybira.upload(scope, tmp_upload_fixture("dois", "dois.txt"))
+      {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/casa")
+
+      lv |> element(~s(input[phx-value-kind="file"][phx-value-id="#{first.rkey}"])) |> render_click()
+      lv |> element(~s(input[phx-value-kind="file"][phx-value-id="#{second.rkey}"])) |> render_click()
+
+      assert has_element?(lv, "#files-selection-toolbar", "2 itens selecionados")
+
+      lv |> element("button[phx-click=open-move-selected]") |> render_click()
+
+      lv
+      |> element(~s(button[phx-click*="move-selected"][phx-click*="#{folder.rkey}"]))
+      |> render_click()
+
+      assert {:ok, %{files: moved}} = Ybira.list_folder_contents(scope, folder.rkey)
+      assert moved |> Enum.map(& &1.rkey) |> Enum.sort() == Enum.sort([first.rkey, second.rkey])
+      assert render(lv) =~ "2 itens movidos."
+    end
+
+    test "removes selected files and folders into the trash", %{conn: conn, scope: scope, ava: ava} do
+      {:ok, folder} = Ybira.create_folder(scope, %{name: "Arquivo antigo"})
+      {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("solto", "solto.txt"))
+      {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/casa")
+
+      lv |> element(~s(input[phx-value-kind="folder"][phx-value-id="#{folder.rkey}"])) |> render_click()
+      lv |> element(~s(input[phx-value-kind="file"][phx-value-id="#{file.rkey}"])) |> render_click()
+      lv |> element("button[phx-click=ask-delete-selected]") |> render_click()
+
+      assert has_element?(lv, "#confirm-remove .dialog__title", "Remover 2 itens?")
+
+      lv |> element("#confirm-remove button[phx-click=confirm-delete-selected]") |> render_click()
+
+      assert render(lv) =~ "2 itens enviados para a lixeira."
+      assert {:ok, %{items: [trashed_file]}} = Ybira.list_trash(scope)
+      assert trashed_file.rkey == file.rkey
+      assert {:ok, trashed_folders} = Ybira.list_trash_folders(scope)
+      assert Enum.any?(trashed_folders, &(&1.rkey == folder.rkey))
+    end
+  end
+
   # --- fluxos de domínio preservados ---
 
   describe "fluxos preservados" do

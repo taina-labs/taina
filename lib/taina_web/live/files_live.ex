@@ -31,7 +31,10 @@ defmodule TainaWeb.FilesLive do
 
   @impl true
   def mount(_params, _session, socket) do
-    {:ok, assign(socket, :page_title, gettext("Documentos"))}
+    {:ok,
+     socket
+     |> assign(:page_title, gettext("Documentos"))
+     |> assign(:selection, MapSet.new())}
   end
 
   @impl true
@@ -123,6 +126,7 @@ defmodule TainaWeb.FilesLive do
     |> assign(:folder, folder)
     |> assign(:folder_rkey, folder_rkey)
     |> assign(:zona, zona)
+    |> assign(:selection, MapSet.new())
     |> assign(:return_to, return_to)
     |> assign(:breadcrumb, breadcrumb)
     |> assign(:crumbs, crumbs(zona, breadcrumb))
@@ -163,6 +167,79 @@ defmodule TainaWeb.FilesLive do
     else
       {:noreply, socket}
     end
+  end
+
+  def handle_event("toggle-selection", %{"kind" => kind, "id" => id}, socket) when kind in ["file", "folder"] do
+    case owned_resource(socket.assigns.current_scope, kind, id) do
+      {:ok, _item} ->
+        selection = toggle_selection(socket.assigns.selection, {kind, id})
+        {:noreply, assign(socket, :selection, selection)}
+
+      {:error, _reason} ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event("clear-selection", _params, socket) do
+    {:noreply, assign(socket, :selection, MapSet.new())}
+  end
+
+  def handle_event("ask-delete-selected", _params, socket) do
+    count = MapSet.size(socket.assigns.selection)
+
+    if count == 0 do
+      {:noreply, socket}
+    else
+      {:noreply, assign(socket, :confirm, %{kind: "selection-delete", count: count})}
+    end
+  end
+
+  def handle_event("open-move-selected", _params, socket) do
+    case selected_items(socket.assigns.current_scope, socket.assigns.selection) do
+      [] ->
+        {:noreply, socket}
+
+      items ->
+        case Ybira.list_folders(socket.assigns.current_scope) do
+          {:ok, folders} ->
+            owned_folders = Enum.filter(folders, &own?(socket.assigns.current_scope, &1))
+
+            {:noreply,
+             socket
+             |> assign(:modal, "move")
+             |> assign(:move_target, %{kind: "selection", id: nil, name: selection_name(length(items))})
+             |> assign(:all_folders, owned_folders)}
+
+          {:error, _reason} ->
+            {:noreply, put_flash(socket, :error, gettext("Não foi possível abrir as pastas."))}
+        end
+    end
+  end
+
+  def handle_event("move-selected", %{"target" => target}, socket) do
+    target = normalize_target(target)
+    {moved, failed} = move_selected_items(socket.assigns.current_scope, socket.assigns.selection, target)
+
+    socket =
+      socket
+      |> assign(:modal, nil)
+      |> assign(:move_target, nil)
+      |> assign(:selection, MapSet.new())
+      |> selection_flash(:move, moved, failed)
+
+    {:noreply, refresh(socket)}
+  end
+
+  def handle_event("confirm-delete-selected", _params, socket) do
+    {deleted, failed} = delete_selected_items(socket.assigns.current_scope, socket.assigns.selection)
+
+    socket =
+      socket
+      |> assign(:confirm, nil)
+      |> assign(:selection, MapSet.new())
+      |> selection_flash(:delete, deleted, failed)
+
+    {:noreply, refresh(socket)}
   end
 
   def handle_event("open-modal", %{"modal" => modal}, socket) do
@@ -439,6 +516,101 @@ defmodule TainaWeb.FilesLive do
 
   defp own?(scope, item), do: scope.ava.id == item.dono_id
 
+  defp owned_resource(scope, "file", rkey) do
+    case Ybira.get_file(scope, rkey) do
+      {:ok, file} -> if own?(scope, file), do: {:ok, file}, else: {:error, :not_owner}
+      {:error, _reason} = error -> error
+    end
+  end
+
+  defp owned_resource(scope, "folder", rkey) do
+    case Ybira.get_folder(scope, rkey) do
+      {:ok, folder} -> if own?(scope, folder), do: {:ok, folder}, else: {:error, :not_owner}
+      {:error, _reason} = error -> error
+    end
+  end
+
+  defp selected?(selection, kind, id), do: MapSet.member?(selection, {kind, id})
+
+  # Selection is server state; the key is only meaningful after `owned_resource`
+  # has checked the current scope.
+  defp toggle_selection(selection, item) do
+    if MapSet.member?(selection, item), do: MapSet.delete(selection, item), else: MapSet.put(selection, item)
+  end
+
+  defp selected_items(scope, selection) do
+    selection
+    |> Enum.sort()
+    |> Enum.flat_map(fn {kind, id} ->
+      case owned_resource(scope, kind, id) do
+        {:ok, item} -> [%{kind: kind, id: id, item: item}]
+        {:error, _reason} -> []
+      end
+    end)
+  end
+
+  defp selection_name(1), do: gettext("1 item selecionado")
+  defp selection_name(count), do: gettext("%{count} itens selecionados", count: count)
+
+  defp move_selected_items(scope, selection, target) do
+    apply_selected_items(selection, fn
+      "file", id -> Ybira.move_file(scope, id, target)
+      "folder", id -> Ybira.move_folder(scope, id, target)
+    end)
+  end
+
+  defp delete_selected_items(scope, selection) do
+    apply_selected_items(selection, fn
+      "file", id -> Ybira.delete_file(scope, id)
+      "folder", id -> Ybira.delete_folder(scope, id)
+    end)
+  end
+
+  defp apply_selected_items(selection, operation) do
+    selection
+    |> Enum.sort()
+    |> Enum.reduce({0, 0}, fn {kind, id}, {succeeded, failed} ->
+      case operation.(kind, id) do
+        {:ok, _item} -> {succeeded + 1, failed}
+        {:error, _reason} -> {succeeded, failed + 1}
+      end
+    end)
+  end
+
+  defp selection_flash(socket, _action, 0, 0), do: socket
+
+  defp selection_flash(socket, action, succeeded, 0) do
+    message =
+      case action do
+        :move ->
+          ngettext("1 item movido.", "%{count} itens movidos.", succeeded, count: succeeded)
+
+        :delete ->
+          ngettext("1 item enviado para a lixeira.", "%{count} itens enviados para a lixeira.", succeeded,
+            count: succeeded
+          )
+      end
+
+    put_flash(socket, :info, message)
+  end
+
+  defp selection_flash(socket, action, succeeded, failed) do
+    success =
+      case action do
+        :move ->
+          ngettext("1 item movido", "%{count} itens movidos", succeeded, count: succeeded)
+
+        :delete ->
+          ngettext("1 item enviado para a lixeira", "%{count} itens enviados para a lixeira", succeeded, count: succeeded)
+      end
+
+    put_flash(
+      socket,
+      :error,
+      gettext("%{success}; %{count} não puderam ser concluídos.", success: success, count: failed)
+    )
+  end
+
   # Só pasta SUA é alvo de soltar: o servidor recusa mover para pasta
   # alheia, então a UI não destaca o que não vai funcionar. nil faz o
   # atributo nem chegar ao HTML.
@@ -477,6 +649,11 @@ defmodule TainaWeb.FilesLive do
 
   defp normalize_target(target) when target in [nil, ""], do: nil
   defp normalize_target(target), do: target
+
+  defp move_command(%{kind: "selection"}, target), do: JS.push("move-selected", value: %{target: target || ""})
+
+  defp move_command(%{kind: kind, id: id}, target),
+    do: JS.push("move-item", value: %{kind: kind, id: id, target: target || ""})
 
   defp upload_path(folder_id, return_to) do
     params = [return_to: return_to] ++ if(folder_id, do: [pasta: folder_id], else: [])
@@ -539,11 +716,18 @@ defmodule TainaWeb.FilesLive do
   # a lixeira e some de vez depois de 30 dias; a pasta vai com o que tem
   # dentro e volta como unidade.
   defp confirm_title(%{kind: "publish-folder"}), do: gettext("Publicar pasta e conteúdo na praça?")
+
+  defp confirm_title(%{kind: "selection-delete", count: count}),
+    do: ngettext("Remover 1 item?", "Remover %{count} itens?", count, count: count)
+
   defp confirm_title(%{name: name}), do: gettext("Remover %{name}?", name: name)
   defp confirm_title(_confirm), do: nil
 
   defp confirm_body(%{kind: "publish-folder"}),
     do: gettext("Os arquivos e as pastas dentro dela também ficarão visíveis para toda a comunidade.")
+
+  defp confirm_body(%{kind: "selection-delete"}),
+    do: gettext("Os itens vão para a lixeira. As pastas levam o que está dentro delas.")
 
   defp confirm_body(%{kind: "file"}), do: gettext("O arquivo vai para a lixeira e some de vez depois de 30 dias.")
 
@@ -556,6 +740,7 @@ defmodule TainaWeb.FilesLive do
   defp confirm_kind(_confirm), do: "destructive"
 
   defp confirm_event(%{kind: "publish-folder"}), do: "confirm-zone"
+  defp confirm_event(%{kind: "selection-delete"}), do: "confirm-delete-selected"
   defp confirm_event(_confirm), do: "confirm-delete"
 
   defp confirm_label(%{kind: "publish-folder"}), do: gettext("Publicar tudo")
@@ -619,6 +804,15 @@ defmodule TainaWeb.FilesLive do
         <p class="type-caption text-muted">{folder_meta(@file_count, @folder.updated_at)}</p>
       </div>
 
+      <div :if={MapSet.size(@selection) > 0} id="files-selection-toolbar" class="selection-toolbar row between mb-4">
+        <span class="selection-toolbar__count">{selection_name(MapSet.size(@selection))}</span>
+        <div class="row gap-2">
+          <.button kind="secondary" size="sm" phx-click="open-move-selected">{gettext("Mover")}</.button>
+          <.button kind="danger" size="sm" phx-click="ask-delete-selected">{gettext("Remover")}</.button>
+          <.button kind="ghost" size="sm" phx-click="clear-selection">{gettext("Cancelar")}</.button>
+        </div>
+      </div>
+
       <div id="ybira-dnd" phx-hook="DnD">
         <ul :if={@folders != []} class="list mb-3">
           <.list_row
@@ -634,7 +828,20 @@ defmodule TainaWeb.FilesLive do
             data-drop-folder={drop_folder(@current_scope, folder)}
           >
             <:leading>
-              <.service_square mark="ybira" />
+              <div class="row gap-2">
+                <label :if={own?(@current_scope, folder)} class="selection-checkbox__target">
+                  <input
+                    type="checkbox"
+                    class="selection-checkbox"
+                    checked={selected?(@selection, "folder", folder.rkey)}
+                    aria-label={gettext("Selecionar %{name}", name: folder.nome)}
+                    phx-click="toggle-selection"
+                    phx-value-kind="folder"
+                    phx-value-id={folder.rkey}
+                  />
+                </label>
+                <.service_square mark="ybira" />
+              </div>
             </:leading>
             <:actions>
               <.row_menu
@@ -662,7 +869,20 @@ defmodule TainaWeb.FilesLive do
             data-drag-kind="file"
           >
             <:leading>
-              <.service_square mark={file_mark(file.mime)} />
+              <div class="row gap-2">
+                <label :if={own?(@current_scope, file)} class="selection-checkbox__target">
+                  <input
+                    type="checkbox"
+                    class="selection-checkbox"
+                    checked={selected?(@selection, "file", file.rkey)}
+                    aria-label={gettext("Selecionar %{name}", name: file.nome)}
+                    phx-click="toggle-selection"
+                    phx-value-kind="file"
+                    phx-value-id={file.rkey}
+                  />
+                </label>
+                <.service_square mark={file_mark(file.mime)} />
+              </div>
             </:leading>
             <:actions>
               <.row_menu
@@ -743,7 +963,7 @@ defmodule TainaWeb.FilesLive do
             <button
               type="button"
               class="list-row"
-              phx-click={JS.push("move-item", value: %{kind: @move_target.kind, id: @move_target.id, target: ""})}
+              phx-click={move_command(@move_target, nil)}
             >
               <.service_square mark="casa" />
               <span class="list-row__body type-label">{gettext("Início (raiz)")}</span>
@@ -753,9 +973,7 @@ defmodule TainaWeb.FilesLive do
             <button
               type="button"
               class="list-row"
-              phx-click={
-                JS.push("move-item", value: %{kind: @move_target.kind, id: @move_target.id, target: folder.rkey})
-              }
+              phx-click={move_command(@move_target, folder.rkey)}
             >
               <.service_square mark="ybira" />
               <span class="list-row__body type-label">{folder.nome}</span>

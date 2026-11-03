@@ -102,6 +102,71 @@ defmodule TainaWeb.TrashLiveTest do
     assert {:error, :not_found} = Ybira.get_file(scope, file.rkey)
   end
 
+  test "restores multiple selected files", %{conn: conn, scope: scope, ava: ava, trashed_file: first} do
+    {:ok, second} = Ybira.upload(scope, tmp_upload_fixture("segundo", "segundo.txt"))
+    {:ok, _} = Ybira.delete_file(scope, second.rkey)
+    {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/lixeira")
+
+    lv |> element(~s(input[phx-value-type="file"][phx-value-id="#{first.rkey}"])) |> render_click()
+    lv |> element(~s(input[phx-value-type="file"][phx-value-id="#{second.rkey}"])) |> render_click()
+
+    assert has_element?(lv, "#trash-selection-toolbar", "2 itens selecionados")
+
+    lv |> element("button[phx-click=restore-selected]") |> render_click()
+
+    assert render(lv) =~ "2 itens restaurados."
+    assert {:ok, _} = Ybira.get_file(scope, first.rkey)
+    assert {:ok, _} = Ybira.get_file(scope, second.rkey)
+  end
+
+  test "permanently deletes multiple selected files after confirmation", %{
+    conn: conn,
+    scope: scope,
+    ava: ava,
+    trashed_file: first
+  } do
+    {:ok, second} = Ybira.upload(scope, tmp_upload_fixture("segundo", "segundo.txt"))
+    {:ok, _} = Ybira.delete_file(scope, second.rkey)
+    {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/lixeira")
+
+    lv |> element(~s(input[phx-value-type="file"][phx-value-id="#{first.rkey}"])) |> render_click()
+    lv |> element(~s(input[phx-value-type="file"][phx-value-id="#{second.rkey}"])) |> render_click()
+    lv |> element("button[phx-click=ask-purge-selected]") |> render_click()
+
+    assert has_element?(lv, "#confirm-purge .dialog__title", "Apagar 2 itens de vez?")
+
+    lv |> element("#confirm-purge button[phx-click=\"confirm-purge\"]") |> render_click()
+
+    assert render(lv) =~ "A lixeira está vazia"
+    assert {:error, :not_found} = Ybira.get_trashed_file(scope, first.rkey)
+    assert {:error, :not_found} = Ybira.get_trashed_file(scope, second.rkey)
+  end
+
+  test "selecting a deleted folder and its contents restores the subtree once", %{
+    conn: conn,
+    scope: scope,
+    ava: ava
+  } do
+    {:ok, root} = Ybira.create_folder(scope, %{name: "Raiz"})
+    {:ok, child} = Ybira.create_folder(scope, %{name: "Filha", parent_rkey: root.rkey})
+    {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("dentro", "dentro.txt"), folder_rkey: child.rkey)
+    {:ok, :deleted} = Ybira.delete_folder(scope, root.rkey)
+    {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/lixeira")
+
+    lv |> element(~s(input[phx-value-type="folder"][phx-value-id="#{root.rkey}"])) |> render_click()
+    lv |> element(~s(input[phx-value-type="folder"][phx-value-id="#{child.rkey}"])) |> render_click()
+    lv |> element(~s(input[phx-value-type="file"][phx-value-id="#{file.rkey}"])) |> render_click()
+
+    lv |> element("button[phx-click=restore-selected]") |> render_click()
+
+    assert render(lv) =~ "1 item restaurado."
+    assert {:ok, restored_root} = Ybira.get_folder(scope, root.rkey)
+    assert {:ok, restored_child} = Ybira.get_folder(scope, child.rkey)
+    assert {:ok, restored_file} = Ybira.get_file(scope, file.rkey)
+    assert restored_child.parent_id == restored_root.id
+    assert restored_file.folder_id == restored_child.id
+  end
+
   test "restaura uma pasta junto com o que tem dentro", %{conn: conn, scope: scope, ava: ava} do
     {:ok, folder} = Ybira.create_folder(scope, %{name: "ferias"})
     {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("x", "foto.txt"), folder_rkey: folder.rkey)

@@ -1,0 +1,33 @@
+/* Multi-select controls for file and trash lists. */
+.selection-toolbar {
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface-raised);
+  border: var(--border-hairline) solid var(--border-default);
+  border-radius: var(--radius-lg);
+}
+
+.selection-toolbar__count {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.selection-checkbox__target {
+  display: inline-flex;
+  flex: 0 0 var(--size-touch);
+  align-items: center;
+  justify-content: center;
+  min-width: var(--size-touch);
+  min-height: var(--size-touch);
+  cursor: pointer;
+}
+
+.selection-checkbox {
+  width: var(--space-5);
+  height: var(--space-5);
+  margin: 0;
+  accent-color: var(--brand-primary);
+  cursor: pointer;
+}
