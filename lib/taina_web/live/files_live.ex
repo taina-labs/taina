@@ -804,7 +804,7 @@ defmodule TainaWeb.FilesLive do
       <:item :if={:abrir in @actions} icon={@item_kind} navigate={item_path(@item_kind, @id)}>
         {gettext("Abrir")}
       </:item>
-      <:item :if={:baixar in @actions} icon="download" navigate={~p"/files/#{@id}"}>
+      <:item :if={:baixar in @actions} icon="download" href={~p"/files/#{@id}"} download>
         {gettext("Baixar")}
       </:item>
       <:item

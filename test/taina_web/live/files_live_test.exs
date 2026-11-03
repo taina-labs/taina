@@ -261,6 +261,8 @@ defmodule TainaWeb.FilesLiveTest do
         assert has_element?(lv, ~s(#item-file-#{file.rkey}-panel), label)
       end
 
+      assert has_element?(lv, ~s(#item-file-#{file.rkey}-panel a[href="/files/#{file.rkey}"][download]), "Baixar")
+
       assert has_element?(lv, ~s(#item-file-#{file.rkey}), "Ações do arquivo")
     end
 

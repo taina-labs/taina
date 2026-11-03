@@ -119,7 +119,7 @@
   .actions-menu__panel {
     position: absolute;
     top: calc(100% + var(--space-1));
-    right: 0;
+    inset-inline: auto 0;
     bottom: auto;
     min-width: var(--size-menu-min);
     max-width: calc(100vw - var(--space-8));
