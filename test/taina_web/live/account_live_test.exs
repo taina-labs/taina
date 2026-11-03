@@ -145,6 +145,7 @@ defmodule TainaWeb.AccountLiveTest do
     lv |> element(~s([phx-click="open-devices"])) |> render_click()
 
     assert has_element?(lv, "#devices-sheet .sheet__panel", "Celular de João")
+    assert has_element?(lv, "#devices-sheet .badge--active", "Atual")
 
     html = lv |> element(~s(button[phx-click="revoke-device"])) |> render_click()
 
@@ -157,6 +158,6 @@ defmodule TainaWeb.AccountLiveTest do
 
     lv |> element(~s([phx-click="open-devices"])) |> render_click()
 
-    assert has_element?(lv, "#devices-sheet", "Nenhum aparelho com acesso agora.")
+    assert has_element?(lv, "#devices-sheet", "Nenhum outro aparelho com acesso agora.")
   end
 end

@@ -131,13 +131,18 @@ defmodule TainaWeb.API.Serializer do
 
   @doc "O dispositivo no fio: sem o hash, jamais."
   @spec device(DeviceToken.t()) :: map()
-  def device(%DeviceToken{} = device) do
+  def device(%DeviceToken{} = device), do: device(device, nil)
+
+  @doc "O dispositivo no fio, com a marca da chamada atual quando conhecida."
+  @spec device(DeviceToken.t(), nil | String.t()) :: map()
+  def device(%DeviceToken{} = device, current_public_id) do
     %{
       "public_id" => device.public_id,
       "name" => device.name,
       "last_used_at" => Wire.at(device.last_used_at),
       "revoked_at" => Wire.at(device.revoked_at),
-      "created_at" => Wire.at(device.inserted_at)
+      "created_at" => Wire.at(device.inserted_at),
+      "current" => device.public_id == current_public_id
     }
   end
 
@@ -146,7 +151,7 @@ defmodule TainaWeb.API.Serializer do
   def session(token, %DeviceToken{} = device, scope) do
     %{
       "token" => token,
-      "device" => device(device),
+      "device" => device(device, device.public_id),
       "me" => Wire.Ava.json(scope.ava),
       "tekoa" => tekoa(scope.tekoa)
     }
@@ -225,7 +230,7 @@ defmodule TainaWeb.API.Serializer do
   defp tekoa_json(%Tekoa{} = tekoa), do: tekoa(tekoa)
 
   defp device_json(nil), do: nil
-  defp device_json(%DeviceToken{} = device), do: device(device)
+  defp device_json(%DeviceToken{} = device), do: device(device, device.public_id)
 
   defp by_kind_json(%{photos: photos, videos: videos, documents: documents, others: others}) do
     %{"photos" => photos, "videos" => videos, "documents" => documents, "others" => others}

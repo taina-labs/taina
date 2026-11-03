@@ -1609,6 +1609,9 @@ components:
         created_at:
           type: string
           format: date-time
+        current:
+          type: boolean
+          description: True when this device made the current API request.
 
     File:
       type: object

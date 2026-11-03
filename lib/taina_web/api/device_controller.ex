@@ -10,8 +10,18 @@ defmodule TainaWeb.API.DeviceController do
 
   def index(conn, _params) do
     case Maraca.list_devices(conn.assigns[:current_scope]) do
-      {:ok, devices} -> json(conn, Wire.page(Enum.map(devices, &Serializer.device/1), nil))
-      {:error, reason} -> Error.reply(conn, reason)
+      {:ok, devices} ->
+        current_public_id =
+          case conn.assigns[:api_device] do
+            %{public_id: public_id} -> public_id
+            _ -> nil
+          end
+
+        items = Enum.map(devices, &Serializer.device(&1, current_public_id))
+        json(conn, Wire.page(items, nil))
+
+      {:error, reason} ->
+        Error.reply(conn, reason)
     end
   end
 

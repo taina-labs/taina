@@ -303,9 +303,18 @@ defmodule TainaWeb.AccountLive do
             {gettext("Aparelhos com acesso à sua conta. Revogar não apaga nada da caixa: o aparelho só precisa entrar de novo.")}
           </p>
 
-          <ul class="list">
-            <.list_row
-              :for={device <- @devices}
+           <ul class="list">
+           <.list_row
+             kind="person"
+             title={gettext("Este navegador")}
+             meta={gettext("Sessão atual")}
+           >
+             <:leading><.service_square mark="dispositivos" /></:leading>
+             <:actions><.badge kind="active">{gettext("Atual")}</.badge></:actions>
+           </.list_row>
+
+           <.list_row
+             :for={device <- @devices}
               kind="person"
               title={device.name}
               meta={device_meta(device)}
@@ -318,9 +327,9 @@ defmodule TainaWeb.AccountLive do
             </.list_row>
           </ul>
 
-          <p :if={@devices == []} class="type-body-sm text-muted">
-            {gettext("Nenhum aparelho com acesso agora.")}
-          </p>
+           <p :if={@devices == []} class="type-body-sm text-muted">
+             {gettext("Nenhum outro aparelho com acesso agora.")}
+           </p>
         </div>
       </.sheet>
     </Layouts.page>

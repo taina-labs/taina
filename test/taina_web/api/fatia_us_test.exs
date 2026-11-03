@@ -3,6 +3,7 @@ defmodule TainaWeb.API.FatiaUsTest do
 
   import Taina.Fixtures
 
+  alias Taina.Maraca
   alias Taina.Scope
   alias Taina.Ybira
 
@@ -95,6 +96,22 @@ defmodule TainaWeb.API.FatiaUsTest do
       assert forbidden["error"]["code"] == "unauthorized"
 
       assert ana_conn |> delete(~p"/api/v1/devices/#{device["public_id"]}") |> response(204)
+    end
+
+    test "marca o dispositivo que fez a chamada", %{conn: conn} do
+      tekoa = tekoa_fixture()
+      ana = active_ava_fixture(tekoa)
+      scope = Scope.new(ana, tekoa)
+      {:ok, %{token: token, device: current}} = Maraca.create_device_token(scope, "este aparelho")
+
+      body =
+        conn
+        |> Plug.Conn.put_req_header("authorization", "Bearer " <> token)
+        |> get(~p"/api/v1/devices")
+        |> json_response(200)
+
+      assert [%{"public_id" => id, "current" => true}] = body["items"]
+      assert id == current.public_id
     end
   end
 
