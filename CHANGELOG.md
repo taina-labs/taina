@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.1](https://github.com/taina-labs/taina/compare/v0.7.0...v0.7.1) (2026-11-03)
+
+
+### Bug Fixes
+
+* **files:** hide root breadcrumb ([58403e3](https://github.com/taina-labs/taina/commit/58403e3f53e6bafb4c35fa87b38712bc2c9fb900))
+* **trash:** use actions menu in preview ([504ffc0](https://github.com/taina-labs/taina/commit/504ffc0556f343b302a93e0251e86ebc3e4ad0bc))
+
 ## [0.7.0](https://github.com/taina-labs/taina/compare/v0.6.1...v0.7.0) (2026-11-03)
 
 
