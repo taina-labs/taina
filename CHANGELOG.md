@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.8.0](https://github.com/taina-labs/taina/compare/v0.7.1...v0.8.0) (2026-11-03)
+
+
+### Features
+
+* **files:** add multi-select actions ([d5e73fb](https://github.com/taina-labs/taina/commit/d5e73fbeb86b50670af59e1a8afaf7b282c6d088))
+* **files:** show move destinations as a tree ([4b2fcdf](https://github.com/taina-labs/taina/commit/4b2fcdfa6d297a765d93f8e403ef64e21056bcf2))
+* **files:** show move destinations as a tree ([90341de](https://github.com/taina-labs/taina/commit/90341deb7612b974b82fcf3dccf0307e12f83ccb))
+* **trash:** add explicit permanent deletion ([5e695f4](https://github.com/taina-labs/taina/commit/5e695f4df59340a641a3937bd6f7ed373d116311))
+
+
+### Code Refactoring
+
+* **trash:** flatten selection filtering ([c995d4e](https://github.com/taina-labs/taina/commit/c995d4e244b4add7cfdd78cb7c9a14493920aa9e))
+
 ## [0.7.1](https://github.com/taina-labs/taina/compare/v0.7.0...v0.7.1) (2026-11-03)
 
 
