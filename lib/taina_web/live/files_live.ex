@@ -258,15 +258,7 @@ defmodule TainaWeb.FilesLive do
       {:ok, folders} ->
         owned_folders = Enum.filter(folders, &own?(socket.assigns.current_scope, &1))
 
-        excluded_ids =
-          if kind == "folder" do
-            case Enum.find(owned_folders, &(&1.rkey == id)) do
-              nil -> MapSet.new()
-              folder -> folder_exclusions(owned_folders, [folder.id])
-            end
-          else
-            MapSet.new()
-          end
+        excluded_ids = excluded_move_folder_ids(kind, id, owned_folders)
 
         {:noreply,
          socket
@@ -576,6 +568,15 @@ defmodule TainaWeb.FilesLive do
       |> Enum.reduce(excluded, &MapSet.put(&2, &1))
     end)
   end
+
+  defp excluded_move_folder_ids("folder", rkey, folders) do
+    case Enum.find(folders, &(&1.rkey == rkey)) do
+      nil -> MapSet.new()
+      folder -> folder_exclusions(folders, [folder.id])
+    end
+  end
+
+  defp excluded_move_folder_ids(_kind, _rkey, _folders), do: MapSet.new()
 
   defp folder_subtree_ids(folder_id, children) do
     descendants =
