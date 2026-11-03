@@ -155,6 +155,7 @@ const UploadQueue = {
     this.queue = [];
     this.active = 0;
     this.releasing = false;
+    this.skipChange = false;
 
     this.handleEvent("upload-entry-finished", () => {
       this.active = Math.max(this.active - 1, 0);
@@ -165,11 +166,16 @@ const UploadQueue = {
       if (this.releasing) return;
       const input = event.target;
       if (!this.fileInput(input) || !input.files?.length) return;
+      this.skipChange = true;
       this.capture(event, input, Array.from(input.files));
     };
 
     this.onChange = (event) => {
       if (this.releasing) return;
+      if (this.skipChange) {
+        this.skipChange = false;
+        return;
+      }
       const input = event.target;
       if (!this.fileInput(input) || !input.files?.length) return;
       this.capture(event, input, Array.from(input.files));
