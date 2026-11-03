@@ -239,6 +239,25 @@ const UploadQueue = {
   },
 };
 
+const VideoFallback = {
+  mounted() {
+    this.reported = false;
+    this.report = () => {
+      if (this.reported) return;
+      this.reported = true;
+      this.pushEvent("video-preview-unavailable", {});
+    };
+
+    this.el.addEventListener("error", this.report);
+    const mime = this.el.dataset.videoMime;
+    if (mime && this.el.canPlayType(mime) === "") queueMicrotask(this.report);
+  },
+
+  destroyed() {
+    this.el.removeEventListener("error", this.report);
+  },
+};
+
 // Web Share API (mobile): compartilha o link do convite pelo app que a
 // comunidade já usa. Sem suporte (desktop), o LiveView esconde o botão? Não,
 // degradamos copiando o link.
@@ -422,6 +441,7 @@ export default {
   FullSwap,
   DragClass,
   UploadQueue,
+  VideoFallback,
   Share,
   FlashAutoDismiss,
   DnD,

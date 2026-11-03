@@ -38,6 +38,7 @@ defmodule TainaWeb.FilePreviewLive do
          |> assign(:names, load_names(scope))
          |> assign(:photo_metadata, load_photo_metadata(scope, file))
          |> assign(:text_preview, load_text_preview(file))
+         |> assign(:video_preview_unavailable, false)
          |> assign(:modal, nil)
          |> assign(:all_folders, [])
          |> assign(:show_confirm, false)}
@@ -192,6 +193,10 @@ defmodule TainaWeb.FilePreviewLive do
 
   def handle_event("close-modal", _params, socket), do: {:noreply, assign(socket, :modal, nil)}
 
+  def handle_event("video-preview-unavailable", _params, socket) do
+    {:noreply, assign(socket, :video_preview_unavailable, true)}
+  end
+
   def handle_event("confirm-delete", _params, socket) do
     case Ybira.delete_file(socket.assigns.current_scope, socket.assigns.file.rkey) do
       {:ok, _file} ->
@@ -303,29 +308,6 @@ defmodule TainaWeb.FilePreviewLive do
   defp badge_kind(:praca), do: "praca"
   defp badge_kind(:casa), do: "casa"
 
-  defp media_kind("image/" <> _rest), do: :image
-  defp media_kind("video/" <> _rest), do: :video
-  defp media_kind("audio/" <> _rest), do: :audio
-  defp media_kind("application/pdf"), do: :pdf
-  defp media_kind("text/" <> _rest), do: :text
-  defp media_kind(_mime), do: :other
-
-  # Dimensões intrínsecas para o <img> (metadata da Rendition): o layout não
-  # pula enquanto a imagem carrega. Vídeo não tem metadata equivalente hoje.
-  defp file_dimension(metadata, "width") do
-    case metadata do
-      %{"width" => w, "height" => _h} -> w
-      _ -> nil
-    end
-  end
-
-  defp file_dimension(metadata, "height") do
-    case metadata do
-      %{"width" => _w, "height" => h} -> h
-      _ -> nil
-    end
-  end
-
   defp base_meta(file), do: "#{file_kind(file.mime)}, #{format_bytes(file.tamanho)}"
 
   defp zona_flash("publicar", :ok), do: gettext("Publicado na praça.")
@@ -362,31 +344,13 @@ defmodule TainaWeb.FilePreviewLive do
 
       <div class="col gap-4 mx-auto w-full measure">
         <div class="surface-raised radius-lg center media-frame col gap-2">
-          <%= case media_kind(@file.mime) do %>
-            <% :image -> %>
-              <img
-                src={~p"/files/#{@file.rkey}"}
-                alt={@file.nome}
-                width={file_dimension(@photo_metadata, "width")}
-                height={file_dimension(@photo_metadata, "height")}
-              />
-            <% :video -> %>
-              <video controls playsinline src={~p"/files/#{@file.rkey}"} class="w-full"></video>
-            <% :audio -> %>
-              <audio controls src={~p"/files/#{@file.rkey}"} class="w-full p-4"></audio>
-            <% :pdf -> %>
-              <iframe
-                src={~p"/files/#{@file.rkey}"}
-                title={@file.nome}
-                class="w-full doc-frame"
-              >
-              </iframe>
-            <% :text -> %>
-              <pre :if={@text_preview} class="text-preview">{@text_preview}</pre>
-              <.service_square :if={!@text_preview} mark="doc" size="lg" />
-            <% :other -> %>
-              <.service_square mark="doc" size="lg" />
-          <% end %>
+          <.file_preview
+            file={@file}
+            photo_metadata={@photo_metadata}
+            text_preview={@text_preview}
+            video_preview_unavailable={@video_preview_unavailable}
+            download_href={~p"/files/#{@file.rkey}"}
+          />
 
           <h2 class="type-h3">{@file.nome}</h2>
           <div class="row items-center gap-2">

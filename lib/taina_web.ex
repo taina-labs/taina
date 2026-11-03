@@ -87,6 +87,7 @@ defmodule TainaWeb do
       import TainaWeb.UI.Actions
       import TainaWeb.UI.Content
       import TainaWeb.UI.Feedback
+      import TainaWeb.UI.FilePreview
       import TainaWeb.UI.Forms
       import TainaWeb.UI.Media
       import TainaWeb.UI.Navigation
