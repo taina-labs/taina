@@ -1,0 +1,20 @@
+reviews:
+  path_filters:
+    - "lib/**"
+    - "config/**"
+    - "tekoa/**"
+    - "!lib/taina/araci/**"
+    - "!lib/taina/arapa/**"
+    - "!lib/taina/guara/**"
+    - "!lib/taina/kaa/**"
+    - "!lib/taina/karai/**"
+    - "!nix/**"
+    - "!rel/**"
+    - "!test/**"
+    - "!deps/**"       
+    - "!_build/**"     
+    - "!priv/static/**"
+    - "!assets/**"
+    - "!.github/**"
+    - "!mix.lock"      
+
