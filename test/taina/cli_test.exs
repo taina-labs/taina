@@ -1,5 +1,5 @@
 defmodule Taina.CLITest do
-  use ExUnit.Case, async: false
+  use Taina.DataCase, async: false
 
   alias Taina.CLI
 
@@ -83,6 +83,20 @@ defmodule Taina.CLITest do
 
       output = capture_stderr(fn -> assert 1 = CLI.run(["restore", archive]) end)
       assert output =~ "restore falhou"
+    end
+  end
+
+  describe "run/1 thumbnails" do
+    test "unknown tekoa is a domain failure, not a crash" do
+      output = capture_stderr(fn -> assert 1 = CLI.run(["thumbnails", "regenerate", "--tekoa", "AAAAAAAAAAAA"]) end)
+
+      assert output =~ "miniaturas falharam: :not_found"
+    end
+
+    test "malformed tekoa id is a domain failure, not a crash" do
+      output = capture_stderr(fn -> assert 1 = CLI.run(["thumbnails", "regenerate", "--tekoa", "malformed"]) end)
+
+      assert output =~ "miniaturas falharam: :not_found"
     end
   end
 

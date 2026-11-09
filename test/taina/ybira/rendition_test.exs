@@ -195,5 +195,10 @@ defmodule Taina.Ybira.Workers.RenditionTest do
       refute Map.has_key?(metadata, "rendition_error")
       assert match?(%{"sm" => _, "md" => _}, metadata["thumbnails"])
     end
+
+    test "returns not_found for unknown or malformed tekoa ids" do
+      assert {:error, :not_found} = ThumbnailOperator.regenerate("AAAAAAAAAAAA")
+      assert {:error, :not_found} = ThumbnailOperator.regenerate("malformed")
+    end
   end
 end
