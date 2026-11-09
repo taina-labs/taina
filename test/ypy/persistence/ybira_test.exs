@@ -5,6 +5,7 @@ defmodule Ypy.Ybira.PersistenceTest do
 
   alias Ecto.Adapters.SQL.Sandbox
   alias Ypy.BlobStore
+  alias Ypy.BlobStore.Blocking
   alias Ypy.BrokenKeys
   alias Ypy.Cid
   alias Ypy.Mural.Store
@@ -554,7 +555,7 @@ defmodule Ypy.Ybira.PersistenceTest do
 
   test "upload que falha nao remove bytes iguais de um upload concorrente ainda sem commit", ctx do
     disk = BlobStore.Disk.new(dir_temporario("blobs-concorrentes"))
-    armazenamento = Ypy.BlobStore.Blocking.new(disk, self())
+    armazenamento = Blocking.new(disk, self())
     {path, dados} = arquivo("mesmos bytes durante dois uploads")
     quebradas = BrokenKeys.new(dir_temporario("keys-quebradas-concorrentes"))
 
