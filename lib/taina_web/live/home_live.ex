@@ -184,10 +184,9 @@ defmodule TainaWeb.HomeLive do
     |> Enum.join(", ")
   end
 
-  # Saudação pelo relógio da caixa: o servidor mora na casa da comunidade,
-  # então o horário local do sistema é o horário local de quem usa.
+  # A saudação segue o fuso configurado para a comunidade, nao o do sistema.
   defp greeting(name) do
-    {_date, {hour, _min, _sec}} = :calendar.local_time()
+    hour = TainaWeb.Time.local_hour(DateTime.utc_now())
     gettext("%{period}, %{name}", period: period(hour), name: name)
   end
 

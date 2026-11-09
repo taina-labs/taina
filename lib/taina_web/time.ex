@@ -34,6 +34,13 @@ defmodule TainaWeb.Time do
     at |> DateTime.from_naive!("Etc/UTC") |> local_clock()
   end
 
+  @doc "Hora local da comunidade como número de 0 a 23."
+  def local_hour(%DateTime{} = at), do: at |> shifted_local() |> Map.fetch!(:hour)
+
+  def local_hour(%NaiveDateTime{} = at) do
+    at |> DateTime.from_naive!("Etc/UTC") |> local_hour()
+  end
+
   defp shifted_local(at), do: DateTime.shift(at, second: offset_seconds())
 
   defp offset_seconds, do: local_offset_hours() * 3600
