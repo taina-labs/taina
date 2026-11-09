@@ -9,7 +9,7 @@ defmodule Taina.Nhaman.UpdateTest do
   internet por causa de teste.
   """
 
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias Taina.Nhaman.Update
 
@@ -45,6 +45,19 @@ defmodule Taina.Nhaman.UpdateTest do
 
       assert %{result: :check_off, running: running} = Update.status(releases_url: "http://127.0.0.1:1/ninguem")
       assert {:ok, %Version{}} = Version.parse(running)
+    end
+
+    test "an invalid request becomes unavailable instead of crashing status" do
+      previous = Application.get_env(:taina, :update_check)
+      Application.put_env(:taina, :update_check, enabled: true)
+
+      on_exit(fn ->
+        if previous,
+          do: Application.put_env(:taina, :update_check, previous),
+          else: Application.delete_env(:taina, :update_check)
+      end)
+
+      assert %{result: :unavailable} = Update.status(releases_url: :invalid_url)
     end
   end
 end

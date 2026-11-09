@@ -107,6 +107,10 @@ defmodule Taina.Nhaman.Update do
     else
       _ -> :error
     end
+  rescue
+    _ -> :error
+  catch
+    :exit, _ -> :error
   end
 
   defp releases_url, do: Keyword.get(config(), :url, @releases_url)

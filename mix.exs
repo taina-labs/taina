@@ -26,7 +26,7 @@ defmodule Taina.MixProject do
   def application do
     [
       mod: {Taina.Application, []},
-      extra_applications: [:logger, :runtime_tools]
+      extra_applications: [:logger, :runtime_tools, :inets, :ssl]
     ]
   end
 
