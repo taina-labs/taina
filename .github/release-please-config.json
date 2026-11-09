@@ -2,8 +2,9 @@
   "bootstrap-sha": "fa1453f",
   "initial-version": "0.1.0",
   "bump-minor-pre-major": true,
+  "separate-pull-requests": true,
   "pull-request-header": "Vamo mandar pra prod?",
-  "pull-request-title-pattern": "chore: release ${version}",
+  "pull-request-title-pattern": "chore: release${component} ${version}",
   "changelog-sections": [
     {
       "type": "feat",
@@ -61,16 +62,31 @@
       "hidden": false
     }
   ],
-  "extra-files": [
-    {
-      "type": "generic",
-      "path": "flake.nix",
-      "glob": false
-    }
-  ],
   "packages": {
     ".": {
-      "release-type": "elixir"
+      "release-type": "elixir",
+      "include-component-in-tag": false,
+      "exclude-paths": [
+        "okena",
+        "site"
+      ],
+      "extra-files": [
+        {
+          "type": "generic",
+          "path": "flake.nix",
+          "glob": false
+        }
+      ]
+    },
+    "okena": {
+      "release-type": "simple",
+      "component": "okena",
+      "include-component-in-tag": true
+    },
+    "site": {
+      "release-type": "simple",
+      "component": "site",
+      "include-component-in-tag": true
     }
   },
   "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json"
