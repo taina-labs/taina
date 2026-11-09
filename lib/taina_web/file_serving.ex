@@ -79,7 +79,9 @@ defmodule TainaWeb.FileServing do
   # O nome vem do cliente: o `filename` fica ASCII e sem aspas/barra (nao quebra
   # o parametro) e a versao fiel vai percent-encoded em `filename*` (RFC 5987).
   defp content_disposition(file) do
-    kind = if String.starts_with?(file.mime, @inline_prefixes), do: "inline", else: "attachment"
+    svg? = String.starts_with?(String.downcase(file.mime), "image/svg+xml")
+    inline? = String.starts_with?(file.mime, @inline_prefixes) and not svg?
+    kind = if inline?, do: "inline", else: "attachment"
     ascii = String.replace(file.nome, ~r/[^\x20-\x7E]|["\\]/, "_")
     encoded = URI.encode(file.nome, &URI.char_unreserved?/1)
     ~s(#{kind}; filename="#{ascii}"; filename*=UTF-8''#{encoded})
