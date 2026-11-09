@@ -3,6 +3,7 @@ defmodule Taina.Ybira.Workers.PurgeTrashTest do
 
   import Taina.Fixtures
 
+  alias Taina.Jaci.Photo
   alias Taina.Scope
   alias Taina.Ybira
   alias Taina.Ybira.BlobGc
@@ -94,6 +95,36 @@ defmodule Taina.Ybira.Workers.PurgeTrashTest do
     assert gc_row?(a.blob_cid)
   end
 
+  test "system purge removes only the purged photo thumbnails and metadata" do
+    scope = scope_fixture()
+    image_path = tmp_image_fixture(filename: "shared.jpg")
+    {:ok, purged_photo} = Ybira.upload(scope, image_path, filename: "purged.jpg")
+    {:ok, live_photo} = Ybira.upload(scope, image_path, filename: "live.jpg")
+    {:ok, document} = Ybira.upload(scope, tmp_upload_fixture("document", "notes.txt"))
+
+    assert purged_photo.blob_cid == live_photo.blob_cid
+    purged_thumbnails = photo_thumbnails(scope, purged_photo)
+    live_thumbnails = photo_thumbnails(scope, live_photo)
+    assert Enum.all?(Map.values(purged_thumbnails), &File.exists?/1)
+    assert Enum.all?(Map.values(live_thumbnails), &File.exists?/1)
+
+    {:ok, _} = Ybira.delete_file(scope, purged_photo.rkey)
+    {:ok, _} = Ybira.delete_file(scope, document.rkey)
+    backdate(YbiraFile, purged_photo.id, days_ago(31))
+    backdate(YbiraFile, document.id, days_ago(31))
+
+    assert {:ok, 2} = Ybira.purge_deleted_files(days_ago(30))
+
+    refute Repo.get(YbiraFile, purged_photo.id, skip_tekoa_id: true)
+    refute Repo.get(YbiraFile, document.id, skip_tekoa_id: true)
+    refute photo_metadata_exists?(purged_photo.id)
+    assert Repo.get(YbiraFile, live_photo.id, skip_tekoa_id: true)
+    assert photo_metadata_exists?(live_photo.id)
+    assert Enum.all?(Map.values(purged_thumbnails), &(not File.exists?(&1)))
+    assert Enum.all?(Map.values(live_thumbnails), &File.exists?/1)
+    assert blob_on_disk?(live_photo)
+  end
+
   test "purges every row sharing a blob: the shared cid is queued once" do
     scope = scope_fixture()
     {:ok, a} = Ybira.upload(scope, tmp_upload_fixture("iguais", "a.txt"))
@@ -169,6 +200,37 @@ defmodule Taina.Ybira.Workers.PurgeTrashTest do
     assert tekoa.storage_used_bytes == 0
   end
 
+  test "folder purge removes photo renditions and dependent metadata, not other data" do
+    scope = scope_fixture()
+    {:ok, folder} = Ybira.create_folder(scope, %{name: "fotos e documentos"})
+    image_path = tmp_image_fixture(filename: "folder.jpg")
+
+    {:ok, photo} = Ybira.upload(scope, image_path, folder_rkey: folder.rkey)
+    {:ok, live_photo} = Ybira.upload(scope, image_path, filename: "outside.jpg")
+
+    {:ok, document} =
+      Ybira.upload(scope, tmp_upload_fixture("documento", "inside.txt"), folder_rkey: folder.rkey)
+
+    assert photo.blob_cid == live_photo.blob_cid
+    thumbnails = photo_thumbnails(scope, photo)
+    live_thumbnails = photo_thumbnails(scope, live_photo)
+    assert Enum.all?(Map.values(thumbnails), &File.exists?/1)
+    assert Enum.all?(Map.values(live_thumbnails), &File.exists?/1)
+
+    {:ok, :deleted} = Ybira.delete_folder(scope, folder.rkey)
+
+    assert {:ok, %{folders: 1, files: 2}} = Ybira.purge_trash_folder(scope, folder.rkey)
+
+    refute Repo.get(YbiraFile, photo.id, skip_tekoa_id: true)
+    refute Repo.get(YbiraFile, document.id, skip_tekoa_id: true)
+    refute photo_metadata_exists?(photo.id)
+    assert Repo.get(YbiraFile, live_photo.id, skip_tekoa_id: true)
+    assert photo_metadata_exists?(live_photo.id)
+    assert Enum.all?(Map.values(thumbnails), &(not File.exists?(&1)))
+    assert Enum.all?(Map.values(live_thumbnails), &File.exists?/1)
+    assert blob_on_disk?(live_photo)
+  end
+
   test "permanent purge is restricted to trashed resources owned by the caller" do
     scope = scope_fixture()
     other = ava_fixture(scope.tekoa)
@@ -193,6 +255,15 @@ defmodule Taina.Ybira.Workers.PurgeTrashTest do
 
   defp gc_row?(blob_cid) do
     Repo.exists?(from(g in BlobGc, where: g.blob_cid == ^blob_cid), skip_tekoa_id: true)
+  end
+
+  defp photo_thumbnails(scope, file) do
+    {:ok, metadata} = Ybira.photo_metadata(scope, file)
+    metadata["thumbnails"]
+  end
+
+  defp photo_metadata_exists?(file_id) do
+    Repo.exists?(from(p in Photo, where: p.file_id == ^file_id), skip_tekoa_id: true)
   end
 
   defp blob_on_disk?(file) do

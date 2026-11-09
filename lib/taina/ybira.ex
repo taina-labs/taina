@@ -860,49 +860,52 @@ defmodule Taina.Ybira do
   """
   def purge_deleted_files(%DateTime{} = cutoff) do
     # Job de sistema que cruza todas as Tekoas: sem contexto, as queries
-    # declaram `skip_tekoa_id: true`. Os bytes em disco NÃO são tocados aqui
-    # (GC diferido, `enqueue_blob_gc/1`).
-    {:ok, files} =
-      Repo.with_system(fn ->
-        # Registros saem num só `delete_all` (com `select: f`, devolve as
-        # linhas apagadas na mesma viagem). Arquivos saem ANTES das pastas: o
-        # FK de `folder_id` (nilify) não dispara em lote vazio.
-        {_count, files} =
-          Repo.delete_all(
-            from(f in File,
-              where: not is_nil(f.apagado_em) and f.apagado_em < ^cutoff,
-              select: f
-            ),
-            skip_tekoa_id: true
-          )
+    # declaram `skip_tekoa_id: true`. Blobs originais ficam para o GC diferido;
+    # thumbnails das imagens purgadas sao removidas junto com os registros.
+    with {:ok, files} <- Repo.with_system(fn -> purge_deleted_files_in_system(cutoff) end) do
+      {:ok, length(files)}
+    end
+  end
 
-        # Pastas na lixeira só guardam metadados (sem bytes nem cota), apaga em
-        # lote. `delete_folder/2` faz soft delete em cascata; sem isto, os
-        # registros de pasta ficariam para sempre com `apagado_em` preenchido.
-        Repo.delete_all(
-          from(p in Folder, where: not is_nil(p.apagado_em) and p.apagado_em < ^cutoff),
-          skip_tekoa_id: true
-        )
+  defp purge_deleted_files_in_system(cutoff) do
+    # Registros saem num só `delete_all` (com `select: f`, devolve as linhas
+    # apagadas na mesma viagem). Arquivos saem ANTES das pastas: o FK de
+    # `folder_id` (nilify) não dispara em lote vazio.
+    {_count, files} =
+      Repo.delete_all(
+        from(f in File,
+          where: not is_nil(f.apagado_em) and f.apagado_em < ^cutoff,
+          select: f
+        ),
+        skip_tekoa_id: true
+      )
 
-        # Cota em lote: soma por Tekoa dos bytes apagados e ajusta uma vez por
-        # comunidade, na MESMA transação dos deletes -- invariante de crash
-        # preservado: registro e cota caem juntos, ou nada cai.
-        Enum.each(bytes_per_tekoa(files), fn {tekoa_id, bytes} ->
-          adjust_storage_used(tekoa_id, -bytes)
-        end)
+    with :ok <- delete_thumbnails(files, tekoa_public_ids(files, skip_tekoa_id: true)) do
+      # Pastas na lixeira só guardam metadados (sem bytes nem cota), apaga em
+      # lote. `delete_folder/2` faz soft delete em cascata; sem isto, os
+      # registros de pasta ficariam para sempre com `apagado_em` preenchido.
+      Repo.delete_all(
+        from(p in Folder, where: not is_nil(p.apagado_em) and p.apagado_em < ^cutoff),
+        skip_tekoa_id: true
+      )
 
-        # A corrida da dedup (revisão 0.1.0, 1c): apagar os bytes aqui, logo
-        # após o commit da conferência, deixava uma janela em que um upload
-        # concorrente commita um arquivo que compartilha o CID -- e o expurgo
-        # apagava bytes de arquivo vivo. Os CIDs vão para a fila do GC
-        # diferido, na MESMA transação dos deletes: registro apagado e blob
-        # enfileirado caem juntos, ou nada cai.
-        _ = enqueue_blob_gc(Enum.map(files, & &1.blob_cid))
-
-        {:ok, files}
+      # Cota em lote: soma por Tekoa dos bytes apagados e ajusta uma vez por
+      # comunidade, na MESMA transação dos deletes -- invariante de crash
+      # preservado: registro e cota caem juntos, ou nada cai.
+      Enum.each(bytes_per_tekoa(files), fn {tekoa_id, bytes} ->
+        adjust_storage_used(tekoa_id, -bytes)
       end)
 
-    {:ok, length(files)}
+      # A corrida da dedup (revisão 0.1.0, 1c): apagar os bytes aqui, logo
+      # após o commit da conferência, deixava uma janela em que um upload
+      # concorrente commita um arquivo que compartilha o CID -- e o expurgo
+      # apagava bytes de arquivo vivo. Os CIDs vão para a fila do GC
+      # diferido, na MESMA transação dos deletes: registro apagado e blob
+      # enfileirado caem juntos, ou nada cai.
+      _ = enqueue_blob_gc(Enum.map(files, & &1.blob_cid))
+
+      {:ok, files}
+    end
   end
 
   @doc """
@@ -1087,12 +1090,47 @@ defmodule Taina.Ybira do
       Repo.delete_all(from(f in File, where: f.tekoa_id == ^tekoa_id and f.id in ^ids))
 
     if count == length(files) do
-      adjust_storage_used(tekoa_id, -bytes)
-      {:ok, _queued} = enqueue_blob_gc(Enum.map(files, & &1.blob_cid))
-      {:ok, count}
+      tekoa = Repo.get!(Tekoa, tekoa_id)
+
+      with :ok <- delete_thumbnails(files, %{tekoa_id => tekoa.public_id}) do
+        adjust_storage_used(tekoa_id, -bytes)
+        {:ok, _queued} = enqueue_blob_gc(Enum.map(files, & &1.blob_cid))
+        {:ok, count}
+      end
     else
       {:error, :not_found}
     end
+  end
+
+  defp tekoa_public_ids(files, opts) do
+    tekoa_ids = files |> Enum.filter(&image?(&1.mime)) |> Enum.map(& &1.tekoa_id) |> Enum.uniq()
+
+    from(t in Tekoa, where: t.id in ^tekoa_ids, select: {t.id, t.public_id})
+    |> Repo.all(opts)
+    |> Map.new()
+  end
+
+  defp delete_thumbnails(files, tekoa_public_ids) do
+    files
+    |> Enum.filter(&image?(&1.mime))
+    |> Enum.reduce_while(:ok, fn file, :ok ->
+      paths = Rendition.thumbnail_paths(Map.fetch!(tekoa_public_ids, file.tekoa_id), file.rkey)
+
+      case delete_thumbnail_paths(paths) do
+        :ok -> {:cont, :ok}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+  end
+
+  defp delete_thumbnail_paths(paths) do
+    Enum.reduce_while(Map.values(paths), :ok, fn path, :ok ->
+      case Elixir.File.rm(path) do
+        :ok -> {:cont, :ok}
+        {:error, :enoent} -> {:cont, :ok}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
   end
 
   defp purge_folders(tekoa_id, folder_ids) do

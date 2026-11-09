@@ -45,6 +45,13 @@ defmodule Taina.Ybira.Workers.Rendition do
   # a visualização fullscreen. Os caminhos vão para `metadata["thumbnails"]`.
   @sizes %{"sm" => 400, "md" => 1600}
 
+  @doc false
+  def thumbnail_paths(tekoa_public_id, file_rkey) do
+    Map.new(@sizes, fn {name, _max_edge} ->
+      {name, thumbnail_path(tekoa_public_id, file_rkey, name)}
+    end)
+  end
+
   @doc """
   Gera as renditions de um arquivo de imagem pelo `id`, dentro da Tekoa de
   `tekoa_public_id` (abre o `Repo.with_tekoa/2` por conta própria).
@@ -195,8 +202,10 @@ defmodule Taina.Ybira.Workers.Rendition do
   end
 
   defp generate_thumbnails(%YbiraFile{} = file, tekoa_public_id, blob_path) do
+    paths = thumbnail_paths(tekoa_public_id, file.rkey)
+
     Enum.reduce_while(@sizes, {:ok, %{}}, fn {name, max_edge}, {:ok, acc} ->
-      dest = thumbnail_path(tekoa_public_id, file.rkey, name)
+      dest = Map.fetch!(paths, name)
 
       case Media.thumbnail(blob_path, dest, max_edge) do
         :ok -> {:cont, {:ok, Map.put(acc, name, dest)}}
