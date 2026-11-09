@@ -124,11 +124,10 @@ defmodule TainaWeb.AccessRequestsLive do
   def handle_event("retry-grants", _params, socket), do: {:noreply, assign_requests(socket)}
 
   defp access_gone(socket) do
-    {:noreply,
-     socket
-     |> assign(:confirm_revoke, nil)
-     |> assign_requests()
-     |> Phoenix.LiveView.put_flash(:error, gettext("Este acesso já foi tirado."))}
+    socket
+    |> assign(:confirm_revoke, nil)
+    |> assign_requests()
+    |> Phoenix.LiveView.put_flash(:error, gettext("Este acesso já foi tirado."))
   end
 
   @impl true

@@ -101,6 +101,43 @@ defmodule TainaWeb.AccessRequestsLiveTest do
     refute Maraca.authorize?(requester, :read, "ypy.file.v0", file.rkey)
   end
 
+  test "confirming a grant that was already revoked refreshes without a nested reply", %{
+    conn: conn,
+    tekoa: tekoa,
+    owner: owner,
+    requester: requester,
+    target_file: file
+  } do
+    req = request(requester, tekoa, file)
+    {:ok, grant} = Maraca.aprovar(Scope.new(owner, tekoa), req)
+    {:ok, lv, _html} = conn |> log_in(owner) |> live(~p"/conta/pedidos")
+
+    lv |> element(~s(button[phx-click="ask-revoke"])) |> render_click()
+    {:ok, _revoked} = Maraca.revogar(Scope.new(owner, tekoa), grant)
+
+    lv |> element(~s(#confirm-revoke button[phx-click*="revoke"])) |> render_click()
+
+    html = render(lv)
+    assert html =~ "Este acesso já foi tirado."
+    refute has_element?(lv, ~s(button[phx-click="ask-revoke"]))
+    refute Maraca.authorize?(requester, :read, "ypy.file.v0", file.rkey)
+  end
+
+  test "confirming a grant that is no longer listed refreshes without a nested reply", %{
+    conn: conn,
+    owner: owner
+  } do
+    {:ok, lv, _html} = conn |> log_in(owner) |> live(~p"/conta/pedidos")
+
+    render_click(lv, "ask-revoke", %{"id" => "missing-grant"})
+    lv |> element(~s(#confirm-revoke button[phx-click*="revoke"])) |> render_click()
+
+    html = render(lv)
+    assert html =~ "Este acesso já foi tirado."
+    refute has_element?(lv, "#confirm-revoke")
+    assert html =~ "Nenhum pedido ainda"
+  end
+
   # board `com pedidos`: recusado
   test "denying is gated by the confirm dialog and the refusal reaches who asked", %{
     conn: conn,
