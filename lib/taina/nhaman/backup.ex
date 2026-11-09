@@ -239,17 +239,21 @@ defmodule Taina.Nhaman.Backup do
   end
 
   defp validate_secret(path) when is_binary(path) do
-    if File.regular?(path) do
-      case File.read(path) do
-        {:ok, secret} -> if(String.trim(secret) == "", do: {:error, :invalid_secret}, else: :ok)
-        {:error, _reason} -> {:error, :missing_secret}
-      end
-    else
-      {:error, :missing_secret}
-    end
+    if File.regular?(path), do: validate_secret_file(path), else: {:error, :missing_secret}
   end
 
   defp validate_secret(_path), do: {:error, :missing_secret}
+
+  defp validate_secret_file(path) do
+    case File.read(path) do
+      {:ok, secret} -> validate_secret_value(secret)
+      {:error, _reason} -> {:error, :missing_secret}
+    end
+  end
+
+  defp validate_secret_value(secret) do
+    if String.trim(secret) == "", do: {:error, :invalid_secret}, else: :ok
+  end
 
   ## Construtores puros (testáveis isoladamente)
 
