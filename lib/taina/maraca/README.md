@@ -17,9 +17,9 @@ O Maraca oferece:
 - Convites por link/QR, sem e-mail; login por nome de usuário
 - Sistema de permissões granular por recurso (arquivos, pastas, conversas)
 - Controle de acesso baseado em papéis (zelador, morador)
-- Isolamento total de dados entre comunidades (Row-Level Security)
+- Isolamento entre comunidades aplicado pela camada da aplicação; SQLite não oferece RLS
 - Pedido de acesso com aprovação explícita (zeladores não acessam dados sem permissão)
-- Lixeira com recuperação de dados excluídos (15 dias configurável)
+- Lixeira com restauração por até 30 dias; o prazo de expurgo é fixo, não configurável
 
 ## Para quem é
 
@@ -31,7 +31,7 @@ O Maraca oferece:
 ## Vantagens
 
 - Moradores são donos de seus dados (zeladores não têm acesso automático)
-- Isolamento completo entre comunidades no nível do banco de dados
+- Isolamento entre comunidades aplicado pela camada da aplicação
 - Permissões explícitas e amigáveis para iniciantes
 - Padrões seguros por padrão (senha bcrypt, tokens de uso único)
 - Arquitetura extensível para federação entre Tekoas no futuro
@@ -45,8 +45,8 @@ Este projeto está em desenvolvimento ativo. Maraca é o serviço fundamental so
 
 - Autenticação baseada em sessão (Phoenix)
 - Criptografia de senhas com bcrypt
-- Row-Level Security (RLS) no PostgreSQL para isolamento de dados
-- Sistema de permissões com biblioteca Permit
+- SQLite com isolamento por comunidade aplicado na camada da aplicação
+- Autorização por `Ypy.Maraca.Policy`
 - Convites e redefinição por token (link/QR), sem e-mail
 - Soft delete com recuperação de dados (lixeira)
 
