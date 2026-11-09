@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#060A14" />
+    <meta name="theme-color" content={theme_color()} />
     <meta name="csrf-token" content={get_csrf_token()} />
     <%!-- O iOS nem sempre honra o `display` do manifest para "Adicionar à Tela
     de Início"; estas metas são o que garante a abertura em tela cheia (sem a

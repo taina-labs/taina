@@ -20,7 +20,13 @@ defmodule TainaWeb.Layouts do
 
   use TainaWeb, :html
 
+  # Resolved value of --bg-deep (via --color-night-950) for browser metadata.
+  @theme_color "#060a14"
+
   embed_templates "layouts/*"
+
+  @doc false
+  def theme_color, do: @theme_color
 
   @doc """
   Shell do hub (`/`): flash, pular-para-conteúdo e `main` com conteúdo limitado

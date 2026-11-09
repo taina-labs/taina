@@ -82,7 +82,18 @@ defmodule TainaWeb.LayoutsTest do
     """)
   end
 
+  defp root_html do
+    render_component(&Layouts.root/1, %{inner_content: "conteudo", page_title: nil})
+  end
+
   defp count(html, payload), do: length(String.split(html, payload)) - 1
+
+  test "root theme color uses the resolved deep background token value" do
+    html = root_html()
+
+    assert html =~ "name=\"theme-color\" content=\"#{Layouts.theme_color()}\""
+    assert Layouts.theme_color() == "#060a14"
+  end
 
   describe "hub" do
     test "flash, skip-link e main#main-content na casca --hub" do
