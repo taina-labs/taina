@@ -30,6 +30,42 @@ defmodule Ypy.BlobStore.DiskTest do
     assert cid1 == cid2
   end
 
+  test "put cria um root ausente" do
+    root = Path.join(System.tmp_dir!(), "ypy-disk-missing-#{System.unique_integer([:positive])}")
+    store = Disk.new(root)
+
+    assert {:ok, cid} = Disk.put(store, "root criado")
+    assert {:ok, "root criado"} = Disk.fetch(store, cid)
+  end
+
+  test "put concorrente e repetido nunca expoe uma reescrita parcial", %{store: store} do
+    dados = :crypto.strong_rand_bytes(1024 * 1024)
+    {:ok, cid} = Disk.put(store, dados)
+
+    escritores =
+      for _ <- 1..8 do
+        Task.async(fn ->
+          for _ <- 1..4 do
+            assert {:ok, ^cid} = Disk.put(store, dados)
+          end
+        end)
+      end
+
+    leitores =
+      for _ <- 1..4 do
+        Task.async(fn ->
+          for _ <- 1..20 do
+            assert {:ok, ^dados} = Disk.fetch(store, cid)
+            assert {:ok, path} = Disk.open(store, cid)
+            assert {:ok, ^dados} = File.read(path)
+          end
+        end)
+      end
+
+    Enum.each(escritores ++ leitores, &Task.await(&1, :infinity))
+    assert Path.wildcard(Path.join(store.root, "tmp-*")) == []
+  end
+
   test "fetch devolve os bytes", %{store: store} do
     {:ok, cid} = Disk.put(store, <<1, 2, 3>>)
     assert {:ok, <<1, 2, 3>>} == Disk.fetch(store, cid)
@@ -75,6 +111,16 @@ defmodule Ypy.BlobStore.DiskTest do
              "conteudo da foto"
 
     # O temporario nao sobra: so o galho do CID (e o proprio arquivo).
+    assert Path.wildcard(Path.join(root, "tmp-*")) == []
+  end
+
+  test "put_file cria o root ausente antes de abrir o temporario" do
+    root = Path.join(System.tmp_dir!(), "ypy-disk-file-missing-#{System.unique_integer([:positive])}")
+    origem = Path.join(System.tmp_dir!(), "ypy-disk-source-#{System.unique_integer([:positive])}")
+    File.write!(origem, "upload sem root")
+
+    assert {:ok, cid} = Disk.put_file(Disk.new(root), origem)
+    assert {:ok, "upload sem root"} = Disk.fetch(Disk.new(root), cid)
     assert Path.wildcard(Path.join(root, "tmp-*")) == []
   end
 

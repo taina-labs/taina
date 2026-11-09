@@ -30,9 +30,11 @@ defmodule Ypy.BlobStore.Disk do
   def put(store, data) when is_binary(data) do
     cid = Cid.from_data(data, Cid.raw())
     path = path(store, cid)
+    tmp = tmp_path(store)
 
-    with :ok <- File.mkdir_p(Path.dirname(path)),
-         :ok <- File.write(path, data) do
+    with :ok <- File.mkdir_p(store.root),
+         :ok <- File.mkdir_p(Path.dirname(path)),
+         :ok <- write_atomic(tmp, path, data) do
       {:ok, cid}
     end
   end
@@ -45,7 +47,8 @@ defmodule Ypy.BlobStore.Disk do
     tmp = tmp_path(store)
 
     try do
-      with {:ok, digest} <- copy_hashed(source, tmp),
+      with :ok <- File.mkdir_p(store.root),
+           {:ok, digest} <- copy_hashed(source, tmp),
            cid = Cid.from_digest(digest, Cid.raw()),
            path = path(store, cid),
            :ok <- File.mkdir_p(Path.dirname(path)),
@@ -97,6 +100,15 @@ defmodule Ypy.BlobStore.Disk do
 
   defp tmp_path(%__MODULE__{} = store) do
     Path.join(store.root, "tmp-#{:erlang.unique_integer([:positive])}")
+  end
+
+  defp write_atomic(tmp, path, data) do
+    with :ok <- File.write(tmp, data, [:binary, :exclusive]) do
+      File.rename(tmp, path)
+    end
+  after
+    _ = File.rm(tmp)
+    :ok
   end
 
   @impl true
