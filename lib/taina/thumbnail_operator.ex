@@ -17,16 +17,16 @@ defmodule Taina.ThumbnailOperator do
   defp list_tekoas(nil), do: Repo.with_system(fn -> {:ok, Repo.all(Tekoa, skip_tekoa_id: true)} end)
 
   defp list_tekoas(public_id) do
-    if PublicId.valid?(public_id) do
-      Repo.with_system(fn ->
-        case Repo.get_by(Tekoa, [public_id: public_id], skip_tekoa_id: true) do
-          %Tekoa{} = tekoa -> {:ok, [tekoa]}
-          nil -> {:error, :not_found}
-        end
-      end)
-    else
-      {:error, :not_found}
-    end
+    if PublicId.valid?(public_id), do: find_tekoa(public_id), else: {:error, :not_found}
+  end
+
+  defp find_tekoa(public_id) do
+    Repo.with_system(fn ->
+      case Repo.get_by(Tekoa, [public_id: public_id], skip_tekoa_id: true) do
+        %Tekoa{} = tekoa -> {:ok, [tekoa]}
+        nil -> {:error, :not_found}
+      end
+    end)
   end
 
   defp regenerate_tekoa(tekoa) do
