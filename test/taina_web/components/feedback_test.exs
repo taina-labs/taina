@@ -187,7 +187,7 @@ defmodule TainaWeb.UI.FeedbackTest do
     html = skeleton_html(kind: "photo_grid", count: 8)
 
     assert html =~ "skeleton skeleton--photo-grid"
-    assert length(Regex.scan(~r/skeleton__tile/, html)) == 8
+    assert Enum.count_until(Regex.scan(~r/skeleton__tile/, html), 9) == 8
   end
 
   test "skeleton card: títulos e linhas" do

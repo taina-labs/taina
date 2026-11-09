@@ -72,7 +72,7 @@ defmodule Taina.YbiraTest do
       {:ok, b} = Ybira.upload(scope, tmp_upload_fixture("b", "b.txt"))
 
       assert {:ok, %{items: files, next_cursor: nil}} = Ybira.list_files(scope)
-      assert length(files) == 2
+      assert Enum.count_until(files, 3) == 2
       assert hd(files).id == b.id
     end
 
@@ -471,7 +471,7 @@ defmodule Taina.YbiraTest do
                Ybira.list_folder_contents(scope, nil, limit: 2)
 
       assert folder.nome == "uma pasta"
-      assert length(files) == 2
+      assert Enum.count_until(files, 3) == 2
       # Paginação por offset: next_cursor é o próximo deslocamento (inteiro).
       assert cursor == 2
 

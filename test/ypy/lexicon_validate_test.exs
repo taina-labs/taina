@@ -28,7 +28,7 @@ defmodule Ypy.Lexicon.ValidateTest do
       "properties" => %{"name" => %{"type" => "string"}}
     }
 
-    assert length(errors(schema, %{"name" => nil})) == 1
+    assert Enum.count_until(errors(schema, %{"name" => nil}), 2) == 1
   end
 
   test "a null on a nullable field is legal and on a plain optional one is a type error" do

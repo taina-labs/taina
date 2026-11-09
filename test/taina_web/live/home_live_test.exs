@@ -104,7 +104,7 @@ defmodule TainaWeb.HomeLiveTest do
 
     {:ok, _lv, html} = conn |> log_in(ana) |> live(~p"/")
 
-    assert length(Regex.scan(~r/list-row--file/, html)) == 4
+    assert Enum.count_until(Regex.scan(~r/list-row--file/, html), 5) == 4
   end
 
   test "degradado: cartão de erro no topo e seções viram esqueleto", %{conn: _conn} do

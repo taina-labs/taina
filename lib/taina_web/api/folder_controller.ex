@@ -77,8 +77,12 @@ defmodule TainaWeb.API.FolderController do
   # O pai de uma pasta sozinha: o penultimo elo do breadcrumb (raiz -> atual).
   defp resolved_folder_json(scope, folder) do
     case Ybira.folder_path(scope, folder.rkey) do
-      {:ok, path} when length(path) > 1 ->
-        Map.put(Serializer.folder(scope, folder), "folder", Enum.at(path, -2).rkey)
+      {:ok, path} ->
+        if Enum.count_until(path, 2) > 1 do
+          Map.put(Serializer.folder(scope, folder), "folder", Enum.at(path, -2).rkey)
+        else
+          Serializer.folder(scope, folder)
+        end
 
       _ ->
         Serializer.folder(scope, folder)

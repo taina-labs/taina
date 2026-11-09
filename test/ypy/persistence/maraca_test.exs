@@ -170,8 +170,8 @@ defmodule Ypy.Maraca.PersistenceTest do
     {:ok, _} =
       Maraca.pedir_acesso(TestRepo, ctx.outro_scope, "ypy.file.v0", file.rkey, "quero ver")
 
-    assert length(Maraca.pedidos_recebidos(TestRepo, ctx.dono_scope)) == 1
-    assert length(Maraca.pedidos_enviados(TestRepo, ctx.outro_scope)) == 1
+    assert Enum.count_until(Maraca.pedidos_recebidos(TestRepo, ctx.dono_scope), 2) == 1
+    assert Enum.count_until(Maraca.pedidos_enviados(TestRepo, ctx.outro_scope), 2) == 1
     assert Maraca.pedidos_recebidos(TestRepo, ctx.outro_scope) == []
   end
 
@@ -236,7 +236,7 @@ defmodule Ypy.Maraca.PersistenceTest do
       assert Enum.count(resultados, &(&1 == {:error, :last_zelador})) == 1
       assert Store.count_zeladores(TestRepo, ctx.tekoa.id) == 1
 
-      assert length(Ypy.Mural.Store.entradas(TestRepo, ctx.tekoa.id, tipo: "mudar_papel")) == 2
+      assert Enum.count_until(Ypy.Mural.Store.entradas(TestRepo, ctx.tekoa.id, tipo: "mudar_papel"), 3) == 2
     after
       RacyRepo.disarm()
     end

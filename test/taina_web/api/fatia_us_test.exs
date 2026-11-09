@@ -95,7 +95,7 @@ defmodule TainaWeb.API.FatiaUsTest do
       bia_conn = authorize_device(conn, bia)
 
       list = ana_conn |> get(~p"/api/v1/devices") |> json_response(200)
-      assert length(list["items"]) == 1
+      assert Enum.count_until(list["items"], 2) == 1
       device = hd(list["items"])
 
       forbidden = bia_conn |> delete(~p"/api/v1/devices/#{device["public_id"]}") |> json_response(403)

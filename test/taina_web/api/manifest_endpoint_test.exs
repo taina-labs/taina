@@ -50,12 +50,12 @@ defmodule TainaWeb.API.ManifestEndpointTest do
 
     # Pagina cheia (2 de 3): o cursor aponta para a proxima.
     body = conn |> get(~p"/api/v1/files/manifest", limit: "2") |> json_response(200)
-    assert length(body["items"]) == 2
+    assert Enum.count_until(body["items"], 3) == 2
     assert is_binary(body["next_cursor"])
 
     # Teto alto pega tudo numa pagina so: sem cursor.
     body = conn |> get(~p"/api/v1/files/manifest", limit: "5000") |> json_response(200)
-    assert length(body["items"]) == 3
+    assert Enum.count_until(body["items"], 4) == 3
     assert body["next_cursor"] == nil
   end
 end

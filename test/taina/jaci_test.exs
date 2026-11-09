@@ -31,7 +31,7 @@ defmodule Taina.JaciTest do
       ids = Enum.map(items, & &1.rkey)
       assert img.rkey in ids
       assert vid.rkey in ids
-      assert length(ids) == 2
+      assert Enum.count_until(ids, 3) == 2
     end
 
     test "paginates by opaque cursor" do
@@ -39,11 +39,11 @@ defmodule Taina.JaciTest do
       for i <- 1..3, do: {:ok, _} = Ybira.upload(scope, tmp_image_fixture(filename: "#{i}.jpg"))
 
       {:ok, %{items: first, next_cursor: cursor}} = Jaci.list_photos(scope, limit: 2)
-      assert length(first) == 2
+      assert Enum.count_until(first, 3) == 2
       assert is_binary(cursor)
 
       {:ok, %{items: rest, next_cursor: nil}} = Jaci.list_photos(scope, limit: 2, after_cursor: cursor)
-      assert length(rest) == 1
+      assert Enum.count_until(rest, 2) == 1
     end
 
     test "zona filters IN the query, and the cursor walks the filtered set" do
@@ -66,7 +66,7 @@ defmodule Taina.JaciTest do
 
       # sem zona, o conjunto inteiro volta
       {:ok, %{items: tudo}} = Jaci.list_photos(scope, limit: 3)
-      assert length(tudo) == 3
+      assert Enum.count_until(tudo, 4) == 3
     end
   end
 
@@ -95,7 +95,7 @@ defmodule Taina.JaciTest do
 
       {:ok, %{groups: groups}} = Jaci.timeline(scope)
       assert [%{date: ~D[2023-07-15], photos: photos}] = groups
-      assert length(photos) == 2
+      assert Enum.count_until(photos, 3) == 2
     end
 
     test "sem EXIF a ordem efetiva e a do upload (fallback)" do

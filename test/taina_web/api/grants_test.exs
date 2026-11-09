@@ -57,7 +57,7 @@ defmodule TainaWeb.API.GrantsTest do
 
     test "papel desconhecido cai na ponta da dona", %{conn: conn} do
       body = conn |> get(~p"/api/v1/grants", role: "qualquer") |> json_response(200)
-      assert length(body["items"]) == 1
+      assert Enum.count_until(body["items"], 2) == 1
     end
 
     test "paginada: limit e o cursor `after` andam sobre o conjunto, com next_cursor real", %{
@@ -74,7 +74,7 @@ defmodule TainaWeb.API.GrantsTest do
       end
 
       primeira = conn |> get(~p"/api/v1/grants", limit: "2") |> json_response(200)
-      assert length(primeira["items"]) == 2
+      assert Enum.count_until(primeira["items"], 3) == 2
       assert is_binary(primeira["next_cursor"])
 
       segunda =
@@ -82,14 +82,14 @@ defmodule TainaWeb.API.GrantsTest do
         |> get(~p"/api/v1/grants", limit: "2", after: primeira["next_cursor"])
         |> json_response(200)
 
-      assert length(segunda["items"]) == 1
+      assert Enum.count_until(segunda["items"], 2) == 1
       assert segunda["next_cursor"] == nil
 
       # as paginas nao se repetem nem se sobrepõem
       ids_primeira = Enum.map(primeira["items"], & &1["public_id"])
       ids_segunda = Enum.map(segunda["items"], & &1["public_id"])
       refute ids_primeira == ids_segunda
-      assert length(Enum.uniq(ids_primeira ++ ids_segunda)) == 3
+      assert Enum.count_until(Enum.uniq(ids_primeira ++ ids_segunda), 4) == 3
     end
 
     test "cursor ilegivel pagina do comeco em vez de quebrar", %{conn: conn} do

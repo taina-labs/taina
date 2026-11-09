@@ -88,7 +88,7 @@ defmodule Taina.MuralTest do
       for i <- 1..3, do: :ok = Maraca.record_event(scope, :quota_changed, %{"to" => i})
 
       assert {:ok, %{events: events}} = Maraca.list_events(scope)
-      assert length(events) == 3
+      assert Enum.count_until(events, 4) == 3
       # A ordem da cadeia: sequência crescente, projecao decrescente.
       assert Enum.map(events, & &1.seq) == [3, 2, 1]
       assert Enum.map(events, & &1.payload["to"]) == [3, 2, 1]

@@ -376,13 +376,7 @@ defmodule Ypy.Ybira do
         hash = Base.encode16(blob_cid.digest, case: :lower)
         upload = Map.merge(meta, %{blob_cid: blob_cid, hash: hash})
 
-        case commit_upload_rows(repo, keys, scope, tekoa, upload) do
-          {:ok, file} ->
-            {:ok, file}
-
-          {:error, reason} ->
-            {:error, reason}
-        end
+        commit_upload_rows(repo, keys, scope, tekoa, upload)
 
       {:error, reason} ->
         {:error, reason}

@@ -345,7 +345,7 @@ defmodule Ypy.Lexicon.Validate do
   defp format_errors("nsid", value, path) do
     segments = String.split(value, ".")
 
-    if length(segments) < 3 or
+    if Enum.count_until(segments, 3) < 3 or
          Enum.any?(segments, &(&1 == "" or String.match?(&1, ~r/^[0-9]/))) do
       [{path, :bad_nsid}]
     else
