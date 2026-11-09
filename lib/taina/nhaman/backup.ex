@@ -97,14 +97,16 @@ defmodule Taina.Nhaman.Backup do
     db_path = Keyword.get(opts, :database_path) || repo_db_path()
     now = Keyword.get(opts, :now, DateTime.utc_now())
     workdir = tmp_workdir()
+    secret = secret_path()
 
     try do
-      with :ok <- File.mkdir_p(dir),
+      with :ok <- validate_secret(secret),
+           :ok <- File.mkdir_p(dir),
            :ok <- File.mkdir_p(workdir),
            dump_path = Path.join(workdir, "db.dump"),
            :ok <- snapshot_db(db_path, dump_path),
            archive_path = Path.join(dir, archive_filename(now)),
-           :ok <- package_archive(archive_path, dump_path, storage_root, secret_path()) do
+           :ok <- package_archive(archive_path, dump_path, storage_root, secret) do
         {:ok, %{archive: archive_path, bytes: file_size(archive_path)}}
       end
     after
@@ -142,25 +144,26 @@ defmodule Taina.Nhaman.Backup do
   ## Empacotamento (OTP :erl_tar — sem binário externo)
 
   @doc """
-  Monta o `.tar.gz` com `db.dump` + a árvore de `storage_root` sob `storage/`.
-  Adiciona apenas arquivos (diretórios vazios são irrelevantes para o storage),
-  com caminhos relativos determinísticos.
+  Monta o `.tar.gz` com `db.dump`, `secret_key_base` e a árvore de `storage_root`
+  sob `storage/`. Adiciona apenas arquivos (diretórios vazios são irrelevantes
+  para o storage), com caminhos relativos determinísticos.
   """
   def package_archive(archive_path, dump_path, storage_root) do
     package_archive(archive_path, dump_path, storage_root, nil)
   end
 
   def package_archive(archive_path, dump_path, storage_root, secret_path) do
-    secret_entries =
-      if is_binary(secret_path) and File.exists?(secret_path),
-        do: [{~c"secret_key_base", String.to_charlist(secret_path)}],
-        else: []
+    with :ok <- validate_secret(secret_path) do
+      entries = [
+        {~c"db.dump", String.to_charlist(dump_path)},
+        {~c"secret_key_base", String.to_charlist(secret_path)}
+        | storage_entries(storage_root)
+      ]
 
-    entries = [{~c"db.dump", String.to_charlist(dump_path)} | secret_entries ++ storage_entries(storage_root)]
-
-    case :erl_tar.create(String.to_charlist(archive_path), entries, [:compressed]) do
-      :ok -> :ok
-      {:error, reason} -> {:error, {:archive_failed, reason}}
+      case :erl_tar.create(String.to_charlist(archive_path), entries, [:compressed]) do
+        :ok -> :ok
+        {:error, reason} -> {:error, {:archive_failed, reason}}
+      end
     end
   end
 
@@ -191,13 +194,10 @@ defmodule Taina.Nhaman.Backup do
   end
 
   defp validate_restore_contents(workdir) do
-    secret = Path.join(workdir, "secret_key_base")
-
-    cond do
-      not File.regular?(Path.join(workdir, "db.dump")) -> {:error, :missing_database}
-      not File.regular?(secret) -> {:error, :missing_secret}
-      String.trim(File.read!(secret)) == "" -> {:error, :invalid_secret}
-      true -> :ok
+    if File.regular?(Path.join(workdir, "db.dump")) do
+      validate_secret(Path.join(workdir, "secret_key_base"))
+    else
+      {:error, :missing_database}
     end
   end
 
@@ -234,11 +234,22 @@ defmodule Taina.Nhaman.Backup do
         validate_secret(destination)
       end
     else
-      :ok
+      {:error, :missing_secret}
     end
   end
 
-  defp validate_secret(path), do: if(String.trim(File.read!(path)) == "", do: {:error, :invalid_secret}, else: :ok)
+  defp validate_secret(path) when is_binary(path) do
+    if File.regular?(path) do
+      case File.read(path) do
+        {:ok, secret} -> if(String.trim(secret) == "", do: {:error, :invalid_secret}, else: :ok)
+        {:error, _reason} -> {:error, :missing_secret}
+      end
+    else
+      {:error, :missing_secret}
+    end
+  end
+
+  defp validate_secret(_path), do: {:error, :missing_secret}
 
   ## Construtores puros (testáveis isoladamente)
 

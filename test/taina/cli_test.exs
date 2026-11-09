@@ -68,6 +68,16 @@ defmodule Taina.CLITest do
 
     test "com --out: imprime o caminho do arquivo criado e devolve 0" do
       dir = tmp_dir()
+      secret = Path.join(tmp_dir(), "secret_key_base")
+      File.write!(secret, "test-secret")
+      previous = Application.get_env(:taina, :config)
+      Application.put_env(:taina, :config, %{secret_key_base_file: secret})
+
+      on_exit(fn ->
+        if previous,
+          do: Application.put_env(:taina, :config, previous),
+          else: Application.delete_env(:taina, :config)
+      end)
 
       output = ExUnit.CaptureIO.capture_io(fn -> assert 0 = CLI.run(["backup", "--out", dir]) end)
 

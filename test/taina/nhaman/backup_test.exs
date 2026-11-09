@@ -23,9 +23,11 @@ defmodule Taina.Nhaman.BackupTest do
 
       dump = Path.join(tmp_dir(), "db.dump")
       File.write!(dump, "FAKE DUMP")
+      secret = Path.join(tmp_dir(), "secret_key_base")
+      File.write!(secret, "test-secret")
 
       archive = Path.join(tmp_dir(), "backup.tar.gz")
-      assert :ok = Backup.package_archive(archive, dump, storage)
+      assert :ok = Backup.package_archive(archive, dump, storage, secret)
       assert File.exists?(archive)
 
       extracted = tmp_dir()
@@ -77,7 +79,24 @@ defmodule Taina.Nhaman.BackupTest do
       dump = Path.join(root, "db.dump")
       File.write!(dump, "new-db")
       archive = Path.join(root, "missing-secret.tar.gz")
-      assert :ok = Backup.package_archive(archive, dump, Path.join(root, "missing-storage"))
+      missing_secret = Path.join(root, "missing-secret")
+
+      assert {:error, :missing_secret} =
+               Backup.package_archive(archive, dump, Path.join(root, "missing-storage"), missing_secret)
+
+      assert {:error, :missing_secret} =
+               Backup.package_archive(archive, dump, Path.join(root, "missing-storage"))
+
+      refute File.exists?(archive)
+
+      # Old archives without a secret still fail restore validation.
+      assert :ok =
+               :erl_tar.create(
+                 String.to_charlist(archive),
+                 [{~c"db.dump", String.to_charlist(dump)}],
+                 [:compressed]
+               )
+
       db = Path.join(root, "taina.db")
       File.write!(db, "old-db")
       storage = Path.join(root, "storage")
@@ -105,14 +124,42 @@ defmodule Taina.Nhaman.BackupTest do
       dump = Path.join(tmp_dir(), "db.dump")
       File.write!(dump, "D")
       archive = Path.join(tmp_dir(), "b.tar.gz")
+      secret = Path.join(tmp_dir(), "secret_key_base")
+      File.write!(secret, "test-secret")
 
-      assert :ok = Backup.package_archive(archive, dump, Path.join(tmp_dir(), "missing"))
+      assert :ok = Backup.package_archive(archive, dump, Path.join(tmp_dir(), "missing"), secret)
 
       extracted = tmp_dir()
       assert :ok = Backup.extract_archive(archive, extracted)
       assert File.read!(Path.join(extracted, "db.dump")) == "D"
       refute File.exists?(Path.join(extracted, "storage"))
     end
+  end
+
+  test "run fails before creating an archive when the secret is missing" do
+    root = tmp_dir()
+    secret = Path.join(root, "missing-secret")
+    previous = Application.get_env(:taina, :config)
+    Application.put_env(:taina, :config, %{secret_key_base_file: secret})
+
+    on_exit(fn ->
+      if previous,
+        do: Application.put_env(:taina, :config, previous),
+        else: Application.delete_env(:taina, :config)
+    end)
+
+    {:ok, now, 0} = DateTime.from_iso8601("2026-06-10T13:05:09Z")
+    archive = Path.join(root, Backup.archive_filename(now))
+
+    assert {:error, :missing_secret} =
+             Backup.run(
+               dir: root,
+               storage_root: Path.join(root, "storage"),
+               database_path: Path.join(root, "missing.db"),
+               now: now
+             )
+
+    refute File.exists?(archive)
   end
 
   describe "last_backup/0 e parse_archive_filename/1" do
