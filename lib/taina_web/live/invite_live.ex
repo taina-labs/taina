@@ -17,6 +17,7 @@ defmodule TainaWeb.InviteLive do
 
   alias Taina.Maraca
   alias TainaWeb.InternalPath
+  alias TainaWeb.InviteLink
   alias TainaWeb.Layouts
 
   @impl true
@@ -60,7 +61,7 @@ defmodule TainaWeb.InviteLive do
 
         {:noreply,
          socket
-         |> assign(invite_url: invite_url, app_url: deep_link(invite_url))
+         |> assign(invite_url: invite_url, app_url: InviteLink.deep_link(token))
          |> Phoenix.LiveView.put_flash(:info, gettext("Convite criado. Envie o link para a pessoa."))}
 
       {:error, _reason} ->
@@ -87,17 +88,6 @@ defmodule TainaWeb.InviteLive do
 
   def handle_event("reset", _params, socket) do
     {:noreply, assign(socket, invite_url: nil, app_url: nil)}
-  end
-
-  # O deep link do app (contrato review 0.1.0, E): o mesmo token, com o host
-  # da caixa, no scheme proprio -- o que o app sabe abrir direto (e o que o
-  # QR dedicado codifica). O host e a autoridade do proprio link de convite
-  # (host com porta, quando ha).
-  defp deep_link(invite_url) do
-    uri = URI.parse(invite_url)
-    token = uri.path |> String.split("/") |> List.last()
-
-    "taina://convite/#{token}?host=#{uri.authority}"
   end
 
   defp return_label(return_to) do

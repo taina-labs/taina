@@ -13,6 +13,7 @@ defmodule TainaWeb.API.MemberController do
 
   alias Taina.Maraca
   alias TainaWeb.API.Error
+  alias TainaWeb.InviteLink
   alias Ypy.Wire
 
   def index(conn, _params) do
@@ -36,7 +37,7 @@ defmodule TainaWeb.API.MemberController do
             |> json(%{
               "ava" => Wire.Ava.json(ava),
               "token" => token,
-              "invite_url" => "taina://convite/" <> token <> "?host=" <> URI.encode_www_form(TainaWeb.Endpoint.url())
+              "invite_url" => InviteLink.deep_link(token)
             })
 
           {:error, reason} ->

@@ -41,7 +41,13 @@ defmodule TainaWeb.API.FatiaUsTest do
         |> post(~p"/api/v1/members", %{"papel" => "morador"})
         |> json_response(201)
 
-      assert String.starts_with?(created["invite_url"], "taina://convite/#{created["token"]}?host=")
+      assert created["invite_url"] == TainaWeb.InviteLink.deep_link(created["token"])
+
+      invite_uri = URI.parse(created["invite_url"])
+      assert invite_uri.scheme == "taina"
+      assert invite_uri.host == "convite"
+      assert invite_uri.path == "/#{created["token"]}"
+      assert URI.decode_query(invite_uri.query) == %{"host" => TainaWeb.Endpoint.url()}
     end
 
     test "papel explicito desconhecido no convite responde 422", %{conn: conn, zelador: zelador} do
