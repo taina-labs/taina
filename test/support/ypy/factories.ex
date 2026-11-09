@@ -73,7 +73,8 @@ defmodule Ypy.Factories do
 
   @doc "Um diretorio temporario unico sob o prefixo dado."
   def dir_temporario(prefixo) do
-    dir = Path.join(System.tmp_dir!(), "ypy-#{prefixo}-#{System.unique_integer([:positive])}")
+    unique = "#{System.system_time(:nanosecond)}-#{System.unique_integer([:positive])}"
+    dir = Path.join(System.tmp_dir!(), "ypy-#{prefixo}-#{unique}")
     File.mkdir_p!(dir)
     dir
   end

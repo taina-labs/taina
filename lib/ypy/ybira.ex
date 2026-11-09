@@ -133,7 +133,7 @@ defmodule Ypy.Ybira do
   """
   @spec list_files(Ecto.Repo.t(), Scope.t(), keyword()) :: [File.t()]
   def list_files(repo, %Scope{} = scope, opts \\ []) do
-    case resolve_folder(repo, scope, opts[:folder]) do
+    case resolve_readable_folder(repo, scope, opts[:folder]) do
       {:ok, folder} ->
         query =
           scope.tekoa.id
@@ -150,7 +150,7 @@ defmodule Ypy.Ybira do
   @doc "As pastas legiveis, mesmo jogo das listagens. Opcoes: `:parent`, `:zona`, `:cursor`, `:limit`, `:lixeira`."
   @spec list_folders(Ecto.Repo.t(), Scope.t(), keyword()) :: [Folder.t()]
   def list_folders(repo, %Scope{} = scope, opts \\ []) do
-    case resolve_folder(repo, scope, opts[:parent]) do
+    case resolve_readable_folder(repo, scope, opts[:parent]) do
       {:ok, parent} ->
         query =
           scope.tekoa.id
@@ -293,6 +293,12 @@ defmodule Ypy.Ybira do
     end
   end
 
+  defp resolve_readable_folder(_repo, _scope, nil), do: {:ok, nil}
+
+  defp resolve_readable_folder(repo, scope, rkey) do
+    get_readable(repo, scope, "ypy.folder.v0", rkey)
+  end
+
   defp nome(path, opts), do: Keyword.get(opts, :nome, Path.basename(path))
 
   # O payload auto-descritivo do record de arquivo (RFC_006 secao 6): a
@@ -375,27 +381,11 @@ defmodule Ypy.Ybira do
             {:ok, file}
 
           {:error, reason} ->
-            # Os bytes sao enderecados por conteudo e deduplicados: so saem
-            # quando nenhuma linha da Tekoa os endereca.
-            recolher_bytes_orfaos(repo, blobs, tekoa.id, blob_cid)
             {:error, reason}
         end
 
       {:error, reason} ->
         {:error, reason}
-    end
-  end
-
-  # O upload falhou e o rollback devolveu o dado: a linha do blob que
-  # sobrevive ao rollback e a de um upload anterior que a commitou (um
-  # arquivo vivo ainda a usa); sem linha na Tekoa, os bytes nao sao de
-  # ninguem e saem.
-  defp recolher_bytes_orfaos(repo, blobs, tekoa_id, blob_cid) do
-    if Store.get_blob(repo, tekoa_id, Cid.to_string(blob_cid)) do
-      :ok
-    else
-      _ = blob_delete(blobs, blob_cid)
-      :ok
     end
   end
 
@@ -624,6 +614,5 @@ defmodule Ypy.Ybira do
     end
   end
 
-  defp blob_delete(blobs, cid), do: impl(blobs).delete(blobs, cid)
   defp impl(store), do: store.__struct__
 end

@@ -3,6 +3,7 @@ defmodule Ypy.Ybira.PersistenceTest do
 
   import Ypy.Factories
 
+  alias Ecto.Adapters.SQL.Sandbox
   alias Ypy.BlobStore
   alias Ypy.BrokenKeys
   alias Ypy.Cid
@@ -292,6 +293,67 @@ defmodule Ypy.Ybira.PersistenceTest do
     assert ids == [dentro.id]
   end
 
+  test "leitores da praca podem listar arquivos e pastas dentro de uma pasta", ctx do
+    {:ok, pasta} = Ybira.criar_pasta(TestRepo, ctx.keys, ctx.dono_scope, "comum")
+    {path, _dados} = arquivo("arquivo comum")
+
+    {:ok, file} =
+      Ybira.upload(TestRepo, ctx.keys, blobs(), ctx.dono_scope, path,
+        mime: @mime,
+        folder: pasta.rkey
+      )
+
+    {:ok, dentro} =
+      Ybira.criar_pasta(TestRepo, ctx.keys, ctx.dono_scope, "subpasta", parent: pasta.rkey)
+
+    {:ok, _} = Ybira.publicar(TestRepo, ctx.keys, ctx.dono_scope, "ypy.folder.v0", pasta.rkey)
+    {:ok, _} = Ybira.publicar(TestRepo, ctx.keys, ctx.dono_scope, "ypy.file.v0", file.rkey)
+    {:ok, _} = Ybira.publicar(TestRepo, ctx.keys, ctx.dono_scope, "ypy.folder.v0", dentro.rkey)
+
+    assert Enum.map(Ybira.list_files(TestRepo, ctx.outro_scope, folder: pasta.rkey), & &1.rkey) == [
+             file.rkey
+           ]
+
+    assert Enum.map(Ybira.list_folders(TestRepo, ctx.outro_scope, parent: pasta.rkey), & &1.rkey) == [
+             dentro.rkey
+           ]
+  end
+
+  test "leitores com concessao na pasta podem listar seus conteudos legiveis", ctx do
+    {:ok, pasta} = Ybira.criar_pasta(TestRepo, ctx.keys, ctx.dono_scope, "concedida")
+    {path, _dados} = arquivo("arquivo legivel")
+
+    {:ok, file} =
+      Ybira.upload(TestRepo, ctx.keys, blobs(), ctx.dono_scope, path,
+        mime: @mime,
+        folder: pasta.rkey
+      )
+
+    {:ok, dentro} =
+      Ybira.criar_pasta(TestRepo, ctx.keys, ctx.dono_scope, "subpasta", parent: pasta.rkey)
+
+    {:ok, _} = Ybira.publicar(TestRepo, ctx.keys, ctx.dono_scope, "ypy.file.v0", file.rkey)
+    {:ok, _} = Ybira.publicar(TestRepo, ctx.keys, ctx.dono_scope, "ypy.folder.v0", dentro.rkey)
+
+    {:ok, _concessao} =
+      Ypy.Maraca.conceder(
+        TestRepo,
+        ctx.keys,
+        ctx.dono_scope,
+        "ypy.folder.v0",
+        pasta.rkey,
+        ctx.outro
+      )
+
+    assert Enum.map(Ybira.list_files(TestRepo, ctx.outro_scope, folder: pasta.rkey), & &1.rkey) == [
+             file.rkey
+           ]
+
+    assert Enum.map(Ybira.list_folders(TestRepo, ctx.outro_scope, parent: pasta.rkey), & &1.rkey) == [
+             dentro.rkey
+           ]
+  end
+
   test "apagar, ver a lixeira e restaurar; cadeia anota os dois atos", ctx do
     {path, _dados} = arquivo("para a lixeira")
 
@@ -453,7 +515,7 @@ defmodule Ypy.Ybira.PersistenceTest do
     {:ok, _} = Ybira.get_folder(TestRepo, ctx.outro_scope, pasta.rkey)
   end
 
-  test "falha de cadeia desfaz a escrita do dado", ctx do
+  test "falha de cadeia desfaz os registros, mas mantem os bytes", ctx do
     quebradas = BrokenKeys.new(dir_temporario("keys-quebradas"))
     armazenamento = blobs()
     {path, dados} = arquivo("conteudo commitado")
@@ -461,8 +523,8 @@ defmodule Ypy.Ybira.PersistenceTest do
     assert {:error, :not_found} =
              Ybira.upload(TestRepo, quebradas, armazenamento, ctx.dono_scope, path, mime: @mime)
 
-    # Nada ficou: sem arquivo, sem cota, sem entrada, sem bytes. Ou a cadeia
-    # fica com o dado, ou o dado volta.
+    # Nada ficou no banco: sem arquivo, sem cota ou entrada na cadeia. Os
+    # bytes ficam no armazenamento, pois outra Tekoa pode estar usando o CID.
     assert TestRepo.aggregate(Ypy.Ybira.File, :count) == 0
 
     tekoa = TestRepo.reload!(ctx.tekoa)
@@ -470,7 +532,58 @@ defmodule Ypy.Ybira.PersistenceTest do
     assert Store.cadeia(TestRepo, ctx.tekoa.id) == []
 
     cid = Cid.from_data(dados, Cid.raw())
-    assert fetch_blob(armazenamento, Cid.to_string(cid)) == {:error, :not_found}
+    assert {:ok, ^dados} = fetch_blob(armazenamento, Cid.to_string(cid))
+  end
+
+  test "falha de upload em outra Tekoa nao remove bytes deduplicados no root compartilhado", ctx do
+    armazenamento = blobs()
+    {path, dados} = arquivo("bytes compartilhados entre Tekoas")
+
+    {:ok, file} = Ybira.upload(TestRepo, ctx.keys, armazenamento, ctx.dono_scope, path, mime: @mime)
+
+    {outra_tekoa, _outras_chaves} = nova_tekoa(TestRepo, domain: "outra.test")
+    {:ok, outro_dono} = novo_ava(TestRepo, outra_tekoa, username: "ana")
+    outro_scope = %Scope{ava: outro_dono, tekoa: outra_tekoa}
+    quebradas = BrokenKeys.new(dir_temporario("keys-quebradas-outra-tekoa"))
+
+    assert {:error, :not_found} =
+             Ybira.upload(TestRepo, quebradas, armazenamento, outro_scope, path, mime: @mime)
+
+    assert {:ok, ^dados} = fetch_blob(armazenamento, file.blob_cid)
+  end
+
+  test "upload que falha nao remove bytes iguais de um upload concorrente ainda sem commit", ctx do
+    disk = BlobStore.Disk.new(dir_temporario("blobs-concorrentes"))
+    armazenamento = Ypy.BlobStore.Blocking.new(disk, self())
+    {path, dados} = arquivo("mesmos bytes durante dois uploads")
+    quebradas = BrokenKeys.new(dir_temporario("keys-quebradas-concorrentes"))
+
+    upload_ativo =
+      Task.async(fn ->
+        Ybira.upload(TestRepo, ctx.keys, armazenamento, ctx.dono_scope, path, mime: @mime)
+      end)
+
+    :ok = Sandbox.allow(TestRepo, self(), upload_ativo.pid)
+    assert_receive {:blob_written, ativo_pid, {:ok, cid}}
+    assert ativo_pid == upload_ativo.pid
+
+    upload_falho =
+      Task.async(fn ->
+        Ybira.upload(TestRepo, quebradas, armazenamento, ctx.outro_scope, path, mime: @mime)
+      end)
+
+    :ok = Sandbox.allow(TestRepo, self(), upload_falho.pid)
+    assert_receive {:blob_written, falho_pid, {:ok, ^cid}}
+    assert falho_pid == upload_falho.pid
+
+    send(falho_pid, :continue_blob)
+    assert {:error, :not_found} = Task.await(upload_falho, :infinity)
+    assert {:ok, ^dados} = BlobStore.Disk.fetch(disk, cid)
+
+    send(ativo_pid, :continue_blob)
+    assert {:ok, file} = Task.await(upload_ativo, :infinity)
+    assert file.blob_cid == Cid.to_string(cid)
+    assert {:ok, ^dados} = BlobStore.Disk.fetch(disk, cid)
   end
 
   test "bytes deduplicados sobrevivem a um upload que falha na cadeia", ctx do
