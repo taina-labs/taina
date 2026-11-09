@@ -907,6 +907,11 @@ msgstr ""
 msgid "%{actor} entrou na comunidade."
 msgstr ""
 
+#: lib/taina_web/mural_text.ex:85
+#, elixir-autogen, elixir-format
+msgid "%{actor} liberou o disco inteiro para a comunidade."
+msgstr ""
+
 #: lib/taina_web/mural_text.ex:87
 #, elixir-autogen, elixir-format
 msgid "%{actor} mudou o limite de armazenamento de %{from} para %{to}."

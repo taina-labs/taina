@@ -82,6 +82,9 @@ defmodule TainaWeb.MuralText do
   def sentence(%Entry{tipo: "member_reactivated"} = event, names),
     do: gettext("%{actor} reativou uma conta.", actor: actor_label(event, names))
 
+  def sentence(%Entry{tipo: "quota_changed", payload: %{"to" => nil}} = event, names),
+    do: gettext("%{actor} liberou o disco inteiro para a comunidade.", actor: actor_label(event, names))
+
   def sentence(%Entry{tipo: "quota_changed", payload: %{"from" => from, "to" => to}} = event, names)
       when is_integer(from) do
     gettext("%{actor} mudou o limite de armazenamento de %{from} para %{to}.",
