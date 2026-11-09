@@ -24,5 +24,8 @@ defmodule Ypy.BrokenKeys do
   def fetch_public(_store, _tekoa_id), do: {:error, :not_found}
 
   @impl true
+  def initialize(_store, _tekoa_id, _keypair), do: :ok
+
+  @impl true
   def rotate(_store, _tekoa_id, _keypair), do: :ok
 end

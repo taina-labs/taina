@@ -32,8 +32,8 @@ defmodule Taina.Keys do
     else
       files = new()
 
-      with {:ok, {pub, _priv} = keypair} <- Files.generate(files),
-           :ok <- Files.rotate(files, tekoa_id, keypair),
+      with {:ok, {_pub, _priv} = keypair} <- Files.generate(files),
+           {:ok, pub} <- initialize_or_fetch(files, tekoa_id, keypair),
            {:ok, _key} <-
              repo.insert(
                TekoaKey.changeset(%TekoaKey{}, %{
@@ -44,6 +44,14 @@ defmodule Taina.Keys do
              ) do
         :ok
       end
+    end
+  end
+
+  defp initialize_or_fetch(files, tekoa_id, {pub, _priv} = keypair) do
+    case Files.initialize(files, tekoa_id, keypair) do
+      :ok -> {:ok, pub}
+      {:error, :eexist} -> Files.fetch_public(files, tekoa_id)
+      {:error, _reason} = error -> error
     end
   end
 

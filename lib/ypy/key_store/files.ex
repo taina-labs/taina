@@ -1,10 +1,9 @@
 defmodule Ypy.KeyStore.Files do
   @moduledoc """
-  A chave privada da Tekoa em um arquivo sob o diretorio de chaves
-  (`Ypy.Layout.keys`), uma por Tekoa, no mesmo risco do Pesque: o arquivo nasce
-  com exclusao (`O_EXCL`) para que duas inicializacoes em corrida nao caiam
-  uma sobre a outra, e o `chmod` vem depois do create porque o open do Erlang
-  ignora modo de criacao.
+  Stores each Tekoa private key in a file under `Ypy.Layout.keys`.
+
+  Initialization claims the destination exclusively. Explicit rotation writes
+  a protected temporary file and atomically replaces the destination.
   """
 
   @behaviour Ypy.KeyStore
@@ -38,31 +37,54 @@ defmodule Ypy.KeyStore.Files do
   end
 
   @impl true
-  def rotate(store, tekoa_id, {_pub, priv}) do
-    case :file.open(path(store, tekoa_id), [:write, :exclusive]) do
-      {:ok, device} ->
-        with :ok <- :file.write(device, priv),
-             :ok <- :file.close(device) do
-          File.chmod(path(store, tekoa_id), 0o600)
-        end
+  def initialize(store, tekoa_id, {_pub, priv}) do
+    target = path(store, tekoa_id)
 
-      {:error, :eexist} ->
-        replace(store, tekoa_id, priv)
-
-      {:error, reason} ->
-        {:error, reason}
+    case :file.open(target, [:write, :exclusive]) do
+      {:ok, device} -> write_private(target, device, priv)
+      {:error, reason} -> {:error, reason}
     end
   end
 
-  # A substituicao e atomica via temporario + rename: um leitor (sign em
-  # outro processo) ve a chave velha inteira ou a nova inteira, nunca metade.
+  @impl true
+  def rotate(store, tekoa_id, {_pub, priv}) do
+    replace(store, tekoa_id, priv)
+  end
+
   defp replace(store, tekoa_id, priv) do
     target = path(store, tekoa_id)
     temp = target <> ".tmp-#{System.unique_integer([:positive])}"
 
-    with :ok <- File.write(temp, priv),
-         :ok <- File.chmod(temp, 0o600) do
-      File.rename(temp, target)
+    with {:ok, device} <- :file.open(temp, [:write, :exclusive]),
+         :ok <- write_private(temp, device, priv),
+         :ok <- File.rename(temp, target) do
+      :ok
+    else
+      {:error, _reason} = error ->
+        File.rm(temp)
+        error
+    end
+  end
+
+  defp write_private(path, device, priv) do
+    result =
+      with :ok <- File.chmod(path, 0o600) do
+        :file.write(device, priv)
+      end
+
+    close_result = :file.close(device)
+
+    case {result, close_result} do
+      {:ok, :ok} ->
+        :ok
+
+      {{:error, _reason} = error, _close_result} ->
+        File.rm(path)
+        error
+
+      {:ok, {:error, reason}} ->
+        File.rm(path)
+        {:error, reason}
     end
   end
 

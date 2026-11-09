@@ -27,10 +27,9 @@ defmodule Ypy.KeyStore do
   @callback fetch_public(t(), tekoa_id :: integer()) ::
               {:ok, binary()} | {:error, :not_found}
 
-  @doc """
-  Poem `keypair` como chave atual da Tekoa: reclama o arquivo com exclusao
-  quando a Tekoa ainda nao tem chave (duas inicializacoes em corrida, uma
-  so vence) e substitui atomicamente quando ja tem.
-  """
+  @doc "Claims the key file during first-time initialization. Returns `:eexist` if another initializer already created it."
+  @callback initialize(t(), tekoa_id :: integer(), keypair()) :: :ok | {:error, term()}
+
+  @doc "Explicitly replaces the current key file atomically, or creates it if absent."
   @callback rotate(t(), tekoa_id :: integer(), keypair()) :: :ok | {:error, term()}
 end

@@ -20,14 +20,21 @@ defmodule Ypy.KeyStore.FilesTest do
     assert Secp256k1.public_from_private(priv) == pub
   end
 
-  test "rotate reclama o arquivo com exclusao e assina", %{keys: keys, dir: dir} do
+  test "initialize claims the file exclusively and writes it with restricted permissions", %{
+    keys: keys,
+    dir: dir
+  } do
     {:ok, {pub, priv}} = Files.generate(keys)
 
-    assert Files.rotate(keys, 1, {pub, priv}) == :ok
+    assert Files.initialize(keys, 1, {pub, priv}) == :ok
 
     path = Path.join(dir, "tekoa-1.key")
     assert File.read!(path) == priv
     assert Bitwise.band(File.stat!(path).mode, 0o777) == 0o600
+
+    {:ok, {_other_pub, other_priv}} = Files.generate(keys)
+    assert Files.initialize(keys, 1, {pub, other_priv}) == {:error, :eexist}
+    assert File.read!(path) == priv
 
     assert {:ok, signature} = Files.sign(keys, 1, "corpo")
     assert byte_size(signature) == 64
@@ -50,10 +57,12 @@ defmodule Ypy.KeyStore.FilesTest do
     {:ok, {pub1, priv1}} = Files.generate(keys)
     {:ok, {pub2, priv2}} = Files.generate(keys)
 
-    :ok = Files.rotate(keys, 3, {pub1, priv1})
+    :ok = Files.initialize(keys, 3, {pub1, priv1})
     :ok = Files.rotate(keys, 3, {pub2, priv2})
 
-    assert File.read!(Path.join(dir, "tekoa-3.key")) == priv2
+    path = Path.join(dir, "tekoa-3.key")
+    assert File.read!(path) == priv2
+    assert Bitwise.band(File.stat!(path).mode, 0o777) == 0o600
     assert {:ok, ^pub2} = Files.fetch_public(keys, 3)
   end
 
@@ -63,7 +72,7 @@ defmodule Ypy.KeyStore.FilesTest do
          dir: dir
        } do
     {:ok, {pub, priv}} = Files.generate(keys)
-    :ok = Files.rotate(keys, 4, {pub, priv})
+    :ok = Files.initialize(keys, 4, {pub, priv})
     {:ok, {pub_nova, priv_nova}} = Files.generate(keys)
 
     :ok = Files.rotate(keys, 4, {pub_nova, priv_nova})

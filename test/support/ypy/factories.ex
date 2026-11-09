@@ -24,7 +24,7 @@ defmodule Ypy.Factories do
 
     keys = KeyStore.Files.new(dir_temporario("keys"))
     {:ok, keypair} = KeyStore.Files.generate(keys)
-    :ok = KeyStore.Files.rotate(keys, tekoa.id, keypair)
+    :ok = KeyStore.Files.initialize(keys, tekoa.id, keypair)
     {pub, _priv} = keypair
 
     {:ok, _} =
