@@ -1,5 +1,5 @@
 defmodule Taina.ConfigTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias Taina.Config
 
@@ -64,6 +64,23 @@ defmodule Taina.ConfigTest do
     assert config[:taina][:upload][:max_concurrent_uploads] == 10
     assert config[:taina][Taina.Repo][:database] == "/data/taina.db"
     assert config[:taina][:storage_root] == "/storage"
+    assert config[:taina][TainaWeb.Endpoint][:check_origin] == ["https://example.org"]
+  end
+
+  test "endpoint origin includes a non-default public port" do
+    path = write_config(String.replace(@valid, "url_port = 443", "url_port = 8443"))
+    previous = System.get_env("TAINA_CONFIG_TEST")
+    System.put_env("TAINA_CONFIG_TEST", path)
+
+    on_exit(fn ->
+      if previous,
+        do: System.put_env("TAINA_CONFIG_TEST", previous),
+        else: System.delete_env("TAINA_CONFIG_TEST")
+    end)
+
+    config = Config.load([], {:system, "TAINA_CONFIG_TEST"})
+
+    assert config[:taina][TainaWeb.Endpoint][:check_origin] == ["https://example.org:8443"]
   end
 
   test "template contains no secret value" do

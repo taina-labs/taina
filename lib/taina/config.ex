@@ -241,7 +241,7 @@ defmodule Taina.Config do
          url: [host: settings.hostname, port: settings.url_port, scheme: Atom.to_string(settings.url_scheme)],
          http: [ip: settings.bind_ip, port: settings.port],
          secret_key_base: secret,
-         check_origin: false
+         check_origin: [public_origin(settings)]
        ]},
       storage_root: settings.storage_dir,
       upload: [
@@ -253,6 +253,14 @@ defmodule Taina.Config do
       data_dir: settings.data_dir,
       config: settings
     ]
+  end
+
+  defp public_origin(settings) do
+    scheme = Atom.to_string(settings.url_scheme)
+    default_port = if scheme == "https", do: 443, else: 80
+    port = if settings.url_port == default_port, do: "", else: ":#{settings.url_port}"
+
+    "#{scheme}://#{settings.hostname}#{port}"
   end
 
   defp secret(path), do: if(File.regular?(path), do: String.trim(File.read!(path)))
