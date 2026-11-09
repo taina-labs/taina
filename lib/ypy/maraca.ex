@@ -150,8 +150,7 @@ defmodule Ypy.Maraca do
           {:ok, Ava.t()} | {:error, term()}
   def mudar_papel(repo, keys, %Scope{} = scope, %Ava{id: ava_id}, papel) when papel in [:zelador, :morador] do
     with :ok <- zelador_guard(scope),
-         {:ok, ava} <- ava_atual(repo, scope.tekoa.id, ava_id),
-         :ok <- ultimo_zelador_guard(repo, scope, ava, papel) do
+         {:ok, ava} <- ava_atual(repo, scope.tekoa.id, ava_id) do
       MuralStore.commit(
         repo,
         keys,
@@ -162,9 +161,7 @@ defmodule Ypy.Maraca do
           "ava" => ava.public_id,
           "papel" => Atom.to_string(papel)
         },
-        fn ->
-          repo.update(Ava.papel_changeset(ava, papel))
-        end
+        fn -> mudar_papel_transacional(repo, scope, ava_id, papel) end
       )
     end
   end
@@ -234,6 +231,13 @@ defmodule Ypy.Maraca do
   end
 
   defp ultimo_zelador_guard(_repo, _scope, _ava, :zelador), do: :ok
+
+  defp mudar_papel_transacional(repo, scope, ava_id, papel) do
+    with {:ok, ava} <- ava_atual(repo, scope.tekoa.id, ava_id),
+         :ok <- ultimo_zelador_guard(repo, scope, ava, papel) do
+      repo.update(Ava.papel_changeset(ava, papel))
+    end
+  end
 
   # A concessao e a decisao do pedido sao um so commit: ambas entram no
   # data_fn da transacao do mural, e uma falha de cadeia devolve as duas.

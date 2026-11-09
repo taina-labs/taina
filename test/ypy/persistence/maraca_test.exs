@@ -3,12 +3,14 @@ defmodule Ypy.Maraca.PersistenceTest do
 
   import Ypy.Factories
 
+  alias Ecto.Adapters.SQL.Sandbox
   alias Ypy.BrokenKeys
   alias Ypy.Maraca
   alias Ypy.Maraca.Ava
   alias Ypy.Maraca.Concessao
   alias Ypy.Maraca.Policy
   alias Ypy.Maraca.Store
+  alias Ypy.RacyRepo
   alias Ypy.Scope
   alias Ypy.Ybira
 
@@ -199,6 +201,47 @@ defmodule Ypy.Maraca.PersistenceTest do
     end
   end
 
+  test "commits concorrentes nao removem a ultima zeladoria", ctx do
+    {:ok, segundo_zelador} =
+      Maraca.mudar_papel(TestRepo, ctx.keys, ctx.zelador_scope, ctx.dono, :zelador)
+
+    segundo_zelador_scope = %Scope{ava: segundo_zelador, tekoa: ctx.tekoa}
+    RacyRepo.arm_concurrent_commit(self())
+
+    tarefas =
+      Enum.map(
+        [
+          {ctx.zelador_scope, segundo_zelador},
+          {segundo_zelador_scope, ctx.zelador}
+        ],
+        fn {actor_scope, target} ->
+          task =
+            Task.async(fn ->
+              receive do
+                :start -> Maraca.mudar_papel(RacyRepo, ctx.keys, actor_scope, target, :morador)
+              end
+            end)
+
+          :ok = Sandbox.allow(TestRepo, self(), task.pid)
+          send(task.pid, :start)
+          task
+        end
+      )
+
+    try do
+      synchronize_racy_repo()
+      resultados = Enum.map(tarefas, &Task.await(&1, :infinity))
+
+      assert Enum.count(resultados, &match?({:ok, %Ava{}}, &1)) == 1
+      assert Enum.count(resultados, &(&1 == {:error, :last_zelador})) == 1
+      assert Store.count_zeladores(TestRepo, ctx.tekoa.id) == 1
+
+      assert length(Ypy.Mural.Store.entradas(TestRepo, ctx.tekoa.id, tipo: "mudar_papel")) == 2
+    after
+      RacyRepo.disarm()
+    end
+  end
+
   test "mudar papel e um ato na cadeia, do mesmo commit da mudanca", ctx do
     {:ok, promovido} =
       Maraca.mudar_papel(TestRepo, ctx.keys, ctx.zelador_scope, ctx.outro, :zelador)
@@ -272,5 +315,32 @@ defmodule Ypy.Maraca.PersistenceTest do
       Ybira.upload(TestRepo, ctx.keys, blobs(), scope, path, mime: "image/jpeg")
 
     {:ok, file}
+  end
+
+  defp synchronize_racy_repo do
+    {phase, first_pid} =
+      receive do
+        {:racy_repo_waiting, phase, pid} -> {phase, pid}
+      after
+        5_000 -> flunk("no concurrent repo operation reached the barrier")
+      end
+
+    phase_pids = [first_pid | waiting_racy_repo(phase, 1)]
+    Enum.each(phase_pids, &send(&1, {:racy_repo_continue, phase}))
+
+    if phase == :count do
+      transaction_pids = waiting_racy_repo(:transaction, 2)
+      Enum.each(transaction_pids, &send(&1, {:racy_repo_continue, :transaction}))
+    end
+  end
+
+  defp waiting_racy_repo(phase, count) do
+    Enum.map(1..count, fn _ ->
+      receive do
+        {:racy_repo_waiting, ^phase, pid} -> pid
+      after
+        5_000 -> flunk("concurrent repo operation did not reach #{phase} barrier")
+      end
+    end)
   end
 end
