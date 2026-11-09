@@ -71,6 +71,8 @@ defmodule TainaWeb.SaudeLive do
      |> assign(:painel, painel)}
   end
 
+  def handle_info(_message, socket), do: {:noreply, socket}
+
   @impl true
   def handle_event("run-backup", _params, socket) do
     if Maraca.zelador?(socket.assigns.current_scope.ava) and Backup.enabled?() do

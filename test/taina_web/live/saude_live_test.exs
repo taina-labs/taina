@@ -169,6 +169,15 @@ defmodule TainaWeb.SaudeLiveTest do
     assert has_element?(lv, ".page-header__title", "Saúde da comunidade")
   end
 
+  test "unrelated messages leave the live view unchanged", %{conn: conn, morador: morador} do
+    {:ok, lv, _html} = conn |> log_in(morador) |> live(~p"/saude")
+    html = render(lv)
+
+    send(lv.pid, {:unrelated_pubsub_event, :ignored})
+
+    assert render(lv) == html
+  end
+
   defp saude_body_html(opts) do
     painel =
       %{
