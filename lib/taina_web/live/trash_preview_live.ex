@@ -5,6 +5,7 @@ defmodule TainaWeb.TrashPreviewLive do
 
   alias Taina.Ybira
   alias TainaWeb.Layouts
+  alias TainaWeb.TextPreview
 
   @text_preview_limit 256 * 1024
 
@@ -85,7 +86,7 @@ defmodule TainaWeb.TrashPreviewLive do
          {:ok, device} <- File.open(path, [:read, :binary, :raw]) do
       try do
         case :file.read(device, @text_preview_limit) do
-          {:ok, content} -> content
+          {:ok, content} when is_binary(content) -> TextPreview.decode(content)
           _ -> nil
         end
       after

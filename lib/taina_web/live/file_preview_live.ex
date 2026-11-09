@@ -18,6 +18,7 @@ defmodule TainaWeb.FilePreviewLive do
   alias Taina.Maraca
   alias Taina.Ybira
   alias TainaWeb.Layouts
+  alias TainaWeb.TextPreview
   alias TainaWeb.Time
 
   @impl true
@@ -126,7 +127,7 @@ defmodule TainaWeb.FilePreviewLive do
          {:ok, device} <- File.open(path, [:read, :binary, :raw]) do
       try do
         case :file.read(device, @text_preview_limit) do
-          {:ok, content} when is_binary(content) -> content
+          {:ok, content} when is_binary(content) -> TextPreview.decode(content)
           _ -> nil
         end
       after
