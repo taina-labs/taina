@@ -16,7 +16,6 @@ defmodule Ypy.Mural.Store do
 
   import Ecto.Query, only: [exclude: 2, limit: 2, order_by: 3]
 
-  alias Ypy.Cbor
   alias Ypy.Cid
   alias Ypy.KeyStore
   alias Ypy.Maraca.Store, as: MaracaStore
@@ -42,8 +41,15 @@ defmodule Ypy.Mural.Store do
     prev = prev_cid(head)
     body = %{"seq" => seq, "prev" => prev, "payload" => payload}
 
-    with {:ok, signature} <- keys.__struct__.sign(keys, tekoa_id, Cbor.encode(body)) do
-      insert_entry(repo, tekoa_id, tipo, payload, seq, prev, signature)
+    with %TekoaKey{pub: pub} <- MaracaStore.chave_ativa(repo, tekoa_id),
+         signing_body = Map.put(body, "signing_key", pub),
+         {:ok, signed_bytes} <- Mural.signing_bytes(signing_body),
+         {:ok, signature} <- keys.__struct__.sign(keys, tekoa_id, signed_bytes),
+         :ok <- Mural.verify_entry(pub, Map.put(signing_body, "signature", signature)) do
+      insert_entry(repo, tekoa_id, tipo, payload, seq, prev, signature, pub)
+    else
+      nil -> {:error, :not_found}
+      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -53,10 +59,17 @@ defmodule Ypy.Mural.Store do
   defp prev_cid(nil), do: nil
   defp prev_cid(head), do: Cid.parse(head.cid)
 
-  defp insert_entry(repo, tekoa_id, tipo, payload, seq, prev, signature) do
-    entry = %{"seq" => seq, "prev" => prev, "payload" => payload, "signature" => signature}
+  defp insert_entry(repo, tekoa_id, tipo, payload, seq, prev, signature, signing_key) do
+    entry = %{
+      "seq" => seq,
+      "prev" => prev,
+      "payload" => payload,
+      "signature" => signature,
+      "signing_key" => signing_key
+    }
+
     cid = Mural.entry_cid(entry)
-    changeset = changeset(tekoa_id, seq, prev, tipo, payload, signature, cid)
+    changeset = changeset(tekoa_id, seq, prev, tipo, payload, signature, signing_key, cid)
 
     case repo.insert(changeset) do
       {:ok, row} ->
@@ -147,36 +160,40 @@ defmodule Ypy.Mural.Store do
   def cadeia(repo, tekoa_id), do: repo.all(Queries.entradas(tekoa_id))
 
   @doc """
-  Verifica a cadeia inteira da Tekoa contra a chave publica ativa dela, do
-  genesis a cabeca. Devolve :ok, {:error, {indice, motivo}} na entrada que
-  quebra, ou {:error, :not_found} quando a Tekoa nao tem chave ativa.
+  Verifica a cadeia inteira da Tekoa contra as chaves publicas ativas e
+  aposentadas, do genesis a cabeca. Entradas antigas sem identificador sao
+  tentadas contra cada chave registrada. Devolve :ok,
+  {:error, {indice, motivo}} na entrada que quebra, ou {:error, :not_found}
+  quando a Tekoa nao tem chave ativa.
   """
   @spec verificar_cadeia(Ecto.Repo.t(), integer()) ::
           :ok | {:error, {non_neg_integer(), atom()}} | {:error, :not_found}
   def verificar_cadeia(repo, tekoa_id) do
-    case MaracaStore.chave_ativa(repo, tekoa_id) do
-      %TekoaKey{pub: pub} ->
-        entries =
-          repo
-          |> cadeia(tekoa_id)
-          |> Enum.map(&reconstruct/1)
+    keys = MaracaStore.chaves(repo, tekoa_id)
 
-        Mural.verify_chain(pub, entries)
+    if Enum.any?(keys, &is_nil(&1.aposentada_em)) do
+      entries =
+        repo
+        |> cadeia(tekoa_id)
+        |> Enum.map(&reconstruct/1)
 
-      nil ->
-        {:error, :not_found}
+      Mural.verify_chain(Enum.map(keys, & &1.pub), entries)
+    else
+      {:error, :not_found}
     end
   end
 
   # A linha de volta ao mapa do fio CBOR: prev volta a ser link e a
   # assinatura volta a ser byte string; a matematica pura confere o resto.
   defp reconstruct(%Entry{} = row) do
-    %{
+    entry = %{
       "seq" => row.seq,
       "prev" => row.prev && Cid.parse(row.prev),
       "payload" => row.payload,
       "signature" => row.signature
     }
+
+    if is_binary(row.signing_key), do: Map.put(entry, "signing_key", row.signing_key), else: entry
   end
 
   @doc "Se o erro e de indice unico: aceita o changeset ou a lista de erros dele."
@@ -190,7 +207,7 @@ defmodule Ypy.Mural.Store do
     end)
   end
 
-  defp changeset(tekoa_id, seq, prev, tipo, payload, signature, cid) do
+  defp changeset(tekoa_id, seq, prev, tipo, payload, signature, signing_key, cid) do
     Entry.changeset(%Entry{}, %{
       tekoa_id: tekoa_id,
       seq: seq,
@@ -198,6 +215,7 @@ defmodule Ypy.Mural.Store do
       tipo: tipo,
       payload: payload,
       signature: signature,
+      signing_key: signing_key,
       cid: Cid.to_string(cid)
     })
   end

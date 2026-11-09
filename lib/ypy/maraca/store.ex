@@ -57,6 +57,9 @@ defmodule Ypy.Maraca.Store do
   @doc "A chave publica ativa da Tekoa."
   def chave_ativa(repo, tekoa_id), do: repo.one(Queries.chave_ativa(tekoa_id))
 
+  @doc "Todas as chaves publicas registradas da Tekoa, incluindo as aposentadas."
+  def chaves(repo, tekoa_id), do: repo.all(Queries.chaves(tekoa_id))
+
   @doc """
   Aumenta o storage usado da Tekoa (atomico, sem reler). A Tekoa que nao
   existe responde {:error, :not_found}.

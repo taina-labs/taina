@@ -21,6 +21,7 @@ defmodule Ypy.Mural.Entry do
           tipo: String.t() | nil,
           payload: map() | nil,
           signature: binary() | nil,
+          signing_key: binary() | nil,
           cid: String.t() | nil,
           tekoa_id: integer() | nil,
           inserted_at: DateTime.t() | nil
@@ -32,6 +33,7 @@ defmodule Ypy.Mural.Entry do
     field(:tipo, :string)
     field(:payload, :map)
     field(:signature, :binary)
+    field(:signing_key, :binary)
     field(:cid, :string)
 
     belongs_to(:tekoa, Tekoa)
@@ -42,7 +44,7 @@ defmodule Ypy.Mural.Entry do
   @doc "A entrada e append-only: insert ou conflito de sequencia, nada entre."
   def changeset(entry, attrs) do
     entry
-    |> cast(attrs, [:seq, :prev, :tipo, :payload, :signature, :cid, :tekoa_id])
+    |> cast(attrs, [:seq, :prev, :tipo, :payload, :signature, :signing_key, :cid, :tekoa_id])
     |> validate_required([:seq, :tipo, :payload, :signature, :cid, :tekoa_id])
     |> validate_number(:seq, greater_than: 0)
     |> unique_constraint(:seq, name: :maraca_mural_tekoa_id_seq_index)

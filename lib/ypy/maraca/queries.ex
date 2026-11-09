@@ -68,4 +68,12 @@ defmodule Ypy.Maraca.Queries do
       limit: 1
     )
   end
+
+  @doc "Todas as chaves da Tekoa, da mais antiga para a mais nova."
+  def chaves(tekoa_id) do
+    from(k in TekoaKey,
+      where: k.tekoa_id == ^tekoa_id,
+      order_by: [asc: k.inserted_at]
+    )
+  end
 end

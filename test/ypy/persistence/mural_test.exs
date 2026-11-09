@@ -9,6 +9,7 @@ defmodule Ypy.Mural.PersistenceTest do
   alias Ypy.Mural
   alias Ypy.Mural.Store
   alias Ypy.RacyRepo
+  alias Ypy.Secp256k1
   alias Ypy.Ybira.Folder
 
   setup do
@@ -38,6 +39,42 @@ defmodule Ypy.Mural.PersistenceTest do
     assert ultima.seq == 3
     assert Enum.map(Store.cadeia(TestRepo, tekoa.id), & &1.seq) == [1, 2, 3]
     assert Store.verificar_cadeia(TestRepo, tekoa.id) == :ok
+  end
+
+  test "the chain verifies entries signed before and after rotation", %{
+    tekoa: tekoa,
+    keys: keys
+  } do
+    {:ok, primeira} = Store.append(TestRepo, keys, tekoa.id, "put", %{"rkey" => "antes"})
+    chave_antiga = Ypy.Maraca.Store.chave_ativa(TestRepo, tekoa.id)
+    agora = DateTime.truncate(DateTime.utc_now(), :second)
+
+    {:ok, {pub_nova, priv_nova} = par_novo} = Files.generate(keys)
+    :ok = Files.rotate(keys, tekoa.id, par_novo)
+
+    chave_antiga
+    |> TekoaKey.retire_changeset(agora)
+    |> TestRepo.update!()
+
+    {:ok, _chave_nova} =
+      TestRepo.insert(
+        TekoaKey.changeset(%TekoaKey{}, %{
+          tekoa_id: tekoa.id,
+          pub: pub_nova,
+          multibase: TekoaKey.multibase(pub_nova)
+        })
+      )
+
+    {:ok, segunda} = Store.append(TestRepo, keys, tekoa.id, "put", %{"rkey" => "depois"})
+
+    assert primeira.signing_key == chave_antiga.pub
+    assert segunda.signing_key == pub_nova
+    assert Store.verificar_cadeia(TestRepo, tekoa.id) == :ok
+
+    TestRepo.update!(Ecto.Changeset.change(segunda, signature: :crypto.strong_rand_bytes(64)))
+    assert Store.verificar_cadeia(TestRepo, tekoa.id) == {:error, {1, :bad_signature}}
+
+    assert Secp256k1.public_from_private(priv_nova) == pub_nova
   end
 
   test "conflito de sequencia sob escritor concorrente: a transacao inteira recomeca e vence", %{
@@ -157,7 +194,8 @@ defmodule Ypy.Mural.PersistenceTest do
       "seq" => row.seq,
       "prev" => row.prev && Ypy.Cid.parse(row.prev),
       "payload" => row.payload,
-      "signature" => row.signature
+      "signature" => row.signature,
+      "signing_key" => row.signing_key
     }
   end
 end

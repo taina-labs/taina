@@ -23,6 +23,16 @@ defmodule Ypy.MuralTest do
     Enum.reverse(entries)
   end
 
+  defp seal_chain_with_keys(signed_payloads) do
+    {entries, _last_cid, _last_seq} =
+      Enum.reduce(signed_payloads, {[], nil, 1}, fn {priv, pub, payload}, {acc, prev, seq} ->
+        entry = Mural.seal(seq, prev, payload, priv, pub)
+        {[entry | acc], Mural.entry_cid(entry), seq + 1}
+      end)
+
+    Enum.reverse(entries)
+  end
+
   test "a chain of N verifies", %{priv: priv, pub: pub} do
     payloads =
       Enum.map(1..5, fn i -> %{"kind" => "publish", "rkey" => "rkey-#{i}", "seq_do_ato" => i} end)
@@ -95,6 +105,39 @@ defmodule Ypy.MuralTest do
     chain = seal_chain(priv, [%{"n" => 1}, %{"n" => 2}])
 
     assert Mural.verify_chain(outra_pub, chain) == {:error, {0, :bad_signature}}
+  end
+
+  test "a chain verifies across key rotation and rejects a bad rotated signature" do
+    {pub1, priv1} = Secp256k1.generate_keypair()
+    {pub2, priv2} = Secp256k1.generate_keypair()
+
+    chain =
+      seal_chain_with_keys([
+        {priv1, pub1, %{"n" => 1}},
+        {priv1, pub1, %{"n" => 2}},
+        {priv2, pub2, %{"n" => 3}},
+        {priv2, pub2, %{"n" => 4}}
+      ])
+
+    assert Mural.verify_chain([pub1, pub2], chain) == :ok
+
+    corrupted =
+      List.update_at(chain, 2, fn entry ->
+        Map.put(entry, "signature", :crypto.strong_rand_bytes(64))
+      end)
+
+    assert Mural.verify_chain([pub1, pub2], corrupted) == {:error, {2, :bad_signature}}
+
+    unidentified = List.update_at(chain, 3, &Map.delete(&1, "signing_key"))
+    assert Mural.verify_chain([pub1, pub2], unidentified) == {:error, {3, :bad_signature}}
+  end
+
+  test "legacy entries without a signing key verify against retired keys" do
+    {old_pub, old_priv} = Secp256k1.generate_keypair()
+    {active_pub, _active_priv} = Secp256k1.generate_keypair()
+    legacy_chain = seal_chain(old_priv, [%{"n" => 1}, %{"n" => 2}])
+
+    assert Mural.verify_chain([old_pub, active_pub], legacy_chain) == :ok
   end
 
   test "reordered entries break at the first one that is out of place", %{priv: priv, pub: pub} do
