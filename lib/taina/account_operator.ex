@@ -19,8 +19,14 @@ defmodule Taina.AccountOperator do
     end
   end
 
-  defp find(tekoa, username),
-    do: Repo.with_tekoa(tekoa.public_id, fn -> {:ok, Repo.get_by(Ava, username: username, tekoa_id: tekoa.id)} end)
+  defp find(tekoa, username) do
+    Repo.with_tekoa(tekoa.public_id, fn ->
+      case Repo.get_by(Ava, username: username, tekoa_id: tekoa.id) do
+        %Ava{} = ava -> {:ok, ava}
+        nil -> {:error, :not_found}
+      end
+    end)
+  end
 
   defp update(tekoa, ava, password),
     do: Repo.with_tekoa(tekoa.public_id, fn -> Repo.update(Ava.reset_changeset(ava, %{password: password})) end)

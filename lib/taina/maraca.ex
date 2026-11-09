@@ -535,14 +535,15 @@ defmodule Taina.Maraca do
         {:error, :not_found}
 
       %Ava{} = ava ->
-        Repo.update(
-          Ava.reset_request_changeset(ava, %{
-            reset_token_hash: hash_token(raw_token),
-            reset_sent_at: agora()
-          })
-        )
-
-        {:ok, %{ava: ava, token: raw_token}}
+        with {:ok, updated_ava} <-
+               Repo.update(
+                 Ava.reset_request_changeset(ava, %{
+                   reset_token_hash: hash_token(raw_token),
+                   reset_sent_at: agora()
+                 })
+               ) do
+          {:ok, %{ava: updated_ava, token: raw_token}}
+        end
     end
   end
 

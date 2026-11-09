@@ -269,7 +269,9 @@ defmodule Taina.MaracaTest do
     test "zelador mints a link and the member sets a new password", %{tekoa: tekoa, zelador: zelador, member: member} do
       scope = Scope.new(zelador, tekoa)
 
-      assert {:ok, %{token: token}} = Maraca.mint_reset_link(scope, member)
+      assert {:ok, %{ava: with_token, token: token}} = Maraca.mint_reset_link(scope, member)
+      assert with_token.reset_token_hash
+      assert with_token.reset_sent_at
 
       assert {:ok, _} = Maraca.reset_password(token, "novasenha123")
       assert {:ok, _} = Maraca.authenticate("maria", "novasenha123", tekoa)
