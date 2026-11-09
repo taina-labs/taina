@@ -214,6 +214,22 @@ defmodule Ypy.Lexicon.ValidateTest do
     assert errors(fechado, %{"$type" => "novo.lexicon.v0#futuro"}) == [{[], :unknown_type}]
   end
 
+  test "a union rejects non-string and null discriminators without raising" do
+    schema = %{"type" => "union", "ref" => "#textTag"}
+
+    for value <- [
+          %{"$type" => 5},
+          %{"$type" => %{}},
+          %{"$type" => []}
+        ] do
+      assert errors(schema, value) == [{[], :invalid_type}]
+    end
+
+    assert errors(schema, %{"$type" => nil}) == [{[], :missing_type}]
+    assert errors(schema, %{}) == [{[], :missing_type}]
+    assert errors(schema, %{"$type" => "#textTag"}) == []
+  end
+
   test "bytes are measured by what the base64 decodes to" do
     schema = %{"type" => "bytes", "maxLength" => 4}
 

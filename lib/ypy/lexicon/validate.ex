@@ -104,7 +104,8 @@ defmodule Ypy.Lexicon.Validate do
 
     case value["$type"] do
       nil -> [{path, :missing_type}]
-      type -> union_errors(schema, allowed, type, value, path)
+      type when is_binary(type) -> union_errors(schema, allowed, type, value, path)
+      _ -> [{path, :invalid_type}]
     end
   end
 
