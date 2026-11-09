@@ -278,11 +278,11 @@ defmodule TainaWeb.UI.Content do
   # ---------- progresso ----------
 
   @doc """
-  Barra de progresso. Aceita `value` como porcentagem (0..100) ou fração (0..1);
-  o preenchimento usa `transform: scaleX()`. Para a versão segmentada
-  (armazenamento por tipo), passe `segments` como lista de `{cor, fração}`.
+  Barra de progresso. `value` é sempre uma porcentagem (0..100); para a versão
+  segmentada (armazenamento por tipo), passe `segments` como lista de
+  `{cor, fração}`. O preenchimento usa `transform: scaleX()`.
   """
-  attr :value, :any, default: nil, doc: "porcentagem 0..100 ou fração 0..1"
+  attr :value, :any, default: nil, doc: "porcentagem 0..100"
   attr :label, :string, default: nil, doc: "rótulo acessível (aria-label)"
   attr :color, :string, default: nil, values: [nil, "success", "jaci", "sky", "ybira", "neutral", "warning"]
   attr :segments, :list, default: nil, doc: ~s|ex.: [{"jaci", 0.5}, {"sky", 0.3}]|
@@ -323,7 +323,6 @@ defmodule TainaWeb.UI.Content do
   end
 
   defp progress_percent(nil), do: nil
-  defp progress_percent(value) when is_float(value) and value <= 1.0, do: clamp_percent(value * 100)
   defp progress_percent(value), do: clamp_percent(value)
 
   defp clamp_percent(pct), do: pct |> max(0) |> min(100)

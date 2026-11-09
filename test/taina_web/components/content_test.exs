@@ -323,6 +323,32 @@ defmodule TainaWeb.UI.ContentTest do
     # 256_000_000_000 bytes = 238 GB; o meta segue o padrão "X de Y usados".
     assert html =~ "82 GB de 238 GB usados"
     assert html =~ "progress__fill--success"
+    assert html =~ ~s(aria-valuenow="34.375")
+    assert html =~ "scaleX(0.34375)"
+  end
+
+  test "storage_card keeps usage below one percent in percentage units" do
+    stats = %{used_bytes: 2, quota_bytes: 1_000}
+    html = storage_card_html(stats: stats)
+
+    assert html =~ ~s(aria-valuenow="0.2")
+    assert html =~ "scaleX(0.002)"
+  end
+
+  test "storage_card keeps exactly one percent in percentage units" do
+    stats = %{used_bytes: 10, quota_bytes: 1_000}
+    html = storage_card_html(stats: stats)
+
+    assert html =~ ~s(aria-valuenow="1.0")
+    assert html =~ "scaleX(0.01)"
+  end
+
+  test "storage_card clamps high percentage usage" do
+    stats = %{used_bytes: 120, quota_bytes: 100}
+    html = storage_card_html(stats: stats)
+
+    assert html =~ ~s(aria-valuenow="100")
+    assert html =~ "scaleX(1.0)"
   end
 
   test "storage_card full: número grande do board, barra e livres" do
