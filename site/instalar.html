@@ -1,0 +1,585 @@
+<!doctype html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Instalar o Tainá, passo a passo</title>
+  <meta name="description"
+    content="Como colocar o Tainá no ar do zero, na máquina da comunidade ou numa VPS, em menos de 30 minutos." />
+  <meta name="color-scheme" content="dark" />
+  <meta name="theme-color" content="#060A14" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Tainá" />
+  <meta property="og:locale" content="pt_BR" />
+  <meta property="og:title" content="Instalar o Tainá, passo a passo" />
+  <meta property="og:description"
+    content="Como colocar o Tainá no ar do zero, na máquina da comunidade ou numa VPS, em menos de 30 minutos." />
+  <meta property="og:url" content="https://taina.dev.br/instalar.html" />
+  <meta property="og:image" content="https://taina.dev.br/og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt"
+    content="Tainá: a nuvem privada da sua comunidade." />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Instalar o Tainá, passo a passo" />
+  <meta name="twitter:description"
+    content="Como colocar o Tainá no ar do zero, na máquina da comunidade ou numa VPS, em menos de 30 minutos." />
+  <meta name="twitter:image" content="https://taina.dev.br/og.png" />
+  <link rel="stylesheet" href="styles/tokens.css" />
+  <link rel="stylesheet" href="styles/base.css" />
+  <link rel="stylesheet" href="styles/ybaka.css" />
+  <link rel="icon" href="favicon.ico" sizes="48x48" />
+  <link rel="icon" href="icons/favicon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+  <script>
+    document.documentElement.classList.add("js");
+  </script>
+</head>
+
+<body>
+  <a class="skip-link" href="#conteudo">Pular para o conteúdo</a>
+
+  <header class="site-header">
+    <div class="shell site-header__inner">
+      <a class="brand" href="index.html">
+        <svg class="brand__mark" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 2l2.2 7.8L22 12l-7.8 2.2L12 22l-2.2-7.8L2 12l7.8-2.2z" fill="currentColor" />
+        </svg>
+        <span class="brand__name">Tainá</span>
+      </a>
+      <nav class="site-nav" aria-label="Principal">
+        <a class="site-nav__link site-nav__link--optional" href="index.html">Início</a>
+        <a class="site-nav__link" href="transparencia.html">Transparência</a>
+        <a class="btn btn--primary btn--sm" href="#passos">Começar</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="conteudo">
+    <section class="section section--tight">
+      <div class="shell shell--narrow">
+        <p class="type-overline section__eyebrow">Instalação</p>
+        <h1 class="type-h1">Colocar o Tainá no ar.</h1>
+        <p class="type-body section__lede mt-4">
+          Este guia assume que você não é técnico: nunca abriu um
+          <a class="text-brand" href="glossario.html#terminal">terminal</a>,
+          ou abriu mas nunca instalou nada. Do começo ao fim, sem ajuda de
+          ninguém, em menos de 30 minutos.
+        </p>
+
+        <p class="type-caption muted mt-4">
+          Cada termo técnico deste guia está explicado em uma linha no
+          <a class="text-brand" href="glossario.html">glossário</a>. Travou
+          numa palavra? Volte lá.
+        </p>
+
+        <p class="lede mt-8">
+          Você pode usar um
+          <a class="text-brand" href="glossario.html#raspberry-pi">Raspberry Pi</a>,
+          um mini PC ou uma <a class="text-brand" href="glossario.html#vps">VPS</a>.
+          Os comandos são os mesmos nos três: o Docker baixa
+          automaticamente a imagem certa para a máquina. Não há CLI para
+          instalar nem arquitetura para escolher.
+        </p>
+
+        <div class="callout callout--brand mt-8">
+          <span class="callout__icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="10" />
+              <path d="M12 16v-4" />
+              <path d="M12 8h.01" />
+            </svg>
+          </span>
+          <p>
+            Se você só quer experimentar numa caixa local, pare depois de
+            criar a comunidade. Domínio, acesso remoto e disco de backup são
+            para quando a comunidade for usar de verdade.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section section--alt" id="passos">
+      <div class="shell shell--narrow">
+        <div class="steps">
+          <!-- passo 1 -->
+          <div class="step">
+            <h2 class="step__title">Instale o Docker</h2>
+            <div class="step__body">
+              <p>
+                O Tainá roda dentro do
+                <a class="text-brand" href="glossario.html#docker">Docker</a>,
+                e o Docker Compose cuida de iniciar e atualizar o serviço.
+                No Linux e no Raspberry Pi OS, cole o bloco abaixo e aperte
+                Enter:
+              </p>
+              <div class="code">
+                <div class="code__head">
+                  <span class="code__label">Terminal</span>
+                  <button class="copy-btn" type="button" data-copy>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                      stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <rect x="9" y="9" width="13" height="13" rx="2" />
+                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                    </svg>
+                    <span data-copy-label>Copiar</span>
+                  </button>
+                </div>
+                <pre><code>curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker "$USER"</code></pre>
+              </div>
+              <p>
+                Saia da sessão e entre de novo para a permissão do Docker
+                valer. Depois confira
+                <code class="type-mono-sm">docker info</code> e
+                <code class="type-mono-sm">docker compose version</code>.
+                Se os dois comandos responderem sem erro, está pronto.
+              </p>
+            </div>
+          </div>
+
+          <!-- passo 2 -->
+          <div class="step">
+            <h2 class="step__title">Baixe o pacote do Tainá</h2>
+            <div class="step__body">
+              <p>
+                O pacote do Tainá traz a configuração pronta. Você não precisa
+                compilar o aplicativo nem instalar uma CLI. No terminal, rode:
+              </p>
+              <div class="code">
+                <div class="code__head">
+                  <span class="code__label">Terminal</span>
+                  <button class="copy-btn" type="button" data-copy>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                      stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <rect x="9" y="9" width="13" height="13" rx="2" />
+                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                    </svg>
+                    <span data-copy-label>Copiar</span>
+                  </button>
+                </div>
+                <pre><code>curl -fsSL https://github.com/taina-labs/taina/archive/refs/heads/main.tar.gz | tar -xz
+cd taina-main/deploy/compose
+./taina init</code></pre>
+              </div>
+              <p>
+                O último comando cria o arquivo
+                <code class="type-mono-sm">taina.conf</code> e a pasta
+                <code class="type-mono-sm">backups</code>. Rode os próximos
+                comandos dentro dessa pasta
+                <code class="type-mono-sm">taina-main/deploy/compose</code>.
+              </p>
+            </div>
+          </div>
+
+          <!-- passo 3 -->
+          <div class="step">
+            <h2 class="step__title">Configure o primeiro acesso</h2>
+            <div class="step__body">
+              <p>
+                Abra a configuração com
+                <code class="type-mono-sm">nano taina.conf</code>. Para criar
+                a comunidade no navegador da própria máquina, ou por um túnel
+                SSH, deixe estas três linhas assim:
+              </p>
+              <div class="code">
+                <div class="code__head">
+                  <span class="code__label">taina.conf</span>
+                  <button class="copy-btn" type="button" data-copy>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                      stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <rect x="9" y="9" width="13" height="13" rx="2" />
+                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                    </svg>
+                    <span data-copy-label>Copiar</span>
+                  </button>
+                </div>
+                <pre><code>url_scheme = http
+hostname = 127.0.0.1
+url_port = 4000</code></pre>
+              </div>
+              <p>
+                Não mude as outras linhas. No Nano, salve com Ctrl+O, aperte
+                Enter e saia com Ctrl+X. O segredo das sessões é criado e
+                guardado automaticamente no primeiro boot; ele não fica no
+                <code class="type-mono-sm">taina.conf</code>.
+              </p>
+            </div>
+          </div>
+
+          <!-- passo 4 -->
+          <div class="step">
+            <h2 class="step__title">Suba o Tainá</h2>
+            <div class="step__body">
+              <p>
+                O Compose baixa a imagem publicada, inicia o Tainá e espera o
+                aplicativo responder que está saudável:
+              </p>
+              <div class="code">
+                <div class="code__head">
+                  <span class="code__label">Terminal</span>
+                  <button class="copy-btn" type="button" data-copy>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                      stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <rect x="9" y="9" width="13" height="13" rx="2" />
+                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                    </svg>
+                    <span data-copy-label>Copiar</span>
+                  </button>
+                </div>
+                <pre><code>docker compose up --detach --wait
+docker compose ps</code></pre>
+              </div>
+              <p>
+                Quando o serviço <code class="type-mono-sm">taina</code>
+                aparecer como saudável, ele está pronto para o primeiro
+                acesso. Por segurança, a porta fica disponível apenas na
+                própria máquina.
+              </p>
+            </div>
+          </div>
+
+          <!-- passo 5 -->
+          <div class="step">
+            <h2 class="step__title">Crie a comunidade</h2>
+            <div class="step__body">
+              <p>
+                Abra
+                <a class="text-brand" href="http://127.0.0.1:4000/setup">http://127.0.0.1:4000/setup</a>
+                no navegador da máquina. Se ela não tiver navegador, abra um
+                terminal no seu computador e crie um túnel SSH, trocando o
+                usuário e o endereço pelos da sua máquina:
+              </p>
+              <div class="code">
+                <div class="code__head">
+                  <span class="code__label">Terminal do seu computador</span>
+                  <button class="copy-btn" type="button" data-copy>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                      stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <rect x="9" y="9" width="13" height="13" rx="2" />
+                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                    </svg>
+                    <span data-copy-label>Copiar</span>
+                  </button>
+                </div>
+                <pre><code>ssh -L 4000:127.0.0.1:4000 usuario@servidor</code></pre>
+              </div>
+              <p>
+                Deixe esse terminal aberto e use o mesmo endereço acima no seu
+                navegador. Vão aparecer três telas:
+              </p>
+              <ul class="type-body-sm">
+                <li>
+                  <strong>Nome da comunidade.</strong> Cada instância é uma
+                  comunidade só, e o nome é definitivo para sempre.
+                </li>
+                <li>
+                  <strong>Quem cuida da máquina.</strong> Um nome de usuário,
+                  um nome de exibição e uma senha. Essa pessoa é a zeladora,
+                  não administradora.
+                </li>
+                <li>
+                  <strong>Armazenamento.</strong> O Tainá mostra onde os
+                  arquivos vão ficar e quanto espaço livre existe.
+                </li>
+              </ul>
+              <p>
+                Depois do último passo você entra logado. A comunidade foi
+                criada e você é a primeira pessoa dela.
+              </p>
+            </div>
+          </div>
+
+          <!-- passo 6 -->
+          <div class="step">
+            <h2 class="step__title">Convide a primeira pessoa</h2>
+            <div class="step__body">
+              <p>
+                No menu, abra <strong>Membros</strong> e depois
+                <strong>Convidar</strong>. O Tainá mostra um link de convite e
+                um <a class="text-brand" href="glossario.html#qr-code">QR code</a>. A pessoa abre e cria a conta dela.
+                Não existe e-mail no
+                Tainá, e isso é uma decisão: menos uma senha guardada em
+                servidor de terceiro.
+              </p>
+            </div>
+          </div>
+
+          <!-- passo 7 -->
+          <div class="step">
+            <h2 class="step__title">Acesse de fora com Tailscale</h2>
+            <div class="step__body">
+              <p>
+                Para um acesso privado, sem abrir portas no roteador, o
+                caminho mais simples é o
+                <a class="text-brand" href="glossario.html#vpn">Tailscale</a>.
+                Instale-o na caixa e nos aparelhos de quem vai acessar, entre
+                na mesma conta e rode na caixa:
+              </p>
+              <div class="code">
+                <div class="code__head">
+                  <span class="code__label">Terminal</span>
+                  <button class="copy-btn" type="button" data-copy>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                      stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <rect x="9" y="9" width="13" height="13" rx="2" />
+                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                    </svg>
+                    <span data-copy-label>Copiar</span>
+                  </button>
+                </div>
+                <pre><code>tailscale serve --bg 4000
+tailscale serve status</code></pre>
+              </div>
+              <p>
+                O segundo comando mostra o endereço HTTPS. No
+                <code class="type-mono-sm">taina.conf</code>, use esse nome em
+                <code class="type-mono-sm">hostname</code>, mude
+                <code class="type-mono-sm">url_scheme</code> para
+                <code class="type-mono-sm">https</code> e
+                <code class="type-mono-sm">url_port</code> para
+                <code class="type-mono-sm">443</code>. Depois rode
+                <code class="type-mono-sm">docker compose restart taina</code>
+                para os novos convites usarem esse endereço.
+              </p>
+            </div>
+          </div>
+
+          <!-- passo 8 -->
+          <div class="step" id="caddy">
+            <h2 class="step__title">Ou publique com Caddy e um domínio</h2>
+            <div class="step__body">
+              <p>
+                Se a comunidade tem um domínio e a caixa pode receber
+                conexões da internet, o Caddy faz o proxy para o Tainá e
+                emite o certificado HTTPS automaticamente. Antes de começar,
+                aponte os registros A e AAAA do domínio para o IP da caixa e
+                libere as portas 80 e 443 no firewall. Numa máquina em casa,
+                também encaminhe essas duas portas no roteador. A porta 4000
+                continua fechada para a internet.
+              </p>
+              <p>No Debian, Ubuntu ou Raspberry Pi OS, instale o Caddy:</p>
+              <div class="code">
+                <div class="code__head">
+                  <span class="code__label">Terminal</span>
+                  <button class="copy-btn" type="button" data-copy>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                      stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <rect x="9" y="9" width="13" height="13" rx="2" />
+                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                    </svg>
+                    <span data-copy-label>Copiar</span>
+                  </button>
+                </div>
+                <pre><code>sudo apt update
+sudo apt install -y caddy
+sudo nano /etc/caddy/Caddyfile</code></pre>
+              </div>
+              <p>
+                Substitua o conteúdo do arquivo pelo bloco abaixo, trocando o
+                endereço pelo domínio da comunidade:
+              </p>
+              <div class="code">
+                <div class="code__head">
+                  <span class="code__label">/etc/caddy/Caddyfile</span>
+                  <button class="copy-btn" type="button" data-copy>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                      stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <rect x="9" y="9" width="13" height="13" rx="2" />
+                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                    </svg>
+                    <span data-copy-label>Copiar</span>
+                  </button>
+                </div>
+                <pre><code>nuvem.suacomunidade.org {
+    reverse_proxy 127.0.0.1:4000
+}</code></pre>
+              </div>
+              <p>Salve o arquivo e ative a configuração:</p>
+              <div class="code">
+                <div class="code__head">
+                  <span class="code__label">Terminal</span>
+                  <button class="copy-btn" type="button" data-copy>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                      stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <rect x="9" y="9" width="13" height="13" rx="2" />
+                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                    </svg>
+                    <span data-copy-label>Copiar</span>
+                  </button>
+                </div>
+                <pre><code>sudo caddy fmt --overwrite /etc/caddy/Caddyfile
+sudo systemctl reload caddy</code></pre>
+              </div>
+              <p>
+                Por fim, no <code class="type-mono-sm">taina.conf</code>,
+                configure o mesmo domínio e reinicie o Tainá:
+              </p>
+              <div class="code">
+                <div class="code__head">
+                  <span class="code__label">taina.conf</span>
+                  <button class="copy-btn" type="button" data-copy>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                      stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <rect x="9" y="9" width="13" height="13" rx="2" />
+                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                    </svg>
+                    <span data-copy-label>Copiar</span>
+                  </button>
+                </div>
+                <pre><code>url_scheme = https
+hostname = nuvem.suacomunidade.org
+url_port = 443</code></pre>
+              </div>
+              <div class="code">
+                <div class="code__head">
+                  <span class="code__label">Terminal</span>
+                  <button class="copy-btn" type="button" data-copy>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                      stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <rect x="9" y="9" width="13" height="13" rx="2" />
+                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                    </svg>
+                    <span data-copy-label>Copiar</span>
+                  </button>
+                </div>
+                <pre><code>docker compose restart taina</code></pre>
+              </div>
+              <p>
+                Acesse <code class="type-mono-sm">https://nuvem.suacomunidade.org</code>.
+                O Caddy renova o certificado sozinho. Se o HTTPS não abrir,
+                confira o DNS, as portas 80 e 443 e os logs com
+                <code class="type-mono-sm">sudo journalctl -u caddy</code>.
+              </p>
+            </div>
+          </div>
+
+          <!-- passo 9 -->
+          <div class="step">
+            <h2 class="step__title">Confira o backup</h2>
+            <div class="step__body">
+              <p>
+                A configuração do Oka já vem com
+                <code class="type-mono-sm">backup_enabled = true</code>. Os
+                arquivos ficam na pasta <code class="type-mono-sm">backups</code>,
+                ao lado do <code class="type-mono-sm">compose.yaml</code>.
+                Para criar um backup agora, rode:
+              </p>
+              <div class="code">
+                <div class="code__head">
+                  <span class="code__label">Terminal</span>
+                  <button class="copy-btn" type="button" data-copy>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                      stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <rect x="9" y="9" width="13" height="13" rx="2" />
+                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                    </svg>
+                    <span data-copy-label>Copiar</span>
+                  </button>
+                </div>
+                <pre><code>./taina backup</code></pre>
+              </div>
+              <p>
+                Copie os arquivos dessa pasta para um disco externo ou outro
+                lugar fora da caixa. E ensaie a restauração: um backup que
+                nunca foi testado não é backup.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div class="callout callout--brand mt-10">
+          <span class="callout__icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="10" />
+              <path d="M12 16v-4" />
+              <path d="M12 8h.01" />
+            </svg>
+          </span>
+          <p>
+            Para atualizar depois, faça um backup e use o Compose para baixar
+            a imagem nova e recriar o serviço. As migrações de banco rodam
+            sozinhas no boot.
+          </p>
+        </div>
+
+        <div class="code mt-6">
+          <div class="code__head">
+            <span class="code__label">Atualização</span>
+            <button class="copy-btn" type="button" data-copy>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="9" y="9" width="13" height="13" rx="2" />
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+              </svg>
+              <span data-copy-label>Copiar</span>
+            </button>
+          </div>
+          <pre><code>./taina backup
+docker compose pull
+docker compose up --detach --wait</code></pre>
+        </div>
+
+        <div class="hero__actions">
+          <a class="btn btn--primary" href="https://github.com/taina-labs/taina/tree/main/deploy#compose">Documentação do Compose</a>
+          <a class="btn btn--secondary" href="#caddy">Configurar o Caddy</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="shell">
+      <div class="site-footer__grid">
+        <div class="site-footer__brand">
+          <a class="brand" href="index.html">
+            <svg class="brand__mark" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 2l2.2 7.8L22 12l-7.8 2.2L12 22l-2.2-7.8L2 12l7.8-2.2z" fill="currentColor" />
+            </svg>
+            <span class="brand__name">Tainá</span>
+          </a>
+          <p>
+            A nuvem privada da comunidade. Tainá é a estrela da manhã em
+            Tupi-Guarani: a que guia quem busca independência digital.
+          </p>
+        </div>
+        <nav class="site-footer__col" aria-label="Projeto">
+          <h2>Projeto</h2>
+          <ul>
+            <li>
+              <a href="https://github.com/taina-labs/taina">Código</a>
+            </li>
+            <li>
+              <a href="https://github.com/taina-labs/tekoa/blob/main/ROADMAP.md">Roadmap</a>
+            </li>
+            <li>
+              <a href="https://github.com/taina-labs/taina/blob/main/LICENSE">Licença (AGPL)</a>
+            </li>
+          </ul>
+        </nav>
+        <nav class="site-footer__col" aria-label="Aprender">
+          <h2>Aprender</h2>
+          <ul>
+            <li><a href="instalar.html">Instalação</a></li>
+            <li><a href="glossario.html">Glossário</a></li>
+            <li><a href="transparencia.html">Transparência e LGPD</a></li>
+            <li>
+              <a href="https://github.com/taina-labs/tekoa">Documentação</a>
+            </li>
+          </ul>
+        </nav>
+      </div>
+      <div class="site-footer__legal">
+        <span>Código sob GNU AGPL v3.0.</span>
+        <span>Este site não usa cookies nem rastreio.</span>
+      </div>
+    </div>
+  </footer>
+
+  <script src="js/app.js"></script>
+</body>
+
+</html>

@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Glossário, Tainá</title>
+  <meta name="description"
+    content="Os termos técnicos do Tainá explicados em uma linha cada: Docker, VPS, Raspberry Pi, HTTPS, backup e o resto. Sem curso técnico." />
+  <meta name="color-scheme" content="dark" />
+  <meta name="theme-color" content="#060A14" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Tainá" />
+  <meta property="og:locale" content="pt_BR" />
+  <meta property="og:title" content="Glossário, Tainá" />
+  <meta property="og:description"
+    content="Os termos técnicos do Tainá explicados em uma linha cada: Docker, VPS, Raspberry Pi, HTTPS, backup e o resto. Sem curso técnico." />
+  <meta property="og:url" content="https://taina.dev.br/glossario.html" />
+  <meta property="og:image" content="https://taina.dev.br/og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt"
+    content="Tainá: a nuvem privada da sua comunidade." />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Glossário, Tainá" />
+  <meta name="twitter:description"
+    content="Os termos técnicos do Tainá explicados em uma linha cada: Docker, VPS, Raspberry Pi, HTTPS, backup e o resto. Sem curso técnico." />
+  <meta name="twitter:image" content="https://taina.dev.br/og.png" />
+  <link rel="stylesheet" href="styles/tokens.css" />
+  <link rel="stylesheet" href="styles/base.css" />
+  <link rel="stylesheet" href="styles/ybaka.css" />
+  <link rel="icon" href="favicon.ico" sizes="48x48" />
+  <link rel="icon" href="icons/favicon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+  <script>
+    document.documentElement.classList.add("js");
+  </script>
+</head>
+
+<body>
+  <a class="skip-link" href="#conteudo">Pular para o conteúdo</a>
+
+  <header class="site-header">
+    <div class="shell site-header__inner">
+      <a class="brand" href="index.html">
+        <svg class="brand__mark" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 2l2.2 7.8L22 12l-7.8 2.2L12 22l-2.2-7.8L2 12l7.8-2.2z" fill="currentColor" />
+        </svg>
+        <span class="brand__name">Tainá</span>
+      </a>
+      <nav class="site-nav" aria-label="Principal">
+        <a class="site-nav__link site-nav__link--optional" href="index.html">Início</a>
+        <a class="site-nav__link" href="transparencia.html">Transparência</a>
+        <a class="btn btn--primary btn--sm" href="instalar.html">Instalar</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="conteudo">
+    <section class="section section--tight">
+      <div class="shell shell--narrow">
+        <p class="type-overline section__eyebrow">Glossário</p>
+        <h1 class="type-h1">Cada termo em uma linha.</h1>
+        <p class="type-body section__lede mt-4">
+          O Tainá fala português simples, mas a instalação encosta em palavras
+          que vêm de fora. Aqui está o que cada uma quer dizer, sem curso
+          técnico. Se um guia usar uma palavra que não está aqui, isso é um
+          furo: avise que a gente corrige.
+        </p>
+        <p class="type-caption muted mt-4">
+          Os nomes do projeto (Tainá, Tekoa, Ybira, Jaci, Maracá) estão
+          explicados na
+          <a class="text-brand" href="index.html#nomes">página inicial</a>.
+        </p>
+      </div>
+    </section>
+
+    <section class="section section--alt">
+      <div class="shell shell--narrow">
+        <h2 class="type-h2">O básico</h2>
+        <dl class="glossary glossary--cols mt-6">
+          <div>
+            <dt class="glossary__term" id="terminal">Terminal</dt>
+            <dd class="glossary__def">
+              A janela onde você digita em vez de clicar. É onde se colam os
+              blocos de comando deste site.
+            </dd>
+          </div>
+          <div>
+            <dt class="glossary__term" id="comando">Comando</dt>
+            <dd class="glossary__def">
+              Uma linha de texto que pede algo ao computador. Você copia, cola
+              e aperta Enter.
+            </dd>
+          </div>
+          <div>
+            <dt class="glossary__term" id="codigo-aberto">Código aberto</dt>
+            <dd class="glossary__def">
+              O programa vem com o código-fonte à vista. Qualquer pessoa pode
+              ler, copiar e mudar.
+            </dd>
+          </div>
+          <div>
+            <dt class="glossary__term" id="agpl">AGPL</dt>
+            <dd class="glossary__def">
+              A licença do Tainá. Deixa você usar e mudar o código; se você
+              oferecer o serviço a outras pessoas, as mudanças continuam
+              abertas.
+            </dd>
+          </div>
+        </dl>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="shell shell--narrow">
+        <h2 class="type-h2">Onde o Tainá roda</h2>
+        <dl class="glossary glossary--cols mt-6">
+          <div>
+            <dt class="glossary__term" id="docker">Docker</dt>
+            <dd class="glossary__def">
+              A ferramenta que roda o Tainá numa caixa separada dentro do
+              computador, sem bagunçar o resto.
+            </dd>
+          </div>
+          <div>
+            <dt class="glossary__term" id="container">Container</dt>
+            <dd class="glossary__def">
+              Essa caixa separada. Tem tudo que o Tainá precisa dentro e não
+              mexe no que está fora.
+            </dd>
+          </div>
+          <div>
+            <dt class="glossary__term" id="imagem">Imagem</dt>
+            <dd class="glossary__def">
+              O molde do container, pronto para baixar e subir. Atualizar o
+              Tainá é trocar a imagem.
+            </dd>
+          </div>
+          <div>
+            <dt class="glossary__term" id="binario">Binário</dt>
+            <dd class="glossary__def">
+              O programa já pronto para rodar, num arquivo só. É o que você
+              baixa e instala.
+            </dd>
+          </div>
+          <div>
+            <dt class="glossary__term" id="arquitetura">
+              Arquitetura (aarch64, x86_64)
+            </dt>
+            <dd class="glossary__def">
+              O tipo do processador da máquina. Raspberry Pi é aarch64; a
+              maioria dos PCs e VPS é x86_64. O binário precisa bater com o
+              tipo.
+            </dd>
+          </div>
+          <div>
+            <dt class="glossary__term" id="servidor">Servidor</dt>
+            <dd class="glossary__def">
+              Um computador ligado para outras pessoas acessarem. A caixa do
+              Tainá é um servidor.
+            </dd>
+          </div>
+          <div>
+            <dt class="glossary__term" id="raspberry-pi">Raspberry Pi</dt>
+            <dd class="glossary__def">
+              Um computador pequeno e barato, do tamanho de um cartão. Ótimo
+              para ficar ligado 24 horas.
+            </dd>
+          </div>
+          <div>
+            <dt class="glossary__term" id="mini-pc">Mini PC</dt>
+            <dd class="glossary__def">
+              Um computador de mesa pequeno, mais potente que o Raspberry Pi e
+              ainda econômico.
+            </dd>
+          </div>
+          <div>
+            <dt class="glossary__term" id="vps">VPS</dt>
+            <dd class="glossary__def">
+              Um computador alugado na nuvem, ligado 24 horas, que você acessa
+              de longe. Custa uma mensalidade.
+            </dd>
+          </div>
+          <div>
+            <dt class="glossary__term" id="ssd">SSD / NVMe</dt>
+            <dd class="glossary__def">
+              Um disco rápido e sem partes móveis. É onde os arquivos ficam.
+              Cartão de memória comum não serve.
+            </dd>
+          </div>
+        </dl>
+      </div>
+    </section>
+
+    <section class="section section--alt">
+      <div class="shell shell--narrow">
+        <h2 class="type-h2">Rede e acesso</h2>
+        <dl class="glossary glossary--cols mt-6">
+          <div>
+            <dt class="glossary__term" id="ip">IP</dt>
+            <dd class="glossary__def">
+              O endereço da máquina na rede. Um número.
+            </dd>
+          </div>
+          <div>
+            <dt class="glossary__term" id="porta">Porta</dt>
+            <dd class="glossary__def">
+              A porta por onde um serviço atende dentro da máquina. Também um
+              número.
+            </dd>
+          </div>
+          <div>
+            <dt class="glossary__term" id="dominio">Domínio</dt>
+            <dd class="glossary__def">
+              O nome bonito do endereço, como nuvem.suacomunidade.org, em vez
+              de um número de IP.
+            </dd>
+          </div>
+          <div>
+            <dt class="glossary__term" id="https">HTTPS</dt>
+            <dd class="glossary__def">
+              O cadeado do navegador: a conversa com a caixa vai cifrada. Sem
+              ele, o navegador avisa que a conexão não é segura.
+            </dd>
+          </div>
+          <div>
+            <dt class="glossary__term" id="vpn">VPN / Tailscale</dt>
+            <dd class="glossary__def">
+              Uma ponte privada entre a caixa e quem acessa, mesmo de longe,
+              sem abrir a caixa para a internet inteira. O Tailscale monta
+              essa ponte sem complicação.
+            </dd>
+          </div>
+          <div>
+            <dt class="glossary__term" id="qr-code">QR code</dt>
+            <dd class="glossary__def">
+              O quadradinho que a câmera do celular lê. No Tainá, é um convite
+              que a pessoa escaneia para entrar.
+            </dd>
+          </div>
+        </dl>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="shell shell--narrow">
+        <h2 class="type-h2">Cuidar da caixa</h2>
+        <dl class="glossary glossary--cols mt-6">
+          <div>
+            <dt class="glossary__term" id="backup">Backup</dt>
+            <dd class="glossary__def">
+              Uma cópia de segurança dos dados, guardada em outro lugar. Se a
+              caixa cair, é ela que salva.
+            </dd>
+          </div>
+          <div>
+            <dt class="glossary__term" id="restauracao">Restauração</dt>
+            <dd class="glossary__def">
+              Devolver os dados a partir do backup. Precisa ser ensaiada:
+              backup que nunca foi testado não é backup.
+            </dd>
+          </div>
+          <div>
+            <dt class="glossary__term" id="cota">Cota</dt>
+            <dd class="glossary__def">
+              O limite de espaço que cada pessoa pode usar na caixa.
+            </dd>
+          </div>
+        </dl>
+      </div>
+    </section>
+
+    <section class="section section--alt">
+      <div class="shell shell--narrow">
+        <h2 class="type-h2">O projeto</h2>
+        <dl class="glossary glossary--cols mt-6">
+          <div>
+            <dt class="glossary__term" id="repositorio">Repositório</dt>
+            <dd class="glossary__def">
+              Onde o código vive, no GitHub. É de lá que saem as versões.
+            </dd>
+          </div>
+          <div>
+            <dt class="glossary__term" id="releases">Releases</dt>
+            <dd class="glossary__def">
+              As versões publicadas do Tainá, prontas para baixar.
+            </dd>
+          </div>
+        </dl>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="shell">
+      <div class="site-footer__grid">
+        <div class="site-footer__brand">
+          <a class="brand" href="index.html">
+            <svg class="brand__mark" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 2l2.2 7.8L22 12l-7.8 2.2L12 22l-2.2-7.8L2 12l7.8-2.2z" fill="currentColor" />
+            </svg>
+            <span class="brand__name">Tainá</span>
+          </a>
+          <p>
+            A nuvem privada da comunidade. Tainá é a estrela da manhã em
+            Tupi-Guarani: a que guia quem busca independência digital.
+          </p>
+        </div>
+        <nav class="site-footer__col" aria-label="Projeto">
+          <h2>Projeto</h2>
+          <ul>
+            <li>
+              <a href="https://github.com/taina-labs/taina">Código</a>
+            </li>
+            <li>
+              <a href="https://github.com/taina-labs/tekoa/blob/main/ROADMAP.md">Roadmap</a>
+            </li>
+            <li>
+              <a href="https://github.com/taina-labs/taina/blob/main/LICENSE">Licença (AGPL)</a>
+            </li>
+          </ul>
+        </nav>
+        <nav class="site-footer__col" aria-label="Aprender">
+          <h2>Aprender</h2>
+          <ul>
+            <li><a href="instalar.html">Instalação</a></li>
+            <li><a href="glossario.html">Glossário</a></li>
+            <li><a href="transparencia.html">Transparência e LGPD</a></li>
+            <li>
+              <a href="https://github.com/taina-labs/tekoa">Documentação</a>
+            </li>
+          </ul>
+        </nav>
+      </div>
+      <div class="site-footer__legal">
+        <span>Código sob GNU AGPL v3.0.</span>
+        <span>Este site não usa cookies nem rastreio.</span>
+      </div>
+    </div>
+  </footer>
+
+  <script src="js/app.js"></script>
+</body>
+
+</html>
