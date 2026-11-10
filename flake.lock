@@ -5,11 +5,11 @@
         "nixpkgs": "nixpkgs"
       },
       "locked": {
-        "lastModified": 1793647007,
-        "narHash": "sha256-x2n8BHSmhd/5dgfrL5dtp6U/ZVot5RJQakBUxinpytY=",
+        "lastModified": 1793817286,
+        "narHash": "sha256-VKGKWlqbATPp5+CbybTCl8jVTefk/VTQOqGGS1LjbXg=",
         "owner": "zeeetech",
         "repo": "beam-overlay",
-        "rev": "8eb676782915b99a11eca08c5a43a336b71e19f1",
+        "rev": "2d96b27617dd20f3bf9cf22d5544845274437da8",
         "type": "github"
       },
       "original": {

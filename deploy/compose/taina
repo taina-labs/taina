@@ -1,0 +1,232 @@
+#!/bin/sh
+# The one-off container scripts intentionally expand variables inside the
+# container, not in the host shell.
+# shellcheck disable=SC2016
+set -eu
+
+root=$(CDPATH='' cd -P "$(dirname "$0")" && pwd)
+compose_file=$root/compose.yaml
+config_file=$root/taina.conf
+example_file=$root/taina.conf.example
+backup_mount=/app/backups
+rootless=0
+newline=$(printf '\nx')
+newline=${newline%x}
+
+die() { code=$1; shift; printf 'error: %s\n' "$*" >&2; exit "$code"; }
+note() { printf 'note: %s\n' "$*" >&2; }
+
+usage() {
+  cat <<'USAGE'
+usage: ./taina <command> [arguments]
+
+  init                              copy the config and create the default backup directory
+  backup [--out /app/backups]       write an archive into the mounted backup directory
+  restore ARCHIVE_NAME              restore a file while the service is cold
+  <domain command>                  run a Taina release command
+
+The host paths and the service user live in compose.yaml. Lifecycle uses Docker
+Compose directly:
+  docker compose up --detach --wait
+  docker compose stop taina
+USAGE
+}
+
+compose() { docker compose --project-directory "$root" --file "$compose_file" "$@"; }
+
+need_docker() {
+  command -v docker >/dev/null 2>&1 || die 3 "docker is required for this deployment"
+  docker compose version >/dev/null 2>&1 || die 3 "Docker Compose v2 is required"
+  docker info >/dev/null 2>&1 || die 3 "the Docker daemon is not running"
+  detect_rootless
+}
+
+# Rootless Docker maps the operator's host user to container uid 0 and every
+# other container user to an unused subuid. A host bind owned by the operator is
+# therefore reachable only by container root, which is why the commands below
+# run as root under rootless and as the image user otherwise.
+detect_rootless() {
+  case "$(docker info --format '{{.SecurityOptions}}' 2>/dev/null)" in
+    *rootless*) rootless=1 ;;
+    *) rootless=0 ;;
+  esac
+}
+
+# The service user set in compose.yaml. Empty means the image default (nobody).
+compose_service_user() {
+  sed -n 's/^[[:space:]]*user:[[:space:]]*//p' "$compose_file" | head -n 1 | tr -d '"' | tr -d "'"
+}
+
+# Under rootless the service has to run as the operator (uid 0 in the container
+# namespace), otherwise it cannot reach the host backup directory and the
+# scheduled backup fails silently.
+require_rootless_user() {
+  [ "$rootless" -eq 1 ] || return 0
+  case "$(compose_service_user)" in
+    0|0:0|root) return 0 ;;
+  esac
+  die 3 "rootless Docker needs the service to run as your user: add 'user: \"0\"' to the taina service in $compose_file and 'docker compose up --detach --wait' again"
+}
+
+need_deployment() {
+  [ -f "$compose_file" ] || die 3 "missing Compose definition: $compose_file"
+  [ -f "$config_file" ] || die 3 "missing $config_file; run './taina init' and edit it first"
+}
+
+copy_if_missing() {
+  source=$1
+  destination=$2
+  if [ -e "$destination" ]; then
+    note "$destination exists; leaving it unchanged"
+  else
+    cp "$source" "$destination" || die 3 "could not write $destination"
+    printf 'wrote %s\n' "$destination"
+  fi
+}
+
+init() {
+  [ "$#" -eq 0 ] || die 2 "usage: ./taina init"
+  [ -f "$example_file" ] || die 3 "missing bundled config example: $example_file"
+  copy_if_missing "$example_file" "$config_file"
+  mkdir -p "$root/backups" || die 3 "could not create the default backup directory"
+}
+
+run_compose() {
+  if [ -t 0 ] && [ -t 1 ]; then set -- -it "$@"; else set -- -i "$@"; fi
+  compose run --rm --no-deps "$@"
+}
+
+run_once() { run_compose --entrypoint /app/bin/cli taina "$@"; }
+run_once_root() { run_compose --user 0 --entrypoint /app/bin/cli taina "$@"; }
+
+# A one-off shell in the service container: as the operator under rootless, as
+# the image user otherwise.
+run_shell() {
+  if [ "$rootless" -eq 1 ]; then
+    compose run --rm --no-deps --user 0 --entrypoint /bin/sh taina -c "$1"
+  else
+    compose run --rm --no-deps --entrypoint /bin/sh taina -c "$1"
+  fi
+}
+
+run_domain() {
+  [ "$#" -gt 0 ] || die 2 "a release command is required"
+  need_deployment
+  need_docker
+  # doctor only reads the instance, including the mounted backup directory, so
+  # it can run as the operator under rootless. Verbs that write the data and
+  # storage volumes stay on the image user, or the server loses its files.
+  if [ "$1" = doctor ]; then
+    require_rootless_user
+    if [ "$rootless" -eq 1 ]; then
+      run_once_root "$@"
+      return
+    fi
+  fi
+  run_once "$@"
+}
+
+# The mounted backup directory must be writable by the service user and readable
+# by the operator (group = host gid, no world access). The check and the repair
+# run inside the container, where a rootful uid namespace matches the host one.
+backup_directory_usable() {
+  compose run --rm --no-deps --env HOST_GID="$(id -g)" --entrypoint /bin/sh taina -c '
+    dir=/app/backups
+    probe=$(mktemp "$dir/.taina-write-test.XXXXXX") 2>/dev/null || exit 1
+    rm -f -- "$probe" || exit 1
+    mode=$(stat -c %a "$dir") || exit 1
+    gid=$(stat -c %g "$dir") || exit 1
+    [ "$gid" = "$HOST_GID" ] || exit 1
+    case "$mode" in *0) exit 0 ;; *) exit 1 ;; esac' >/dev/null 2>&1
+}
+
+repair_backup_directory() {
+  compose run --rm --no-deps --env HOST_GID="$(id -g)" --user 0 --entrypoint /bin/sh taina -c '
+    dir=/app/backups
+    chown 65534:"$HOST_GID" "$dir" || exit 1
+    chmod 2770 "$dir"' ||
+    die 3 "could not prepare the backup directory for the container user and host group $(id -g)"
+}
+
+prepare_backup_directory() {
+  if backup_directory_usable; then return; fi
+  repair_backup_directory
+  backup_directory_usable || die 3 "the backup directory is not usable by the container user and host group $(id -g)"
+}
+
+# Rootless variant: the container runs as the operator, so only the operator's
+# write access to the mounted directory matters.
+prepare_rootless_backup_directory() {
+  if run_shell '[ -w /app/backups ]' >/dev/null 2>&1; then return; fi
+  die 3 "the host directory bound to /app/backups is not writable by your user; fix its ownership or the bind source in $compose_file"
+}
+
+# A backup on the same filesystem as the data volume does not survive a disk
+# loss. NixOS enforces this with a mountpoint check; here it is only a warning.
+note_backup_filesystem() {
+  run_shell '[ "$(stat -c %d /app/backups 2>/dev/null)" = "$(stat -c %d /app/data 2>/dev/null)" ]' >/dev/null 2>&1 || return 0
+  note "the backup directory shares a filesystem with the data volume; bind it to a separate disk or mount in $compose_file for disaster recovery"
+}
+
+backup() {
+  if [ "$#" -eq 0 ]; then
+    :
+  elif [ "$#" -eq 2 ] && [ "$1" = --out ] && [ "$2" = "$backup_mount" ]; then
+    :
+  else
+    die 2 "the Compose bundle writes backups only to $backup_mount; the host path is the bind source in $compose_file"
+  fi
+  need_deployment
+  need_docker
+  require_rootless_user
+  if [ "$rootless" -eq 1 ]; then
+    prepare_rootless_backup_directory
+  else
+    prepare_backup_directory
+  fi
+  note_backup_filesystem
+  if [ "$rootless" -eq 1 ]; then
+    run_once_root backup --out "$backup_mount"
+  else
+    run_once backup --out "$backup_mount"
+  fi
+}
+
+restore() {
+  [ "$#" -eq 1 ] || die 2 "usage: ./taina restore ARCHIVE_NAME"
+  archive=$1
+  case "$archive" in
+    ''|.|..|-*|*/*|*"$newline"*) die 2 "ARCHIVE_NAME must be a filename inside the mounted backup directory" ;;
+  esac
+  need_deployment
+  need_docker
+  require_rootless_user
+  if ! running=$(compose ps --quiet taina); then
+    die 3 "could not query the Compose service state; restore was not run"
+  fi
+  case "$running" in
+    '') ;;
+    *"$newline"*) die 3 "unexpected Compose service state; restore was not run" ;;
+    *) die 3 "the Compose service is running; stop it with 'docker compose stop taina' before restore" ;;
+  esac
+  if [ "$rootless" -eq 1 ]; then
+    run_once_root restore "$backup_mount/$archive"
+  else
+    run_once restore "$backup_mount/$archive"
+  fi
+}
+
+main() {
+  [ "$#" -gt 0 ] || { usage; return 2; }
+  command=$1
+  shift
+  case "$command" in
+    --help|-h|help) usage ;;
+    init) init "$@" ;;
+    backup) backup "$@" ;;
+    restore) restore "$@" ;;
+    *) run_domain "$command" "$@" ;;
+  esac
+}
+
+main "$@"

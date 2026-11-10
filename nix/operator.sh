@@ -55,12 +55,12 @@ docker_run() {
 run_container() {
   need_docker
   require_storage
-  docker_run --user "$user_spec" --workdir /app \
-    --env TAINA_CONFIG=/app/taina.conf \
-    --mount "type=bind,source=$data_dir,target=/app/data" \
+  docker_run --user "$user_spec" --workdir /data \
+    --env TAINA_CONFIG=/data/taina.conf \
+    --mount "type=bind,source=$data_dir,target=/data" \
     --mount "type=bind,source=$storage_dir,target=/app/storage" \
     --mount "type=bind,source=$backup_dir,target=/app/backups" \
-    --mount "type=bind,source=$config_file,target=/app/taina.conf,readonly" \
+    --mount "type=bind,source=$config_file,target=/data/taina.conf,readonly" \
     --entrypoint /app/bin/cli "$@"
 }
 

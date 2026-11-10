@@ -1,0 +1,23 @@
+# Public URL, after TLS termination.
+url_scheme = https
+hostname = community.example.org
+url_port = 443
+
+# HTTP listener inside the container.
+bind_ip = 0.0.0.0
+port = 4000
+
+# Upload limits.
+max_blob_size = 2147483648
+max_concurrent_uploads = 10
+
+# Persistent application paths.
+data_dir = /app/data
+storage_dir = /app/storage
+backup_dir = /app/backups
+
+backup_enabled = true
+update_check = false
+
+# Optional. Defaults to DATA_DIR/secret_key_base.
+# secret_key_base_file = /app/data/secret_key_base

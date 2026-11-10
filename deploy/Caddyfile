@@ -1,0 +1,51 @@
+# Taina reverse proxy + automatic TLS.
+#
+# This is the domain-set Caddyfile for a Compose deployment. For a box
+# without a public domain, see Caddyfile.local instead: it serves any
+# hostname with local-CA certificates issued on demand.
+#
+# TLS is coupled to your network topology (see guias/acesso-remoto.md). The site
+# address below is {$TAINA_DOMAIN} with a default of :443:
+#
+#   - TAINA_DOMAIN set (e.g. taina.example.org) + ports 80/443 reachable:
+#       Caddy issues a real Let's Encrypt certificate over HTTP-01 and adds the
+#       HTTP->HTTPS redirect automatically. Recommended for a box with a public
+#       domain.
+#
+#   - TAINA_DOMAIN empty (LAN only, or behind Tailscale/Headscale):
+#       The address falls back to :443 and Caddy serves its own local-CA
+#       certificate automatically (its internal issuer). Browsers warn until the
+#       local root is trusted on each device. If you reach the box over
+#       Tailscale/Headscale, prefer a real cert from the overlay
+#       (`tailscale cert` / MagicDNS *.ts.net) and point clients at that name;
+#       the overlay terminates TLS and this fallback is unused.
+#
+#   - DNS-01 (public domain behind NAT, or wildcard certs):
+#       Requires a custom Caddy image built with your DNS provider module
+#       (the stock caddy:2 image has no DNS modules). See the guide.
+#
+# Security headers (HSTS, nosniff, Referrer-Policy, frame-ancestors) are applied
+# to every response.
+
+{
+	# Quieter logs for a home box; raise to INFO when debugging.
+	log {
+		level WARN
+	}
+}
+
+{$TAINA_DOMAIN::443} {
+	header {
+		# HSTS: force HTTPS for a year, including subdomains. Browsers honor
+		# this only over a trusted (non-self-signed) cert.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# Disallow being framed by any other origin (clickjacking).
+		Content-Security-Policy "frame-ancestors 'self'"
+		# Do not advertise the server software.
+		-Server
+	}
+
+	reverse_proxy taina:4000
+}

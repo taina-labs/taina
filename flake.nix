@@ -24,7 +24,12 @@
       );
   in {
     nixosModules = {
-      taina = import ./nix/module.nix;
+      taina = {
+        imports = [
+          beam-overlay.nixosModules.beam-containers
+          ./nix/module.nix
+        ];
+      };
       default = self.nixosModules.taina;
     };
 

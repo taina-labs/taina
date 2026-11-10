@@ -1,0 +1,56 @@
+# Caddy para caixas sem domínio público (rede local, ou acesso por overlay
+# como Tailscale/Headscale). O compose escolhe este arquivo quando
+# TAINA_CADDYFILE vale Caddyfile.local, que é o padrão do install.sh sem
+# TAINA_DOMAIN. Para uma caixa com domínio público, veja o Caddyfile.
+#
+# Sem um domínio, não há como emitir certificado Let's Encrypt (a emissão via
+# HTTP-01 exige um nome público que aponte para a caixa). Em vez disso, o
+# Caddy emite certificados do CA interno dele sob demanda: para cada nome que
+# chegar aqui (o IP da caixa, o nome no MagicDNS, etc.), ele pergunta ao
+# /health do app antes de assinar, e o certificado sai do CA local. Os
+# navegadores vão avisar até que o root local seja confiável em cada aparelho;
+# o guia de acesso remoto explica o caminho com Tailscale, em que é o overlay
+# que termina o TLS de verdade.
+
+{
+	# Logs mais calmos para uma caixa de casa; suba para INFO ao depurar.
+	log {
+		level WARN
+	}
+
+	# TLS sob demanda: o Caddy só emite certificado depois de perguntar ao
+	# app (o /health responde 200 com o app no ar; sem app, ele recusa).
+	on_demand_tls {
+		ask http://taina:4000/health
+	}
+}
+
+# Qualquer nome que chegar por HTTP vira HTTPS.
+http:// {
+	redir https://{host}{uri} permanent
+}
+
+# Catch-all HTTPS: um mesmo site atende qualquer hostname, com certificado
+# local emitido na hora para cada um.
+https:// {
+	tls internal {
+		on_demand
+	}
+
+	header {
+		# Sem HSTS de propósito: aqui o certificado sai do CA local. Depois que
+		# o operador confia nesse root, o navegador passa a honrar cabeçalhos de
+		# segurança, e um HSTS de um ano fixaria https:// para TODO hostname já
+		# usado para chegar na caixa (o IP da rede, o nome no MagicDNS, qualquer
+		# nome novo), mesmo os que um dia precisem responder de outro jeito. O
+		# Caddyfile com domínio público mantém o HSTS normalmente.
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# Proíbe ser moldurado por outra origem (clickjacking).
+		Content-Security-Policy "frame-ancestors 'self'"
+		# Não anuncia qual é o servidor.
+		-Server
+	}
+
+	reverse_proxy taina:4000
+}

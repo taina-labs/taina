@@ -75,6 +75,11 @@
           "type": "generic",
           "path": "flake.nix",
           "glob": false
+        },
+        {
+          "type": "generic",
+          "path": "deploy/compose/compose.yaml",
+          "glob": false
         }
       ]
     },

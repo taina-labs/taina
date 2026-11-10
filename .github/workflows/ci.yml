@@ -192,9 +192,16 @@ jobs:
 
       - name: Check operator shell scripts
         run: |
-          sh -n nix/operator.sh rel/overlays/bin/cli rel/overlays/bin/server
+          sh -n nix/operator.sh rel/overlays/bin/cli rel/overlays/bin/server \
+            deploy/compose/taina deploy/compose/smoke.sh
           nix shell nixpkgs#shellcheck -c shellcheck \
-            nix/operator.sh rel/overlays/bin/cli rel/overlays/bin/server
+            nix/operator.sh rel/overlays/bin/cli rel/overlays/bin/server \
+            deploy/compose/taina deploy/compose/smoke.sh
+
+      - name: Check the Compose deployment
+        run: |
+          cmp taina.conf.example deploy/compose/taina.conf.example
+          deploy/compose/smoke.sh
 
       - name: Evaluate the module and build its wrapper
         run: |

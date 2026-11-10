@@ -1,0 +1,46 @@
+name: taina
+
+services:
+  taina:
+    image: ghcr.io/taina-labs/taina:v0.7.1 # x-release-please-version
+    restart: unless-stopped
+    entrypoint: ["/app/bin/server"]
+    environment:
+      TAINA_CONFIG: /app/taina.conf
+    volumes:
+      - type: volume
+        source: data
+        target: /app/data
+      - type: volume
+        source: storage
+        target: /app/storage
+      - type: bind
+        source: ./backups
+        target: /app/backups
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./taina.conf
+        target: /app/taina.conf
+        read_only: true
+        bind:
+          create_host_path: false
+    ports:
+      - "127.0.0.1:4000:4000"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:4000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "4"
+
+volumes:
+  data:
+    name: taina-data
+  storage:
+    name: taina-storage
