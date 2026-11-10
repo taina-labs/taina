@@ -75,7 +75,7 @@ Agradeço imensamente aos nossos patrocinadores por apoiar esse projeto!
 
 <p align="center">
   <a href="https://www.coderabbit.ai/?utm_source=oss&utm_medium=github&utm_campaign=zoedsoupe">
-    <img src="https://victorious-bubble-f69a016683.media.strapiapp.com/Frame_1686552887_8d2a26b476.svg" alt="Coderabbit Sponsor Logo" height="80"/>
+    <img src="https://avatars.githubusercontent.com/u/132028505?s=200&v=4" alt="Coderabbit Sponsor Logo" height="80"/>
   </a>
 </p>
 
