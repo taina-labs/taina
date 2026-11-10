@@ -1,0 +1,44 @@
+name: okena
+
+on:
+  pull_request:
+    paths:
+      - "okena/**"
+      - "api/**"
+      - ".github/workflows/okena.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "okena/**"
+      - "api/**"
+      - ".github/workflows/okena.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.9
+          channel: stable
+          cache: true
+
+      - name: Check the Dart core
+        working-directory: okena/packages/okena_core
+        run: |
+          dart pub get
+          dart analyze
+          dart test
+
+      - name: Check the Flutter app
+        working-directory: okena/app
+        run: |
+          flutter pub get
+          flutter analyze
+          flutter test

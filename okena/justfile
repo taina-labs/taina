@@ -1,0 +1,48 @@
+set shell := ["zsh", "-lc"]
+
+default: check
+
+[working-directory: "packages/okena_core"]
+core-get:
+    dart pub get
+
+[working-directory: "packages/okena_core"]
+core-analyze: core-get
+    dart analyze
+
+[working-directory: "packages/okena_core"]
+core-test: core-get
+    dart test
+
+core-check: core-analyze core-test
+
+[working-directory: "app"]
+app-get:
+    flutter pub get
+
+[working-directory: "app"]
+app-analyze: app-get
+    flutter analyze
+
+[working-directory: "app"]
+app-test: app-get
+    flutter test
+
+app-check: app-analyze app-test
+
+check: core-check app-check
+
+format:
+    dart format packages/okena_core/lib packages/okena_core/test app/lib app/test
+
+[working-directory: "app"]
+run platform:
+    if "{{platform}}" == "ios" then flutter run -d "0FFEBF70-D496-4D87-BBB1-B5A2A243E17A"; else flutter run -d "Medium_Phone_API_37.0"; fi
+
+[working-directory: "app"]
+build-ios:
+    flutter build ios --simulator --no-codesign
+
+[working-directory: "app"]
+build-android:
+    flutter build apk --debug

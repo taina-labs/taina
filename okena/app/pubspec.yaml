@@ -1,0 +1,42 @@
+name: okena_app
+description: Tainá's multiplatform app.
+publish_to: none
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.13.7
+
+dependencies:
+  file_picker: ^13.3.2
+  flutter:
+    sdk: flutter
+  flutter_secure_storage: ^11.2.0
+  go_router: ^18.1.3
+  okena_core:
+    path: ../packages/okena_core
+  open_filex: ^5.0.0
+  permission_handler: ^13.0.2
+  provider: ^6.1.5+1
+  share_plus: ^13.3.1
+  shared_preferences: ^2.5.6
+  video_player: ^2.14.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/fonts/
+  fonts:
+    - family: Bricolage Grotesque
+      fonts:
+        - asset: assets/fonts/BricolageGrotesque-Variable.ttf
+    - family: Schibsted Grotesk
+      fonts:
+        - asset: assets/fonts/SchibstedGrotesk-Variable.ttf
+    - family: JetBrains Mono
+      fonts:
+        - asset: assets/fonts/JetBrainsMono-Variable.ttf
