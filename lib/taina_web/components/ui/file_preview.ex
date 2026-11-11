@@ -63,17 +63,7 @@ defmodule TainaWeb.UI.FilePreview do
   defp media_kind("text/" <> _rest), do: :text
   defp media_kind(_mime), do: :other
 
-  defp file_dimension(metadata, "width") do
-    case metadata do
-      %{"width" => width, "height" => _height} -> width
-      _ -> nil
-    end
-  end
-
-  defp file_dimension(metadata, "height") do
-    case metadata do
-      %{"width" => _width, "height" => height} -> height
-      _ -> nil
-    end
-  end
+  defp file_dimension(%{"width" => width, "height" => _height}, "width"), do: width
+  defp file_dimension(%{"width" => _width, "height" => height}, "height"), do: height
+  defp file_dimension(_metadata, _dimension), do: nil
 end

@@ -26,10 +26,10 @@ defmodule TainaWeb.SetupControllerTest do
     assert {:ok, tekoa} = Maraca.get_tekoa()
     assert tekoa.name == "Quilombo do Café"
     # "O disco inteiro" (spec 11.3): sem cota, o teto é o próprio disco.
-    assert tekoa.storage_quota_bytes == nil
+    assert is_nil(tekoa.storage_quota_bytes)
   end
 
-  test "Um limite em GB vira bytes na cota", %{conn: conn} do
+  test "um limite em GB vira bytes na cota", %{conn: conn} do
     params =
       @params
       |> put_in(["setup", "storage_quota"], "limite")
@@ -41,7 +41,7 @@ defmodule TainaWeb.SetupControllerTest do
     assert tekoa.storage_quota_bytes == 5 * @gb
   end
 
-  test "Um limite inválido (zero) volta ao passo 3 com o aviso do campo", %{conn: conn} do
+  test "um limite inválido (zero) volta ao passo 3 com o aviso do campo", %{conn: conn} do
     params =
       @params
       |> put_in(["setup", "storage_quota"], "limite")
@@ -54,7 +54,7 @@ defmodule TainaWeb.SetupControllerTest do
     refute Maraca.bootstrapped?()
   end
 
-  test "Um limite maior que o disco volta ao passo 3 com o aviso do teto", %{conn: conn} do
+  test "um limite maior que o disco volta ao passo 3 com o aviso do teto", %{conn: conn} do
     params =
       @params
       |> put_in(["setup", "storage_quota"], "limite")

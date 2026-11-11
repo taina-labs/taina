@@ -30,6 +30,9 @@ defmodule TainaWeb.SaudeLive do
   alias TainaWeb.Layouts
   alias TainaWeb.Saude
 
+  @attention_state "attention"
+  @unknown_state "unknown"
+
   @impl true
   def mount(_params, _session, socket) do
     scope = socket.assigns.current_scope
@@ -40,23 +43,19 @@ defmodule TainaWeb.SaudeLive do
 
     socket =
       socket
-      |> assign(:page_title, gettext("Saúde da comunidade"))
       |> assign(:load_error, false)
+      |> assign(:page_title, gettext("Saúde da comunidade"))
       |> assign(:update_status, update_status)
       |> assign_painel(scope)
 
-    socket =
-      if connected?(socket) and Update.enabled?() do
-        me = self()
-
-        {:ok, _pid} = Task.start_link(fn -> send(me, {:update_status, Update.status()}) end)
-
-        socket
-      else
-        socket
-      end
-
-    {:ok, socket}
+    {:ok,
+     if connected?(socket) and Update.enabled?() do
+       me = self()
+       Task.start(fn -> send(me, {:update_status, Update.status()}) end)
+       socket
+     else
+       socket
+     end}
   end
 
   # Resposta do GET opt-in: troca a linha "verificando" pelo resultado de
@@ -74,7 +73,7 @@ defmodule TainaWeb.SaudeLive do
   def handle_info(_message, socket), do: {:noreply, socket}
 
   @impl true
-  def handle_event("run-backup", _params, socket) do
+  def handle_event("run_backup", _params, socket) do
     if Maraca.zelador?(socket.assigns.current_scope.ava) and Backup.enabled?() do
       # Dispara o mesmo worker do backup agendado: a fila cuida do trabalho
       # pesado (pg_dump + tar.gz) fora do request, e a fila já é o caminho de
@@ -121,6 +120,33 @@ defmodule TainaWeb.SaudeLive do
 
   # --- core puro: dados -> dados ---
 
+  # As quatro linhas do board, na ordem: backup, espaço, atualização e a
+  defp backup_button?(%{zelador?: true}), do: Backup.enabled?()
+  defp backup_button?(_painel), do: false
+
+  # Em dia é "Backup em dia"; caixa nova (nunca houve backup) é atenção e
+  # backup ilegível é problema (o board `atenção` pinta o falhado de
+  # vermelho). A palavra nasce no resumo da Saúde, o mesmo veredito do hub.
+  defp backup_row({:ok, _guardou}), do: %{state: "ok", title: gettext("Backup em dia")}
+
+  defp backup_row({:error, reason}) do
+    %{line: title} = backup_verdict({:error, reason})
+
+    %{state: backup_state(reason), title: title}
+  end
+
+  defp backup_state(reason) when reason in [:none, :no_dir], do: @attention_state
+  defp backup_state(_reason), do: "problem"
+
+  # O veredito do backup, isolado do disco: com cota nil o disco não chama
+  # atenção, então a linha do resumo é só do backup (`TainaWeb.Saude`).
+  defp backup_verdict(backup) do
+    Saude.summary_line(%{storage: %{used_bytes: 0, quota_bytes: nil}, backup: backup})
+  end
+
+  # O botão do backup (board zelador): só para quem cuida da máquina e só
+  # quando o destino está configurado - botão que não funciona é beco sem
+  # saída.
   # O modelo do corpo: nil (a carga falhou) não desenha nada além do cartão
   # de erro; senão, as linhas, o rodapé e o botão do backup, decididos de uma
   # vez (spec 1.3: qual estado renderizar é decisão pura do dado).
@@ -131,71 +157,6 @@ defmodule TainaWeb.SaudeLive do
 
     %{rows: rows, footer: care_footer(painel, rows), backup_button: backup_button?(painel)}
   end
-
-  # As quatro linhas do board, na ordem: backup, espaço, atualização e a
-  # caixa no ar. Linha do board não leva detalhe (Detail: none).
-  defp saude_rows(%{stats: stats, backup: backup, update_status: update_status}) do
-    [
-      backup_row(backup),
-      disk_row(stats, backup),
-      update_row(update_status),
-      %{state: "ok", title: gettext("Tudo no ar")}
-    ]
-  end
-
-  # Em dia é "Backup em dia"; caixa nova (nunca houve backup) é atenção e
-  # backup ilegível é problema (o board `atenção` pinta o falhado de
-  # vermelho). A palavra nasce no resumo da Saúde, o mesmo veredito do hub.
-  defp backup_row({:ok, _guardou}), do: %{state: "ok", title: gettext("Backup em dia")}
-
-  defp backup_row({:error, reason} = backup) do
-    %{line: title} = backup_verdict(backup)
-
-    %{state: backup_state(reason), title: title}
-  end
-
-  # O veredito do backup, isolado do disco: com cota nil o disco não chama
-  # atenção, então a linha do resumo é só do backup (`TainaWeb.Saude`).
-  defp backup_verdict(backup) do
-    Saude.summary_line(%{storage: %{used_bytes: 0, quota_bytes: nil}, backup: backup})
-  end
-
-  defp backup_state(reason) when reason in [:none, :no_dir], do: "attention"
-  defp backup_state(_reason), do: "problem"
-
-  # Sem limite não há o que estourar (`Saude.disk_attention?/1`): o espaço é
-  # de sobra. Na atenção, a palavra é a do resumo (o disco fala primeiro,
-  # doc do Saude), seja qual for o backup.
-  defp disk_row(stats, backup) do
-    if Saude.disk_attention?(stats) do
-      %{state: "attention", title: Saude.summary_line(%{storage: stats, backup: backup}).line}
-    else
-      %{state: "ok", title: gettext("Espaço de sobra")}
-    end
-  end
-
-  # A verificação de atualização (opt-in, soberana): "em dia" é da caixa que
-  # verificou e está na mais recente. Os outros estados dizem o que se sabe,
-  # sem fingir - nem "em dia" quem desligou a verificação ou não conseguiu
-  # verificar agora.
-  defp update_row(%{result: :up_to_date}), do: %{state: "ok", title: gettext("Atualizações em dia")}
-
-  defp update_row(%{result: {:update_available, _latest}}) do
-    %{state: "attention", title: gettext("Atualização disponível")}
-  end
-
-  defp update_row(%{result: :checking}), do: %{state: "unknown", title: gettext("Verificando atualização")}
-  defp update_row(%{result: :check_off}), do: %{state: "unknown", title: gettext("Verificação desligada")}
-
-  defp update_row(%{result: result}) when result in [:unavailable, :unknown] do
-    %{state: "unknown", title: gettext("Verificação falhou")}
-  end
-
-  # O botão do backup (board zelador): só para quem cuida da máquina e só
-  # quando o destino está configurado - botão que não funciona é beco sem
-  # saída.
-  defp backup_button?(%{zelador?: true}), do: Backup.enabled?()
-  defp backup_button?(_painel), do: false
 
   # O rodapé do board: quem não cuida lê quem cuida, pelo nome (e o cuidado é
   # da máquina, não dos arquivos); quando algo pede atenção, a saída é falar
@@ -227,15 +188,53 @@ defmodule TainaWeb.SaudeLive do
   # um dia não houver nome para ler.
   defp care_names_line([]), do: gettext("Vale falar com quem cuida da nuvem. Ninguém perdeu arquivo.")
 
+  defp checking_status, do: %{running: Update.running_version(), result: :checking}
+
+  # Sem limite não há o que estourar (`Saude.disk_attention?/1`): o espaço é
+  # de sobra. Na atenção, a palavra é a do resumo (o disco fala primeiro,
+  # doc do Saude), seja qual for o backup.
+  defp disk_row(stats, backup) do
+    if Saude.disk_attention?(stats) do
+      %{state: @attention_state, title: Saude.summary_line(%{storage: stats, backup: backup}).line}
+    else
+      %{state: "ok", title: gettext("Espaço de sobra")}
+    end
+  end
+
+  # As quatro linhas do board: backup, espaço, atualização e a caixa no ar.
+  defp saude_rows(%{stats: stats, backup: backup, update_status: update_status}) do
+    [
+      backup_row(backup),
+      disk_row(stats, backup),
+      update_row(update_status),
+      %{state: "ok", title: gettext("Tudo no ar")}
+    ]
+  end
+
+  # A verificação de atualização (opt-in, soberana): "em dia" é da caixa que
+  # verificou e está na mais recente. Os outros estados dizem o que se sabe,
+  # sem fingir - nem "em dia" quem desligou a verificação ou não conseguiu
+  # verificar agora.
+  defp update_row(%{result: :up_to_date}), do: %{state: "ok", title: gettext("Atualizações em dia")}
+
+  defp update_row(%{result: {:update_available, _latest}}) do
+    %{state: @attention_state, title: gettext("Atualização disponível")}
+  end
+
+  defp update_row(%{result: :checking}), do: %{state: @unknown_state, title: gettext("Verificando atualização")}
+  defp update_row(%{result: :check_off}), do: %{state: @unknown_state, title: gettext("Verificação desligada")}
+
+  defp update_row(%{result: result}) when result in [:unavailable, :unknown] do
+    %{state: @unknown_state, title: gettext("Verificação falhou")}
+  end
+
   # Quem cuida da máquina, pelo nome: só quem está ativo. Conta desativada
   # desativada está, não é gente cuidando da caixa agora.
   defp zelador_names(members) do
-    members
-    |> Enum.filter(&(&1.papel == :zelador and is_nil(&1.deactivated_at)))
-    |> Enum.map(&person_name/1)
+    for member <- members,
+        member.papel == :zelador and is_nil(member.deactivated_at),
+        do: person_name(member)
   end
-
-  defp checking_status, do: %{running: Update.running_version(), result: :checking}
 
   # --- shell imperativo: assign/render ---
 
@@ -277,7 +276,7 @@ defmodule TainaWeb.SaudeLive do
           </div>
         </div>
 
-        <.button :if={@saude.backup_button} kind="primary" class="self-start" phx-click="run-backup">
+        <.button :if={@saude.backup_button} kind="primary" class="self-start" phx-click="run_backup">
           {gettext("Fazer backup agora")}
         </.button>
 

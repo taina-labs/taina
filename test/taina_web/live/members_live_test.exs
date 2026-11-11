@@ -54,7 +54,7 @@ defmodule TainaWeb.MembersLiveTest do
 
     assert has_element?(
              lv,
-             ~s(.page-header a[href="/moradores/convidar?return_to=%2Fmoradores%3Ffiltro%3Dzeladores"]),
+             ~S(.page-header a[href="/moradores/convidar?return_to=%2Fmoradores%3Ffiltro%3Dzeladores"]),
              "Convidar"
            )
 
@@ -98,7 +98,7 @@ defmodule TainaWeb.MembersLiveTest do
 
     html =
       lv
-      |> element(~s(button[phx-click*="reset-link"][phx-click*="#{member.public_id}"]))
+      |> element(~s(button[phx-click*="reset_link"][phx-click*="#{member.public_id}"]))
       |> render_click()
 
     assert html =~ "Link de redefinição de senha"
@@ -106,7 +106,7 @@ defmodule TainaWeb.MembersLiveTest do
 
     assert has_element?(
              lv,
-             ~s(#reset-link-modal .dialog__panel[aria-labelledby="reset-link-modal-title"] h2#reset-link-modal-title)
+             ~S(#reset-link-modal .dialog__panel[aria-labelledby="reset-link-modal-title"] h2#reset-link-modal-title)
            )
   end
 
@@ -138,12 +138,12 @@ defmodule TainaWeb.MembersLiveTest do
 
     html =
       lv
-      |> element(~s(button[phx-click*="ask-revoke"][phx-click*="#{invited.public_id}"]))
+      |> element(~s(button[phx-click*="ask_revoke"][phx-click*="#{invited.public_id}"]))
       |> render_click()
 
     assert html =~ "Revogar este convite?"
 
-    html = lv |> element(~s(#confirm-revoke button[phx-click*="revoke"])) |> render_click()
+    html = lv |> element(~S(#confirm-revoke button[phx-click*="revoke"])) |> render_click()
 
     assert html =~ "Convite revogado."
     refute html =~ "Convites pendentes"

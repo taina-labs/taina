@@ -20,6 +20,58 @@ defmodule TainaWeb.UI.Navigation do
   import TainaWeb.Icons
   import TainaWeb.UI.Content, only: [avatar: 1]
 
+  @doc """
+  Palavra do botão de voltar das telas internas (spec 1.5): na volta para a
+  raiz, "Início"; para o parente, o nome dele quando cabe em 12 caracteres,
+  senão a saída honesta "Voltar".
+
+      <.page_header title="Atas" back={~p"/documentos"} back_label={back_label(folder.name)} />
+  """
+  def back_label(nil), do: gettext("Início")
+
+  def back_label(name) when is_binary(name) do
+    if String.length(String.trim(name)) <= 12, do: String.trim(name), else: gettext("Voltar")
+  end
+
+  @doc """
+  Caminho de migalha (Penpot: Breadcrumb, 3fd18cd2-90f8-80f3-8008-d5c47a4b109d),
+  desktop only (>= 768; no mobile o word do back carrega o parente, spec 1.5
+  e 4.3), separadores em chevron-right.
+
+      <.breadcrumb>
+        <:crumb label={gettext("Praça")} navigate={~p"/documentos/praca"} />
+        <:crumb label={gettext("Atas")} navigate={~p"/documentos/pasta/atas"} />
+        <:crumb label={folder.name} current />
+      </.breadcrumb>
+  """
+  attr :rest, :global
+
+  slot :crumb, required: true do
+    attr :label, :string, required: true
+    attr :navigate, :string, doc: "vira <a> quando presente"
+    attr :current, :boolean, doc: "elo atual (nome da pasta aberta)"
+  end
+
+  def breadcrumb(assigns) do
+    ~H"""
+    <nav class="breadcrumb" aria-label={gettext("Você está em")} {@rest}>
+      <div :for={{crumb, index} <- Enum.with_index(@crumb, 1)} class="breadcrumb__seg">
+        <.icon :if={index > 1} name="chevron-right" size={14} class="breadcrumb__sep" />
+        <.link
+          :if={crumb[:navigate]}
+          navigate={crumb.navigate}
+          class={["breadcrumb__link", crumb[:current] && "breadcrumb__current"]}
+        >
+          {crumb.label}
+        </.link>
+        <span :if={!crumb[:navigate]} class={["breadcrumb__link", crumb[:current] && "breadcrumb__current"]}>
+          {crumb.label}
+        </span>
+      </div>
+    </nav>
+    """
+  end
+
   # ---------- HubHeader ----------
 
   @doc """
@@ -56,24 +108,11 @@ defmodule TainaWeb.UI.Navigation do
     """
   end
 
-  defp user_display_name(%{display_name: name}) when is_binary(name) and name != "", do: name
+  defp user_display_name(%{display_name: <<_::binary-size(1), _::binary>> = name}), do: name
   defp user_display_name(%{username: name}) when is_binary(name), do: name
   defp user_display_name(_user), do: ""
 
   # ---------- back label (spec 1.5) ----------
-
-  @doc """
-  Palavra do botão de voltar das telas internas (spec 1.5): na volta para a
-  raiz, "Início"; para o parente, o nome dele quando cabe em 12 caracteres,
-  senão a saída honesta "Voltar".
-
-      <.page_header title="Atas" back={~p"/documentos"} back_label={back_label(folder.name)} />
-  """
-  def back_label(nil), do: gettext("Início")
-
-  def back_label(name) when is_binary(name) do
-    if String.length(String.trim(name)) <= 12, do: String.trim(name), else: gettext("Voltar")
-  end
 
   # ---------- PageHeader ----------
 
@@ -126,7 +165,7 @@ defmodule TainaWeb.UI.Navigation do
         <:tabs><.service_tab_bar service="ybira" current="praca" /></:tabs>
       </.service_header>
   """
-  attr :service, :string, required: true, values: ~w(ybira jaci)
+  attr :service, :string, required: true, values: ~W(ybira jaci)
   attr :title, :string, required: true
   attr :back, :string, required: true
   attr :back_label, :string, default: nil
@@ -184,7 +223,7 @@ defmodule TainaWeb.UI.Navigation do
 
       <.service_tab_bar service="ybira" current="praca" />
   """
-  attr :service, :string, required: true, values: ~w(ybira jaci)
+  attr :service, :string, required: true, values: ~W(ybira jaci)
   attr :current, :string, default: nil, doc: "key da aba corrente; recebe aria-current=page"
 
   def service_tab_bar(assigns) do
@@ -206,50 +245,9 @@ defmodule TainaWeb.UI.Navigation do
     """
   end
 
-  @doc "Mapa puro de abas por serviço (testável sem socket; documentado no 4.1)."
-  def service_tabs(service) when service in ~w(ybira jaci), do: Map.fetch!(@service_tabs, service)
-
   @doc "Chaves das abas que um serviço tem (útil para casar `current` em telas)."
   def service_tab_keys(service), do: Enum.map(service_tabs(service), & &1.key)
 
-  # ---------- Breadcrumb ----------
-
-  @doc """
-  Caminho de migalha (Penpot: Breadcrumb, 3fd18cd2-90f8-80f3-8008-d5c47a4b109d),
-  desktop only (>= 768; no mobile o word do back carrega o parente, spec 1.5
-  e 4.3), separadores em chevron-right.
-
-      <.breadcrumb>
-        <:crumb label={gettext("Praça")} navigate={~p"/documentos/praca"} />
-        <:crumb label={gettext("Atas")} navigate={~p"/documentos/pasta/\#{folder.rkey}"} />
-        <:crumb label={folder.name} current />
-      </.breadcrumb>
-  """
-  attr :rest, :global
-
-  slot :crumb, required: true do
-    attr :label, :string, required: true
-    attr :navigate, :string, doc: "vira <a> quando presente"
-    attr :current, :boolean, doc: "elo atual (nome da pasta aberta)"
-  end
-
-  def breadcrumb(assigns) do
-    ~H"""
-    <nav class="breadcrumb" aria-label={gettext("Você está em")} {@rest}>
-      <div :for={{crumb, index} <- Enum.with_index(@crumb, 1)} class="breadcrumb__seg">
-        <.icon :if={index > 1} name="chevron-right" size={14} class="breadcrumb__sep" />
-        <.link
-          :if={crumb[:navigate]}
-          navigate={crumb.navigate}
-          class={["breadcrumb__link", crumb[:current] && "breadcrumb__current"]}
-        >
-          {crumb.label}
-        </.link>
-        <span :if={!crumb[:navigate]} class={["breadcrumb__link", crumb[:current] && "breadcrumb__current"]}>
-          {crumb.label}
-        </span>
-      </div>
-    </nav>
-    """
-  end
+  @doc "Mapa puro de abas por serviço (testável sem socket; documentado no 4.1)."
+  def service_tabs(service) when service in ~W(ybira jaci), do: Map.fetch!(@service_tabs, service)
 end

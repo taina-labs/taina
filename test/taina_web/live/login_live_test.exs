@@ -27,9 +27,9 @@ defmodule TainaWeb.LoginLiveTest do
     assert has_element?(lv, ".auth-title", "Tainá")
     assert has_element?(lv, "button.auth-link", "Esqueci minha senha")
     assert has_element?(lv, ".type-caption.text-muted", "ou")
-    assert has_element?(lv, ~s(form[action="/login"]))
-    assert has_element?(lv, ~s(input[name="username"]))
-    assert has_element?(lv, ~s(input[name="password"]))
+    assert has_element?(lv, ~S(form[action="/login"]))
+    assert has_element?(lv, ~S(input[name="username"]))
+    assert has_element?(lv, ~S(input[name="password"]))
   end
 
   test "sem o aviso de tamanho de senha no login (spec 6.5)", %{conn: conn} do
@@ -45,7 +45,7 @@ defmodule TainaWeb.LoginLiveTest do
 
     {:ok, lv, _html} = live(conn, ~p"/login?username=ana")
 
-    assert has_element?(lv, ~s(input#login_username[value="ana"]))
+    assert has_element?(lv, ~S(input#login_username[value="ana"]))
   end
 
   test "o aviso de conexão insegura continua após o LiveView conectar", %{conn: conn} do
@@ -72,7 +72,7 @@ defmodule TainaWeb.LoginLiveTest do
     # o board `erro` não repete o subtítulo.
     assert html =~ @login_error
     assert html =~ "Confira a senha e tente de novo."
-    assert has_element?(lv, ~s(.field--invalid input[name="password"]))
+    assert has_element?(lv, ~S(.field--invalid input[name="password"]))
     refute html =~ "Entre com seu nome na nuvem da sua comunidade."
   end
 
@@ -92,7 +92,7 @@ defmodule TainaWeb.LoginLiveTest do
     refute html =~ "Confira a senha e tente de novo."
   end
 
-  test "Esqueci minha senha abre a explicação da recuperação mediada", %{conn: conn} do
+  test "esqueci minha senha abre a explicação da recuperação mediada", %{conn: conn} do
     tekoa_fixture()
 
     {:ok, lv, _html} = live(conn, ~p"/login")
@@ -102,7 +102,7 @@ defmodule TainaWeb.LoginLiveTest do
     assert html =~ "O Tainá não usa e-mail."
   end
 
-  test "Tenho um convite leva ao /convite", %{conn: conn} do
+  test "tenho um convite leva ao /convite", %{conn: conn} do
     tekoa_fixture()
 
     {:ok, lv, _html} = live(conn, ~p"/login")

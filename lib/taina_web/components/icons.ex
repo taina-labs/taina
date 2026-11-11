@@ -86,12 +86,6 @@ defmodule TainaWeb.Icons do
 
   @names Map.keys(@paths)
 
-  @doc "Nomes de ícone disponíveis (para validação em `attr :name, values: ...`)."
-  def names, do: @names
-
-  @doc "Markup interno (paths) do ícone. Levanta se o nome não existir."
-  def path!(name), do: Map.fetch!(@paths, name)
-
   @doc """
   Ícone outline do design system, SVG inline (`TainaWeb.Icons`).
 
@@ -121,4 +115,10 @@ defmodule TainaWeb.Icons do
     </svg>
     """
   end
+
+  @doc "Nomes de ícone disponíveis (para validação em `attr :name, values: ...`)."
+  def names, do: @names
+
+  @doc "Markup interno (paths) do ícone. Levanta se o nome não existir."
+  def path!(name), do: Map.fetch!(@paths, name)
 end

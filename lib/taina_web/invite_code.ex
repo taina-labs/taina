@@ -18,19 +18,21 @@ defmodule TainaWeb.InviteCode do
   # placeholder do board): o trecho antes do caminho é o host.
   @link_format ~r{^(?:[a-zA-Z][a-zA-Z0-9+.-]*://)?([^/?#\s]*)/convite/([A-Za-z0-9_-]+)/?$}
 
+  @type host :: String.t()
+  @type token :: String.t()
+
   @doc """
   `{:ok, token} | {:error, :invalid}` para o texto colado: link completo de
   qualquer host ou código cru.
   """
-  @spec parse(term()) :: {:ok, String.t()} | {:error, :invalid}
+  @spec parse(term()) :: {:ok, token()} | {:error, :invalid}
   def parse(input), do: parse(input, nil)
 
   @doc """
   Com o host da requisição, link apontado para outro host volta
   `{:error, :other_community}`.
   """
-  @spec parse(term(), String.t() | nil) ::
-          {:ok, String.t()} | {:error, :invalid | :other_community}
+  @spec parse(term(), host() | nil) :: {:ok, token()} | {:error, :invalid | :other_community}
   def parse(input, current_host) do
     case extract(String.trim(input || "")) do
       {:ok, token, nil} -> {:ok, token}
@@ -38,6 +40,10 @@ defmodule TainaWeb.InviteCode do
       :error -> {:error, :invalid}
     end
   end
+
+  # Caminho relativo ("/convite/abc") não aponta para outra comunidade.
+  defp authority(""), do: nil
+  defp authority(authority), do: authority
 
   # Sem host no texto colado (só o código), não há comunidade a conferir: o
   # aceite valida o token de qualquer jeito.
@@ -66,16 +72,12 @@ defmodule TainaWeb.InviteCode do
     end
   end
 
-  # Caminho relativo ("/convite/abc") não aponta para outra comunidade.
-  defp authority(""), do: nil
-  defp authority(authority), do: authority
+  defp normalize_host(host) do
+    host |> String.downcase() |> String.split(":") |> List.first()
+  end
 
   # O host do link e o da requisição, sem porta nem caixa.
   defp same_host?(link_host, current_host) do
     normalize_host(link_host) == normalize_host(current_host)
-  end
-
-  defp normalize_host(host) do
-    host |> String.downcase() |> String.split(":") |> List.first()
   end
 end

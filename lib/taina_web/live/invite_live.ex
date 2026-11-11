@@ -27,11 +27,11 @@ defmodule TainaWeb.InviteLive do
     if Maraca.zelador?(scope.ava) do
       {:ok,
        socket
+       |> assign(:app_url, nil)
+       |> assign(:invite_url, nil)
        |> assign(:page_title, gettext("Convidar moradores"))
        |> assign(:return_to, InternalPath.return_to(params["return_to"], ~p"/moradores"))
-       |> assign(:role, "morador")
-       |> assign(:invite_url, nil)
-       |> assign(:app_url, nil)}
+       |> assign(:role, "morador")}
     else
       {:ok,
        socket
@@ -43,11 +43,11 @@ defmodule TainaWeb.InviteLive do
   # O rádio nativo do RadioCard manda o form inteiro no phx-change; o estado
   # do papel vive no to_form (o card reflete o valor, igual ao HTML).
   @impl true
-  def handle_event("set-role", %{"invite" => %{"role" => role}}, socket) when role in ~w(morador zelador) do
+  def handle_event("set_role", %{"invite" => %{"role" => role}}, socket) when role in ~W(morador zelador) do
     {:noreply, assign(socket, :role, role)}
   end
 
-  def handle_event("set-role", _params, socket) do
+  def handle_event("set_role", _params, socket) do
     {:noreply, socket}
   end
 
@@ -61,7 +61,8 @@ defmodule TainaWeb.InviteLive do
 
         {:noreply,
          socket
-         |> assign(invite_url: invite_url, app_url: InviteLink.deep_link(token))
+         |> assign(:invite_url, invite_url)
+         |> assign(:app_url, InviteLink.deep_link(token))
          |> Phoenix.LiveView.put_flash(:info, gettext("Convite criado. Envie o link para a pessoa."))}
 
       {:error, _reason} ->
@@ -77,6 +78,8 @@ defmodule TainaWeb.InviteLive do
   # A guarda de clipboard fica no hook (JS); quando ele não consegue copiar
   # (origem insegura, sem permissão), a saída é a mão: selecionar o link e
   # copiar por conta própria.
+  # Clipboard reports this event name from the JavaScript hook.
+  # credo:disable-for-next-line OptimumCredo.Check.Readability.EventNameSnakeCase
   def handle_event("copy-failed", _params, socket) do
     {:noreply,
      Phoenix.LiveView.put_flash(
@@ -87,7 +90,7 @@ defmodule TainaWeb.InviteLive do
   end
 
   def handle_event("reset", _params, socket) do
-    {:noreply, assign(socket, invite_url: nil, app_url: nil)}
+    {:noreply, socket |> assign(:invite_url, nil) |> assign(:app_url, nil)}
   end
 
   defp return_label(return_to) do
@@ -101,6 +104,8 @@ defmodule TainaWeb.InviteLive do
     invite_url
     |> EQRCode.encode()
     |> EQRCode.svg(viewbox: true)
+    # The SVG markup comes from EQRCode.svg/2, not from the encoded URL.
+    # credo:disable-for-next-line OeditusCredo.Check.Security.XSSVulnerability
     |> Phoenix.HTML.raw()
   end
 
@@ -147,7 +152,7 @@ defmodule TainaWeb.InviteLive do
             {gettext("O convite vale por 7 dias.")}
           </p>
         <% else %>
-          <form id="invite-form" phx-change="set-role" phx-submit="generate" class="col gap-5">
+          <form id="invite-form" phx-change="set_role" phx-submit="generate" class="col gap-5">
             <div class="col gap-3">
               <p class="type-overline text-muted">{gettext("PAPEL NO CONVITE")}</p>
               <.radio_card

@@ -28,7 +28,7 @@ defmodule TainaWeb.API.FatiaUsTest do
     } do
       body = conn |> authorize_device(morador) |> get(~p"/api/v1/members") |> json_response(200)
       assert Enum.map(body["items"], & &1["public_id"]) == [zelador.public_id, morador.public_id]
-      assert body["next_cursor"] == nil
+      assert is_nil(body["next_cursor"])
     end
 
     test "so a zeladora convida", %{conn: conn, zelador: zelador, morador: morador} do
@@ -106,8 +106,7 @@ defmodule TainaWeb.API.FatiaUsTest do
 
     test "marca o dispositivo que fez a chamada", %{conn: conn} do
       tekoa = tekoa_fixture()
-      ana = active_ava_fixture(tekoa)
-      scope = Scope.new(ana, tekoa)
+      scope = Scope.new(active_ava_fixture(tekoa), tekoa)
       {:ok, %{token: token, device: current}} = Maraca.create_device_token(scope, "este aparelho")
 
       body =
@@ -220,7 +219,7 @@ defmodule TainaWeb.API.FatiaUsTest do
       assert Enum.any?(trash["items"], &(&1["rkey"] == file["rkey"]))
 
       restored = conn |> post(~p"/api/v1/trash/#{file["rkey"]}/restore") |> json_response(200)
-      assert restored["deleted_at"] == nil
+      assert is_nil(restored["deleted_at"])
     end
   end
 
@@ -242,7 +241,7 @@ defmodule TainaWeb.API.FatiaUsTest do
 
       timeline = conn |> get(~p"/api/v1/photos/timeline") |> json_response(200)
       assert [%{"date" => date, "photos" => photos} | _] = timeline["items"]
-      assert is_binary(date)
+      assert byte_size(date) > 0
       assert Enum.any?(photos, &(&1["rkey"] == photo["rkey"]))
     end
   end
@@ -337,7 +336,7 @@ defmodule TainaWeb.API.FatiaUsTest do
       assert conn |> post(~p"/api/v1/members", %{}) |> json_response(201)
 
       body = conn |> get(~p"/api/v1/mural") |> json_response(200)
-      assert is_list(body["items"])
+      assert is_list(body["items"]) and Enum.all?(body["items"], &is_map/1)
       refute Enum.any?(body["items"], &(&1["tipo"] == "invite_created"))
     end
 

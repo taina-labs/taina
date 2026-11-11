@@ -60,9 +60,9 @@ defmodule TainaWeb.StorageLiveTest do
 
     # quem cuida não lê "isso é com quem cuida": ganha o botão
     refute html =~ "Hoje, isso é com"
-    assert has_element?(lv, ~s(button[phx-click="open-quota-sheet"]), "Mudar limite")
+    assert has_element?(lv, ~S(button[phx-click="open_quota_sheet"]), "Mudar limite")
 
-    lv |> element(~s(button[phx-click="open-quota-sheet"])) |> render_click()
+    lv |> element(~S(button[phx-click="open_quota_sheet"])) |> render_click()
 
     assert has_element?(lv, "#quota-sheet")
     assert render(lv) =~ "Limite de espaço"
@@ -73,8 +73,8 @@ defmodule TainaWeb.StorageLiveTest do
     assert render(lv) =~ "Limite (GB)"
 
     # a cota de hoje abre marcada no "Definir um limite" (1 GB do fixture)
-    assert has_element?(lv, ~s(#quota-sheet input[value="limite"][checked]))
-    assert has_element?(lv, ~s(#quota_gigabytes[value="1"]))
+    assert has_element?(lv, ~S(#quota-sheet input[value="limite"][checked]))
+    assert has_element?(lv, ~S(#quota_gigabytes[value="1"]))
 
     lv |> form("#quota-form") |> render_submit(%{"quota" => %{"choice" => "limite", "gigabytes" => "10"}})
 
@@ -93,9 +93,9 @@ defmodule TainaWeb.StorageLiveTest do
     |> Repo.update!()
 
     {:ok, lv, _html} = conn |> log_in(admin) |> live(~p"/armazenamento")
-    lv |> element(~s(button[phx-click="open-quota-sheet"])) |> render_click()
+    lv |> element(~S(button[phx-click="open_quota_sheet"])) |> render_click()
 
-    assert has_element?(lv, ~s(#quota-sheet input[name="quota[gigabytes]"][value="1"]))
+    assert has_element?(lv, ~S(#quota-sheet input[name="quota[gigabytes]"][value="1"]))
   end
 
   # board `disco inteiro` (o card sem limite): o número grande diz que o
@@ -125,9 +125,9 @@ defmodule TainaWeb.StorageLiveTest do
 
     {:ok, lv, _html} = conn |> log_in(admin) |> live(~p"/armazenamento")
 
-    lv |> element(~s(button[phx-click="open-quota-sheet"])) |> render_click()
+    lv |> element(~S(button[phx-click="open_quota_sheet"])) |> render_click()
 
-    assert has_element?(lv, ~s(#quota-sheet input[value="inteiro"][checked]))
+    assert has_element?(lv, ~S(#quota-sheet input[value="inteiro"][checked]))
 
     lv |> form("#quota-form") |> render_submit(%{"quota" => %{"choice" => "inteiro"}})
 
@@ -154,7 +154,7 @@ defmodule TainaWeb.StorageLiveTest do
     refute html =~ "Espaço da comunidade"
   end
 
-  test "Armazenamento renderiza a casca page com o título no cabeçalho (a casca é quem possui o título)", %{
+  test "armazenamento renderiza a casca page com o título no cabeçalho (a casca é quem possui o título)", %{
     conn: conn,
     member: member
   } do

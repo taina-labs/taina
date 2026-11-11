@@ -45,13 +45,13 @@ defmodule TainaWeb.GalleryLiveTest do
 
     # FAB "Enviar" leva ao envio (toda foto nasce na casa); o mesmo "Enviar"
     # mora no cabeçalho do desktop (a troca é do CSS, os dois ficam no DOM)
-    assert has_element?(lv, ~s(.fab[href="/documentos/enviar?return_to=%2Fgaleria"]), "Enviar")
-    assert has_element?(lv, ~s(.service-header a[href="/documentos/enviar?return_to=%2Fgaleria"]))
+    assert has_element?(lv, ~S(.fab[href="/documentos/enviar?return_to=%2Fgaleria"]), "Enviar")
+    assert has_element?(lv, ~S(.service-header a[href="/documentos/enviar?return_to=%2Fgaleria"]))
 
     # abas são rotas na barra de serviço, não segmented
-    assert has_element?(lv, ~s(.service-tab-bar__item[href="/galeria"]), "Grade")
-    assert has_element?(lv, ~s(.service-tab-bar__item[href="/galeria/linha-do-tempo"]), "Linha do tempo")
-    assert has_element?(lv, ~s(.service-tab-bar__item[aria-current="page"]), "Grade")
+    assert has_element?(lv, ~S(.service-tab-bar__item[href="/galeria"]), "Grade")
+    assert has_element?(lv, ~S(.service-tab-bar__item[href="/galeria/linha-do-tempo"]), "Linha do tempo")
+    assert has_element?(lv, ~S(.service-tab-bar__item[aria-current="page"]), "Grade")
     refute has_element?(lv, ".segmented")
 
     # o board não desenha badge de zona no tile
@@ -73,7 +73,7 @@ defmodule TainaWeb.GalleryLiveTest do
 
     assert has_element?(lv, ".empty-state", "Ainda não há fotos")
     assert html =~ "Quando alguém enviar uma foto, ela aparece aqui para toda a comunidade."
-    assert has_element?(lv, ~s(.empty-state a[href="/documentos/enviar?return_to=%2Fgaleria"]), "Enviar uma foto")
+    assert has_element?(lv, ~S(.empty-state a[href="/documentos/enviar?return_to=%2Fgaleria"]), "Enviar uma foto")
     refute has_element?(lv, ".photo-grid__item")
     refute has_element?(lv, ".skeleton")
   end
@@ -121,9 +121,9 @@ defmodule TainaWeb.GalleryLiveTest do
 
     assert has_element?(lv, ".photo-grid")
     assert html =~ dia_escrito(Date.utc_today())
-    assert has_element?(lv, ~s(.service-tab-bar__item[aria-current="page"]), "Linha do tempo")
+    assert has_element?(lv, ~S(.service-tab-bar__item[aria-current="page"]), "Linha do tempo")
     refute html =~ "2 fotos"
-    assert has_element?(lv, ~s(.fab[href="/documentos/enviar?return_to=%2Fgaleria%2Flinha-do-tempo"]), "Enviar")
+    assert has_element?(lv, ~S(.fab[href="/documentos/enviar?return_to=%2Fgaleria%2Flinha-do-tempo"]), "Enviar")
   end
 
   # Board "Visualizador / padrao": fullscreen, media com FullSwap, navegação
@@ -135,7 +135,7 @@ defmodule TainaWeb.GalleryLiveTest do
     html = lv |> element(~s(a[href="/galeria/#{second.rkey}"])) |> render_click()
     assert html =~ "1 de 2"
     assert html =~ "segunda.jpg"
-    assert has_element?(lv, ~s(.viewer[phx-hook="ViewerNav"]))
+    assert has_element?(lv, ~S(.viewer[phx-hook="ViewerNav"]))
     assert has_element?(lv, "#viewer-full-swap")
 
     # próxima = mais antiga
@@ -255,7 +255,7 @@ defmodule TainaWeb.GalleryLiveTest do
 
       refute casa_html =~ "primeira.jpg"
       assert casa_html =~ "segunda.jpg"
-      assert has_element?(casa_lv, ~s(.fab[href="/documentos/enviar?return_to=%2Fgaleria%3Fzona%3Dcasa"]))
+      assert has_element?(casa_lv, ~S(.fab[href="/documentos/enviar?return_to=%2Fgaleria%3Fzona%3Dcasa"]))
 
       {:ok, _lv, praca_html} = conn |> log_in(ava) |> live(~p"/galeria?zona=praca")
 
@@ -268,7 +268,7 @@ defmodule TainaWeb.GalleryLiveTest do
 
       {:ok, lv, html} = conn |> log_in(ava) |> live(~p"/galeria/linha-do-tempo?zona=praca")
 
-      assert has_element?(lv, ~s(.fab[href="/documentos/enviar?return_to=%2Fgaleria%2Flinha-do-tempo%3Fzona%3Dpraca"]))
+      assert has_element?(lv, ~S(.fab[href="/documentos/enviar?return_to=%2Fgaleria%2Flinha-do-tempo%3Fzona%3Dpraca"]))
 
       assert html =~ "primeira.jpg"
       refute html =~ "segunda.jpg"
@@ -277,7 +277,7 @@ defmodule TainaWeb.GalleryLiveTest do
 
   # O formato do board ("4 de outubro"): mesma regra do group_title/1 da tela.
   defp dia_escrito(date) do
-    meses = ~w(janeiro fevereiro março abril maio junho julho agosto setembro outubro novembro dezembro)
+    meses = ~W(janeiro fevereiro março abril maio junho julho agosto setembro outubro novembro dezembro)
     "#{date.day} de #{Enum.at(meses, date.month - 1)}"
   end
 end

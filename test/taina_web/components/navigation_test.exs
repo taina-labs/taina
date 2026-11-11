@@ -108,11 +108,11 @@ defmodule TainaWeb.UI.NavigationTest do
     html = hub_header_html()
 
     assert html =~ "Boa noite, Ana"
-    assert html =~ ~s(class="hub-header__greeting")
+    assert html =~ ~S(class="hub-header__greeting")
     assert html =~ "Quilombo do Café"
-    assert html =~ ~s(class="hub-header__community")
-    assert html =~ ~s(href="/conta")
-    assert html =~ ~s(aria-label="Sua conta")
+    assert html =~ ~S(class="hub-header__community")
+    assert html =~ ~S(href="/conta")
+    assert html =~ ~S(aria-label="Sua conta")
     assert html =~ "A"
   end
 
@@ -150,16 +150,16 @@ defmodule TainaWeb.UI.NavigationTest do
   test "page_header: título no meio, zonas de mesma largura, back icon + palavra" do
     html = page_header_html()
 
-    assert html =~ ~s(class="page-header")
-    assert html =~ ~s(class="page-header__zone page-header__zone--start")
-    assert html =~ ~s(class="page-header__zone page-header__zone--end")
+    assert html =~ ~S(class="page-header")
+    assert html =~ ~S(class="page-header__zone page-header__zone--start")
+    assert html =~ ~S(class="page-header__zone page-header__zone--end")
     assert html =~ "Moradores"
-    assert html =~ ~s(class="page-header__title")
+    assert html =~ ~S(class="page-header__title")
     assert html =~ "m15 18-6-6 6-6"
     # ---------- ServiceHeader ----------
-    assert html =~ ~s(class="page-header__back-label")
+    assert html =~ ~S(class="page-header__back-label")
     assert html =~ "Início"
-    assert html =~ ~s(href="/moradores")
+    assert html =~ ~S(href="/moradores")
   end
 
   test "page_header: back_label explcindo aparece como veio" do
@@ -206,20 +206,20 @@ defmodule TainaWeb.UI.NavigationTest do
     assert html =~ "Praça"
     assert html =~ "Casa"
     assert html =~ "Lixeira"
-    assert html =~ ~s(aria-current="page")
+    assert html =~ ~S(aria-current="page")
     assert html =~ "data-phx-link=\"patch\""
-    assert html =~ ~s(href="/documentos")
-    assert html =~ ~s(href="/documentos/praca")
-    assert html =~ ~s(href="/documentos/lixeira")
+    assert html =~ ~S(href="/documentos")
+    assert html =~ ~S(href="/documentos/praca")
+    assert html =~ ~S(href="/documentos/lixeira")
     # lixeira é outra LiveView: navigate em vez de patch
     assert html =~ "data-phx-link=\"redirect\""
-    assert html =~ ~s(href="/documentos/lixeira")
+    assert html =~ ~S(href="/documentos/lixeira")
   end
 
   test "service_tab_bar ybira: um único nav serve para mobile e desktop" do
     html = tab_bar_html()
 
-    assert html =~ ~s(class="service-tab-bar")
+    assert html =~ ~S(class="service-tab-bar")
     assert length(String.split(html, "<nav")) - 1 == 1
     assert html =~ "aria-label=\"Navegação"
   end
@@ -229,7 +229,7 @@ defmodule TainaWeb.UI.NavigationTest do
 
     assert html =~ "Grade"
     assert html =~ "Linha do tempo"
-    assert html =~ ~s(href="/galeria/linha-do-tempo")
+    assert html =~ ~S(href="/galeria/linha-do-tempo")
     # corrente: aria-current na MESMA tag do patch do key
     assert html =~ ~r|href="/galeria/linha-do-tempo"[^>]*aria-current="page"|ms
   end
@@ -239,7 +239,7 @@ defmodule TainaWeb.UI.NavigationTest do
     assert [%{key: "casa"}, %{key: "praca"}, %{key: "lixeira"}] = service_tabs("ybira")
 
     assert [%{key: "grid"}, %{key: "timeline"}] = service_tabs("jaci")
-    assert service_tab_keys("ybira") == ~w(casa praca lixeira)
+    assert service_tab_keys("ybira") == ~W(casa praca lixeira)
   end
 
   test "breadcrumb: elos com separador chevron-right e elo corrente" do
@@ -255,8 +255,8 @@ defmodule TainaWeb.UI.NavigationTest do
     assert html =~ "Documentos"
     assert html =~ "Atas"
     assert html =~ "breadcrumb__sep"
-    assert html =~ ~s(path d="m9 18 6-6-6-6")
+    assert html =~ ~S(path d="m9 18 6-6-6-6")
     assert html =~ "breadcrumb__current"
-    assert html =~ ~s(aria-label)
+    assert html =~ ~S(aria-label)
   end
 end

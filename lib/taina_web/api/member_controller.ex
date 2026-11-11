@@ -16,13 +16,6 @@ defmodule TainaWeb.API.MemberController do
   alias TainaWeb.InviteLink
   alias Ypy.Wire
 
-  def index(conn, _params) do
-    case Maraca.list_members(conn.assigns[:current_scope]) do
-      {:ok, members} -> json(conn, Wire.page(Enum.map(members, &Wire.Ava.json/1), nil))
-      {:error, reason} -> Error.reply(conn, reason)
-    end
-  end
-
   def create(conn, params) do
     scope = conn.assigns[:current_scope]
 
@@ -49,21 +42,6 @@ defmodule TainaWeb.API.MemberController do
     end
   end
 
-  def update(conn, %{"id" => id} = params) do
-    scope = conn.assigns[:current_scope]
-
-    case papel(params["papel"]) do
-      {:ok, papel} ->
-        case Maraca.update_member_role(scope, id, papel) do
-          {:ok, ava} -> json(conn, Wire.Ava.json(ava))
-          {:error, reason} -> Error.reply(conn, reason)
-        end
-
-      :error ->
-        Error.reply(conn, :invalid_action)
-    end
-  end
-
   def delete(conn, %{"id" => id}) do
     case Maraca.deactivate_member(conn.assigns[:current_scope], id) do
       {:ok, _ava} -> send_resp(conn, 204, "")
@@ -71,16 +49,16 @@ defmodule TainaWeb.API.MemberController do
     end
   end
 
-  def reactivate(conn, %{"id" => id}) do
-    case Maraca.reactivate_member(conn.assigns[:current_scope], id) do
-      {:ok, ava} -> json(conn, Wire.Ava.json(ava))
+  def index(conn, _params) do
+    case Maraca.list_members(conn.assigns[:current_scope]) do
+      {:ok, members} -> json(conn, Wire.page(Enum.map(members, &Wire.Ava.json/1), nil))
       {:error, reason} -> Error.reply(conn, reason)
     end
   end
 
-  def revoke_invite(conn, %{"id" => id}) do
-    case Maraca.revoke_invite(conn.assigns[:current_scope], id) do
-      {:ok, _ava} -> send_resp(conn, 204, "")
+  def reactivate(conn, %{"id" => id}) do
+    case Maraca.reactivate_member(conn.assigns[:current_scope], id) do
+      {:ok, ava} -> json(conn, Wire.Ava.json(ava))
       {:error, reason} -> Error.reply(conn, reason)
     end
   end
@@ -99,6 +77,28 @@ defmodule TainaWeb.API.MemberController do
       })
     else
       {:error, reason} -> Error.reply(conn, reason)
+    end
+  end
+
+  def revoke_invite(conn, %{"id" => id}) do
+    case Maraca.revoke_invite(conn.assigns[:current_scope], id) do
+      {:ok, _ava} -> send_resp(conn, 204, "")
+      {:error, reason} -> Error.reply(conn, reason)
+    end
+  end
+
+  def update(conn, %{"id" => id} = params) do
+    scope = conn.assigns[:current_scope]
+
+    case papel(params["papel"]) do
+      {:ok, papel} ->
+        case Maraca.update_member_role(scope, id, papel) do
+          {:ok, ava} -> json(conn, Wire.Ava.json(ava))
+          {:error, reason} -> Error.reply(conn, reason)
+        end
+
+      :error ->
+        Error.reply(conn, :invalid_action)
     end
   end
 

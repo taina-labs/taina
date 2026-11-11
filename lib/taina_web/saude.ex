@@ -17,6 +17,24 @@ defmodule TainaWeb.Saude do
   # Limite "acabando" do disco: 90% da cota. Aviso ambiente, não alarme.
   @disk_warning_percent 90
 
+  @type storage_stats :: %{used_bytes: integer(), quota_bytes: integer() | nil}
+  @type summary :: %{state: :ok | :attention, line: String.t()}
+
+  @doc "O último backup falhou? Só o `{:error, _}` chama atenção."
+  @spec backup_attention?(term()) :: boolean()
+  def backup_attention?({:error, _reason}), do: true
+  def backup_attention?(_backup), do: false
+
+  @doc """
+  O disco está acabando? Cota inteira e maior que zero; sem cota (`nil`,
+  disco inteiro) não há limite para estourar, então nunca chama atenção.
+  """
+  @spec disk_attention?(storage_stats()) :: boolean()
+  def disk_attention?(%{used_bytes: used, quota_bytes: quota}) when is_integer(used) and is_integer(quota) and quota > 0,
+    do: used / quota * 100 >= @disk_warning_percent
+
+  def disk_attention?(_stats), do: false
+
   @doc """
   A linha de resumo da Saúde, copiada das telas Penpot:
 
@@ -28,7 +46,7 @@ defmodule TainaWeb.Saude do
   O disco fala primeiro (é o fato mais apertado da caixa); o backup, depois.
   Aceita o mapa de blocos do hub: `%{storage: stats, backup: backup}`.
   """
-  @spec summary_line(%{storage: map(), backup: term()}) :: %{state: :ok | :attention, line: String.t()}
+  @spec summary_line(%{storage: storage_stats(), backup: term()}) :: summary()
   def summary_line(%{storage: storage, backup: backup}) do
     cond do
       disk_attention?(storage) -> %{state: :attention, line: gettext("Disco quase cheio")}
@@ -43,19 +61,4 @@ defmodule TainaWeb.Saude do
   # que o `SaudeLive` já dizia nesse caso.
   defp backup_line({:error, reason}) when reason in [:none, :no_dir], do: gettext("Nenhum backup ainda")
   defp backup_line(_backup), do: gettext("Último backup falhou")
-
-  @doc """
-  O disco está acabando? Cota inteira e maior que zero; sem cota (`nil`,
-  disco inteiro) não há limite para estourar, então nunca chama atenção.
-  """
-  @spec disk_attention?(%{used_bytes: integer(), quota_bytes: integer() | nil}) :: boolean()
-  def disk_attention?(%{used_bytes: used, quota_bytes: quota}) when is_integer(used) and is_integer(quota) and quota > 0,
-    do: used / quota * 100 >= @disk_warning_percent
-
-  def disk_attention?(_stats), do: false
-
-  @doc "O último backup falhou? Só o `{:error, _}` chama atenção."
-  @spec backup_attention?(term()) :: boolean()
-  def backup_attention?({:error, _reason}), do: true
-  def backup_attention?(_backup), do: false
 end

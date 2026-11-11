@@ -70,9 +70,9 @@ defmodule TainaWeb.UI.FormsTest do
   test "field kind text (padrão): sem modifier de kind, input text" do
     html = field_html()
 
-    assert html =~ ~s(<div class="field)
+    assert html =~ ~S(<div class="field)
     refute html =~ "field--"
-    assert html =~ ~s(type="text")
+    assert html =~ ~S(type="text")
     assert html =~ "<label"
   end
 
@@ -80,15 +80,15 @@ defmodule TainaWeb.UI.FormsTest do
     html = field_html(kind: "password", value: "segredo")
 
     assert html =~ "field--password"
-    assert html =~ ~s(type="password")
+    assert html =~ ~S(type="password")
   end
 
   test "field kind search usa o bloco .search órfão e icon de busca" do
     html = field_html(kind: "search")
 
     assert html =~ "field--search"
-    assert html =~ ~s(class="field__control search")
-    assert html =~ ~s(type="search")
+    assert html =~ ~S(class="field__control search")
+    assert html =~ ~S(type="search")
   end
 
   test "field kind address: ícone servidor à esquerda (paridade Penpot)" do
@@ -98,7 +98,7 @@ defmodule TainaWeb.UI.FormsTest do
     assert html =~ "field__icon--leading"
     # markup do ícone `servidor`
     assert html =~ "M7,6.7L7.01,6.7"
-    assert html =~ ~s(type="text")
+    assert html =~ ~S(type="text")
   end
 
   # ---------- Field: acessibilidade e erros ----------
@@ -107,8 +107,8 @@ defmodule TainaWeb.UI.FormsTest do
     html = field_html(errors: ["obrigatório"])
 
     assert html =~ "field--invalid"
-    assert html =~ ~s(aria-invalid="true")
-    assert html =~ ~s(role="alert")
+    assert html =~ ~S(aria-invalid="true")
+    assert html =~ ~S(role="alert")
     assert html =~ "obrigatório"
   end
 
@@ -120,19 +120,19 @@ defmodule TainaWeb.UI.FormsTest do
   test "field ajuda vira aria-describedby" do
     html = field_html(help: "sem espaços")
 
-    assert html =~ ~s(id="campo-help")
-    assert html =~ ~s(aria-describedby="campo-help")
+    assert html =~ ~S(id="campo-help")
+    assert html =~ ~S(aria-describedby="campo-help")
   end
 
   test "field password: a alternância é a palavra Mostrar dentro da caixa" do
     html = render_component(&password_field_component/1, %{value: nil})
 
     # board: texto da marca dentro do controle, não um ícone do lado de fora
-    assert html =~ ~s(class="field__toggle")
+    assert html =~ ~S(class="field__toggle")
     assert html =~ "Mostrar"
-    assert html =~ ~s(id="senha-toggle")
-    assert html =~ ~s(phx-hook="PasswordToggle")
-    assert html =~ ~s(aria-label="Mostrar senha")
+    assert html =~ ~S(id="senha-toggle")
+    assert html =~ ~S(phx-hook="PasswordToggle")
+    assert html =~ ~S(aria-label="Mostrar senha")
     refute html =~ "icon-button"
   end
 
@@ -142,7 +142,7 @@ defmodule TainaWeb.UI.FormsTest do
     html = radio_card_html(field: form_field("escolha", "inteiro"), value: "inteiro")
 
     assert html =~ "radio-card radio-card--selected"
-    assert html =~ ~s(type="radio")
+    assert html =~ ~S(type="radio")
     assert html =~ "checked"
     assert html =~ "O disco inteiro"
   end
@@ -158,7 +158,7 @@ defmodule TainaWeb.UI.FormsTest do
     html = radio_card_html(field: "escolha")
 
     refute html =~ "radio-card--selected"
-    assert html =~ ~s(name="escolha")
+    assert html =~ ~S(name="escolha")
   end
 
   test "radio_card descrição e anel visuais" do

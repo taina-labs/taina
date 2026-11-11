@@ -15,6 +15,22 @@ defmodule TainaWeb.CoreComponents do
   alias Phoenix.LiveView.JS
   alias TainaWeb.Time
 
+  @doc """
+  Rótulo curto do tipo de arquivo para as linhas de lista ("PDF", "Imagem"...).
+  """
+  def file_kind("image/" <> _rest), do: gettext("Imagem")
+  def file_kind("video/" <> _rest), do: gettext("Vídeo")
+  def file_kind("audio/" <> _rest), do: gettext("Áudio")
+  def file_kind("application/pdf"), do: "PDF"
+  def file_kind("application/zip"), do: "ZIP"
+  def file_kind("text/" <> _rest), do: gettext("Texto")
+  def file_kind(_mime), do: gettext("Arquivo")
+
+  @doc "Marca de serviço para um arquivo em uma linha de lista."
+  def file_mark("image/" <> _rest), do: "jaci"
+  def file_mark("video/" <> _rest), do: "video"
+  def file_mark(_mime), do: "doc"
+
   # ---------- flash ----------
 
   attr :flash, :map, required: true
@@ -63,36 +79,6 @@ defmodule TainaWeb.CoreComponents do
 
   # ---------- helpers de formatação ----------
 
-  @doc "Marca de serviço para um arquivo em uma linha de lista."
-  def file_mark("image/" <> _rest), do: "jaci"
-  def file_mark("video/" <> _rest), do: "video"
-  def file_mark(_mime), do: "doc"
-
-  @doc "Nome social para exibição, com o nome de usuário como reserva."
-  def person_name(%{display_name: name}) when is_binary(name) and name != "", do: name
-  def person_name(%{username: name}) when is_binary(name), do: name
-  def person_name(_ava), do: ""
-
-  @doc "Lista nomes em pt-BR, com vírgulas e 'e' antes do último nome."
-  def list_in_portuguese(names) when is_list(names) do
-    case Enum.reverse(names) do
-      [] -> ""
-      [name] -> name
-      [last | rest] -> Enum.join(Enum.reverse(rest), ", ") <> " #{gettext("e")} #{last}"
-    end
-  end
-
-  @doc """
-  Rótulo curto do tipo de arquivo para as linhas de lista ("PDF", "Imagem"...).
-  """
-  def file_kind("image/" <> _rest), do: gettext("Imagem")
-  def file_kind("video/" <> _rest), do: gettext("Vídeo")
-  def file_kind("audio/" <> _rest), do: gettext("Áudio")
-  def file_kind("application/pdf"), do: "PDF"
-  def file_kind("application/zip"), do: "ZIP"
-  def file_kind("text/" <> _rest), do: gettext("Texto")
-  def file_kind(_mime), do: gettext("Arquivo")
-
   @doc """
   Bytes em texto humano, convenção pt-BR (vírgula decimal): `format_bytes(2_400_000)` retorna `"2,4 MB"`.
   """
@@ -118,6 +104,20 @@ defmodule TainaWeb.CoreComponents do
     "#{formatted} #{unit}"
   end
 
+  @doc "Lista nomes em pt-BR, com vírgulas e 'e' antes do último nome."
+  def list_in_portuguese(names) when is_list(names) do
+    case Enum.reverse(names) do
+      [] -> ""
+      [name] -> name
+      [last | rest] -> Enum.join(Enum.reverse(rest), ", ") <> " #{gettext("e")} #{last}"
+    end
+  end
+
+  @doc "Nome social para exibição, com o nome de usuário como reserva."
+  def person_name(%{display_name: <<_::binary-size(1), _::binary>> = name}), do: name
+  def person_name(%{username: name}) when is_binary(name), do: name
+  def person_name(_ava), do: ""
+
   @doc """
   Tempo relativo curto em pt-BR: "hoje", "ontem", "há 3 dias", "há 2 semanas".
   """
@@ -142,11 +142,11 @@ defmodule TainaWeb.CoreComponents do
   interpolação `%{count}`; aqui interpolamos e deixamos a tradução para os
   arquivos `.po` (domínio "errors").
   """
-  def translate_error({msg, opts}) do
-    if count = opts[:count] do
-      Gettext.dngettext(TainaWeb.Gettext, "errors", msg, msg, count, opts)
+  def translate_error({message, opts}) do
+    if count = Keyword.get(opts, :count) do
+      Gettext.dngettext(TainaWeb.Gettext, "errors", message, message, count, opts)
     else
-      Gettext.dgettext(TainaWeb.Gettext, "errors", msg, opts)
+      Gettext.dgettext(TainaWeb.Gettext, "errors", message, opts)
     end
   end
 end

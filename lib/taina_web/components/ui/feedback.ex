@@ -22,6 +22,25 @@ defmodule TainaWeb.UI.Feedback do
   import TainaWeb.Icons
   import TainaWeb.UI.Actions
 
+  @doc """
+  Aviso de conexão das telas de auth (Penpot: ConnectionNotice,
+  88db615f-12f9-80b9-8008-d62efd1e77ca), exibido só quando a página abriu
+  fora do https da própria rede. A decisão de renderizar é do shell
+  (`secure_connection?`); o componente é só o markup.
+
+      <.connection_notice />
+  """
+  def connection_notice(assigns) do
+    ~H"""
+    <div class="connection-notice">
+      <.icon name="info" size={20} class="connection-notice__icon" />
+      <p class="connection-notice__text">
+        {gettext("Esta conexão só fica protegida quando você está na rede da comunidade. Se não tiver certeza, fale com quem cuida antes de entrar.")}
+      </p>
+    </div>
+    """
+  end
+
   # ---------- estado vazio ----------
 
   @doc """
@@ -35,7 +54,7 @@ defmodule TainaWeb.UI.Feedback do
 
   attr :tag, :string,
     default: "p",
-    doc: ~s{tag do título (padrão "p"; use "h2" etc. quando a tela tem hierarquia de cabeçalho própria)}
+    doc: ~S{tag do título (padrão "p"; use "h2" etc. quando a tela tem hierarquia de cabeçalho própria)}
 
   slot :action, doc: "ação da tela (botão do board)"
   slot :inner_block, doc: "conteúdo extra solto no fim do bloco; prefira o slot :action"
@@ -72,7 +91,7 @@ defmodule TainaWeb.UI.Feedback do
 
   attr :retry_label, :string,
     default: nil,
-    doc: ~s{rótulo da ação; nil = "Tentar de novo" (o board de auth pede "Voltar")}
+    doc: ~S{rótulo da ação; nil = "Tentar de novo" (o board de auth pede "Voltar")}
 
   attr :retry_icon, :string, default: "restore", doc: "ícone da ação de repetir"
 
@@ -99,6 +118,8 @@ defmodule TainaWeb.UI.Feedback do
     </div>
     """
   end
+
+  # ---------- aviso de conexão ----------
 
   # ---------- esqueleto ----------
 
@@ -158,27 +179,6 @@ defmodule TainaWeb.UI.Feedback do
         <span class="skeleton__line"></span>
         <span class="skeleton__line skeleton__line--short"></span>
       </div>
-    </div>
-    """
-  end
-
-  # ---------- aviso de conexão ----------
-
-  @doc """
-  Aviso de conexão das telas de auth (Penpot: ConnectionNotice,
-  88db615f-12f9-80b9-8008-d62efd1e77ca), exibido só quando a página abriu
-  fora do https da própria rede. A decisão de renderizar é do shell
-  (`secure_connection?`); o componente é só o markup.
-
-      <.connection_notice />
-  """
-  def connection_notice(assigns) do
-    ~H"""
-    <div class="connection-notice">
-      <.icon name="info" size={20} class="connection-notice__icon" />
-      <p class="connection-notice__text">
-        {gettext("Esta conexão só fica protegida quando você está na rede da comunidade. Se não tiver certeza, fale com quem cuida antes de entrar.")}
-      </p>
     </div>
     """
   end

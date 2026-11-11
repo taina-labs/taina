@@ -23,45 +23,6 @@ defmodule TainaWeb.API.FileController do
 
   @batch_max_ids 200
 
-  def create(conn, params) do
-    scope = conn.assigns[:current_scope]
-
-    case upload_params(params) do
-      {:ok, tmp_path, opts} ->
-        case Ybira.upload(scope, tmp_path, opts) do
-          {:ok, file} -> conn |> put_status(201) |> json(Serializer.file(scope, file))
-          {:error, reason} -> Error.reply(conn, reason)
-        end
-
-      :error ->
-        Error.reply(conn, :missing_file)
-    end
-  end
-
-  def show(conn, %{"id" => rkey}) do
-    scope = conn.assigns[:current_scope]
-
-    case Ybira.get_file(scope, rkey) do
-      {:ok, file} -> json(conn, Serializer.file(scope, file))
-      {:error, reason} -> Error.reply(conn, reason)
-    end
-  end
-
-  # O manifesto de backup: todo arquivo legivel, do mais antigo para o mais
-  # novo, um sha256 por linha. O ETag e do conjunto inteiro, e a pagina so
-  # sai quando ele nao bate com o If-None-Match.
-  def manifest(conn, params) do
-    scope = conn.assigns[:current_scope]
-    opts = [limit: Query.limit(params, default: 200, max: 1000), after: Query.after_cursor(params)]
-
-    with {:fresh, conn} <- Etag.handle(conn, Etag.readable_files(scope)),
-         {:ok, %{items: files, next_cursor: next}} <- Manifest.page(scope, opts) do
-      json(conn, Wire.page(Serializer.files(scope, files), next))
-    else
-      {:not_modified, conn} -> conn
-    end
-  end
-
   # O lote corre item a item pelo mesmo contexto do endpoint unitario; a
   # falha de um nao para os outros (200 com o resultado de cada um). Os
   # arquivos que voltam saem em serie pelo lote do serializer: uma leitura
@@ -84,11 +45,81 @@ defmodule TainaWeb.API.FileController do
     end
   end
 
+  def create(conn, params) do
+    scope = conn.assigns[:current_scope]
+
+    case upload_params(params) do
+      {:ok, temporary_path, opts} ->
+        case Ybira.upload(scope, temporary_path, opts) do
+          {:ok, file} -> conn |> put_status(201) |> json(Serializer.file(scope, file))
+          {:error, reason} -> Error.reply(conn, reason)
+        end
+
+      :error ->
+        Error.reply(conn, :missing_file)
+    end
+  end
+
+  def delete(conn, %{"id" => rkey}) do
+    case Ybira.delete_file(conn.assigns[:current_scope], rkey) do
+      {:ok, _file} -> send_resp(conn, 204, "")
+      {:error, reason} -> Error.reply(conn, reason)
+    end
+  end
+
   def download(conn, %{"id" => rkey}) do
     with {:ok, file} <- Ybira.get_file(conn.assigns[:current_scope], rkey),
          {:ok, path} <- Ybira.blob_path(file) do
       FileServing.serve(conn, file, path)
     else
+      {:error, reason} -> Error.reply(conn, reason)
+    end
+  end
+
+  # O manifesto de backup: todo arquivo legivel, do mais antigo para o mais
+  # novo, um sha256 por linha. O ETag e do conjunto inteiro, e a pagina so
+  # sai quando ele nao bate com o If-None-Match.
+  def manifest(conn, params) do
+    scope = conn.assigns[:current_scope]
+    opts = [limit: Query.limit(params, default: 200, max: 1000), after: Query.after_cursor(params)]
+
+    with {:ok, etag} <- Etag.readable_files(scope),
+         {:fresh, conn} <- Etag.handle(conn, etag),
+         {:ok, %{items: files, next_cursor: next}} <- Manifest.page(scope, opts) do
+      json(conn, Wire.page(Serializer.files(scope, files), next))
+    else
+      {:not_modified, conn} -> conn
+      {:error, reason} -> Error.reply(conn, reason)
+    end
+  end
+
+  def move(conn, %{"id" => rkey} = params) do
+    scope = conn.assigns[:current_scope]
+
+    case Ybira.move_file(scope, rkey, params["folder"]) do
+      {:ok, file} -> json(conn, Serializer.file(scope, file))
+      {:error, reason} -> Error.reply(conn, reason)
+    end
+  end
+
+  def recent(conn, params) do
+    scope = conn.assigns[:current_scope]
+
+    with {:ok, etag} <- Etag.readable_files(scope),
+         {:fresh, conn} <- Etag.handle(conn, etag),
+         {:ok, files} <- Ybira.list_recent(scope, limit: Query.limit(params)) do
+      json(conn, Wire.page(Serializer.files(scope, files), nil))
+    else
+      {:not_modified, conn} -> conn
+      {:error, reason} -> Error.reply(conn, reason)
+    end
+  end
+
+  def show(conn, %{"id" => rkey}) do
+    scope = conn.assigns[:current_scope]
+
+    case Ybira.get_file(scope, rkey) do
+      {:ok, file} -> json(conn, Serializer.file(scope, file))
       {:error, reason} -> Error.reply(conn, reason)
     end
   end
@@ -104,18 +135,6 @@ defmodule TainaWeb.API.FileController do
     end
   end
 
-  def recent(conn, params) do
-    scope = conn.assigns[:current_scope]
-
-    with {:fresh, conn} <- Etag.handle(conn, Etag.readable_files(scope)),
-         {:ok, files} <- Ybira.list_recent(scope, limit: Query.limit(params)) do
-      json(conn, Wire.page(Serializer.files(scope, files), nil))
-    else
-      {:not_modified, conn} -> conn
-      {:error, reason} -> Error.reply(conn, reason)
-    end
-  end
-
   def update(conn, %{"id" => rkey} = params) do
     scope = conn.assigns[:current_scope]
 
@@ -125,19 +144,20 @@ defmodule TainaWeb.API.FileController do
     end
   end
 
-  def move(conn, %{"id" => rkey} = params) do
-    scope = conn.assigns[:current_scope]
+  ## Lote (contrato review 0.1.0, C2)
 
-    case Ybira.move_file(scope, rkey, params["folder"]) do
-      {:ok, file} -> json(conn, Serializer.file(scope, file))
-      {:error, reason} -> Error.reply(conn, reason)
-    end
-  end
+  # O destino do `move` e o rkey da pasta (ou nil, para a raiz); nos outros
+  # verbos a pasta nao significa nada.
+  defp apply_op(scope, :trash, rkey, _folder), do: Ybira.delete_file(scope, rkey)
+  defp apply_op(scope, :restore, rkey, _folder), do: Ybira.restore_file(scope, rkey)
+  defp apply_op(scope, :move, rkey, folder), do: Ybira.move_file(scope, rkey, folder)
+  defp apply_op(scope, :publish, rkey, _folder), do: Ybira.publicar_file(scope, rkey)
+  defp apply_op(scope, :unpublish, rkey, _folder), do: Ybira.tirar_file_da_praca(scope, rkey)
 
-  def delete(conn, %{"id" => rkey}) do
-    case Ybira.delete_file(conn.assigns[:current_scope], rkey) do
-      {:ok, _file} -> send_resp(conn, 204, "")
-      {:error, reason} -> Error.reply(conn, reason)
+  defp batch_params(params) do
+    with {:ok, op} <- parse_op(params["op"]),
+         {:ok, ids} <- parse_ids(params["ids"]) do
+      {:ok, op, ids, params["folder"]}
     end
   end
 
@@ -151,32 +171,9 @@ defmodule TainaWeb.API.FileController do
     end
   end
 
-  defp upload_params(%{"file" => %Plug.Upload{path: path, filename: filename}} = params) do
-    opts = [filename: filename]
-
-    case params["folder"] do
-      folder when is_binary(folder) and folder != "" -> {:ok, path, Keyword.put(opts, :folder_rkey, folder)}
-      _ -> {:ok, path, opts}
-    end
-  end
-
-  defp upload_params(_params), do: :error
-
-  ## Lote (contrato review 0.1.0, C2)
-
-  defp batch_params(params) do
-    with {:ok, op} <- parse_op(params["op"]),
-         {:ok, ids} <- parse_ids(params["ids"]) do
-      {:ok, op, ids, params["folder"]}
-    end
-  end
-
-  defp parse_op("trash"), do: {:ok, :trash}
-  defp parse_op("restore"), do: {:ok, :restore}
-  defp parse_op("move"), do: {:ok, :move}
-  defp parse_op("publish"), do: {:ok, :publish}
-  defp parse_op("unpublish"), do: {:ok, :unpublish}
-  defp parse_op(_op), do: {:error, :invalid_action}
+  defp code(reason) when is_atom(reason), do: Atom.to_string(reason)
+  defp code(%Ecto.Changeset{}), do: "validation_failed"
+  defp code(_reason), do: "internal_error"
 
   defp parse_ids(ids) when is_list(ids) do
     if Enum.all?(ids, &is_binary/1) and length(ids) <= @batch_max_ids,
@@ -186,44 +183,19 @@ defmodule TainaWeb.API.FileController do
 
   defp parse_ids(_ids), do: {:error, :validation_failed}
 
+  defp parse_op("trash"), do: {:ok, :trash}
+  defp parse_op("restore"), do: {:ok, :restore}
+  defp parse_op("move"), do: {:ok, :move}
+  defp parse_op("publish"), do: {:ok, :publish}
+  defp parse_op("unpublish"), do: {:ok, :unpublish}
+  defp parse_op(_op), do: {:error, :invalid_action}
+
   defp run(scope, op, rkey, folder) do
     case apply_op(scope, op, rkey, folder) do
       {:ok, file} -> {:ok, rkey, file}
       {:error, reason} -> {:error, rkey, reason}
     end
   end
-
-  # Os itens que voltaram `:ok` saem em serie pelo lote do serializer (a
-  # ordem segue a entrada); os que falharam ficam com o motivo no mesmo
-  # lugar, e a falha de um segue sem parar os outros.
-  defp wire_batch(scope, results) do
-    ok_files = for {:ok, _rkey, file} <- results, do: file
-    serialized = Serializer.files(scope, ok_files)
-
-    {items, _rest} =
-      Enum.map_reduce(results, serialized, fn
-        {:ok, rkey, _file}, [file_json | rest] ->
-          {%{"rkey" => rkey, "ok" => true, "file" => file_json}, rest}
-
-        {:error, rkey, reason}, acc ->
-          {%{"rkey" => rkey, "ok" => false, "error" => code(reason)}, acc}
-      end)
-
-    items
-  end
-
-  # O destino do `move` e o rkey da pasta (ou nil, para a raiz); nos outros
-  # verbos a pasta nao significa nada.
-  defp apply_op(scope, :trash, rkey, _folder), do: Ybira.delete_file(scope, rkey)
-  defp apply_op(scope, :restore, rkey, _folder), do: Ybira.restore_file(scope, rkey)
-  defp apply_op(scope, :move, rkey, folder), do: Ybira.move_file(scope, rkey, folder)
-  defp apply_op(scope, :publish, rkey, _folder), do: Ybira.publicar_file(scope, rkey)
-  defp apply_op(scope, :unpublish, rkey, _folder), do: Ybira.tirar_file_da_praca(scope, rkey)
-
-  # O code do item e o vocabulario estavel: o motivo do contexto em string.
-  defp code(reason) when is_atom(reason), do: Atom.to_string(reason)
-  defp code(%Ecto.Changeset{}), do: "validation_failed"
-  defp code(_reason), do: "internal_error"
 
   ## Miniatura (contrato review 0.1.0, B)
 
@@ -248,5 +220,35 @@ defmodule TainaWeb.API.FileController do
       :none ->
         Error.reply(conn, :not_found)
     end
+  end
+
+  defp upload_params(%{"file" => %Plug.Upload{path: path, filename: filename}} = params) do
+    opts = [filename: filename]
+
+    case params["folder"] do
+      <<_::binary-size(1), _::binary>> = folder -> {:ok, path, Keyword.put(opts, :folder_rkey, folder)}
+      _ -> {:ok, path, opts}
+    end
+  end
+
+  defp upload_params(_params), do: :error
+
+  # Os itens que voltaram `:ok` saem em serie pelo lote do serializer (a
+  # ordem segue a entrada); os que falharam ficam com o motivo no mesmo
+  # lugar, e a falha de um segue sem parar os outros.
+  defp wire_batch(scope, results) do
+    ok_files = for {:ok, _rkey, file} <- results, do: file
+    serialized = Serializer.files(scope, ok_files)
+
+    {items, _rest} =
+      Enum.map_reduce(results, serialized, fn
+        {:ok, rkey, _file}, [file_json | rest] ->
+          {%{"rkey" => rkey, "ok" => true, "file" => file_json}, rest}
+
+        {:error, rkey, reason}, acc ->
+          {%{"rkey" => rkey, "ok" => false, "error" => code(reason)}, acc}
+      end)
+
+    items
   end
 end

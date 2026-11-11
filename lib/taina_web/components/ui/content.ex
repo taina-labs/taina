@@ -28,11 +28,59 @@ defmodule TainaWeb.UI.Content do
   import TainaWeb.UI.Actions
 
   @doc """
+  Avatar com inicial e cor determinística a partir do nome. Size: sm, md, lg.
+  `off` apaga a cor (Penpot Tint: off).
+  """
+  attr :name, :string, required: true
+  attr :size, :string, default: "md", values: ~W(sm md lg)
+  attr :off, :boolean, default: false
+
+  def avatar(assigns) do
+    ~H"""
+    <span class={["avatar", @size in ~W(sm lg) && "avatar--#{@size}", avatar_color(@name, @off)]}>
+      {@name |> String.first() |> String.upcase()}
+    </span>
+    """
+  end
+
+  defp avatar_color(_name, true), do: "avatar--off"
+  defp avatar_color(name, false), do: "avatar--#{:erlang.phash2(name, 4)}"
+
+  @badge_icons %{
+    "praca" => "praca",
+    "casa" => "casa",
+    "zelador" => "shield",
+    "morador" => "user",
+    "active" => "check"
+  }
+
+  defp badge_icon(kind), do: Map.fetch!(@badge_icons, kind)
+
+  defp clamp_percent(pct), do: pct |> max(0) |> min(100)
+
+  @doc """
+  Badge do design system (Penpot Badge: Kind praca/casa/zelador/morador/
+  active/inactive). Cores só dos tokens `--badge-*` (docs/web-revamp-spec.md,
+  4.1).
+  """
+  attr :kind, :string, required: true, values: ~W(praca casa zelador morador active inactive)
+  slot :inner_block, required: true
+
+  def badge(assigns) do
+    ~H"""
+    <span class={"badge badge--#{@kind}"}>
+      <.icon :if={@kind != "inactive"} name={badge_icon(@kind)} size={14} />
+      <span>{render_slot(@inner_block)}</span>
+    </span>
+    """
+  end
+
+  @doc """
   Cartão base do design system (Penpot: Card, Kind default/raised,
   3fd18cd2-90f8-80f3-8008-d5ad4993e541).
   """
 
-  attr :kind, :string, default: "default", values: ~w(default raised), doc: "Kind do Penpot"
+  attr :kind, :string, default: "default", values: ~W(default raised), doc: "Kind do Penpot"
   attr :class, :string, default: nil
   attr :rest, :global
   slot :inner_block, required: true
@@ -42,70 +90,6 @@ defmodule TainaWeb.UI.Content do
     <div class={["card", @kind == "raised" && "card--raised", @class]} {@rest}>
       {render_slot(@inner_block)}
     </div>
-    """
-  end
-
-  @doc """
-  Card de serviço da home (Penpot: ServiceCard, Service ybira/jaci,
-  3fd18cd2-90f8-80f3-8008-d5ab6dd34bf5): quadradinho do serviço, título e
-  meta, clicável.
-
-      <.service_card service="ybira" title="Documentos" meta="Arquivos da casa e da praça" navigate={~p"/documentos"} />
-  """
-  attr :service, :string, required: true, values: ~w(ybira jaci)
-  attr :title, :string, required: true
-  attr :meta, :string, default: nil
-  attr :navigate, :string, default: nil
-
-  def service_card(%{navigate: navigate} = assigns) when is_binary(navigate) do
-    ~H"""
-    <.link navigate={@navigate} class={["service-card", "service-card--#{@service}"]}>
-      <.service_square mark={@service} tone="service" size="lg" />
-      <p class="service-card__title">{@title}</p>
-      <p :if={@meta} class="service-card__meta">{@meta}</p>
-    </.link>
-    """
-  end
-
-  def service_card(assigns) do
-    ~H"""
-    <div class={["service-card", "service-card--#{@service}"]}>
-      <.service_square mark={@service} tone="service" size="lg" />
-      <p class="service-card__title">{@title}</p>
-      <p :if={@meta} class="service-card__meta">{@meta}</p>
-    </div>
-    """
-  end
-
-  @doc """
-  Quadradinho de ícone (Penpot: ServiceSquare). A marca `mark` define o
-  documento visual e deriva o ícone por mapa puro (`mark_icon/1`). `tone`
-  (service | neutral) escolhe o fundo; padrão neutral.
-
-      <.service_square mark="doc" />
-      <.service_square mark="ybira" tone="service" size="lg" />
-  """
-  @marks ~w(ybira jaci maraca nhaman doc video neutral casa praca lixeira mural saude moradores pedidos privacidade senha dispositivos sair)
-
-  attr :mark, :string, values: @marks, doc: "marca do Penpot; o ícone sai do mapa puro mark_icon/1"
-  attr :tone, :string, default: "neutral", values: ~w(service neutral)
-  attr :size, :string, default: "md", values: ~w(md lg)
-
-  def service_square(%{mark: mark} = assigns) when is_binary(mark) do
-    assigns
-    |> assign(icon_name: mark_icon(mark))
-    |> render_service_square()
-  end
-
-  def service_square(_assigns) do
-    raise ArgumentError, "service_square: informe :mark"
-  end
-
-  defp render_service_square(assigns) do
-    ~H"""
-    <span class={["service-square", "service-square--#{@tone}", "service-square--#{@mark}", @size == "lg" && "service-square--lg"]}>
-      <.icon name={@icon_name} size={if @size == "lg", do: 24, else: 20} />
-    </span>
     """
   end
 
@@ -133,31 +117,45 @@ defmodule TainaWeb.UI.Content do
     "sair" => "sair"
   }
 
-  @badge_icons %{
-    "praca" => "praca",
-    "casa" => "casa",
-    "zelador" => "shield",
-    "morador" => "user",
-    "active" => "check"
-  }
+  defp list_row_classes(kind, trailing, state) do
+    [
+      "list-row",
+      kind && "list-row--#{kind}",
+      trailing != "none" && "list-row--#{trailing}",
+      state && "list-row--#{state}"
+    ]
+    |> Enum.reject(&(&1 in [nil, false]))
+    |> Enum.join(" ")
+  end
 
   defp mark_icon(mark), do: Map.fetch!(@mark_icons, mark)
-  defp badge_icon(kind), do: Map.fetch!(@badge_icons, kind)
+
+  defp progress_percent(nil), do: nil
+  defp progress_percent(value), do: clamp_percent(value)
 
   @doc """
-  Badge do design system (Penpot Badge: Kind praca/casa/zelador/morador/
-  active/inactive). Cores só dos tokens `--badge-*` (docs/web-revamp-spec.md,
-  4.1).
-  """
-  attr :kind, :string, required: true, values: ~w(praca casa zelador morador active inactive)
-  slot :inner_block, required: true
+  O único "precisa de você" do app (Penpot: CareLine,
+  3fd18cd2-90f8-80f3-8008-d5adac93ef25): card elevado, ícone `pedidos` no
+  acento `--service-maraca-soft`, frase do pedido e a ação "Responder".
 
-  def badge(assigns) do
+      <.care_line text={@pedido_line} action_label="Responder" navigate={~p"/conta/pedidos"} />
+  """
+  attr :text, :string, required: true
+  attr :action_label, :string, required: true
+  attr :navigate, :string, required: true
+
+  def care_line(assigns) do
     ~H"""
-    <span class={"badge badge--#{@kind}"}>
-      <.icon :if={@kind != "inactive"} name={badge_icon(@kind)} size={14} />
-      <span>{render_slot(@inner_block)}</span>
-    </span>
+    <.link navigate={@navigate} class="care-line">
+      <span class="care-line__mark">
+        <.icon name="pedidos" size={20} />
+      </span>
+      <p class="care-line__text">{@text}</p>
+      <span class="care-line__action">
+        {@action_label}
+        <.icon name="chevron-right" size={18} />
+      </span>
+    </.link>
     """
   end
 
@@ -222,7 +220,7 @@ defmodule TainaWeb.UI.Content do
   slot :actions
 
   def list_row(assigns) do
-    assigns = assign(assigns, :classes, list_row_classes(assigns[:kind], assigns[:trailing], assigns[:state]))
+    assigns = assign(assigns, :classes, list_row_classes(assigns.kind, assigns.trailing, assigns.state))
 
     ~H"""
     <.dynamic_tag tag_name={@tag} class={@classes} {@rest}>
@@ -243,40 +241,6 @@ defmodule TainaWeb.UI.Content do
     """
   end
 
-  defp list_row_classes(kind, trailing, state) do
-    [
-      "list-row",
-      kind && "list-row--#{kind}",
-      trailing != "none" && "list-row--#{trailing}",
-      state && "list-row--#{state}"
-    ]
-    |> Enum.reject(&(&1 in [nil, false]))
-    |> Enum.join(" ")
-  end
-
-  # ---------- avatar ----------
-
-  @doc """
-  Avatar com inicial e cor determinística a partir do nome. Size: sm, md, lg.
-  `off` apaga a cor (Penpot Tint: off).
-  """
-  attr :name, :string, required: true
-  attr :size, :string, default: "md", values: ~w(sm md lg)
-  attr :off, :boolean, default: false
-
-  def avatar(assigns) do
-    ~H"""
-    <span class={["avatar", @size in ~w(sm lg) && "avatar--#{@size}", avatar_color(@name, @off)]}>
-      {@name |> String.first() |> String.upcase()}
-    </span>
-    """
-  end
-
-  defp avatar_color(_name, true), do: "avatar--off"
-  defp avatar_color(name, false), do: "avatar--#{:erlang.phash2(name, 4)}"
-
-  # ---------- progresso ----------
-
   @doc """
   Barra de progresso. `value` é sempre uma porcentagem (0..100); para a versão
   segmentada (armazenamento por tipo), passe `segments` como lista de
@@ -285,7 +249,7 @@ defmodule TainaWeb.UI.Content do
   attr :value, :any, default: nil, doc: "porcentagem 0..100"
   attr :label, :string, default: nil, doc: "rótulo acessível (aria-label)"
   attr :color, :string, default: nil, values: [nil, "success", "jaci", "sky", "ybira", "neutral", "warning"]
-  attr :segments, :list, default: nil, doc: ~s|ex.: [{"jaci", 0.5}, {"sky", 0.3}]|
+  attr :segments, :list, default: nil, doc: ~S|ex.: [{"jaci", 0.5}, {"sky", 0.3}]|
 
   def progress(%{segments: segments} = assigns) when is_list(segments) do
     ~H"""
@@ -322,203 +286,6 @@ defmodule TainaWeb.UI.Content do
     """
   end
 
-  defp progress_percent(nil), do: nil
-  defp progress_percent(value), do: clamp_percent(value)
-
-  defp clamp_percent(pct), do: pct |> max(0) |> min(100)
-
-  # ---------- armazenamento ----------
-
-  @doc """
-  Espaço da comunidade (Penpot: StorageCard, Detail compact/full, Tone
-  normal/warning, 3fd18cd2-90f8-80f3-8008-d5ae4c520d6d). O tom deriva do
-  próprio uso: `TainaWeb.Saude.disk_attention?/1` decide o aviso (90%), e o
-  card repete o aviso no modifier `--warning`, na barra
-  (`progress__fill--warning`) e na frase do board.
-
-  Sem cota (`quota_bytes: nil`, disco inteiro) não existe limite para
-  mostrar: nada de barra, a linha vira "Usando o disco inteiro".
-
-      <.storage_card stats={@storage_stats} detail="compact" navigate={~p"/armazenamento"} />
-  """
-
-  attr :stats, :map, required: true, doc: "%{used_bytes:, quota_bytes:} (nil = disco inteiro)"
-
-  attr :detail, :string,
-    default: "compact",
-    values: ~w(compact full),
-    doc: "Detail do Penpot: resumo (hub) ou completo (armazenamento)"
-
-  attr :navigate, :string, default: nil, doc: "destino do \"Ver detalhes\" (só no compact)"
-
-  def storage_card(assigns) do
-    assigns = assign(assigns, :attention, TainaWeb.Saude.disk_attention?(assigns.stats))
-
-    ~H"""
-    <div class={["storage-card", "storage-card--#{@detail}", @attention && "storage-card--warning"]}>
-      <div class="storage-card__head">
-        <p class="storage-card__label">{gettext("Espaço da comunidade")}</p>
-        <.link :if={@detail == "compact" and @navigate} navigate={@navigate} class="storage-card__link">
-          {gettext("Ver detalhes")}
-        </.link>
-      </div>
-
-      <.storage_hero :if={@detail == "full"} stats={@stats} />
-
-      <.progress
-        :if={storage_limited?(@stats)}
-        value={storage_usage_percent(@stats)}
-        color={@attention && "warning" || "success"}
-        label={gettext("Espaço da comunidade")}
-      />
-
-      <.storage_lines stats={@stats} detail={@detail} attention={@attention} />
-    </div>
-    """
-  end
-
-  # Caixa sem cota: nada de barra e nada de "livres" para medir.
-  defp storage_limited?(%{quota_bytes: quota}), do: is_integer(quota) and quota > 0
-  defp storage_limited?(_stats), do: false
-
-  # Uso da cota, 0..100 (o used pode passar da cota; a barra tem clamp).
-  defp storage_usage_percent(%{used_bytes: used, quota_bytes: quota}) when is_integer(quota) and quota > 0,
-    do: used / quota * 100
-
-  defp storage_usage_percent(_stats), do: 0
-
-  defp storage_hero(%{stats: %{used_bytes: used, quota_bytes: quota}} = assigns) when is_integer(quota) and quota > 0 do
-    assigns = assign(assigns, used_text: format_bytes(used), total_text: format_bytes(quota))
-
-    ~H"""
-    <p class="storage-card__hero type-h2">{gettext("%{used} de %{total}", used: @used_text, total: @total_text)}</p>
-    """
-  end
-
-  defp storage_hero(%{stats: %{used_bytes: used, disk_bytes: disk}} = assigns) when is_integer(disk) and disk > 0 do
-    assigns = assign(assigns, used_text: format_bytes(used), total_text: format_bytes(disk))
-
-    ~H"""
-    <p class="storage-card__hero type-h2">
-      {gettext("Usando o disco inteiro: %{used} de %{total}", used: @used_text, total: @total_text)}
-    </p>
-    """
-  end
-
-  defp storage_hero(assigns), do: ~H""
-
-  attr :stats, :map, required: true
-  attr :detail, :string, required: true
-  attr :attention, :boolean, required: true
-
-  defp storage_lines(%{stats: %{used_bytes: used, quota_bytes: quota}} = assigns) when is_integer(quota) and quota > 0 do
-    assigns =
-      assign(assigns,
-        used_text: format_bytes(used),
-        total_text: format_bytes(quota),
-        free: format_bytes(max(quota - used, 0))
-      )
-
-    ~H"""
-    <p :if={@detail == "compact"} class="storage-card__meta">
-      {gettext("%{used} de %{total} usados", used: @used_text, total: @total_text)}
-    </p>
-    <p :if={@detail == "full"} class="storage-card__free">
-      {gettext("%{free} livres", free: @free)}
-    </p>
-    <p :if={@attention} class="storage-card__hint">{storage_hint(@detail)}</p>
-    """
-  end
-
-  # Sem cota: o board do disco inteiro também mostra "N livres" quando a tela
-  # sabe o tamanho do disco; sem esse número, a linha do disco inteiro fica
-  # sozinha em vez de inventar folga.
-  defp storage_lines(%{stats: %{used_bytes: used, disk_bytes: disk}} = assigns) when is_integer(disk) and disk > 0 do
-    assigns = assign(assigns, free: format_bytes(max(disk - used, 0)))
-
-    ~H"""
-    <p :if={@detail == "full"} class="storage-card__free">
-      {gettext("%{free} livres", free: @free)}
-    </p>
-    <p :if={@attention} class="storage-card__hint">{storage_hint(@detail)}</p>
-    """
-  end
-
-  defp storage_lines(assigns) do
-    ~H"""
-    <p class="storage-card__meta">{gettext("Usando o disco inteiro")}</p>
-    <p :if={@attention} class="storage-card__hint">{storage_hint(@detail)}</p>
-    """
-  end
-
-  # Frases do board: no compact o aviso é curto ("Quase cheio."); no full
-  # entra a dica da lixeira ("Quase cheio, libere espaço na lixeira.").
-  defp storage_hint("compact"), do: gettext("Quase cheio.")
-  defp storage_hint("full"), do: gettext("Quase cheio, libere espaço na lixeira.")
-  defp storage_hint(_detail), do: gettext("Quase cheio.")
-
-  @doc """
-  Linha de status (Penpot: StatusLine, Estado ok/attention/problem/unknown e
-  Detail none/with, 3fd18cd2-90f8-80f3-8008-d5a9ae17253e): ícone + palavra,
-  nunca cor sozinha - cada estado tem o próprio ícone (mapa puro
-  `status_line_icon/1`).
-
-      <.status_line state="ok" title="Backup em dia" />
-      <.status_line state="attention" title="Disco quase cheio" detail="96% em uso" />
-  """
-
-  attr :state, :string, required: true, values: ~w(ok attention problem unknown)
-  attr :title, :string, required: true
-  attr :detail, :string, default: nil, doc: "Detail: with (razão textual do estado); nil = Detail: none"
-
-  def status_line(assigns) do
-    assigns = assign(assigns, :icon_name, status_line_icon(assigns.state))
-
-    ~H"""
-    <div class={["status-line", "status-line--#{@state}"]}>
-      <.icon name={@icon_name} size={20} />
-      <div class="status-line__body">
-        <p class="status-line__title">{@title}</p>
-        <p :if={@detail} class="status-line__detail">{@detail}</p>
-      </div>
-    </div>
-    """
-  end
-
-  # Estado -> ícone, mapa puro (a cor nunca é a única informação).
-  defp status_line_icon("ok"), do: "check"
-  defp status_line_icon("attention"), do: "warning"
-  defp status_line_icon("problem"), do: "warning"
-  defp status_line_icon("unknown"), do: "dots"
-
-  @doc """
-  O único "precisa de você" do app (Penpot: CareLine,
-  3fd18cd2-90f8-80f3-8008-d5adac93ef25): card elevado, ícone `pedidos` no
-  acento `--service-maraca-soft`, frase do pedido e a ação "Responder".
-
-      <.care_line text={@pedido_line} action_label="Responder" navigate={~p"/conta/pedidos"} />
-  """
-  attr :text, :string, required: true
-  attr :action_label, :string, required: true
-  attr :navigate, :string, required: true
-
-  def care_line(assigns) do
-    ~H"""
-    <.link navigate={@navigate} class="care-line">
-      <span class="care-line__mark">
-        <.icon name="pedidos" size={20} />
-      </span>
-      <p class="care-line__text">{@text}</p>
-      <span class="care-line__action">
-        {@action_label}
-        <.icon name="chevron-right" size={18} />
-      </span>
-    </.link>
-    """
-  end
-
-  # ---------- QR do convite ----------
-
   @doc """
   Card do link de convite (Penpot: QRCard, título "LINK DO CONVITE", o QR,
   o link, a frase e o botão "Copiar link",
@@ -543,6 +310,106 @@ defmodule TainaWeb.UI.Content do
         {gettext("Quem entrar vê a praça e ganha uma casa própria. Você pode cancelar quando quiser.")}
       </p>
       <.button kind="primary" {@rest}>{gettext("Copiar link")}</.button>
+    </div>
+    """
+  end
+
+  @doc """
+  Card de serviço da home (Penpot: ServiceCard, Service ybira/jaci,
+  3fd18cd2-90f8-80f3-8008-d5ab6dd34bf5): quadradinho do serviço, título e
+  meta, clicável.
+
+      <.service_card service="ybira" title="Documentos" meta="Arquivos da casa e da praça" navigate={~p"/documentos"} />
+  """
+  attr :service, :string, required: true, values: ~W(ybira jaci)
+  attr :title, :string, required: true
+  attr :meta, :string, default: nil
+  attr :navigate, :string, default: nil
+
+  def service_card(%{navigate: navigate} = assigns) when is_binary(navigate) do
+    ~H"""
+    <.link navigate={@navigate} class={["service-card", "service-card--#{@service}"]}>
+      <.service_square mark={@service} tone="service" size="lg" />
+      <p class="service-card__title">{@title}</p>
+      <p :if={@meta} class="service-card__meta">{@meta}</p>
+    </.link>
+    """
+  end
+
+  def service_card(assigns) do
+    ~H"""
+    <div class={["service-card", "service-card--#{@service}"]}>
+      <.service_square mark={@service} tone="service" size="lg" />
+      <p class="service-card__title">{@title}</p>
+      <p :if={@meta} class="service-card__meta">{@meta}</p>
+    </div>
+    """
+  end
+
+  @doc """
+  Quadradinho de ícone (Penpot: ServiceSquare). A marca `mark` define o
+  documento visual e deriva o ícone por mapa puro (`mark_icon/1`). `tone`
+  (service | neutral) escolhe o fundo; padrão neutral.
+
+      <.service_square mark="doc" />
+      <.service_square mark="ybira" tone="service" size="lg" />
+  """
+  @marks ~W(casa dispositivos doc jaci lixeira maraca moradores mural neutral nhaman pedidos praca privacidade saude sair senha video ybira)
+
+  attr :mark, :string, values: @marks, doc: "marca do Penpot; o ícone sai do mapa puro mark_icon/1"
+  attr :tone, :string, default: "neutral", values: ~W(service neutral)
+  attr :size, :string, default: "md", values: ~W(md lg)
+
+  def service_square(%{mark: mark} = assigns) when is_binary(mark) do
+    assigns
+    |> assign(:icon_name, mark_icon(mark))
+    |> render_service_square()
+  end
+
+  def service_square(_assigns) do
+    raise ArgumentError, "service_square: informe :mark"
+  end
+
+  defp render_service_square(assigns) do
+    ~H"""
+    <span class={["service-square", "service-square--#{@tone}", "service-square--#{@mark}", @size == "lg" && "service-square--lg"]}>
+      <.icon name={@icon_name} size={if @size == "lg", do: 24, else: 20} />
+    </span>
+    """
+  end
+
+  # Estado -> ícone, mapa puro (a cor nunca é a única informação).
+  defp status_line_icon("ok"), do: "check"
+  defp status_line_icon("attention"), do: "warning"
+  defp status_line_icon("problem"), do: "warning"
+  defp status_line_icon("unknown"), do: "dots"
+
+  # ---------- armazenamento ----------
+
+  @doc """
+  Linha de status (Penpot: StatusLine, Estado ok/attention/problem/unknown e
+  Detail none/with, 3fd18cd2-90f8-80f3-8008-d5a9ae17253e): ícone + palavra,
+  nunca cor sozinha - cada estado tem o próprio ícone (mapa puro
+  `status_line_icon/1`).
+
+      <.status_line state="ok" title="Backup em dia" />
+      <.status_line state="attention" title="Disco quase cheio" detail="96% em uso" />
+  """
+
+  attr :state, :string, required: true, values: ~W(ok attention problem unknown)
+  attr :title, :string, required: true
+  attr :detail, :string, default: nil, doc: "Detail: with (razão textual do estado); nil = Detail: none"
+
+  def status_line(assigns) do
+    assigns = assign(assigns, :icon_name, status_line_icon(assigns.state))
+
+    ~H"""
+    <div class={["status-line", "status-line--#{@state}"]}>
+      <.icon name={@icon_name} size={20} />
+      <div class="status-line__body">
+        <p class="status-line__title">{@title}</p>
+        <p :if={@detail} class="status-line__detail">{@detail}</p>
+      </div>
     </div>
     """
   end
@@ -586,4 +453,139 @@ defmodule TainaWeb.UI.Content do
     </div>
     """
   end
+
+  @doc """
+  Espaço da comunidade (Penpot: StorageCard, Detail compact/full, Tone
+  normal/warning, 3fd18cd2-90f8-80f3-8008-d5ae4c520d6d). O tom deriva do
+  próprio uso: `TainaWeb.Saude.disk_attention?/1` decide o aviso (90%), e o
+  card repete o aviso no modifier `--warning`, na barra
+  (`progress__fill--warning`) e na frase do board.
+
+  Sem cota (`quota_bytes: nil`, disco inteiro) não existe limite para
+  mostrar: nada de barra, a linha vira "Usando o disco inteiro".
+
+      <.storage_card stats={@storage_stats} detail="compact" navigate={~p"/armazenamento"} />
+  """
+
+  attr :stats, :map, required: true, doc: "%{used_bytes:, quota_bytes:} (nil = disco inteiro)"
+
+  attr :detail, :string,
+    default: "compact",
+    values: ~W(compact full),
+    doc: "Detail do Penpot: resumo (hub) ou completo (armazenamento)"
+
+  attr :navigate, :string, default: nil, doc: "destino do \"Ver detalhes\" (só no compact)"
+
+  def storage_card(assigns) do
+    assigns = assign(assigns, :attention, TainaWeb.Saude.disk_attention?(assigns.stats))
+
+    ~H"""
+    <div class={["storage-card", "storage-card--#{@detail}", @attention && "storage-card--warning"]}>
+      <div class="storage-card__head">
+        <p class="storage-card__label">{gettext("Espaço da comunidade")}</p>
+        <.link :if={@detail == "compact" and @navigate} navigate={@navigate} class="storage-card__link">
+          {gettext("Ver detalhes")}
+        </.link>
+      </div>
+
+      <.storage_hero :if={@detail == "full"} stats={@stats} />
+
+      <.progress
+        :if={storage_limited?(@stats)}
+        value={storage_usage_percent(@stats)}
+        color={@attention && "warning" || "success"}
+        label={gettext("Espaço da comunidade")}
+      />
+
+      <.storage_lines stats={@stats} detail={@detail} attention={@attention} />
+    </div>
+    """
+  end
+
+  defp storage_hero(%{stats: %{used_bytes: used, quota_bytes: quota}} = assigns) when is_integer(quota) and quota > 0 do
+    assigns =
+      assigns
+      |> assign(:used_text, format_bytes(used))
+      |> assign(:total_text, format_bytes(quota))
+
+    ~H"""
+    <p class="storage-card__hero type-h2">{gettext("%{used} de %{total}", used: @used_text, total: @total_text)}</p>
+    """
+  end
+
+  defp storage_hero(%{stats: %{used_bytes: used, disk_bytes: disk}} = assigns) when is_integer(disk) and disk > 0 do
+    assigns =
+      assigns
+      |> assign(:used_text, format_bytes(used))
+      |> assign(:total_text, format_bytes(disk))
+
+    ~H"""
+    <p class="storage-card__hero type-h2">
+      {gettext("Usando o disco inteiro: %{used} de %{total}", used: @used_text, total: @total_text)}
+    </p>
+    """
+  end
+
+  defp storage_hero(assigns), do: ~H""
+
+  # Frases do board: no compact o aviso é curto ("Quase cheio."); no full
+  # entra a dica da lixeira ("Quase cheio, libere espaço na lixeira.").
+  defp storage_hint("compact"), do: gettext("Quase cheio.")
+  defp storage_hint("full"), do: gettext("Quase cheio, libere espaço na lixeira.")
+  defp storage_hint(_detail), do: gettext("Quase cheio.")
+
+  # Caixa sem cota: nada de barra e nada de "livres" para medir.
+  defp storage_limited?(%{quota_bytes: quota}), do: is_integer(quota) and quota > 0
+  defp storage_limited?(_stats), do: false
+
+  attr :stats, :map, required: true
+  attr :detail, :string, required: true
+  attr :attention, :boolean, required: true
+
+  defp storage_lines(%{stats: %{used_bytes: used, quota_bytes: quota}} = assigns) when is_integer(quota) and quota > 0 do
+    assigns =
+      assigns
+      |> assign(:free, format_bytes(max(quota - used, 0)))
+      |> assign(:total_text, format_bytes(quota))
+      |> assign(:used_text, format_bytes(used))
+
+    ~H"""
+    <p :if={@detail == "compact"} class="storage-card__meta">
+      {gettext("%{used} de %{total} usados", used: @used_text, total: @total_text)}
+    </p>
+    <p :if={@detail == "full"} class="storage-card__free">
+      {gettext("%{free} livres", free: @free)}
+    </p>
+    <p :if={@attention} class="storage-card__hint">{storage_hint(@detail)}</p>
+    """
+  end
+
+  # Sem cota: o board do disco inteiro também mostra "N livres" quando a tela
+  # sabe o tamanho do disco; sem esse número, a linha do disco inteiro fica
+  # sozinha em vez de inventar folga.
+  defp storage_lines(%{stats: %{used_bytes: used, disk_bytes: disk}} = assigns) when is_integer(disk) and disk > 0 do
+    assigns = assign(assigns, :free, format_bytes(max(disk - used, 0)))
+
+    ~H"""
+    <p :if={@detail == "full"} class="storage-card__free">
+      {gettext("%{free} livres", free: @free)}
+    </p>
+    <p :if={@attention} class="storage-card__hint">{storage_hint(@detail)}</p>
+    """
+  end
+
+  defp storage_lines(assigns) do
+    ~H"""
+    <p class="storage-card__meta">{gettext("Usando o disco inteiro")}</p>
+    <p :if={@attention} class="storage-card__hint">{storage_hint(@detail)}</p>
+    """
+  end
+
+  # Uso da cota, 0..100 (o used pode passar da cota; a barra tem clamp).
+  defp storage_usage_percent(%{used_bytes: used, quota_bytes: quota}) when is_integer(quota) and quota > 0,
+    do: used / quota * 100
+
+  defp storage_usage_percent(_stats), do: 0
+
+  # ---------- QR do convite ----------
 end

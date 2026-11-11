@@ -30,11 +30,11 @@ defmodule TainaWeb.LoginLive do
       true ->
         {:ok,
          socket
+         |> assign(:login_error, not is_nil(Phoenix.Flash.get(socket.assigns.flash, :error)))
          |> assign(:page_title, gettext("Entrar"))
-         |> assign(:username, "")
-         |> assign(:show_password_help, false)
          |> assign(:password_error, login_password_error(socket.assigns.flash))
-         |> assign(:login_error, not is_nil(Phoenix.Flash.get(socket.assigns.flash, :error)))}
+         |> assign(:show_password_help, false)
+         |> assign(:username, "")}
     end
   end
 
@@ -45,7 +45,7 @@ defmodule TainaWeb.LoginLive do
   def handle_params(_params, _uri, socket), do: {:noreply, assign(socket, :username, "")}
 
   @impl true
-  def handle_event("toggle-password-help", _params, socket) do
+  def handle_event("toggle_password_help", _params, socket) do
     {:noreply, assign(socket, :show_password_help, !socket.assigns.show_password_help)}
   end
 
@@ -100,7 +100,7 @@ defmodule TainaWeb.LoginLive do
         >
           <:trailing><.password_toggle target="login_password" /></:trailing>
         </.field>
-        <button type="button" class="auth-link" phx-click="toggle-password-help">
+        <button type="button" class="auth-link" phx-click="toggle_password_help">
           {gettext("Esqueci minha senha")}
         </button>
         <.button type="submit" kind="primary" class="w-full mt-2">{gettext("Entrar")}</.button>
@@ -116,14 +116,14 @@ defmodule TainaWeb.LoginLive do
         {gettext("Tenho um convite")}
       </.button>
 
-      <.dialog id="password-help" show={@show_password_help} on_cancel={JS.push("toggle-password-help")}>
+      <.dialog id="password-help" show={@show_password_help} on_cancel={JS.push("toggle_password_help")}>
         <h2 id="password-help-title" class="type-h3 mb-3">{gettext("Esqueceu a senha?")}</h2>
         <p class="type-body text-secondary mb-4">
           {gettext(
             "O Tainá não usa e-mail. Fale com quem cuida da sua comunidade: essa pessoa gera um link para você criar uma senha nova."
           )}
         </p>
-        <.button kind="secondary" class="w-full" phx-click="toggle-password-help">
+        <.button kind="secondary" class="w-full" phx-click="toggle_password_help">
           {gettext("Entendi")}
         </.button>
       </.dialog>

@@ -8,6 +8,7 @@ defmodule TainaWeb.SaudeLiveTest do
   Mutando config de backup, roda sem async.
   """
 
+  # This module changes global application backup configuration.
   use TainaWeb.ConnCase, async: false
 
   import Phoenix.LiveViewTest
@@ -74,10 +75,10 @@ defmodule TainaWeb.SaudeLiveTest do
         backup: {:error, :unreadable}
       )
 
-    assert html =~ ~s(status-line--attention)
+    assert html =~ ~S(status-line--attention)
     assert html =~ "Disco quase cheio"
 
-    assert html =~ ~s(status-line--problem)
+    assert html =~ ~S(status-line--problem)
     assert html =~ "Último backup falhou"
 
     # a caixa segue no ar: o alívio vai junto do aviso
@@ -115,7 +116,7 @@ defmodule TainaWeb.SaudeLiveTest do
     assert html =~ "Vale falar com quem cuida da nuvem. Ninguém perdeu arquivo."
 
     # sem botão para quem não cuida
-    refute has_element?(lv, ~s(button[phx-click="run-backup"]))
+    refute has_element?(lv, ~S(button[phx-click="run_backup"]))
   end
 
   test "zelador com backup configurado ganha o passo 'Fazer backup agora'", %{
@@ -128,14 +129,14 @@ defmodule TainaWeb.SaudeLiveTest do
     {:ok, lv, html} = conn |> log_in(zelador) |> live(~p"/saude")
 
     assert html =~ "Nenhum backup ainda"
-    assert has_element?(lv, ~s(button[phx-click="run-backup"]))
+    assert has_element?(lv, ~S(button[phx-click="run_backup"]))
 
-    lv |> element(~s(button[phx-click="run-backup"])) |> render_click()
+    lv |> element(~S(button[phx-click="run_backup"])) |> render_click()
 
     assert render(lv) =~ "Backup a caminho. Volte daqui a pouco para conferir."
     assert {:ok, %{events: events}} = Maraca.list_events(Scope.new(zelador, tekoa))
     event = Enum.find(events, &(&1.tipo == "backup_scheduled"))
-    assert event
+    assert %{tipo: "backup_scheduled"} = event
     assert event.tipo == "backup_scheduled"
     assert event.payload["actor"] == zelador.public_id
   end
@@ -145,7 +146,7 @@ defmodule TainaWeb.SaudeLiveTest do
 
     assert html =~ "Nenhum backup ainda"
     assert html =~ "Você cuida da nuvem. O backup é a sua parte; os arquivos continuam de cada um."
-    refute has_element?(lv, ~s(button[phx-click="run-backup"]))
+    refute has_element?(lv, ~S(button[phx-click="run_backup"]))
   end
 
   test "disco acabando é atenção: ícone e palavra junto, nunca alarme", %{conn: conn, tekoa: tekoa, morador: morador} do

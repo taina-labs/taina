@@ -17,8 +17,8 @@ defmodule TainaWeb.API.Fatia1Test do
       body = conn |> get(~p"/api/v1/instance") |> json_response(200)
 
       assert body["bootstrapped"] == false
-      assert body["tekoa"] == nil
-      assert is_binary(body["version"])
+      assert is_nil(body["tekoa"])
+      assert is_binary(body["version"]) and byte_size(body["version"]) > 0
     end
 
     test "com Tekoa criada: devolve a comunidade", %{conn: conn} do
@@ -55,7 +55,7 @@ defmodule TainaWeb.API.Fatia1Test do
       assert body["me"]["public_id"] == ava.public_id
       assert body["tekoa"]["public_id"] == tekoa.public_id
       assert body["device"]["name"] == "Dispositivo"
-      assert body["device"]["revoked_at"] == nil
+      assert is_nil(body["device"]["revoked_at"])
     end
 
     test "usa o rotulo do aparelho quando o cliente manda", %{conn: conn, ava: ava} do
@@ -91,7 +91,7 @@ defmodule TainaWeb.API.Fatia1Test do
         |> json_response(401)
 
       assert body["error"]["code"] == "invalid_credentials"
-      assert is_binary(body["error"]["message"])
+      assert is_binary(body["error"]["message"]) and byte_size(body["error"]["message"]) > 0
     end
 
     test "conta desativada responde 403, nao 401", %{conn: conn, tekoa: tekoa, ava: ava} do
@@ -173,7 +173,7 @@ defmodule TainaWeb.API.Fatia1Test do
       assert Enum.map(contents["folders"], & &1["rkey"]) == [created["rkey"]]
       assert Enum.map(contents["folders"], & &1["dono"]) == [ava.public_id]
       assert contents["items"] == []
-      assert contents["next_cursor"] == nil
+      assert is_nil(contents["next_cursor"])
     end
 
     test "pasta inexistente responde 404", %{conn: conn} do
@@ -204,9 +204,9 @@ defmodule TainaWeb.API.Fatia1Test do
       assert body["name"] == "nota.txt"
       assert body["mime"] == "text/plain"
       assert body["size"] == byte_size("ola taina")
-      assert is_binary(body["sha256"])
+      assert is_binary(body["sha256"]) and byte_size(body["sha256"]) > 0
       assert body["zona"] == "casa"
-      assert is_binary(body["rkey"])
+      assert is_binary(body["rkey"]) and byte_size(body["rkey"]) > 0
       assert body["dono"] == ava.public_id
     end
 

@@ -19,6 +19,9 @@ defmodule TainaWeb.API.Error do
 
   require Logger
 
+  @type conn :: Plug.Conn.t()
+  @type error_code :: String.t()
+
   @messages %{
     "not_authenticated" => "Entre para continuar.",
     "invalid_credentials" => "Usuário ou senha incorretos.",
@@ -65,7 +68,7 @@ defmodule TainaWeb.API.Error do
   `%Ecto.Changeset{}` vira 422 `validation_failed` com os erros campo a campo
   em `details`.
   """
-  @spec reply(Plug.Conn.t(), term()) :: Plug.Conn.t()
+  @spec reply(conn(), term()) :: conn()
   def reply(conn, reason) do
     {status, code} = resolve(reason)
 
@@ -82,18 +85,12 @@ defmodule TainaWeb.API.Error do
   tabela do fio julga diferente do produto precisa (a senha atual errada na
   troca de senha e 403, nao 401: quem chama ja esta autenticado).
   """
-  @spec reply(Plug.Conn.t(), non_neg_integer(), String.t()) :: Plug.Conn.t()
+  @spec reply(conn(), non_neg_integer(), error_code()) :: conn()
   def reply(conn, status, code) when is_integer(status) and is_binary(code) do
     conn
     |> put_status(status)
     |> Phoenix.Controller.json(body(code, nil))
   end
-
-  defp resolve(reason) when is_atom(reason) and is_map_key(@local_statuses, reason) do
-    {Map.fetch!(@local_statuses, reason), Atom.to_string(reason)}
-  end
-
-  defp resolve(reason), do: Errors.resolve(reason)
 
   defp body(code, nil), do: %{"error" => %{"code" => code, "message" => message(code)}}
 
@@ -101,22 +98,28 @@ defmodule TainaWeb.API.Error do
     %{"error" => %{"code" => code, "message" => message(code), "details" => details}}
   end
 
-  defp message(code), do: Map.get(@messages, code, @messages[@fallback_code])
-
   # A mesma traducao que a web usa (`TainaWeb.CoreComponents.translate_error/1`):
   # o catalogo pt-BR do dominio `errors` cobre as mensagens do Ecto, e o que ja
   # vem em pt-BR do contexto (mensagens de constraint do kernel) passa intacto.
   defp details(%Ecto.Changeset{} = changeset) do
-    Ecto.Changeset.traverse_errors(changeset, fn {msg, opts} -> translate(msg, opts) end)
+    Ecto.Changeset.traverse_errors(changeset, fn {message, opts} -> translate(message, opts) end)
   end
 
   defp details(_reason), do: nil
 
-  defp translate(msg, opts) do
-    if count = opts[:count] do
-      Gettext.dngettext(TainaWeb.Gettext, "errors", msg, msg, count, opts)
+  defp message(code), do: Map.get(@messages, code, @messages[@fallback_code])
+
+  defp resolve(reason) when is_atom(reason) and is_map_key(@local_statuses, reason) do
+    {Map.fetch!(@local_statuses, reason), Atom.to_string(reason)}
+  end
+
+  defp resolve(reason), do: Errors.resolve(reason)
+
+  defp translate(message, opts) do
+    if count = Keyword.get(opts, :count) do
+      Gettext.dngettext(TainaWeb.Gettext, "errors", message, message, count, opts)
     else
-      Gettext.dgettext(TainaWeb.Gettext, "errors", msg, opts)
+      Gettext.dgettext(TainaWeb.Gettext, "errors", message, opts)
     end
   end
 end

@@ -30,14 +30,6 @@ defmodule TainaWeb.InviteController do
     end
   end
 
-  # Volta para a tela de aceite preservando só campos não secretos: a pessoa
-  # não redigita tudo e a senha nunca viaja na URL.
-  defp non_secret_query(params) do
-    params
-    |> Map.take(["username", "display_name"])
-    |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
-  end
-
   # Tradução do changeset para a frase do campo com problema (o LiveView não
   # recebe o changeset, então a mensagem viaja no flash).
   defp accept_error_message(%Changeset{} = changeset) do
@@ -50,6 +42,14 @@ defmodule TainaWeb.InviteController do
 
   defp accept_error_message(_other) do
     gettext("Não foi possível criar a conta. Revise os dados e tente de novo.")
+  end
+
+  # Volta para a tela de aceite preservando só campos não secretos: a pessoa
+  # não redigita tudo e a senha nunca viaja na URL.
+  defp non_secret_query(params) do
+    params
+    |> Map.take(["username", "display_name"])
+    |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
   end
 
   defp username_taken?(%Changeset{} = changeset) do

@@ -23,11 +23,12 @@ defmodule TainaWeb.AccountLive do
     socket =
       socket
       |> assign_pedidos(socket.assigns.current_scope)
-      |> assign(:page_title, gettext("Conta"))
-      |> assign(:show_password, false)
-      |> assign(:show_devices, false)
       |> assign(:devices, [])
+      |> assign(:devices_error, false)
+      |> assign(:page_title, gettext("Conta"))
       |> assign(:password_errors, %{})
+      |> assign(:show_devices, false)
+      |> assign(:show_password, false)
 
     {:ok, socket}
   end
@@ -37,13 +38,23 @@ defmodule TainaWeb.AccountLive do
     {:noreply, assign(socket, :return_to, InternalPath.from_uri(uri))}
   end
 
+  # A revogação é do ciclo de vida: aparelho revogado sai da lista.
+  defp active_devices(devices), do: Enum.filter(devices, &is_nil(&1.revoked_at))
+
   # A meta distingue o que o morador precisa responder dos pedidos que enviou.
   # Eventos do Ava (PubSub) recalculam os dois totais.
   defp assign_pedidos(socket, scope) do
-    {:ok, recebidos} = Maraca.pedidos_recebidos(scope)
-    {:ok, enviados} = Maraca.pedidos_enviados(scope)
-
-    assign(socket, :pedidos_meta, pedidos_meta(length(recebidos), length(enviados)))
+    with {:ok, recebidos} <- Maraca.pedidos_recebidos(scope),
+         {:ok, enviados} <- Maraca.pedidos_enviados(scope) do
+      socket
+      |> assign(:pedidos_meta, pedidos_meta(length(recebidos), length(enviados)))
+      |> assign(:pedidos_error, false)
+    else
+      {:error, _reason} ->
+        socket
+        |> assign(:pedidos_meta, gettext("Não foi possível carregar os pedidos agora."))
+        |> assign(:pedidos_error, true)
+    end
   end
 
   @impl true
@@ -52,37 +63,65 @@ defmodule TainaWeb.AccountLive do
   end
 
   @impl true
-  def handle_event("open-password", _params, socket) do
+  def handle_event("open_password", _params, socket) do
     {:noreply, assign(socket, :show_password, true)}
   end
 
-  def handle_event("close-password", _params, socket) do
+  def handle_event("close_password", _params, socket) do
     {:noreply, close_password_sheet(socket)}
   end
 
-  def handle_event("open-devices", _params, socket) do
-    {:ok, devices} = Maraca.list_devices(socket.assigns.current_scope)
-
-    {:noreply, socket |> assign(:devices, active_devices(devices)) |> assign(:show_devices, true)}
+  def handle_event("retry_pedidos", _params, socket) do
+    {:noreply, assign_pedidos(socket, socket.assigns.current_scope)}
   end
 
-  def handle_event("close-devices", _params, socket) do
+  def handle_event("open_devices", _params, socket) do
+    case Maraca.list_devices(socket.assigns.current_scope) do
+      {:ok, devices} ->
+        {:noreply,
+         socket
+         |> assign(:devices, active_devices(devices))
+         |> assign(:devices_error, false)
+         |> assign(:show_devices, true)}
+
+      {:error, _reason} ->
+        {:noreply,
+         socket
+         |> assign(:devices, [])
+         |> assign(:devices_error, true)
+         |> assign(:show_devices, true)}
+    end
+  end
+
+  def handle_event("close_devices", _params, socket) do
     {:noreply, close_devices_sheet(socket)}
   end
 
   # Revogar um aparelho tira o acesso dele na hora (o app precisa entrar de
   # novo). Idempotente no contexto; a lista volta do banco.
-  def handle_event("revoke-device", %{"id" => public_id}, socket) do
+  def handle_event("revoke_device", %{"id" => public_id}, socket) do
     scope = socket.assigns.current_scope
 
     case Maraca.revoke_device(scope, public_id) do
       {:ok, _device} ->
-        {:ok, devices} = Maraca.list_devices(scope)
+        case Maraca.list_devices(scope) do
+          {:ok, devices} ->
+            {:noreply,
+             socket
+             |> assign(:devices, active_devices(devices))
+             |> assign(:devices_error, false)
+             |> Phoenix.LiveView.put_flash(:info, gettext("Acesso do aparelho revogado."))}
 
-        {:noreply,
-         socket
-         |> assign(:devices, active_devices(devices))
-         |> Phoenix.LiveView.put_flash(:info, gettext("Acesso do aparelho revogado."))}
+          {:error, _reason} ->
+            {:noreply,
+             socket
+             |> assign(:devices, [])
+             |> assign(:devices_error, true)
+             |> Phoenix.LiveView.put_flash(
+               :info,
+               gettext("Acesso revogado. Não foi possível atualizar a lista agora.")
+             )}
+        end
 
       {:error, _reason} ->
         {:noreply,
@@ -98,7 +137,7 @@ defmodule TainaWeb.AccountLive do
   # nova (mesma escolha do aceite de convite, `Maraca.reset_password/3` do
   # outro lado). O erro vira dica no campo que o causou, nao flash solto. A
   # web nao tem aparelho de chamada: a troca derruba os aparelhos todos.
-  def handle_event("change-password", %{"account" => params}, socket) do
+  def handle_event("change_password", %{"account" => params}, socket) do
     with :ok <- confirmation_ok?(params),
          {:ok, _ava} <-
            Maraca.update_password(
@@ -119,16 +158,13 @@ defmodule TainaWeb.AccountLive do
 
   # Fechar o sheet desmonta o form (`:if` do sheet): na reabertura os campos
   # voltam vazios, sem senha velha preenchida.
-  defp close_password_sheet(socket) do
-    assign(socket, show_password: false, password_errors: %{})
-  end
-
   defp close_devices_sheet(socket) do
-    assign(socket, show_devices: false, devices: [])
+    socket |> assign(:show_devices, false) |> assign(:devices, [])
   end
 
-  # A revogação é do ciclo de vida: aparelho revogado sai da lista.
-  defp active_devices(devices), do: Enum.filter(devices, &is_nil(&1.revoked_at))
+  defp close_password_sheet(socket) do
+    socket |> assign(:show_password, false) |> assign(:password_errors, %{})
+  end
 
   defp confirmation_ok?(%{"new_password" => new, "password_confirmation" => confirm}) do
     if is_binary(new) and new != "" and confirm == new, do: :ok, else: {:error, :password_mismatch}
@@ -139,6 +175,15 @@ defmodule TainaWeb.AccountLive do
   # Credencial ruim aponta o campo "atual"; rate limit estourado tambem e da
   # hora de tentar (a dica diz para esperar); changeset (a regra do kernel)
   # aponta o campo "nova"; desigual aponta a confirmacao.
+  defp device_meta(device) do
+    case device.last_used_at do
+      nil -> gettext("Nunca usado")
+      at -> gettext("usado %{when}", when: relative_time(at))
+    end
+  end
+
+  defp invite_path(return_to), do: ~p"/moradores/convidar?#{[return_to: return_to]}"
+
   defp password_errors(:invalid_credentials) do
     %{"current_password" => [gettext("Não é a sua senha atual. Confira e tente de novo.")]}
   end
@@ -157,6 +202,15 @@ defmodule TainaWeb.AccountLive do
 
   # --- core puro: dados -> dados ---
 
+  # Pedidos enviados esperam resposta de outra pessoa, não do morador.
+  defp pedidos_meta(0, 0), do: gettext("Nada pendente")
+
+  defp pedidos_meta(received, _sent) when received > 0 do
+    gettext("%{count} esperando sua resposta", count: received)
+  end
+
+  defp pedidos_meta(0, sent), do: ngettext("1 pedido enviado", "%{count} pedidos enviados", sent)
+
   # "Moradora, Quilombo do Café" (board): papel e comunidade no cartão.
   defp person_meta(scope) do
     gettext("%{role}, %{community}",
@@ -167,22 +221,6 @@ defmodule TainaWeb.AccountLive do
 
   defp role_label(:zelador), do: gettext("Zelador(a)")
   defp role_label(:morador), do: gettext("Morador(a)")
-
-  # Pedidos enviados esperam resposta de outra pessoa, não do morador.
-  defp pedidos_meta(0, 0), do: gettext("Nada pendente")
-
-  defp pedidos_meta(received, _sent) when received > 0 do
-    gettext("%{count} esperando sua resposta", count: received)
-  end
-
-  defp pedidos_meta(0, sent), do: ngettext("1 pedido enviado", "%{count} pedidos enviados", sent)
-
-  defp device_meta(device) do
-    case device.last_used_at do
-      nil -> gettext("Nunca usado")
-      at -> gettext("usado %{when}", when: relative_time(at))
-    end
-  end
 
   @impl true
   def render(assigns) do
@@ -218,7 +256,7 @@ defmodule TainaWeb.AccountLive do
             trailing="chevron"
             title={gettext("Trocar senha")}
             meta={gettext("Atualize a sua senha")}
-            phx-click="open-password"
+            phx-click="open_password"
           >
             <:leading><.service_square mark="senha" /></:leading>
           </.list_row>
@@ -228,19 +266,25 @@ defmodule TainaWeb.AccountLive do
             trailing="chevron"
             title={gettext("Dispositivos")}
             meta={gettext("Aparelhos com acesso")}
-            phx-click="open-devices"
+            phx-click="open_devices"
           >
             <:leading><.service_square mark="dispositivos" /></:leading>
           </.list_row>
         </ul>
+
+        <.error_card
+          :if={@pedidos_error}
+          title={gettext("Não conseguimos carregar os pedidos agora.")}
+          retry_event="retry_pedidos"
+        />
 
         <.button href={~p"/logout"} method="delete" kind="secondary" size="lg" icon="sair" class="w-full">
           {gettext("Sair")}
         </.button>
       </div>
 
-      <.sheet id="password-sheet" show={@show_password} on_cancel="close-password" kind="content" title={gettext("Trocar senha")}>
-        <form id="password-form" phx-submit="change-password" class="col gap-4">
+      <.sheet id="password-sheet" show={@show_password} on_cancel="close_password" kind="content" title={gettext("Trocar senha")}>
+        <form id="password-form" phx-submit="change_password" phx-auto-recover="ignore" class="col gap-4">
           <p class="type-body text-secondary">
             {gettext("Confirme com a senha que você usa hoje e crie uma nova. As outras pessoas não são avisadas: isso é só seu.")}
           </p>
@@ -287,7 +331,7 @@ defmodule TainaWeb.AccountLive do
           </.field>
 
           <div class="row gap-3 mt-2">
-            <.button kind="secondary" size="md" class="flex-1" phx-click={JS.push("close-password")}>
+            <.button kind="secondary" size="md" class="flex-1" phx-click={JS.push("close_password")}>
               {gettext("Cancelar")}
             </.button>
             <.button type="submit" kind="primary" size="md" class="flex-1" phx-disable-with={gettext("Trocando...")}>
@@ -297,11 +341,17 @@ defmodule TainaWeb.AccountLive do
         </form>
       </.sheet>
 
-      <.sheet id="devices-sheet" show={@show_devices} on_cancel="close-devices" kind="content" title={gettext("Dispositivos")}>
+      <.sheet id="devices-sheet" show={@show_devices} on_cancel="close_devices" kind="content" title={gettext("Dispositivos")}>
         <div class="col gap-2">
           <p class="type-body-sm text-secondary">
             {gettext("Aparelhos com acesso à sua conta. Revogar não apaga nada da caixa: o aparelho só precisa entrar de novo.")}
           </p>
+
+          <.error_card
+            :if={@devices_error}
+            title={gettext("Não conseguimos carregar os dispositivos agora.")}
+            retry_event="open_devices"
+          />
 
            <ul class="list">
            <.list_row
@@ -320,7 +370,7 @@ defmodule TainaWeb.AccountLive do
               meta={device_meta(device)}
             >
               <:actions>
-                <.button kind="ghost" size="sm" phx-click="revoke-device" phx-value-id={device.public_id}>
+                <.button kind="ghost" size="sm" phx-click="revoke_device" phx-value-id={device.public_id}>
                   {gettext("Revogar")}
                 </.button>
               </:actions>
@@ -335,6 +385,4 @@ defmodule TainaWeb.AccountLive do
     </Layouts.page>
     """
   end
-
-  defp invite_path(return_to), do: ~p"/moradores/convidar?#{[return_to: return_to]}"
 end

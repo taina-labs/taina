@@ -46,7 +46,7 @@ defmodule TainaWeb.AccountLiveTest do
     refute html =~ "/moradores/convidar"
 
     # Sair é o botão secundário com o ícone sair
-    assert has_element?(lv, ~s(a[href="/logout"][data-method="delete"], button[data-method="delete"]), "Sair")
+    assert has_element?(lv, ~S(a[href="/logout"][data-method="delete"], button[data-method="delete"]), "Sair")
   end
 
   test "zelador: a linha Convidar volta para Conta", %{conn: conn, zelador: zelador} do
@@ -54,7 +54,7 @@ defmodule TainaWeb.AccountLiveTest do
 
     assert has_element?(
              lv,
-             ~s(.list-row a[href="/moradores/convidar?return_to=%2Fconta%3Faba%3Ddispositivos"]),
+             ~S(.list-row a[href="/moradores/convidar?return_to=%2Fconta%3Faba%3Ddispositivos"]),
              "Convidar"
            )
 
@@ -100,13 +100,13 @@ defmodule TainaWeb.AccountLiveTest do
   test "trocar senha abre o sheet com o formulário e valida a senha atual", %{conn: conn, member: member} do
     {:ok, lv, _html} = conn |> log_in(member) |> live(~p"/conta")
 
-    lv |> element(~s([phx-click="open-password"])) |> render_click()
+    lv |> element(~S([phx-click="open_password"])) |> render_click()
 
     assert has_element?(lv, "#password-sheet .sheet__panel")
     assert render(lv) =~ "Confirme com a senha que você usa hoje"
 
     html =
-      render_submit(lv, "change-password", %{
+      render_submit(lv, "change_password", %{
         "account" => %{
           "current_password" => "errada",
           "new_password" => "frase-longa-nova",
@@ -120,10 +120,10 @@ defmodule TainaWeb.AccountLiveTest do
   test "trocar senha no sheet troca de verdade e derruba os aparelhos", %{conn: conn, tekoa: tekoa, member: member} do
     {:ok, lv, _html} = conn |> log_in(member) |> live(~p"/conta")
 
-    lv |> element(~s([phx-click="open-password"])) |> render_click()
+    lv |> element(~S([phx-click="open_password"])) |> render_click()
 
     html =
-      render_submit(lv, "change-password", %{
+      render_submit(lv, "change_password", %{
         "account" => %{
           "current_password" => "senhasegura123",
           "new_password" => "frase-longa-nova",
@@ -142,12 +142,12 @@ defmodule TainaWeb.AccountLiveTest do
 
     {:ok, lv, _html} = conn |> log_in(member) |> live(~p"/conta")
 
-    lv |> element(~s([phx-click="open-devices"])) |> render_click()
+    lv |> element(~S([phx-click="open_devices"])) |> render_click()
 
     assert has_element?(lv, "#devices-sheet .sheet__panel", "Celular de João")
     assert has_element?(lv, "#devices-sheet .badge--active", "Atual")
 
-    html = lv |> element(~s(button[phx-click="revoke-device"])) |> render_click()
+    html = lv |> element(~S(button[phx-click="revoke_device"])) |> render_click()
 
     assert html =~ "Acesso do aparelho revogado."
     refute has_element?(lv, "#devices-sheet", "Celular de João")
@@ -156,7 +156,7 @@ defmodule TainaWeb.AccountLiveTest do
   test "dispositivos sem aparelho diz com honestidade que a lista está vazia", %{conn: conn, member: member} do
     {:ok, lv, _html} = conn |> log_in(member) |> live(~p"/conta")
 
-    lv |> element(~s([phx-click="open-devices"])) |> render_click()
+    lv |> element(~S([phx-click="open_devices"])) |> render_click()
 
     assert has_element?(lv, "#devices-sheet", "Nenhum outro aparelho com acesso agora.")
   end

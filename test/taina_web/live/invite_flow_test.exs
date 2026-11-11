@@ -22,12 +22,12 @@ defmodule TainaWeb.InviteFlowTest do
   test "papel: RadioCards do board com o que cada papel pode", %{conn: conn, zelador: zelador} do
     {:ok, lv, html} = conn |> log_in(zelador) |> live(~p"/moradores/convidar")
 
-    assert has_element?(lv, ~s(.page-header__back[href="/moradores"]))
+    assert has_element?(lv, ~S(.page-header__back[href="/moradores"]))
     assert has_element?(lv, ".radio-card", "Morador")
     assert has_element?(lv, ".radio-card", "Zelador")
     assert html =~ "Vê a praça e ganha uma casa própria."
     assert html =~ "Cuida da máquina: disco, backups e convites. Para abrir uma casa, pede como todo mundo."
-    assert has_element?(lv, ~s(#invite-form button[type="submit"]), "Criar convite")
+    assert has_element?(lv, ~S(#invite-form button[type="submit"]), "Criar convite")
     assert html =~ "Você cria convites só quando quiser. Dá para cancelar depois."
   end
 
@@ -38,13 +38,13 @@ defmodule TainaWeb.InviteFlowTest do
     {:ok, conta_lv, _html} =
       conn |> log_in(zelador) |> live("/moradores/convidar?return_to=%2Fconta%3Faba%3Ddispositivos")
 
-    assert has_element?(conta_lv, ~s(.page-header__back[href="/conta?aba=dispositivos"]))
+    assert has_element?(conta_lv, ~S(.page-header__back[href="/conta?aba=dispositivos"]))
     assert has_element?(conta_lv, ".page-header__back-label", "Conta")
 
     {:ok, moradores_lv, _html} =
       conn |> log_in(zelador) |> live("/moradores/convidar?return_to=https%3A%2F%2Fevil.example")
 
-    assert has_element?(moradores_lv, ~s(.page-header__back[href="/moradores"]))
+    assert has_element?(moradores_lv, ~S(.page-header__back[href="/moradores"]))
     refute render(moradores_lv) =~ "evil.example"
   end
 
@@ -89,11 +89,12 @@ defmodule TainaWeb.InviteFlowTest do
     assert html =~ "Sua casa é só sua"
     assert html =~ "A praça é de todos"
 
-    assert elem(:binary.match(html, "A praça é de todos"), 1) <
-             elem(:binary.match(html, "id=\"invite-accept-form\""), 1)
+    {community_copy_position, _copy_length} = :binary.match(html, "A praça é de todos")
+    {form_position, _form_length} = :binary.match(html, "id=\"invite-accept-form\"")
+    assert community_copy_position < form_position
 
     refute html =~ "account[password_confirmation]"
-    assert has_element?(lv, ~s(a[href="/login"]), "Entrar")
+    assert has_element?(lv, ~S(a[href="/login"]), "Entrar")
 
     # o POST cria a conta e entra
     conn =
@@ -128,8 +129,8 @@ defmodule TainaWeb.InviteFlowTest do
     # O board "Convite / expirado" é um cartão de erro com a saída para o
     # login embaixo.
     assert html =~ "Este convite não é mais válido."
-    assert has_element?(lv, ~s(.error-card))
-    assert has_element?(lv, ~s(a[href="/login"]), "Voltar para entrar")
+    assert has_element?(lv, ~S(.error-card))
+    assert has_element?(lv, ~S(a[href="/login"]), "Voltar para entrar")
     refute html =~ "Criar conta"
   end
 
@@ -147,7 +148,7 @@ defmodule TainaWeb.InviteFlowTest do
     {:ok, lv, _html} = live(conn, ~p"/convite/nao-existe")
 
     assert {:error, {:live_redirect, %{to: "/login"}}} =
-             lv |> element(~s(.error-card button), "Voltar") |> render_click()
+             lv |> element(~S(.error-card button), "Voltar") |> render_click()
   end
 
   test "convite expirado mostra o estado de beco sem saída antes de preencher o formulário", %{

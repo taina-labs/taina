@@ -10,14 +10,14 @@ defmodule TainaWeb.FileServing do
 
   import Plug.Conn
 
-  @thumbnail_sizes ~w(sm md)
+  @thumbnail_sizes ~W(md sm)
+
+  @type metadata :: map()
+  @type thumbnail_size :: String.t()
 
   # Tipos seguros de exibir abrem inline (midia, PDF); o resto baixa como
   # anexo, nada de octet-stream/zip rodando no contexto da pagina.
-  @inline_prefixes ["image/", "video/", "audio/", "application/pdf"]
-
-  @doc ~s{Os tamanhos de miniatura que a rendition gera ("sm" grade, "md" tela cheia).}
-  def thumbnail_sizes, do: @thumbnail_sizes
+  @inline_prefixes ["application/pdf", "audio/", "image/", "video/"]
 
   @doc """
   Serve o arquivo, com `Range` (RFC 7233): o cliente que pede fatia recebe 206
@@ -30,21 +30,13 @@ defmodule TainaWeb.FileServing do
       |> put_resp_header("content-type", file.mime)
       |> put_resp_header("content-disposition", content_disposition(file))
       |> put_resp_header("x-content-type-options", "nosniff")
-      |> put_last_modified(file)
+      |> maybe_put_last_modified(file)
 
     case get_req_header(conn, "range") do
       ["bytes=" <> spec] -> serve_range(conn, file, path, spec)
       _ -> send_file(conn, 200, path)
     end
   end
-
-  @doc """
-  Se a miniatura do tamanho existe no disco. A web responde 404 seco, que e o
-  que um `<img>` precisa; a API responde o envelope, que e o contrato do
-  cliente, entao ela pergunta antes.
-  """
-  @spec thumbnail?(map(), String.t()) :: boolean()
-  def thumbnail?(metadata, size), do: match?({:ok, _}, thumbnail_path(metadata, size))
 
   @doc """
   Serve a miniatura webp a partir dos metadados de rendicao do produto. Tamanho
@@ -66,13 +58,24 @@ defmodule TainaWeb.FileServing do
 
   def thumbnail(conn, _metadata, _size), do: send_resp(conn, 404, "")
 
-  defp thumbnail_path(metadata, size) do
-    case get_in(metadata, ["thumbnails", size]) do
-      path when is_binary(path) ->
-        if File.exists?(path), do: {:ok, path}, else: {:error, :not_found}
+  @doc """
+  Se a miniatura do tamanho existe no disco. A web responde 404 seco, que e o
+  que um `<img>` precisa; a API responde o envelope, que e o contrato do
+  cliente, entao ela pergunta antes.
+  """
+  @spec thumbnail?(metadata(), thumbnail_size()) :: boolean()
+  def thumbnail?(metadata, size), do: match?({:ok, _}, thumbnail_path(metadata, size))
 
-      _ ->
-        {:error, :not_found}
+  @doc ~S{Os tamanhos de miniatura que a rendition gera ("sm" grade, "md" tela cheia).}
+  def thumbnail_sizes, do: @thumbnail_sizes
+
+  defp closed_range(first, last, total) do
+    with {first, ""} when first >= 0 <- Integer.parse(first),
+         {last, ""} when last >= first <- Integer.parse(last),
+         true <- first < total do
+      {:ok, first, min(last, total - 1)}
+    else
+      _ -> :error
     end
   end
 
@@ -89,11 +92,29 @@ defmodule TainaWeb.FileServing do
 
   # `Last-Modified` ajuda o cache do cliente (revalidacao barata em banda
   # limitada). Usa o `updated_at` do registro, que e UTC.
-  defp put_last_modified(conn, %{updated_at: %DateTime{} = at}) do
+  defp maybe_put_last_modified(conn, %{updated_at: %DateTime{} = at}) do
     put_resp_header(conn, "last-modified", Calendar.strftime(at, "%a, %d %b %Y %H:%M:%S GMT"))
   end
 
-  defp put_last_modified(conn, _file), do: conn
+  defp maybe_put_last_modified(conn, _file), do: conn
+
+  defp open_range(first, total) do
+    case Integer.parse(first) do
+      {first, ""} when first >= 0 and first < total -> {:ok, first, total - 1}
+      _ -> :error
+    end
+  end
+
+  # Aceita "first-last", "first-" (ate o fim) e "-suffix" (ultimos N bytes).
+  # Devolve `{:ok, first, last}` com offsets inclusivos e dentro de [0, total).
+  defp parse_range(spec, total) do
+    case String.split(spec, "-", parts: 2) do
+      ["", suffix] -> suffix_range(suffix, total)
+      [first, ""] -> open_range(first, total)
+      [first, last] -> closed_range(first, last, total)
+      _ -> :error
+    end
+  end
 
   defp serve_range(conn, file, path, spec) do
     case parse_range(spec, file.tamanho) do
@@ -109,17 +130,6 @@ defmodule TainaWeb.FileServing do
     end
   end
 
-  # Aceita "first-last", "first-" (ate o fim) e "-suffix" (ultimos N bytes).
-  # Devolve `{:ok, first, last}` com offsets inclusivos e dentro de [0, total).
-  defp parse_range(spec, total) do
-    case String.split(spec, "-", parts: 2) do
-      ["", suffix] -> suffix_range(suffix, total)
-      [first, ""] -> open_range(first, total)
-      [first, last] -> closed_range(first, last, total)
-      _ -> :error
-    end
-  end
-
   defp suffix_range(suffix, total) do
     case Integer.parse(suffix) do
       {len, ""} when len > 0 and total > 0 ->
@@ -131,20 +141,13 @@ defmodule TainaWeb.FileServing do
     end
   end
 
-  defp open_range(first, total) do
-    case Integer.parse(first) do
-      {first, ""} when first >= 0 and first < total -> {:ok, first, total - 1}
-      _ -> :error
-    end
-  end
+  defp thumbnail_path(metadata, size) do
+    case get_in(metadata, ["thumbnails", size]) do
+      path when is_binary(path) ->
+        if File.exists?(path), do: {:ok, path}, else: {:error, :not_found}
 
-  defp closed_range(first, last, total) do
-    with {first, ""} when first >= 0 <- Integer.parse(first),
-         {last, ""} when last >= first <- Integer.parse(last),
-         true <- first < total do
-      {:ok, first, min(last, total - 1)}
-    else
-      _ -> :error
+      _ ->
+        {:error, :not_found}
     end
   end
 end

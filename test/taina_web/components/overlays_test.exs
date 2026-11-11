@@ -109,15 +109,15 @@ defmodule TainaWeb.UI.OverlaysTest do
   test "sheet actions: painel, título e Fechar visível com ModalTrap" do
     html = sheet_html()
 
-    assert html =~ ~s(class="sheet")
+    assert html =~ ~S(class="sheet")
     refute html =~ "sheet__grabber"
     assert html =~ "Ações do arquivo"
     assert html =~ "Fechar"
-    assert html =~ ~s(phx-hook="ModalTrap")
-    assert html =~ ~s(role="dialog")
-    assert html =~ ~s(aria-modal="true")
+    assert html =~ ~S(phx-hook="ModalTrap")
+    assert html =~ ~S(role="dialog")
+    assert html =~ ~S(aria-modal="true")
     # fechamento por esc antes do painel
-    assert html =~ ~s(phx-key="escape")
+    assert html =~ ~S(phx-key="escape")
   end
 
   test "sheet actions: itens no slot, ícone à esquerda e item danger" do
@@ -154,15 +154,15 @@ defmodule TainaWeb.UI.OverlaysTest do
   test "dialog confirm: botão seguro secundário e confirm primary; clique fora fecha" do
     html = dialog_html()
 
-    assert html =~ ~s(class="dialog")
+    assert html =~ ~S(class="dialog")
     assert html =~ "dialog__panel"
     assert html =~ "Publicar na praça?"
     assert html =~ "Deixar na casa"
     assert html =~ "button button--secondary"
     assert html =~ "button button--primary"
     refute html =~ "button--danger"
-    assert html =~ ~s(phx-key="escape")
-    assert html =~ ~s(phx-hook="ModalTrap")
+    assert html =~ ~S(phx-key="escape")
+    assert html =~ ~S(phx-hook="ModalTrap")
     assert html =~ "phx-click-away"
   end
 
@@ -183,7 +183,7 @@ defmodule TainaWeb.UI.OverlaysTest do
     assert html =~ "Cancelar"
     assert html =~ "Remover"
     refute html =~ "phx-click-away"
-    assert html =~ ~s(phx-key="escape")
+    assert html =~ ~S(phx-key="escape")
   end
 
   test "dialog destructive sem confirm_label cai no Remover do board" do
@@ -209,7 +209,7 @@ defmodule TainaWeb.UI.OverlaysTest do
   test "dialog com corpo livre fecha com Esc e clique fora pelo on_cancel" do
     html = modal_html()
 
-    assert html =~ ~s(phx-key="escape")
+    assert html =~ ~S(phx-key="escape")
     assert html =~ "phx-click-away"
   end
 
@@ -218,14 +218,14 @@ defmodule TainaWeb.UI.OverlaysTest do
   test "actions_menu: gatilho kebab, painel com título e Fechar" do
     html = actions_menu_html()
 
-    assert html =~ ~s(class="actions-menu")
-    assert html =~ ~s(aria-label="Mais opções")
-    assert html =~ ~s(aria-haspopup="menu")
+    assert html =~ ~S(class="actions-menu")
+    assert html =~ ~S(aria-label="Mais opções")
+    assert html =~ ~S(aria-haspopup="menu")
     assert html =~ "actions-menu__panel"
     assert html =~ "Ações do arquivo"
     assert html =~ "actions-menu__close"
     assert html =~ "Fechar"
-    refute html =~ ~s(phx-hook="ModalTrap")
+    refute html =~ ~S(phx-hook="ModalTrap")
   end
 
   test "actions_menu: itens com link e com kind danger" do
@@ -236,7 +236,7 @@ defmodule TainaWeb.UI.OverlaysTest do
 
     html = actions_menu_html(items: items)
 
-    assert html =~ ~s(href="/documentos/ata")
+    assert html =~ ~S(href="/documentos/ata")
     assert html =~ "actions-menu__item--danger"
     assert html =~ ~r|<svg.*?</svg>\s*<span class="actions-menu__item-label">\s*Remover|ms
   end

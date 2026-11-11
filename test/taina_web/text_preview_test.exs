@@ -8,8 +8,8 @@ defmodule TainaWeb.TextPreviewTest do
   end
 
   test "invalid non-UTF-8 bytes produce no preview" do
-    assert TextPreview.decode(<<"caf", 0xE9, " na nuvem">>) == nil
-    assert TextPreview.decode(<<0xFF, 0xE2>>) == nil
+    assert is_nil(TextPreview.decode(<<"caf", 0xE9, " na nuvem">>))
+    assert is_nil(TextPreview.decode(<<0xFF, 0xE2>>))
   end
 
   test "an incomplete trailing codepoint is dropped" do

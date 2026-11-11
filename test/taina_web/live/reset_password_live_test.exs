@@ -31,7 +31,7 @@ defmodule TainaWeb.ResetPasswordLiveTest do
     assert html =~ "Use uma frase longa que só você lembra."
     assert html =~ "Salvar nova senha"
     refute html =~ "account[password_confirmation]"
-    assert has_element?(lv, ~s(form#reset-form))
+    assert has_element?(lv, ~S(form#reset-form))
   end
 
   test "token desconhecido mostra o estado de link expirado em vez do formulário", %{conn: conn} do
@@ -39,8 +39,8 @@ defmodule TainaWeb.ResetPasswordLiveTest do
 
     # O board "Redefinir / expirado" é um cartão de erro, não um form.
     assert html =~ "Este link expirou."
-    assert has_element?(lv, ~s(.error-card))
-    assert has_element?(lv, ~s(button), "Voltar")
+    assert has_element?(lv, ~S(.error-card))
+    assert has_element?(lv, ~S(button), "Voltar")
     refute html =~ "Salvar nova senha"
   end
 
@@ -58,7 +58,7 @@ defmodule TainaWeb.ResetPasswordLiveTest do
     {:ok, lv, _html} = live(conn, ~p"/redefinir/nao-existe")
 
     assert {:error, {:live_redirect, %{to: "/login"}}} =
-             lv |> element(~s(.error-card button), "Voltar") |> render_click()
+             lv |> element(~S(.error-card button), "Voltar") |> render_click()
   end
 
   test "link expirado mostra o estado de beco sem saída antes de preencher o formulário", %{

@@ -50,7 +50,7 @@ defmodule TainaWeb.UI.ContentTest do
 
   # ---------- Badge ----------
 
-  for kind <- ~w(praca casa zelador morador active inactive) do
+  for kind <- ~W(praca casa zelador morador active inactive) do
     test "badge kind #{kind}" do
       html = badge_html(kind: unquote(kind))
 
@@ -60,7 +60,7 @@ defmodule TainaWeb.UI.ContentTest do
       if unquote(kind) == "inactive" do
         refute html =~ "<svg"
       else
-        assert html =~ ~s(aria-hidden="true")
+        assert html =~ ~S(aria-hidden="true")
       end
     end
   end
@@ -115,7 +115,7 @@ defmodule TainaWeb.UI.ContentTest do
   }
 
   for mark <-
-        ~w(ybira jaci maraca nhaman doc video neutral casa praca lixeira mural saude moradores pedidos privacidade senha dispositivos sair) do
+        ~W(ybira jaci maraca nhaman doc video neutral casa praca lixeira mural saude moradores pedidos privacidade senha dispositivos sair) do
     test "service_square mark #{mark}: tone neutral (padrão) e ícone derivado" do
       mark = unquote(mark)
       html = square_html(mark: mark)
@@ -157,7 +157,7 @@ defmodule TainaWeb.UI.ContentTest do
   test "card kind default (padrão): sem modifier" do
     html = card_html(kind: "default")
 
-    assert html =~ ~s(class="card)
+    assert html =~ ~S(class="card)
     refute html =~ "card--"
   end
 
@@ -179,7 +179,7 @@ defmodule TainaWeb.UI.ContentTest do
     render_component(&service_card_component/1, assigns)
   end
 
-  for service <- ~w(ybira jaci) do
+  for service <- ~W(ybira jaci) do
     test "service_card service #{service}: modifier, quadradinho do serviço e copy do board" do
       service = unquote(service)
       html = service_card_html(service: service, meta: "meta")
@@ -194,7 +194,7 @@ defmodule TainaWeb.UI.ContentTest do
   test "service_card com navigate: link" do
     html = service_card_html(service: "ybira", navigate: "/documentos")
 
-    assert html =~ ~s(href="/documentos")
+    assert html =~ ~S(href="/documentos")
     assert html =~ "service-card"
   end
 
@@ -218,7 +218,7 @@ defmodule TainaWeb.UI.ContentTest do
     render_component(&list_row_component/1, assigns)
   end
 
-  @list_row_kinds ~w(file folder person civic mural trash upload pedido)
+  @list_row_kinds ~W(file folder civic person mural trash upload pedido)
 
   for kind <- @list_row_kinds do
     test "list_row kind #{kind}" do
@@ -234,7 +234,7 @@ defmodule TainaWeb.UI.ContentTest do
   test "list_row linha legada sem kind: só o bloco, sem modifier" do
     html = list_row_html(title: "Estatuto.pdf")
 
-    assert html =~ ~s(class="list-row")
+    assert html =~ ~S(class="list-row")
     refute html =~ "list-row--"
   end
 
@@ -286,7 +286,7 @@ defmodule TainaWeb.UI.ContentTest do
     html = progress_html(value: 92, color: "warning", label: "Espaço da comunidade")
 
     assert html =~ "progress__fill--warning"
-    assert html =~ ~s(aria-label="Espaço da comunidade")
+    assert html =~ ~S(aria-label="Espaço da comunidade")
   end
 
   test "progress sem tone continua no brand" do
@@ -315,15 +315,15 @@ defmodule TainaWeb.UI.ContentTest do
   test "storage_card compact: label do hub, uso e Ver detalhes" do
     html = storage_card_html(stats: @normal_stats)
 
-    assert html =~ ~s(storage-card storage-card--compact)
+    assert html =~ ~S(storage-card storage-card--compact)
     assert html =~ "Espaço da comunidade"
     assert html =~ "Ver detalhes"
-    assert html =~ ~s(href="/armazenamento")
+    assert html =~ ~S(href="/armazenamento")
     # unidades binárias (1024): 88_000_000_000 bytes = 82 GB e
     # 256_000_000_000 bytes = 238 GB; o meta segue o padrão "X de Y usados".
     assert html =~ "82 GB de 238 GB usados"
     assert html =~ "progress__fill--success"
-    assert html =~ ~s(aria-valuenow="34.375")
+    assert html =~ ~S(aria-valuenow="34.375")
     assert html =~ "scaleX(0.34375)"
   end
 
@@ -331,7 +331,7 @@ defmodule TainaWeb.UI.ContentTest do
     stats = %{used_bytes: 2, quota_bytes: 1_000}
     html = storage_card_html(stats: stats)
 
-    assert html =~ ~s(aria-valuenow="0.2")
+    assert html =~ ~S(aria-valuenow="0.2")
     assert html =~ "scaleX(0.002)"
   end
 
@@ -339,7 +339,7 @@ defmodule TainaWeb.UI.ContentTest do
     stats = %{used_bytes: 10, quota_bytes: 1_000}
     html = storage_card_html(stats: stats)
 
-    assert html =~ ~s(aria-valuenow="1.0")
+    assert html =~ ~S(aria-valuenow="1.0")
     assert html =~ "scaleX(0.01)"
   end
 
@@ -347,7 +347,7 @@ defmodule TainaWeb.UI.ContentTest do
     stats = %{used_bytes: 120, quota_bytes: 100}
     html = storage_card_html(stats: stats)
 
-    assert html =~ ~s(aria-valuenow="100")
+    assert html =~ ~S(aria-valuenow="100")
     assert html =~ "scaleX(1.0)"
   end
 
@@ -356,7 +356,7 @@ defmodule TainaWeb.UI.ContentTest do
 
     assert html =~ "storage-card--full"
     # o board do card completo não repete "usados" no número grande
-    assert html =~ ~s(storage-card__hero)
+    assert html =~ ~S(storage-card__hero)
     assert html =~ "82 GB de 238 GB"
     refute html =~ "82 GB de 238 GB usados"
     assert html =~ "156 GB livres"
@@ -410,9 +410,9 @@ defmodule TainaWeb.UI.ContentTest do
 
   @status_line_icons %{
     "ok" => "M20 6 9 17l-5-5",
-    "attention" => ~s(d="M12,2L22,22L2,22Z"),
-    "problem" => ~s(d="M12,2L22,22L2,22Z"),
-    "unknown" => ~s(cx="19" cy="12")
+    "attention" => ~S(d="M12,2L22,22L2,22Z"),
+    "problem" => ~S(d="M12,2L22,22L2,22Z"),
+    "unknown" => ~S(cx="19" cy="12")
   }
 
   defp status_line_component(assigns) do
@@ -426,7 +426,7 @@ defmodule TainaWeb.UI.ContentTest do
     render_component(&status_line_component/1, assigns)
   end
 
-  for state <- ~w(ok attention problem unknown) do
+  for state <- ~W(ok attention problem unknown) do
     test "status_line state #{state}: modifier, ícone do mapa puro e copy do board (nunca cor sozinha)" do
       state = unquote(state)
       html = status_line_html(state: state)
@@ -470,7 +470,7 @@ defmodule TainaWeb.UI.ContentTest do
         navigate: "/conta/pedidos"
       )
 
-    assert html =~ ~s(href="/conta/pedidos")
+    assert html =~ ~S(href="/conta/pedidos")
     assert html =~ "care-line__mark"
     assert html =~ "care-line__text"
     assert html =~ "care-line__action"
@@ -528,7 +528,7 @@ defmodule TainaWeb.UI.ContentTest do
   test "steps sem label (uso legado do setup): só os pontos, sem legenda" do
     html = steps_html(current: 1)
 
-    assert html =~ ~s(class="steps")
+    assert html =~ ~S(class="steps")
     assert html =~ "steps__dot steps__dot--current"
     refute html =~ "steps--labeled"
     refute html =~ "steps__label"

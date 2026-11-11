@@ -34,15 +34,15 @@ defmodule TainaWeb.UI.FilePreviewTest do
   test "video preview includes the capability hook" do
     html = render_preview()
 
-    assert html =~ ~s(phx-hook="VideoFallback")
-    assert html =~ ~s(data-video-mime="video/x-matroska")
+    assert html =~ ~S(phx-hook="VideoFallback")
+    assert html =~ ~S(data-video-mime="video/x-matroska")
   end
 
   test "unsupported video state offers a download" do
     html = render_preview(%{video_preview_unavailable: true})
 
-    refute html =~ ~s(phx-hook="VideoFallback")
-    assert html =~ ~s(a href="/files/abc" download)
+    refute html =~ ~S(phx-hook="VideoFallback")
+    assert html =~ ~S(a href="/files/abc" download)
     assert html =~ "Este navegador não consegue tocar este vídeo."
   end
 end

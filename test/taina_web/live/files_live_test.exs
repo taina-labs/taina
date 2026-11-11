@@ -38,7 +38,7 @@ defmodule TainaWeb.FilesLiveTest do
       refute html =~ casa.nome
 
       # a zona é a aba: Praça acesa, sem seletor de zona na tela
-      assert has_element?(lv, ~s(.service-tab-bar__item[aria-current="page"]), "Praça")
+      assert has_element?(lv, ~S(.service-tab-bar__item[aria-current="page"]), "Praça")
       refute has_element?(lv, ".segmented")
       # sem badge de zona por linha (a aba inteira já é a zona)
       refute html =~ "Todos veem"
@@ -59,12 +59,12 @@ defmodule TainaWeb.FilesLiveTest do
       refute html =~ praca.nome
       assert html =~ "Só você vê o que está na casa."
       assert html =~ "só você"
-      assert has_element?(lv, ~s(.service-tab-bar__item[aria-current="page"]), "Casa")
-      assert has_element?(lv, ~s(.service-tab-bar__item[href="/documentos/praca"]), "Praça")
+      assert has_element?(lv, ~S(.service-tab-bar__item[aria-current="page"]), "Casa")
+      assert has_element?(lv, ~S(.service-tab-bar__item[href="/documentos/praca"]), "Praça")
       refute has_element?(lv, ".breadcrumb")
 
       {:ok, alias_lv, _alias_html} = conn |> log_in(ava) |> live(~p"/documentos/casa")
-      assert has_element?(alias_lv, ~s(.service-tab-bar__item[aria-current="page"]), "Casa")
+      assert has_element?(alias_lv, ~S(.service-tab-bar__item[aria-current="page"]), "Casa")
     end
 
     test "a zona da raiz é filtrada antes da paginação", %{scope: scope} do
@@ -95,7 +95,7 @@ defmodule TainaWeb.FilesLiveTest do
 
       assert html =~ "2 arquivos"
       assert html =~ "atualizados hoje"
-      assert has_element?(lv, ~s(.service-tab-bar__item[aria-current="page"]), "Casa")
+      assert has_element?(lv, ~S(.service-tab-bar__item[aria-current="page"]), "Casa")
       # pasta de primeiro nível: o voltar aponta a raiz da zona, palavra padrão
       assert has_element?(lv, ".service-header__back-label", "Início")
     end
@@ -128,7 +128,7 @@ defmodule TainaWeb.FilesLiveTest do
       assert has_element?(lv, ".service-header__back-label", "Raiz")
 
       # desktop: migalha enraizada na zona ("Casa > Raiz > Folha")
-      assert has_element?(lv, ~s(.breadcrumb a[href="/documentos"]), "Casa")
+      assert has_element?(lv, ~S(.breadcrumb a[href="/documentos"]), "Casa")
       assert has_element?(lv, ~s(.breadcrumb a[href="/documentos/pasta/#{raiz.rkey}"]), "Raiz")
       assert has_element?(lv, ".breadcrumb .breadcrumb__current", "Folha")
 
@@ -151,7 +151,7 @@ defmodule TainaWeb.FilesLiveTest do
       {:ok, lv, html} = conn |> log_in(ava) |> live(~p"/documentos/pasta/#{folder.rkey}")
 
       assert html =~ file.nome
-      assert has_element?(lv, ~s(.service-tab-bar__item[aria-current="page"]), "Praça")
+      assert has_element?(lv, ~S(.service-tab-bar__item[aria-current="page"]), "Praça")
       refute html =~ "A pasta nasce na sua casa"
     end
 
@@ -350,19 +350,19 @@ defmodule TainaWeb.FilesLiveTest do
       {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/casa")
 
       lv
-      |> element(~s(button[phx-click*="ask-delete"][phx-click*="#{file.rkey}"]))
+      |> element(~s(button[phx-click*="ask_delete"][phx-click*="#{file.rkey}"]))
       |> render_click()
 
       # diálogo destrutivo do board: título com o nome e a cópia dos 30 dias
-      assert has_element?(lv, ~s(#confirm-remove.dialog .dialog__title), "Remover velho.txt?")
+      assert has_element?(lv, ~S(#confirm-remove.dialog .dialog__title), "Remover velho.txt?")
 
       assert has_element?(
                lv,
-               ~s(#confirm-remove .dialog__body),
+               ~S(#confirm-remove .dialog__body),
                "O arquivo vai para a lixeira e some de vez depois de 30 dias."
              )
 
-      lv |> element(~s(#confirm-remove button[phx-click="confirm-delete"])) |> render_click()
+      lv |> element(~S(#confirm-remove button[phx-click="confirm_delete"])) |> render_click()
 
       refute render(lv) =~ "velho.txt"
       assert {:ok, %{items: [trashed]}} = Ybira.list_trash(scope)
@@ -382,10 +382,10 @@ defmodule TainaWeb.FilesLiveTest do
 
       assert has_element?(lv, "#files-selection-toolbar", "2 itens selecionados")
 
-      lv |> element("button[phx-click=open-move-selected]") |> render_click()
+      lv |> element("button[phx-click=open_move_selected]") |> render_click()
 
       lv
-      |> element(~s(button[phx-click*="move-selected"][phx-click*="#{folder.rkey}"]))
+      |> element(~s(button[phx-click*="move_selected"][phx-click*="#{folder.rkey}"]))
       |> render_click()
 
       assert {:ok, %{files: moved}} = Ybira.list_folder_contents(scope, folder.rkey)
@@ -400,11 +400,11 @@ defmodule TainaWeb.FilesLiveTest do
 
       lv |> element(~s(input[phx-value-kind="folder"][phx-value-id="#{folder.rkey}"])) |> render_click()
       lv |> element(~s(input[phx-value-kind="file"][phx-value-id="#{file.rkey}"])) |> render_click()
-      lv |> element("button[phx-click=ask-delete-selected]") |> render_click()
+      lv |> element("button[phx-click=ask_delete_selected]") |> render_click()
 
       assert has_element?(lv, "#confirm-remove .dialog__title", "Remover 2 itens?")
 
-      lv |> element("#confirm-remove button[phx-click=confirm-delete-selected]") |> render_click()
+      lv |> element("#confirm-remove button[phx-click=confirm_delete_selected]") |> render_click()
 
       assert render(lv) =~ "2 itens enviados para a lixeira."
       assert {:ok, %{items: [trashed_file]}} = Ybira.list_trash(scope)
@@ -424,7 +424,7 @@ defmodule TainaWeb.FilesLiveTest do
 
       assert has_element?(
                lv,
-               ~s(#new-folder-modal .dialog__panel[aria-labelledby="new-folder-modal-title"] h2#new-folder-modal-title)
+               ~S(#new-folder-modal .dialog__panel[aria-labelledby="new-folder-modal-title"] h2#new-folder-modal-title)
              )
 
       lv |> form("#new-folder-modal form") |> render_submit(%{"folder" => %{"name" => "Vídeos"}})
@@ -437,7 +437,7 @@ defmodule TainaWeb.FilesLiveTest do
       {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/casa")
 
       lv
-      |> element(~s(button[phx-click*="open-rename"][phx-click*="#{file.rkey}"]))
+      |> element(~s(button[phx-click*="open_rename"][phx-click*="#{file.rkey}"]))
       |> render_click()
 
       lv |> form("#rename-modal form") |> render_submit(%{"folder" => %{"name" => "definitivo.txt"}})
@@ -453,7 +453,7 @@ defmodule TainaWeb.FilesLiveTest do
       {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/casa")
 
       lv
-      |> element(~s(button[phx-click*="open-move"][phx-click*="#{file.rkey}"]))
+      |> element(~s(button[phx-click*="open_move"][phx-click*="#{file.rkey}"]))
       |> render_click()
 
       lv
@@ -472,7 +472,7 @@ defmodule TainaWeb.FilesLiveTest do
       {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/casa")
 
       lv
-      |> element(~s(button[phx-click*="open-move"][phx-click*="#{file.rkey}"]))
+      |> element(~s(button[phx-click*="open_move"][phx-click*="#{file.rkey}"]))
       |> render_click()
 
       assert has_element?(lv, "#move-modal .move-tree__node > .list-row", "Documentos")
@@ -493,7 +493,7 @@ defmodule TainaWeb.FilesLiveTest do
       {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/casa")
 
       lv
-      |> element(~s(button[phx-click*="open-move"][phx-click*="#{parent.rkey}"]))
+      |> element(~s(button[phx-click*="open_move"][phx-click*="#{parent.rkey}"]))
       |> render_click()
 
       refute has_element?(lv, "#move-modal .move-tree__node > .list-row", "Pai")

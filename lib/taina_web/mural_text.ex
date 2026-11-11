@@ -29,13 +29,13 @@ defmodule TainaWeb.MuralText do
   frase dele.
   """
   def resource_refs(events) when is_list(events) do
-    events
-    |> Enum.map(fn event -> {event.payload["collection"], event.payload["rkey"]} end)
-    |> Enum.filter(fn
-      {type, rkey} when type in ["ypy.file.v0", "ypy.folder.v0"] and is_binary(rkey) -> true
-      _other -> false
-    end)
-    |> Enum.uniq()
+    refs =
+      for event <- events,
+          {type, rkey} <- [{event.payload["collection"], event.payload["rkey"]}],
+          type in ["ypy.file.v0", "ypy.folder.v0"] and is_binary(rkey),
+          do: {type, rkey}
+
+    Enum.uniq(refs)
   end
 
   def sentence(%Entry{tipo: "invite_created"} = event, names) do

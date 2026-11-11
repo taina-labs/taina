@@ -17,7 +17,8 @@ defmodule TainaWeb.API.TrashController do
     scope = conn.assigns[:current_scope]
     opts = [limit: Query.limit(params), after_cursor: Query.cursor(params)]
 
-    with {:fresh, conn} <- Etag.handle(conn, Etag.trash(scope)),
+    with {:ok, etag} <- Etag.trash(scope),
+         {:fresh, conn} <- Etag.handle(conn, etag),
          {:ok, %{items: items, next_cursor: next}} <- Ybira.list_trash(scope, opts) do
       json(conn, Wire.page(Serializer.files(scope, items), next))
     else

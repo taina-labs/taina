@@ -37,8 +37,8 @@ defmodule TainaWeb.UploadLiveTest do
   test "a seleção publica o limite de 10 arquivos", %{conn: conn, ava: ava} do
     {:ok, _lv, html} = conn |> log_in(ava) |> live(~p"/documentos/enviar")
 
-    assert html =~ ~s(phx-hook="UploadSelectionLimit")
-    assert html =~ ~s(data-upload-max-entries="10")
+    assert html =~ ~S(phx-hook="UploadSelectionLimit")
+    assert html =~ ~S(data-upload-max-entries="10")
   end
 
   test "o voltar aponta a pasta de destino, pelo nome", %{conn: conn, scope: scope, ava: ava} do
@@ -64,7 +64,7 @@ defmodule TainaWeb.UploadLiveTest do
     path = "/documentos/enviar?return_to=" <> URI.encode_www_form("https://example.com/fora")
     {:ok, lv, _html} = conn |> log_in(ava) |> live(path)
 
-    assert has_element?(lv, ~s(.page-header__back[href="/documentos"]))
+    assert has_element?(lv, ~S(.page-header__back[href="/documentos"]))
     refute render(lv) =~ "example.com"
   end
 
@@ -162,7 +162,7 @@ defmodule TainaWeb.UploadLiveTest do
     html = render(lv)
     assert has_element?(lv, ".dropzone--error-cota")
     assert html =~ "O espaço da comunidade acabou. Peça a quem cuida da nuvem para liberar."
-    assert has_element?(lv, ~s(a[href="/armazenamento"]), "Ver espaço")
+    assert has_element?(lv, ~S(a[href="/armazenamento"]), "Ver espaço")
     # nada persistiu: a cota vale no domínio
     assert {:ok, %{items: []}} = Ybira.list_files(scope)
   end

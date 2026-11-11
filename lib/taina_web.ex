@@ -18,7 +18,7 @@ defmodule TainaWeb do
   """
 
   def static_paths do
-    ~w(assets fonts icons robots.txt favicon.ico openapi.yaml)
+    ~W(assets fonts icons robots.txt favicon.ico openapi.yaml)
   end
 
   def router do

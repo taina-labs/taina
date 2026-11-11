@@ -83,9 +83,9 @@ defmodule TainaWeb.RouterTest do
     {:ok, alias_casa_view, _} = live(conn, ~p"/documentos/casa")
 
     # o ?zona=casa na rota da praça e ignorado: a aba e a praça
-    assert has_element?(root_casa_view, ~s(.service-tab-bar__item[aria-current="page"]), "Casa")
-    assert has_element?(praca_view, ~s(.service-tab-bar__item[aria-current="page"]), "Praça")
-    assert has_element?(alias_casa_view, ~s(.service-tab-bar__item[aria-current="page"]), "Casa")
+    assert has_element?(root_casa_view, ~S(.service-tab-bar__item[aria-current="page"]), "Casa")
+    assert has_element?(praca_view, ~S(.service-tab-bar__item[aria-current="page"]), "Praça")
+    assert has_element?(alias_casa_view, ~S(.service-tab-bar__item[aria-current="page"]), "Casa")
   end
 
   test "/convite (público, sem sessão) monta com o formulário", ctx do

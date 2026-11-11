@@ -51,8 +51,8 @@ defmodule TainaWeb.AccessRequestsLiveTest do
     assert has_element?(lv, ".list-row--pedido", "Maria pediu acesso")
     assert html =~ "doc.txt, hoje"
     assert html =~ "Motivo: Por favor"
-    assert has_element?(lv, ~s(button[phx-click="ask-deny"]), "Recusar")
-    assert has_element?(lv, ~s(button[phx-click="approve"]), "Dar acesso")
+    assert has_element?(lv, ~S(button[phx-click="ask_deny"]), "Recusar")
+    assert has_element?(lv, ~S(button[phx-click="approve"]), "Dar acesso")
   end
 
   # board `com pedidos`: decidido
@@ -66,13 +66,13 @@ defmodule TainaWeb.AccessRequestsLiveTest do
     _req = request(requester, tekoa, file)
     {:ok, lv, _html} = conn |> log_in(owner) |> live(~p"/conta/pedidos")
 
-    lv |> element(~s(button[phx-click="approve"])) |> render_click()
+    lv |> element(~S(button[phx-click="approve"])) |> render_click()
 
     html = render(lv)
     assert html =~ "Acesso a doc.txt liberado"
     assert has_element?(lv, ".list-row--dado", "Maria recebeu acesso")
     assert html =~ "Acesso dado em"
-    assert has_element?(lv, ~s(button[phx-click="ask-revoke"]), "Tirar acesso")
+    assert has_element?(lv, ~S(button[phx-click="ask_revoke"]), "Tirar acesso")
     assert html =~ "Os pedidos resolvidos ficam visíveis. Você pode mudar de ideia quando quiser."
     assert Maraca.authorize?(requester, :read, "ypy.file.v0", file.rkey)
   end
@@ -87,16 +87,16 @@ defmodule TainaWeb.AccessRequestsLiveTest do
     _req = request(requester, tekoa, file)
     {:ok, lv, _html} = conn |> log_in(owner) |> live(~p"/conta/pedidos")
 
-    lv |> element(~s(button[phx-click="approve"])) |> render_click()
-    lv |> element(~s(button[phx-click="ask-revoke"])) |> render_click()
+    lv |> element(~S(button[phx-click="approve"])) |> render_click()
+    lv |> element(~S(button[phx-click="ask_revoke"])) |> render_click()
     assert render(lv) =~ "Tirar o acesso de Maria?"
     assert render(lv) =~ "Para abrir de novo, ela precisa pedir."
 
-    lv |> element(~s(#confirm-revoke button[phx-click*="revoke"])) |> render_click()
+    lv |> element(~S(#confirm-revoke button[phx-click*="revoke"])) |> render_click()
 
     html = render(lv)
     assert html =~ "Acesso de Maria tirado"
-    refute has_element?(lv, ~s(button[phx-click="ask-revoke"]))
+    refute has_element?(lv, ~S(button[phx-click="ask_revoke"]))
     assert html =~ "Nenhum pedido ainda"
     refute Maraca.authorize?(requester, :read, "ypy.file.v0", file.rkey)
   end
@@ -112,14 +112,14 @@ defmodule TainaWeb.AccessRequestsLiveTest do
     {:ok, grant} = Maraca.aprovar(Scope.new(owner, tekoa), req)
     {:ok, lv, _html} = conn |> log_in(owner) |> live(~p"/conta/pedidos")
 
-    lv |> element(~s(button[phx-click="ask-revoke"])) |> render_click()
+    lv |> element(~S(button[phx-click="ask_revoke"])) |> render_click()
     {:ok, _revoked} = Maraca.revogar(Scope.new(owner, tekoa), grant)
 
-    lv |> element(~s(#confirm-revoke button[phx-click*="revoke"])) |> render_click()
+    lv |> element(~S(#confirm-revoke button[phx-click*="revoke"])) |> render_click()
 
     html = render(lv)
     assert html =~ "Este acesso já foi tirado."
-    refute has_element?(lv, ~s(button[phx-click="ask-revoke"]))
+    refute has_element?(lv, ~S(button[phx-click="ask_revoke"]))
     refute Maraca.authorize?(requester, :read, "ypy.file.v0", file.rkey)
   end
 
@@ -129,8 +129,8 @@ defmodule TainaWeb.AccessRequestsLiveTest do
   } do
     {:ok, lv, _html} = conn |> log_in(owner) |> live(~p"/conta/pedidos")
 
-    render_click(lv, "ask-revoke", %{"id" => "missing-grant"})
-    lv |> element(~s(#confirm-revoke button[phx-click*="revoke"])) |> render_click()
+    render_click(lv, "ask_revoke", %{"id" => "missing-grant"})
+    lv |> element(~S(#confirm-revoke button[phx-click*="revoke"])) |> render_click()
 
     html = render(lv)
     assert html =~ "Este acesso já foi tirado."
@@ -149,10 +149,10 @@ defmodule TainaWeb.AccessRequestsLiveTest do
     _req = request(requester, tekoa, file)
     {:ok, lv, _html} = conn |> log_in(owner) |> live(~p"/conta/pedidos")
 
-    lv |> element(~s(button[phx-click="ask-deny"])) |> render_click()
+    lv |> element(~S(button[phx-click="ask_deny"])) |> render_click()
     assert render(lv) =~ "Negar este pedido?"
 
-    lv |> element(~s(#confirm-deny button[phx-click*="deny"])) |> render_click()
+    lv |> element(~S(#confirm-deny button[phx-click*="deny"])) |> render_click()
 
     html = render(lv)
     assert html =~ "Pedido negado"

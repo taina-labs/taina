@@ -24,9 +24,9 @@ defmodule TainaWeb.UI.Actions do
       <.button kind="primary">Começar</.button>
       <.button kind="secondary" navigate={~p"/convite"}>Tenho um convite</.button>
   """
-  attr :kind, :string, values: ~w(primary secondary ghost danger), doc: "Kind do Penpot; padrão primary"
+  attr :kind, :string, values: ~W(primary secondary ghost danger), doc: "Kind do Penpot; padrão primary"
 
-  attr :size, :string, default: "lg", values: ~w(sm md lg)
+  attr :size, :string, default: "lg", values: ~W(sm md lg)
   attr :icon, :string, default: nil, doc: "ícone à esquerda (Penpot Icon: leading); \"none\"/omitido = sem ícone"
   attr :loading, :boolean, default: false, doc: "Penpot State: loading; desabilita o controle"
   attr :type, :string, default: "button"
@@ -34,7 +34,7 @@ defmodule TainaWeb.UI.Actions do
   attr :patch, :string, default: nil
   attr :href, :string, default: nil
   attr :class, :string, default: nil
-  attr :rest, :global, include: ~w(form method download)
+  attr :rest, :global, include: ~W(form method download)
   slot :inner_block, required: true
 
   def button(%{navigate: nil, patch: nil, href: nil} = assigns) do
@@ -73,54 +73,17 @@ defmodule TainaWeb.UI.Actions do
   end
 
   defp resolve_button(assigns) do
-    kind = assigns[:kind] || "primary"
+    kind = Map.get(assigns, :kind) || "primary"
 
-    assign(assigns, kind: kind, icon_name: leading_icon(assigns[:icon]))
+    assigns
+    |> assign(:kind, kind)
+    |> assign(:icon_name, leading_icon(assigns.icon))
   end
 
   # Penpot Icon: none | leading; "none"/omitido = sem ícone
   defp leading_icon(nil), do: nil
   defp leading_icon("none"), do: nil
   defp leading_icon(icon), do: icon
-
-  @doc """
-  Botão só-ícone (cabeçalhos, kebab, ações de linha) com rótulo acessível.
-  Penpot Kind: default | danger.
-  """
-  attr :name, :string, required: true
-  attr :label, :string, required: true
-  attr :kind, :string, values: ~w(default danger), doc: "Kind do Penpot; padrão default"
-  attr :navigate, :string, default: nil
-  attr :href, :string, default: nil
-  attr :rest, :global, include: ~w(download)
-
-  def icon_button(assigns) do
-    assigns = assign(assigns, :kind, assigns[:kind] || "default")
-
-    ~H"""
-    <.link
-      :if={@navigate || @href}
-      navigate={@navigate}
-      href={@href}
-      class={["icon-button", "icon-button--#{@kind}"]}
-      aria-label={@label}
-      title={@label}
-      {@rest}
-    >
-      <.icon name={@name} size={20} />
-    </.link>
-    <button
-      :if={!@navigate && !@href}
-      type="button"
-      class={["icon-button", "icon-button--#{@kind}"]}
-      aria-label={@label}
-      title={@label}
-      {@rest}
-    >
-      <.icon name={@name} size={20} />
-    </button>
-    """
-  end
 
   @doc """
   FAB "Enviar arquivo" (Penpot: FAB Enviar arquivo). Pílula estendida com
@@ -131,7 +94,7 @@ defmodule TainaWeb.UI.Actions do
   attr :icon, :string, default: "plus"
   attr :navigate, :string, default: nil
   attr :uploading, :boolean, default: false, doc: "Penpot State: uploading"
-  attr :rest, :global, include: ~w(id)
+  attr :rest, :global, include: ~W(id)
 
   def fab(assigns) do
     ~H"""
@@ -155,6 +118,45 @@ defmodule TainaWeb.UI.Actions do
     >
       <.icon name={@icon} size={20} />
       <span class="fab__label">{@label}</span>
+    </button>
+    """
+  end
+
+  @doc """
+  Botão só-ícone (cabeçalhos, kebab, ações de linha) com rótulo acessível.
+  Penpot Kind: default | danger.
+  """
+  attr :name, :string, required: true
+  attr :label, :string, required: true
+  attr :kind, :string, values: ~W(default danger), doc: "Kind do Penpot; padrão default"
+  attr :navigate, :string, default: nil
+  attr :href, :string, default: nil
+  attr :rest, :global, include: ~W(download)
+
+  def icon_button(assigns) do
+    assigns = assign(assigns, :kind, Map.get(assigns, :kind) || "default")
+
+    ~H"""
+    <.link
+      :if={@navigate || @href}
+      navigate={@navigate}
+      href={@href}
+      class={["icon-button", "icon-button--#{@kind}"]}
+      aria-label={@label}
+      title={@label}
+      {@rest}
+    >
+      <.icon name={@name} size={20} />
+    </.link>
+    <button
+      :if={!@navigate && !@href}
+      type="button"
+      class={["icon-button", "icon-button--#{@kind}"]}
+      aria-label={@label}
+      title={@label}
+      {@rest}
+    >
+      <.icon name={@name} size={20} />
     </button>
     """
   end

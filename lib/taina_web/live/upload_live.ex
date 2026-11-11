@@ -28,13 +28,13 @@ defmodule TainaWeb.UploadLive do
 
     socket =
       socket
-      |> assign(:page_title, gettext("Documentos"))
-      |> assign(:folder, folder)
-      |> assign(:return_to, InternalPath.return_to(params["return_to"], back_path(folder)))
-      |> assign(:quota_error?, false)
-      |> assign(:max_blob_size, max_blob_size)
       |> assign(:done, [])
       |> assign(:failed, [])
+      |> assign(:folder, folder)
+      |> assign(:max_blob_size, max_blob_size)
+      |> assign(:page_title, gettext("Documentos"))
+      |> assign(:quota_error?, false)
+      |> assign(:return_to, InternalPath.return_to(params["return_to"], back_path(folder)))
       |> maybe_flash_folder_note(folder_note)
       |> allow_upload(:files,
         accept: :any,
@@ -54,28 +54,21 @@ defmodule TainaWeb.UploadLive do
     {:ok, socket}
   end
 
-  # Pasta inexistente ou casa de outra pessoa: sobe para a raiz sem travar o
-  # envio; o flash explica por que a pasta sumiu do voltar.
-  defp resolve_folder(_scope, nil), do: {nil, nil}
+  # Onde os arquivos caíram: na pasta alvo, ou no início já na casa (o
+  # destino de quem chega pela raiz). Cair na praça faria o recém-chegado
+  # "sumir" da tela.
+  defp back_path(nil), do: ~p"/documentos"
+  defp back_path(folder), do: ~p"/documentos/pasta/#{folder.rkey}"
 
-  defp resolve_folder(scope, rkey) do
-    case Ybira.get_folder(scope, rkey) do
-      {:ok, folder} ->
-        {folder, nil}
+  # Erros de configuração (tamanho, quantidade) somados dos dois envios.
+  defp config_errors(uploads), do: upload_errors(uploads.files) ++ upload_errors(uploads.camera)
 
-      {:error, _reason} ->
-        {nil, gettext("A pasta original não está mais disponível. O envio vai para o início.")}
-    end
-  end
+  # State da caixa (board): estourou a cota, o painel explica e aponta o
+  # espaço; com envio em voo, o progresso do arquivo corrente; senão, parada.
+  defp dropzone_state(_uploads, true), do: "error-cota"
 
-  defp maybe_flash_folder_note(socket, nil), do: socket
-  defp maybe_flash_folder_note(socket, note), do: put_flash(socket, :error, note)
-
-  # Consome cada arquivo assim que termina de subir, de qualquer um dos dois
-  # envios (arquivos ou câmera); o resultado vai para a lista concluído (ou
-  # para os erros, sem derrubar os demais envios).
-  defp handle_progress(_name, entry, socket) do
-    if entry.done?, do: finish_upload(entry, socket), else: {:noreply, socket}
+  defp dropzone_state(uploads, _quota_error) do
+    if uploads.files.entries == [], do: "idle", else: "uploading"
   end
 
   defp finish_upload(entry, socket) do
@@ -100,15 +93,34 @@ defmodule TainaWeb.UploadLive do
     end
   end
 
-  defp upload_opts(entry, nil), do: [filename: entry.client_name]
-  defp upload_opts(entry, folder), do: [filename: entry.client_name, folder_rkey: folder.rkey]
+  # A palavra do voltar: o nome da pasta de destino quando há uma, senão o
+  # padrão da casca (spec 1.5, limite de 12 caracteres em back_label/1).
+  defp folder_back_label(nil), do: nil
+  defp folder_back_label(folder), do: back_label(folder.nome)
 
-  # Cada erro explica o que houve e dá a saída (tom-de-voz: erros com saída,
-  # sem culpa). A cópia de cota é da caixa (Dropzone, board), não da lista.
-  defp upload_error(:mime_not_allowed),
-    do: gettext("Não aceitamos este tipo de arquivo. Use imagens, PDFs, texto, áudio, vídeo ou ZIP.")
+  # Consome cada arquivo assim que termina de subir, de qualquer um dos dois
+  # envios (arquivos ou câmera); o resultado vai para a lista concluído (ou
+  # para os erros, sem derrubar os demais envios).
+  defp handle_progress(_name, entry, socket) do
+    if entry.done?, do: finish_upload(entry, socket), else: {:noreply, socket}
+  end
 
-  defp upload_error(_reason), do: gettext("O envio falhou. Toque na caixa acima para tentar de novo.")
+  defp maybe_flash_folder_note(socket, nil), do: socket
+  defp maybe_flash_folder_note(socket, note), do: put_flash(socket, :error, note)
+
+  # Pasta inexistente ou casa de outra pessoa: sobe para a raiz sem travar o
+  # envio; o flash explica por que a pasta sumiu do voltar.
+  defp resolve_folder(_scope, nil), do: {nil, nil}
+
+  defp resolve_folder(scope, rkey) do
+    case Ybira.get_folder(scope, rkey) do
+      {:ok, folder} ->
+        {folder, nil}
+
+      {:error, _reason} ->
+        {nil, gettext("A pasta original não está mais disponível. O envio vai para o início.")}
+    end
+  end
 
   @impl true
   def handle_event("validate", _params, socket), do: {:noreply, socket}
@@ -119,11 +131,6 @@ defmodule TainaWeb.UploadLive do
   def handle_info(_message, socket), do: {:noreply, socket}
 
   # --- core puro: dados -> dados ---
-
-  # A palavra do voltar: o nome da pasta de destino quando há uma, senão o
-  # padrão da casca (spec 1.5, limite de 12 caracteres em back_label/1).
-  defp folder_back_label(nil), do: nil
-  defp folder_back_label(folder), do: back_label(folder.nome)
 
   defp return_label(return_to, folder) do
     return_to
@@ -145,22 +152,24 @@ defmodule TainaWeb.UploadLive do
   defp return_label_from_path("/conta", _folder), do: gettext("Conta")
   defp return_label_from_path(_path, folder), do: folder_back_label(folder) || gettext("Casa")
 
-  # Onde os arquivos caíram: na pasta alvo, ou no início já na casa (o
-  # destino de quem chega pela raiz). Cair na praça faria o recém-chegado
-  # "sumir" da tela.
-  defp back_path(nil), do: ~p"/documentos"
-  defp back_path(folder), do: ~p"/documentos/pasta/#{folder.rkey}"
+  # O quadradinho da linha concluída: o mesmo mapa do hub e do navegador.
+  defp upload_config_error(:too_large, max_blob_size),
+    do: gettext("O arquivo passa de %{size}, o limite por arquivo.", size: format_bytes(max_blob_size))
 
-  # State da caixa (board): estourou a cota, o painel explica e aponta o
-  # espaço; com envio em voo, o progresso do arquivo corrente; senão, parada.
-  defp dropzone_state(_uploads, true), do: "error-cota"
+  defp upload_config_error(:too_many_files, _max_blob_size),
+    do: gettext("São no máximo 10 arquivos por vez. Envie o resto em seguida.")
 
-  defp dropzone_state(uploads, _quota_error) do
-    if uploads.files.entries == [], do: "idle", else: "uploading"
-  end
+  defp upload_config_error(_err, _max_blob_size), do: gettext("O envio falhou. Toque na caixa acima para tentar de novo.")
 
-  # Erros de configuração (tamanho, quantidade) somados dos dois envios.
-  defp config_errors(uploads), do: upload_errors(uploads.files) ++ upload_errors(uploads.camera)
+  # Cada erro explica o que houve e dá a saída (tom-de-voz: erros com saída,
+  # sem culpa). A cópia de cota é da caixa (Dropzone, board), não da lista.
+  defp upload_error(:mime_not_allowed),
+    do: gettext("Não aceitamos este tipo de arquivo. Use imagens, PDFs, texto, áudio, vídeo ou ZIP.")
+
+  defp upload_error(_reason), do: gettext("O envio falhou. Toque na caixa acima para tentar de novo.")
+
+  defp upload_opts(entry, nil), do: [filename: entry.client_name]
+  defp upload_opts(entry, folder), do: [filename: entry.client_name, folder_rkey: folder.rkey]
 
   @impl true
   def render(assigns) do
@@ -235,13 +244,4 @@ defmodule TainaWeb.UploadLive do
     </Layouts.page>
     """
   end
-
-  # O quadradinho da linha concluída: o mesmo mapa do hub e do navegador.
-  defp upload_config_error(:too_large, max_blob_size),
-    do: gettext("O arquivo passa de %{size}, o limite por arquivo.", size: format_bytes(max_blob_size))
-
-  defp upload_config_error(:too_many_files, _max_blob_size),
-    do: gettext("São no máximo 10 arquivos por vez. Envie o resto em seguida.")
-
-  defp upload_config_error(_err, _max_blob_size), do: gettext("O envio falhou. Toque na caixa acima para tentar de novo.")
 end

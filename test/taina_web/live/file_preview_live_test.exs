@@ -49,7 +49,7 @@ defmodule TainaWeb.FilePreviewLiveTest do
     assert request.dono_id == owner.id
     assert request.recurso == file.rkey
     # sem campo na tela, o pedido vai sem motivo: o servidor nao fabrica frase
-    assert request.motivo == nil
+    assert is_nil(request.motivo)
   end
 
   # --- board "Arquivo / padrao" (M e Web) ---
@@ -103,8 +103,8 @@ defmodule TainaWeb.FilePreviewLiveTest do
     {:ok, owner_lv, _html} = conn |> log_in(owner) |> live(~p"/documentos/#{file.rkey}")
 
     assert has_element?(owner_lv, ~s(#file-actions-panel a[href="/files/#{file.rkey}"][download]), "Baixar")
-    refute has_element?(owner_lv, ~s(a[aria-label="Baixar"]))
-    refute has_element?(owner_lv, ~s(button[phx-click="ask-delete"]))
+    refute has_element?(owner_lv, ~S(a[aria-label="Baixar"]))
+    refute has_element?(owner_lv, ~S(button[phx-click="ask_delete"]))
     refute has_element?(owner_lv, ".measure > .row")
     # O menu contém Baixar, Voltar para a casa (o arquivo está na praça) e Remover.
     assert has_element?(owner_lv, "#file-actions-panel", "Baixar")
@@ -124,7 +124,7 @@ defmodule TainaWeb.FilePreviewLiveTest do
   test "dono publica pelo menu do cabeçalho", %{conn: conn, tekoa: tekoa, owner: owner, target_file: file} do
     {:ok, lv, _html} = conn |> log_in(owner) |> live(~p"/documentos/#{file.rkey}")
 
-    lv |> element(~s(button[phx-click*="zona"])) |> render_click()
+    lv |> element(~S(button[phx-click*="zona"])) |> render_click()
 
     assert render(lv) =~ "Publicado na praça."
     assert {:ok, updated} = Ybira.get_file(Scope.new(owner, tekoa), file.rkey)
@@ -139,19 +139,19 @@ defmodule TainaWeb.FilePreviewLiveTest do
   } do
     {:ok, lv, _html} = conn |> log_in(owner) |> live(~p"/documentos/#{file.rkey}")
 
-    lv |> element(~s(button[phx-click*="ask-delete"])) |> render_click()
+    lv |> element(~S(button[phx-click*="ask_delete"])) |> render_click()
 
-    assert has_element?(lv, ~s(#confirm-remove .dialog__title), "Remover particular.txt?")
+    assert has_element?(lv, ~S(#confirm-remove .dialog__title), "Remover particular.txt?")
 
     assert has_element?(
              lv,
-             ~s(#confirm-remove .dialog__body),
+             ~S(#confirm-remove .dialog__body),
              "O arquivo vai para a lixeira e some de vez depois de 30 dias."
            )
 
     # a tela navega de volta para a casa depois de remover
     assert {:error, {:live_redirect, %{to: "/documentos"}}} =
-             lv |> element(~s(#confirm-remove button[phx-click="confirm-delete"])) |> render_click()
+             lv |> element(~S(#confirm-remove button[phx-click="confirm_delete"])) |> render_click()
 
     assert {:ok, %{items: [trashed]}} = Ybira.list_trash(Scope.new(owner, tekoa))
     assert trashed.id == file.id
@@ -189,7 +189,7 @@ defmodule TainaWeb.FilePreviewLiveTest do
     test "arquivo solto na raiz volta para o início", %{conn: conn, owner: owner, target_file: file} do
       {:ok, lv, html} = conn |> log_in(owner) |> live(~p"/documentos/#{file.rkey}")
 
-      assert html =~ ~s(href="/documentos")
+      assert html =~ ~S(href="/documentos")
       assert has_element?(lv, ".page-header__back-label", "Casa")
       refute html =~ "/documentos/pasta/"
     end
@@ -204,14 +204,14 @@ defmodule TainaWeb.FilePreviewLiveTest do
 
       {:ok, lv, html} = conn |> log_in(owner) |> live(~p"/documentos/#{file.rkey}")
 
-      assert html =~ ~s(href="/documentos/praca")
+      assert html =~ ~S(href="/documentos/praca")
       assert has_element?(lv, ".page-header__back-label", "Praça")
     end
 
     test "o menu do preview renomeia o arquivo", %{conn: conn, owner: owner, target_file: file} do
       {:ok, lv, _html} = conn |> log_in(owner) |> live(~p"/documentos/#{file.rkey}")
 
-      lv |> element(~s(button[phx-click*="open-rename"])) |> render_click()
+      lv |> element(~S(button[phx-click*="open_rename"])) |> render_click()
       assert has_element?(lv, "#rename-file-modal .dialog__panel[aria-labelledby=\"rename-file-modal-title\"]")
 
       lv
@@ -232,7 +232,7 @@ defmodule TainaWeb.FilePreviewLiveTest do
       folder_rkey = folder.rkey
       {:ok, lv, _html} = conn |> log_in(owner) |> live(~p"/documentos/#{file.rkey}")
 
-      lv |> element(~s(button[phx-click*="open-move"])) |> render_click()
+      lv |> element(~S(button[phx-click*="open_move"])) |> render_click()
       lv |> element("#move-file-modal button.list-row", "Documentos") |> render_click()
 
       assert render(lv) =~ "Movido."

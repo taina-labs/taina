@@ -3,6 +3,8 @@ defmodule TainaWeb.SessionControllerTest do
 
   import Taina.Fixtures
 
+  # Test-only password fixture; no runtime credential is stored here.
+  # credo:disable-for-next-line OeditusCredo.Check.Security.HardcodedCredentials
   @password "frase-longa-que-so-eu-lembro"
 
   describe "com instância inicializada" do

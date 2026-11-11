@@ -77,10 +77,208 @@ defmodule TainaWeb.FilesLive do
     end
   end
 
-  # A zona é a aba: nas rotas raiz é a live_action; dentro de pasta, a da
-  # pasta (spec 6.2).
-  defp zone_of(live_action, _folder) when live_action in [:praca, :casa], do: live_action
-  defp zone_of(_folder_action, folder), do: folder.zona
+  # --- casca imperativa: o handle_params só assign/stream ---
+
+  defp apply_selected_items(selection, operation) do
+    selection
+    |> Enum.sort()
+    |> Enum.reduce({0, 0}, fn {kind, id}, {succeeded, failed} ->
+      case operation.(kind, id) do
+        {:ok, _item} -> {succeeded + 1, failed}
+        {:error, _reason} -> {succeeded, failed + 1}
+      end
+    end)
+  end
+
+  defp apply_zona(scope, "file", "publicar", id), do: Ybira.publicar_file(scope, id)
+  defp apply_zona(scope, "file", "voltar", id), do: Ybira.tirar_file_da_praca(scope, id)
+  defp apply_zona(scope, "folder", "publicar", id), do: Ybira.publicar_folder(scope, id)
+  defp apply_zona(scope, "folder", "voltar", id), do: Ybira.tirar_folder_da_praca(scope, id)
+
+  defp assign_page(socket, folder, zona, folder_rkey, page, return_to) do
+    breadcrumb =
+      case folder do
+        nil ->
+          []
+
+        %{rkey: rkey} ->
+          # A cadeia vem de `Ybira.folder_path/2` (raiz -> atual, inclusive).
+          # Se ela falhou por baixo (pasta apagada no meio da requisição, por
+          # exemplo), cai para o elo único de hoje em vez de quebrar a tela.
+          case Ybira.folder_path(socket.assigns.current_scope, rkey) do
+            {:ok, path} -> path
+            {:error, _reason} -> [%{rkey: rkey, nome: folder.nome}]
+          end
+      end
+
+    socket
+    |> assign(:breadcrumb, breadcrumb)
+    |> assign(:confirm, nil)
+    |> assign(:crumbs, crumbs(zona, breadcrumb))
+    |> assign(:file_count, length(page.files))
+    |> assign(:folder, folder)
+    |> assign(:folder_counts, folder_counts(socket.assigns.current_scope, page.folders))
+    |> assign(:folder_rkey, folder_rkey)
+    |> assign(:folders, page.folders)
+    |> assign(:item_count, length(page.folders) + length(page.files))
+    |> assign(:modal, nil)
+    |> assign(:move_target, nil)
+    |> assign(:move_tree, [])
+    |> assign(:names, page.names)
+    |> assign(:next_cursor, page.next_cursor)
+    |> assign(:page_title, (folder && folder.nome) || gettext("Documentos"))
+    |> assign(:rename_target, nil)
+    |> assign(:return_to, return_to)
+    |> assign(:selection, MapSet.new())
+    |> assign(:zona, zona)
+    |> stream(:files, page.files, reset: true)
+  end
+
+  defp base_meta(file), do: "#{file_kind(file.mime)}, #{format_bytes(file.tamanho)}"
+
+  # Criar pasta no início é sempre possível; dentro de pasta alheia, o
+  # servidor recusa, então o botão nem aparece (não oferecer o que rejeita).
+  defp can_create_here?(_scope, nil), do: true
+  defp can_create_here?(scope, folder), do: own?(scope, folder)
+
+  # "3 arquivos, atualizados ontem" (board pasta): a contagem de arquivos da
+  # listagem corrente e o dia relativo da pasta no fuso da comunidade.
+  # Migalha do desktop (spec 6.2): enraizada na zona ("Praça > Atas"), sem
+  # repetir "Início" nem "Documentos" (nota do board "Web / Ybira Casa"). Na
+  # raiz da zona, um elo só. No mobile o bloco inteiro some por CSS; quem
+  # carrega o parente é a palavra do voltar.
+  defp crumbs(zona, []) do
+    [%{label: zone_label(zona), current: true}]
+  end
+
+  defp crumbs(zona, chain) do
+    zone = %{label: zone_label(zona), navigate: zone_path(zona)}
+
+    links =
+      for folder <- Enum.drop(chain, -1) do
+        %{label: folder.nome, navigate: ~p"/documentos/pasta/#{folder.rkey}"}
+      end
+
+    current = chain |> List.last() |> then(&%{label: &1.nome, current: true})
+
+    Enum.reverse([current | Enum.reverse(links, [zone])])
+  end
+
+  defp delete_selected_items(scope, selection) do
+    apply_selected_items(selection, fn
+      "file", id -> Ybira.delete_file(scope, id)
+      "folder", id -> Ybira.delete_folder(scope, id)
+    end)
+  end
+
+  # Só pasta SUA é alvo de soltar: o servidor recusa mover para pasta
+  # alheia, então a UI não destaca o que não vai funcionar. nil faz o
+  # atributo nem chegar ao HTML.
+  defp drop_folder(scope, folder) do
+    if own?(scope, folder), do: folder.rkey
+  end
+
+  # O estado vazio diz a verdade sobre onde a pessoa está (boards "vazio"):
+  # na raiz, a zona fala; dentro de pasta, a pasta fala. E na casa alheia a
+  # cópia para de fingir que a pasta é sua.
+  defp empty_copy(:praca, nil, _scope),
+    do:
+      {gettext("A praça está vazia"),
+       gettext("Quando alguém publicar um arquivo na praça, ele aparece aqui para toda a comunidade.")}
+
+  defp empty_copy(:praca, _folder, _scope),
+    do: {gettext("Nada na praça desta pasta"), gettext("O que esta pasta guardar de comum aparece aqui.")}
+
+  defp empty_copy(:casa, nil, _scope),
+    do: {gettext("Sua casa está vazia"), gettext("Envie um arquivo. Ele fica só com você até você publicar na praça.")}
+
+  defp empty_copy(:casa, folder, scope) do
+    if own?(scope, folder) do
+      {gettext("Nada nesta pasta"), gettext("Envie um arquivo. Ele fica só com você até você publicar na praça.")}
+    else
+      {gettext("Nada para você nesta pasta"), gettext("Só aparece o que a pessoa deixar você ver.")}
+    end
+  end
+
+  defp excluded_move_folder_ids("folder", rkey, folders) do
+    case Enum.find(folders, &(&1.rkey == rkey)) do
+      nil -> MapSet.new()
+      folder -> folder_exclusions(folders, [folder.id])
+    end
+  end
+
+  defp excluded_move_folder_ids(_kind, _rkey, _folders), do: MapSet.new()
+
+  # Meta da linha (boards): "PDF, 1,2 MB, só você" na casa; na praça quem
+  # enviou, "enviado por Maria" (ou "enviado por você").
+  defp file_meta(file, names, ava_id) do
+    [base_meta(file), ownership_or_sender(file, names, ava_id)]
+    |> Enum.reject(&is_nil/1)
+    |> Enum.join(", ")
+  end
+
+  # "Pasta, 4 itens" (board): o agregado por pasta vem do contexto e vira o
+  # meta da linha. Falha do agregado não derruba a listagem: a linha fica só
+  # com "Pasta".
+  defp folder_counts(scope, folders) do
+    case Ybira.folder_item_counts(scope, Enum.map(folders, & &1.id)) do
+      {:ok, counts} -> counts
+      {:error, _reason} -> %{}
+    end
+  end
+
+  defp folder_exclusions(folders, root_ids) do
+    children = Enum.group_by(folders, & &1.parent_id)
+
+    Enum.reduce(root_ids, MapSet.new(), fn root_id, excluded ->
+      root_id
+      |> folder_subtree_ids(children)
+      |> Enum.reduce(excluded, &MapSet.put(&2, &1))
+    end)
+  end
+
+  # "3 arquivos, atualizados ontem" (board pasta): a contagem de arquivos da
+  # listagem corrente e o dia relativo da pasta no fuso da comunidade.
+  defp folder_meta(file_count, updated_at) do
+    ngettext("1 arquivo, atualizado %{when}", "%{count} arquivos, atualizados %{when}", file_count,
+      when: relative_time(updated_at)
+    )
+  end
+
+  defp folder_row_meta(folder, counts) do
+    case Map.get(counts, folder.id) do
+      nil -> gettext("Pasta")
+      count -> ngettext("Pasta, %{count} item", "Pasta, %{count} itens", count, count: count)
+    end
+  end
+
+  defp folder_subtree_ids(folder_id, children) do
+    descendants =
+      children
+      |> Map.get(folder_id, [])
+      |> Enum.flat_map(&folder_subtree_ids(&1.id, children))
+
+    [folder_id | descendants]
+  end
+
+  defp folder_tree(folders, excluded_ids) do
+    folders
+    |> Enum.reject(&MapSet.member?(excluded_ids, &1.id))
+    |> Enum.group_by(& &1.parent_id)
+    |> folder_tree_nodes(nil)
+  end
+
+  defp folder_tree_nodes(children, parent_id) do
+    children
+    |> Map.get(parent_id, [])
+    |> Enum.sort_by(&String.downcase(&1.nome))
+    |> Enum.map(fn folder ->
+      %{folder: folder, children: folder_tree_nodes(children, folder.id)}
+    end)
+  end
+
+  defp item_path("file", rkey), do: ~p"/documentos/#{rkey}"
+  defp item_path("folder", rkey), do: ~p"/documentos/pasta/#{rkey}"
 
   defp load_folder(_scope, nil), do: {:ok, nil}
   defp load_folder(scope, rkey), do: Ybira.get_folder(scope, rkey)
@@ -101,51 +299,210 @@ defmodule TainaWeb.FilesLive do
     end
   end
 
-  defp name_map(members), do: Map.new(members, &{&1.id, person_name(&1)})
+  defp maybe_selection_flash(socket, _action, 0, 0), do: socket
 
-  # --- casca imperativa: o handle_params só assign/stream ---
+  defp maybe_selection_flash(socket, action, succeeded, 0) do
+    message =
+      case action do
+        :move ->
+          ngettext("1 item movido.", "%{count} itens movidos.", succeeded, count: succeeded)
 
-  defp assign_page(socket, folder, zona, folder_rkey, page, return_to) do
-    breadcrumb =
-      case folder do
-        nil ->
-          []
-
-        %{rkey: rkey} ->
-          # A cadeia vem de `Ybira.folder_path/2` (raiz -> atual, inclusive).
-          # Se ela falhou por baixo (pasta apagada no meio da requisição, por
-          # exemplo), cai para o elo único de hoje em vez de quebrar a tela.
-          case Ybira.folder_path(socket.assigns.current_scope, rkey) do
-            {:ok, path} -> path
-            {:error, _reason} -> [%{rkey: rkey, nome: folder.nome}]
-          end
+        :delete ->
+          ngettext("1 item enviado para a lixeira.", "%{count} itens enviados para a lixeira.", succeeded,
+            count: succeeded
+          )
       end
 
-    socket
-    |> assign(:page_title, (folder && folder.nome) || gettext("Documentos"))
-    |> assign(:folder, folder)
-    |> assign(:folder_rkey, folder_rkey)
-    |> assign(:zona, zona)
-    |> assign(:selection, MapSet.new())
-    |> assign(:return_to, return_to)
-    |> assign(:breadcrumb, breadcrumb)
-    |> assign(:crumbs, crumbs(zona, breadcrumb))
-    |> assign(:folders, page.folders)
-    |> assign(:folder_counts, folder_counts(socket.assigns.current_scope, page.folders))
-    |> assign(:item_count, length(page.folders) + length(page.files))
-    |> assign(:file_count, length(page.files))
-    |> assign(:next_cursor, page.next_cursor)
-    |> assign(:names, page.names)
-    |> assign(:modal, nil)
-    |> assign(:rename_target, nil)
-    |> assign(:move_target, nil)
-    |> assign(:move_tree, [])
-    |> assign(:confirm, nil)
-    |> stream(:files, page.files, reset: true)
+    put_flash(socket, :info, message)
   end
 
+  defp maybe_selection_flash(socket, action, succeeded, failed) do
+    success =
+      case action do
+        :move ->
+          ngettext("1 item movido", "%{count} itens movidos", succeeded, count: succeeded)
+
+        :delete ->
+          ngettext("1 item enviado para a lixeira", "%{count} itens enviados para a lixeira", succeeded, count: succeeded)
+      end
+
+    put_flash(
+      socket,
+      :error,
+      gettext("%{success}; %{count} não puderam ser concluídos.", success: success, count: failed)
+    )
+  end
+
+  defp menu_title("file"), do: gettext("Ações do arquivo")
+  defp menu_title("folder"), do: gettext("Ações da pasta")
+
+  defp move_command(%{kind: "selection"}, target), do: JS.push("move_selected", value: %{target: target || ""})
+
+  defp move_command(%{kind: kind, id: id}, target),
+    do: JS.push("move-item", value: %{kind: kind, id: id, target: target || ""})
+
+  defp move_selected_items(scope, selection, target) do
+    apply_selected_items(selection, fn
+      "file", id -> Ybira.move_file(scope, id, target)
+      "folder", id -> Ybira.move_folder(scope, id, target)
+    end)
+  end
+
+  defp name_map(members), do: Map.new(members, &{&1.id, person_name(&1)})
+
+  defp normalize_target(target) when target in [nil, ""], do: nil
+  defp normalize_target(target), do: target
+
+  defp own?(scope, item), do: scope.ava.id == item.dono_id
+
+  defp own_actions(item, scope, base) do
+    if own?(scope, item) do
+      Enum.reverse([:remover, :renomear, :mover, zona_action(item.zona) | Enum.reverse(base)])
+    else
+      base
+    end
+  end
+
+  defp owned_resource(scope, "file", rkey) do
+    case Ybira.get_file(scope, rkey) do
+      {:ok, file} -> if own?(scope, file), do: {:ok, file}, else: {:error, :not_owner}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp owned_resource(scope, "folder", rkey) do
+    case Ybira.get_folder(scope, rkey) do
+      {:ok, folder} -> if own?(scope, folder), do: {:ok, folder}, else: {:error, :not_owner}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp ownership_or_sender(%{zona: :casa, dono_id: dono_id}, _names, dono_id), do: gettext("só você")
+  defp ownership_or_sender(%{dono_id: dono_id}, _names, dono_id), do: gettext("enviado por você")
+
+  defp ownership_or_sender(file, names, _ava_id) do
+    case Map.get(names, file.dono_id) do
+      nil -> nil
+      name -> gettext("enviado por %{name}", name: name)
+    end
+  end
+
+  defp parent_of([_current]), do: nil
+  defp parent_of(path), do: Enum.at(path, -2)
+
+  # Recarrega a pasta atual reaproveitando o handle_params.
+  defp refresh(socket) do
+    to =
+      case socket.assigns.folder_rkey do
+        nil -> zone_path(socket.assigns.zona)
+        folder_rkey -> ~p"/documentos/pasta/#{folder_rkey}"
+      end
+
+    push_patch(socket, to: to)
+  end
+
+  # Quais ações a linha oferece (spec 6.2): função pura do (item, escopo).
+  # Só quem é dono publica, move, renomeia e remove; para quem não é, nada
+  # daqui funciona no servidor. Pasta não baixa (não há download de pasta).
+  defp row_actions(%File{} = file, scope), do: own_actions(file, scope, [:abrir, :baixar])
+  defp row_actions(%Folder{} = folder, scope), do: own_actions(folder, scope, [:abrir])
+
+  defp selected?(selection, kind, id), do: MapSet.member?(selection, {kind, id})
+
+  defp selected_folder_ids(items) do
+    for %{kind: "folder", item: %Folder{id: id}} <- items, do: id
+  end
+
+  defp selected_items(scope, selection) do
+    selection
+    |> Enum.sort()
+    |> Enum.flat_map(fn {kind, id} ->
+      case owned_resource(scope, kind, id) do
+        {:ok, item} -> [%{kind: kind, id: id, item: item}]
+        {:error, _reason} -> []
+      end
+    end)
+  end
+
+  defp selection_name(1), do: gettext("1 item selecionado")
+  defp selection_name(count), do: gettext("%{count} itens selecionados", count: count)
+
+  # Voltar da casca: na raiz, o hub ("Início"); dentro de pasta, o parente
+  # (a penúltima elo da mesma cadeia da migalha) ou, a um nível do topo, a
+  # raiz da própria zona.
+  defp shell_back(nil, _breadcrumb, _zona), do: ~p"/"
+
+  defp shell_back(_folder_rkey, breadcrumb, zona) do
+    case parent_of(breadcrumb) do
+      %{rkey: parent_rkey} -> ~p"/documentos/pasta/#{parent_rkey}"
+      _no_parent -> zone_path(zona)
+    end
+  end
+
+  # Diálogo destrutivo (board "Overlay / Dialog remover"): o arquivo vai para
+  # a lixeira e some de vez depois de 30 dias; a pasta vai com o que tem
+  # dentro e volta como unidade.
+  defp confirm_title(%{kind: "publish-folder"}), do: gettext("Publicar pasta e conteúdo na praça?")
+
+  defp confirm_title(%{kind: "selection-delete", count: count}),
+    do: ngettext("Remover 1 item?", "Remover %{count} itens?", count, count: count)
+
+  defp confirm_title(%{name: name}), do: gettext("Remover %{name}?", name: name)
+  defp confirm_title(_confirm), do: nil
+
+  # A palavra do voltar é o nome do parente (regra 1.5, teto de 12 caracteres
+  # em back_label/1); sem parente, a saída padrão da casca ("Início").
+  defp shell_back_label(nil, _breadcrumb), do: nil
+
+  defp shell_back_label(_folder_rkey, breadcrumb) do
+    case parent_of(breadcrumb) do
+      %{nome: nome} -> back_label(nome)
+      _no_parent -> nil
+    end
+  end
+
+  # Selection is server state; the key is only meaningful after `owned_resource`
+  # has checked the current scope.
+  defp toggle_selection(selection, item) do
+    if MapSet.member?(selection, item), do: MapSet.delete(selection, item), else: MapSet.put(selection, item)
+  end
+
+  defp update_zone(socket, kind, action, id) do
+    scope = socket.assigns.current_scope
+
+    case apply_zona(scope, kind, action, id) do
+      {:ok, _} ->
+        socket |> put_flash(:info, zona_flash(action, :ok)) |> refresh()
+
+      {:error, _reason} ->
+        socket |> put_flash(:error, zona_flash(action, :error)) |> refresh()
+    end
+  end
+
+  defp upload_path(folder_id, return_to) do
+    params = [return_to: return_to] ++ if(folder_id, do: [pasta: folder_id], else: [])
+    ~p"/documentos/enviar?#{params}"
+  end
+
+  # A ação oferecida é sempre a oposta da zona atual (consentimento, RFC_003).
+  defp zona_action(:casa), do: :publicar
+  defp zona_action(:praca), do: :voltar
+
+  defp zona_flash("publicar", :ok), do: gettext("Publicado na praça.")
+  defp zona_flash("publicar", :error), do: gettext("Não foi possível publicar na praça.")
+  defp zona_flash("voltar", :ok), do: gettext("Tirado da praça.")
+  defp zona_flash("voltar", :error), do: gettext("Não foi possível tirar da praça.")
+
+  defp zone_label(:praca), do: gettext("Praça")
+  defp zone_label(:casa), do: gettext("Casa")
+
+  # A zona é a aba: nas rotas raiz é a live_action; dentro de pasta, a da
+  # pasta (spec 6.2).
+  defp zone_of(live_action, _folder) when live_action in [:praca, :casa], do: live_action
+  defp zone_of(_folder_action, folder), do: folder.zona
+
   @impl true
-  def handle_event("load-more", _params, socket) do
+  def handle_event("load_more", _params, socket) do
     %{next_cursor: offset, folder_rkey: folder_rkey, zona: zona} = socket.assigns
 
     if offset do
@@ -156,9 +513,9 @@ defmodule TainaWeb.FilesLive do
         {:ok, %{files: files, next_cursor: next_cursor}} ->
           {:noreply,
            socket
-           |> assign(:next_cursor, next_cursor)
-           |> assign(:item_count, socket.assigns.item_count + length(files))
            |> assign(:file_count, socket.assigns.file_count + length(files))
+           |> assign(:item_count, socket.assigns.item_count + length(files))
+           |> assign(:next_cursor, next_cursor)
            |> stream(:files, files)}
 
         {:error, _reason} ->
@@ -169,7 +526,7 @@ defmodule TainaWeb.FilesLive do
     end
   end
 
-  def handle_event("toggle-selection", %{"kind" => kind, "id" => id}, socket) when kind in ["file", "folder"] do
+  def handle_event("toggle_selection", %{"kind" => kind, "id" => id}, socket) when kind in ["file", "folder"] do
     case owned_resource(socket.assigns.current_scope, kind, id) do
       {:ok, _item} ->
         selection = toggle_selection(socket.assigns.selection, {kind, id})
@@ -180,11 +537,11 @@ defmodule TainaWeb.FilesLive do
     end
   end
 
-  def handle_event("clear-selection", _params, socket) do
+  def handle_event("clear_selection", _params, socket) do
     {:noreply, assign(socket, :selection, MapSet.new())}
   end
 
-  def handle_event("ask-delete-selected", _params, socket) do
+  def handle_event("ask_delete_selected", _params, socket) do
     count = MapSet.size(socket.assigns.selection)
 
     if count == 0 do
@@ -194,7 +551,7 @@ defmodule TainaWeb.FilesLive do
     end
   end
 
-  def handle_event("open-move-selected", _params, socket) do
+  def handle_event("open_move_selected", _params, socket) do
     case selected_items(socket.assigns.current_scope, socket.assigns.selection) do
       [] ->
         {:noreply, socket}
@@ -217,7 +574,7 @@ defmodule TainaWeb.FilesLive do
     end
   end
 
-  def handle_event("move-selected", %{"target" => target}, socket) do
+  def handle_event("move_selected", %{"target" => target}, socket) do
     target = normalize_target(target)
     {moved, failed} = move_selected_items(socket.assigns.current_scope, socket.assigns.selection, target)
 
@@ -226,32 +583,32 @@ defmodule TainaWeb.FilesLive do
       |> assign(:modal, nil)
       |> assign(:move_target, nil)
       |> assign(:selection, MapSet.new())
-      |> selection_flash(:move, moved, failed)
+      |> maybe_selection_flash(:move, moved, failed)
 
     {:noreply, refresh(socket)}
   end
 
-  def handle_event("confirm-delete-selected", _params, socket) do
+  def handle_event("confirm_delete_selected", _params, socket) do
     {deleted, failed} = delete_selected_items(socket.assigns.current_scope, socket.assigns.selection)
 
     socket =
       socket
       |> assign(:confirm, nil)
       |> assign(:selection, MapSet.new())
-      |> selection_flash(:delete, deleted, failed)
+      |> maybe_selection_flash(:delete, deleted, failed)
 
     {:noreply, refresh(socket)}
   end
 
-  def handle_event("open-modal", %{"modal" => modal}, socket) do
+  def handle_event("open_modal", %{"modal" => modal}, socket) do
     {:noreply, assign(socket, :modal, modal)}
   end
 
-  def handle_event("open-rename", %{"kind" => kind, "id" => id, "name" => name}, socket) do
+  def handle_event("open_rename", %{"kind" => kind, "id" => id, "name" => name}, socket) do
     {:noreply, socket |> assign(:modal, "rename") |> assign(:rename_target, %{kind: kind, id: id, name: name})}
   end
 
-  def handle_event("open-move", %{"kind" => kind, "id" => id, "name" => name}, socket) do
+  def handle_event("open_move", %{"kind" => kind, "id" => id, "name" => name}, socket) do
     # O seletor só oferece pastas SUAS: mover para pasta alheia o servidor
     # recusa, então a UI não pode oferecer.
     case Ybira.list_folders(socket.assigns.current_scope) do
@@ -271,24 +628,24 @@ defmodule TainaWeb.FilesLive do
     end
   end
 
-  def handle_event("close-modal", _params, socket) do
+  def handle_event("close_modal", _params, socket) do
     {:noreply,
      socket
+     |> assign(:confirm, nil)
      |> assign(:modal, nil)
-     |> assign(:rename_target, nil)
      |> assign(:move_target, nil)
      |> assign(:move_tree, [])
-     |> assign(:confirm, nil)}
+     |> assign(:rename_target, nil)}
   end
 
   # Soltar arquivos do sistema sobre a página: o destino é o upload da pasta
   # atual. O guard de preventDefault mora no hook DnD (JS); sem ele, o
   # navegador navega para fora do app quando o arrasto vem do sistema.
-  def handle_event("drop-files", _params, socket) do
+  def handle_event("drop_files", _params, socket) do
     {:noreply, push_navigate(socket, to: upload_path(socket.assigns.folder_rkey, socket.assigns.return_to))}
   end
 
-  def handle_event("create-folder", %{"folder" => %{"name" => name}}, socket) do
+  def handle_event("create_folder", %{"folder" => %{"name" => name}}, socket) do
     # A pasta nasce sempre na casa: o kernel não aceita zona na criação
     # (Ybira.create_folder só fala nome e pai). A praça é um passo seguinte,
     # no menu do item; a cópia do modal promete só o que o sistema faz.
@@ -304,7 +661,7 @@ defmodule TainaWeb.FilesLive do
     end
   end
 
-  def handle_event("rename-item", %{"folder" => %{"name" => name}}, socket) do
+  def handle_event("rename_item", %{"folder" => %{"name" => name}}, socket) do
     %{kind: kind, id: id} = socket.assigns.rename_target
 
     result =
@@ -322,6 +679,8 @@ defmodule TainaWeb.FilesLive do
 
   # Mover por seletor (botões do modal) ou por arrastar-e-soltar (hook DnD): os
   # dois caem aqui. `target` vazio = raiz.
+  # This event name is the contract with the JavaScript DnD hook in assets/js/hooks.js.
+  # credo:disable-for-next-line OptimumCredo.Check.Readability.EventNameSnakeCase
   def handle_event("move-item", %{"kind" => kind, "id" => id} = params, socket) do
     target = normalize_target(params["target"])
 
@@ -350,11 +709,11 @@ defmodule TainaWeb.FilesLive do
     end
   end
 
-  def handle_event("ask-delete", %{"kind" => kind, "id" => id, "name" => name}, socket) do
+  def handle_event("ask_delete", %{"kind" => kind, "id" => id, "name" => name}, socket) do
     {:noreply, assign(socket, :confirm, %{kind: kind, id: id, name: name})}
   end
 
-  def handle_event("confirm-delete", _params, %{assigns: %{confirm: %{kind: "folder", id: id}}} = socket) do
+  def handle_event("confirm_delete", _params, %{assigns: %{confirm: %{kind: "folder", id: id}}} = socket) do
     case Ybira.delete_folder(socket.assigns.current_scope, id) do
       {:ok, :deleted} ->
         {:noreply,
@@ -371,7 +730,7 @@ defmodule TainaWeb.FilesLive do
     end
   end
 
-  def handle_event("confirm-delete", _params, %{assigns: %{confirm: %{kind: "file", id: id}}} = socket) do
+  def handle_event("confirm_delete", _params, %{assigns: %{confirm: %{kind: "file", id: id}}} = socket) do
     case Ybira.delete_file(socket.assigns.current_scope, id) do
       {:ok, _file} ->
         {:noreply,
@@ -388,7 +747,7 @@ defmodule TainaWeb.FilesLive do
     end
   end
 
-  def handle_event("confirm-delete", _params, socket) do
+  def handle_event("confirm_delete", _params, socket) do
     {:noreply, assign(socket, :confirm, nil)}
   end
 
@@ -402,34 +761,12 @@ defmodule TainaWeb.FilesLive do
     end
   end
 
-  def handle_event("confirm-zone", _params, %{assigns: %{confirm: %{kind: "publish-folder", id: id}}} = socket) do
+  def handle_event("confirm_zone", _params, %{assigns: %{confirm: %{kind: "publish-folder", id: id}}} = socket) do
     socket = assign(socket, :confirm, nil)
     {:noreply, update_zone(socket, "folder", "publicar", id)}
   end
 
-  def handle_event("confirm-zone", _params, socket), do: {:noreply, socket}
-
-  defp update_zone(socket, kind, action, id) do
-    scope = socket.assigns.current_scope
-
-    case apply_zona(scope, kind, action, id) do
-      {:ok, _} ->
-        socket |> put_flash(:info, zona_flash(action, :ok)) |> refresh()
-
-      {:error, _reason} ->
-        socket |> put_flash(:error, zona_flash(action, :error)) |> refresh()
-    end
-  end
-
-  defp apply_zona(scope, "file", "publicar", id), do: Ybira.publicar_file(scope, id)
-  defp apply_zona(scope, "file", "voltar", id), do: Ybira.tirar_file_da_praca(scope, id)
-  defp apply_zona(scope, "folder", "publicar", id), do: Ybira.publicar_folder(scope, id)
-  defp apply_zona(scope, "folder", "voltar", id), do: Ybira.tirar_folder_da_praca(scope, id)
-
-  defp zona_flash("publicar", :ok), do: gettext("Publicado na praça.")
-  defp zona_flash("publicar", :error), do: gettext("Não foi possível publicar na praça.")
-  defp zona_flash("voltar", :ok), do: gettext("Tirado da praça.")
-  defp zona_flash("voltar", :error), do: gettext("Não foi possível tirar da praça.")
+  def handle_event("confirm_zone", _params, socket), do: {:noreply, socket}
 
   # O shell inscreve o morador nos eventos do Ava; esta tela não reage a eles
   # (a listagem se refaz no próximo handle_params), mas precisa ignorar o que
@@ -437,344 +774,12 @@ defmodule TainaWeb.FilesLive do
   @impl true
   def handle_info(_message, socket), do: {:noreply, socket}
 
-  # Recarrega a pasta atual reaproveitando o handle_params.
-  defp refresh(socket) do
-    to =
-      case socket.assigns.folder_rkey do
-        nil -> zone_path(socket.assigns.zona)
-        folder_rkey -> ~p"/documentos/pasta/#{folder_rkey}"
-      end
-
-    push_patch(socket, to: to)
-  end
-
   # --- core puro: dados -> dados ---
-
-  # "Pasta, 4 itens" (board): o agregado por pasta vem do contexto e vira o
-  # meta da linha. Falha do agregado não derruba a listagem: a linha fica só
-  # com "Pasta".
-  defp folder_counts(scope, folders) do
-    case Ybira.folder_item_counts(scope, Enum.map(folders, & &1.id)) do
-      {:ok, counts} -> counts
-      {:error, _reason} -> %{}
-    end
-  end
-
-  defp folder_row_meta(folder, counts) do
-    case Map.get(counts, folder.id) do
-      nil -> gettext("Pasta")
-      count -> ngettext("Pasta, %{count} item", "Pasta, %{count} itens", count, count: count)
-    end
-  end
-
-  # Migalha do desktop (spec 6.2): enraizada na zona ("Praça > Atas"), sem
-  # repetir "Início" nem "Documentos" (nota do board "Web / Ybira Casa"). Na
-  # raiz da zona, um elo só. No mobile o bloco inteiro some por CSS; quem
-  # carrega o parente é a palavra do voltar.
-  defp crumbs(zona, []) do
-    [%{label: zone_label(zona), current: true}]
-  end
-
-  defp crumbs(zona, chain) do
-    zone = %{label: zone_label(zona), navigate: zone_path(zona)}
-
-    links =
-      for folder <- Enum.drop(chain, -1) do
-        %{label: folder.nome, navigate: ~p"/documentos/pasta/#{folder.rkey}"}
-      end
-
-    current = chain |> List.last() |> then(&%{label: &1.nome, current: true})
-
-    [zone] ++ links ++ [current]
-  end
-
-  defp zone_label(:praca), do: gettext("Praça")
-  defp zone_label(:casa), do: gettext("Casa")
-
-  defp zone_path(:praca), do: ~p"/documentos/praca"
-  defp zone_path(:casa), do: ~p"/documentos"
-
-  # Voltar da casca: na raiz, o hub ("Início"); dentro de pasta, o parente
-  # (a penúltima elo da mesma cadeia da migalha) ou, a um nível do topo, a
-  # raiz da própria zona.
-  defp shell_back(nil, _breadcrumb, _zona), do: ~p"/"
-
-  defp shell_back(_folder_rkey, breadcrumb, zona) do
-    case parent_of(breadcrumb) do
-      %{rkey: parent_rkey} -> ~p"/documentos/pasta/#{parent_rkey}"
-      _no_parent -> zone_path(zona)
-    end
-  end
-
-  # A palavra do voltar é o nome do parente (regra 1.5, teto de 12 caracteres
-  # em back_label/1); sem parente, a saída padrão da casca ("Início").
-  defp shell_back_label(nil, _breadcrumb), do: nil
-
-  defp shell_back_label(_folder_rkey, breadcrumb) do
-    case parent_of(breadcrumb) do
-      %{nome: nome} -> back_label(nome)
-      _no_parent -> nil
-    end
-  end
-
-  defp parent_of([_current]), do: nil
-  defp parent_of(path), do: Enum.at(path, -2)
-
-  defp own?(scope, item), do: scope.ava.id == item.dono_id
-
-  defp owned_resource(scope, "file", rkey) do
-    case Ybira.get_file(scope, rkey) do
-      {:ok, file} -> if own?(scope, file), do: {:ok, file}, else: {:error, :not_owner}
-      {:error, _reason} = error -> error
-    end
-  end
-
-  defp owned_resource(scope, "folder", rkey) do
-    case Ybira.get_folder(scope, rkey) do
-      {:ok, folder} -> if own?(scope, folder), do: {:ok, folder}, else: {:error, :not_owner}
-      {:error, _reason} = error -> error
-    end
-  end
-
-  defp selected?(selection, kind, id), do: MapSet.member?(selection, {kind, id})
-
-  # Selection is server state; the key is only meaningful after `owned_resource`
-  # has checked the current scope.
-  defp toggle_selection(selection, item) do
-    if MapSet.member?(selection, item), do: MapSet.delete(selection, item), else: MapSet.put(selection, item)
-  end
-
-  defp selected_items(scope, selection) do
-    selection
-    |> Enum.sort()
-    |> Enum.flat_map(fn {kind, id} ->
-      case owned_resource(scope, kind, id) do
-        {:ok, item} -> [%{kind: kind, id: id, item: item}]
-        {:error, _reason} -> []
-      end
-    end)
-  end
-
-  defp selected_folder_ids(items) do
-    for %{kind: "folder", item: %Folder{id: id}} <- items, do: id
-  end
-
-  defp folder_exclusions(folders, root_ids) do
-    children = Enum.group_by(folders, & &1.parent_id)
-
-    Enum.reduce(root_ids, MapSet.new(), fn root_id, excluded ->
-      root_id
-      |> folder_subtree_ids(children)
-      |> Enum.reduce(excluded, &MapSet.put(&2, &1))
-    end)
-  end
-
-  defp excluded_move_folder_ids("folder", rkey, folders) do
-    case Enum.find(folders, &(&1.rkey == rkey)) do
-      nil -> MapSet.new()
-      folder -> folder_exclusions(folders, [folder.id])
-    end
-  end
-
-  defp excluded_move_folder_ids(_kind, _rkey, _folders), do: MapSet.new()
-
-  defp folder_subtree_ids(folder_id, children) do
-    descendants =
-      children
-      |> Map.get(folder_id, [])
-      |> Enum.flat_map(&folder_subtree_ids(&1.id, children))
-
-    [folder_id | descendants]
-  end
-
-  defp folder_tree(folders, excluded_ids) do
-    visible = Enum.reject(folders, &MapSet.member?(excluded_ids, &1.id))
-    children = Enum.group_by(visible, & &1.parent_id)
-    folder_tree_nodes(nil, children)
-  end
-
-  defp folder_tree_nodes(parent_id, children) do
-    children
-    |> Map.get(parent_id, [])
-    |> Enum.sort_by(&String.downcase(&1.nome))
-    |> Enum.map(fn folder ->
-      %{folder: folder, children: folder_tree_nodes(folder.id, children)}
-    end)
-  end
-
-  defp selection_name(1), do: gettext("1 item selecionado")
-  defp selection_name(count), do: gettext("%{count} itens selecionados", count: count)
-
-  defp move_selected_items(scope, selection, target) do
-    apply_selected_items(selection, fn
-      "file", id -> Ybira.move_file(scope, id, target)
-      "folder", id -> Ybira.move_folder(scope, id, target)
-    end)
-  end
-
-  defp delete_selected_items(scope, selection) do
-    apply_selected_items(selection, fn
-      "file", id -> Ybira.delete_file(scope, id)
-      "folder", id -> Ybira.delete_folder(scope, id)
-    end)
-  end
-
-  defp apply_selected_items(selection, operation) do
-    selection
-    |> Enum.sort()
-    |> Enum.reduce({0, 0}, fn {kind, id}, {succeeded, failed} ->
-      case operation.(kind, id) do
-        {:ok, _item} -> {succeeded + 1, failed}
-        {:error, _reason} -> {succeeded, failed + 1}
-      end
-    end)
-  end
-
-  defp selection_flash(socket, _action, 0, 0), do: socket
-
-  defp selection_flash(socket, action, succeeded, 0) do
-    message =
-      case action do
-        :move ->
-          ngettext("1 item movido.", "%{count} itens movidos.", succeeded, count: succeeded)
-
-        :delete ->
-          ngettext("1 item enviado para a lixeira.", "%{count} itens enviados para a lixeira.", succeeded,
-            count: succeeded
-          )
-      end
-
-    put_flash(socket, :info, message)
-  end
-
-  defp selection_flash(socket, action, succeeded, failed) do
-    success =
-      case action do
-        :move ->
-          ngettext("1 item movido", "%{count} itens movidos", succeeded, count: succeeded)
-
-        :delete ->
-          ngettext("1 item enviado para a lixeira", "%{count} itens enviados para a lixeira", succeeded, count: succeeded)
-      end
-
-    put_flash(
-      socket,
-      :error,
-      gettext("%{success}; %{count} não puderam ser concluídos.", success: success, count: failed)
-    )
-  end
-
-  # Só pasta SUA é alvo de soltar: o servidor recusa mover para pasta
-  # alheia, então a UI não destaca o que não vai funcionar. nil faz o
-  # atributo nem chegar ao HTML.
-  defp drop_folder(scope, folder) do
-    if own?(scope, folder), do: folder.rkey
-  end
-
-  # Criar pasta no início é sempre possível; dentro de pasta alheia, o
-  # servidor recusa, então o botão nem aparece (não oferecer o que rejeita).
-  defp can_create_here?(_scope, nil), do: true
-  defp can_create_here?(scope, folder), do: own?(scope, folder)
-
-  # Quais ações a linha oferece (spec 6.2): função pura do (item, escopo).
-  # Só quem é dono publica, move, renomeia e remove; para quem não é, nada
-  # daqui funciona no servidor. Pasta não baixa (não há download de pasta).
-  defp row_actions(%File{} = file, scope), do: own_actions(file, scope, [:abrir, :baixar])
-  defp row_actions(%Folder{} = folder, scope), do: own_actions(folder, scope, [:abrir])
-
-  defp own_actions(item, scope, base) do
-    if own?(scope, item) do
-      base ++ [zona_action(item.zona), :mover, :renomear, :remover]
-    else
-      base
-    end
-  end
-
-  # A ação oferecida é sempre a oposta da zona atual (consentimento, RFC_003).
-  defp zona_action(:casa), do: :publicar
-  defp zona_action(:praca), do: :voltar
-
-  defp menu_title("file"), do: gettext("Ações do arquivo")
-  defp menu_title("folder"), do: gettext("Ações da pasta")
-
-  defp item_path("file", rkey), do: ~p"/documentos/#{rkey}"
-  defp item_path("folder", rkey), do: ~p"/documentos/pasta/#{rkey}"
-
-  defp normalize_target(target) when target in [nil, ""], do: nil
-  defp normalize_target(target), do: target
-
-  defp move_command(%{kind: "selection"}, target), do: JS.push("move-selected", value: %{target: target || ""})
-
-  defp move_command(%{kind: kind, id: id}, target),
-    do: JS.push("move-item", value: %{kind: kind, id: id, target: target || ""})
-
-  defp upload_path(folder_id, return_to) do
-    params = [return_to: return_to] ++ if(folder_id, do: [pasta: folder_id], else: [])
-    ~p"/documentos/enviar?#{params}"
-  end
-
-  # Meta da linha (boards): "PDF, 1,2 MB, só você" na casa; na praça quem
-  # enviou, "enviado por Maria" (ou "enviado por você").
-  defp file_meta(file, names, ava_id) do
-    [base_meta(file), ownership_or_sender(file, names, ava_id)]
-    |> Enum.reject(&is_nil/1)
-    |> Enum.join(", ")
-  end
-
-  defp ownership_or_sender(%{zona: :casa, dono_id: dono_id}, _names, dono_id), do: gettext("só você")
-  defp ownership_or_sender(%{dono_id: dono_id}, _names, dono_id), do: gettext("enviado por você")
-
-  defp ownership_or_sender(file, names, _ava_id) do
-    case Map.get(names, file.dono_id) do
-      nil -> nil
-      name -> gettext("enviado por %{name}", name: name)
-    end
-  end
-
-  defp base_meta(file), do: "#{file_kind(file.mime)}, #{format_bytes(file.tamanho)}"
 
   # O quadradinho da linha: foto leva o acento do Jaci, vídeo o do vídeo, o
   # resto o documento (o mesmo mapa do hub).
-  # "3 arquivos, atualizados ontem" (board pasta): a contagem de arquivos da
-  # listagem corrente e o dia relativo da pasta no fuso da comunidade.
-  defp folder_meta(file_count, updated_at) do
-    ngettext("1 arquivo, atualizado %{when}", "%{count} arquivos, atualizados %{when}", file_count,
-      when: relative_time(updated_at)
-    )
-  end
-
-  # O estado vazio diz a verdade sobre onde a pessoa está (boards "vazio"):
-  # na raiz, a zona fala; dentro de pasta, a pasta fala. E na casa alheia a
-  # cópia para de fingir que a pasta é sua.
-  defp empty_copy(:praca, nil, _scope),
-    do:
-      {gettext("A praça está vazia"),
-       gettext("Quando alguém publicar um arquivo na praça, ele aparece aqui para toda a comunidade.")}
-
-  defp empty_copy(:praca, _folder, _scope),
-    do: {gettext("Nada na praça desta pasta"), gettext("O que esta pasta guardar de comum aparece aqui.")}
-
-  defp empty_copy(:casa, nil, _scope),
-    do: {gettext("Sua casa está vazia"), gettext("Envie um arquivo. Ele fica só com você até você publicar na praça.")}
-
-  defp empty_copy(:casa, folder, scope) do
-    if own?(scope, folder) do
-      {gettext("Nada nesta pasta"), gettext("Envie um arquivo. Ele fica só com você até você publicar na praça.")}
-    else
-      {gettext("Nada para você nesta pasta"), gettext("Só aparece o que a pessoa deixar você ver.")}
-    end
-  end
-
-  # Diálogo destrutivo (board "Overlay / Dialog remover"): o arquivo vai para
-  # a lixeira e some de vez depois de 30 dias; a pasta vai com o que tem
-  # dentro e volta como unidade.
-  defp confirm_title(%{kind: "publish-folder"}), do: gettext("Publicar pasta e conteúdo na praça?")
-
-  defp confirm_title(%{kind: "selection-delete", count: count}),
-    do: ngettext("Remover 1 item?", "Remover %{count} itens?", count, count: count)
-
-  defp confirm_title(%{name: name}), do: gettext("Remover %{name}?", name: name)
-  defp confirm_title(_confirm), do: nil
+  defp zone_path(:praca), do: ~p"/documentos/praca"
+  defp zone_path(:casa), do: ~p"/documentos"
 
   defp confirm_body(%{kind: "publish-folder"}),
     do: gettext("Os arquivos e as pastas dentro dela também ficarão visíveis para toda a comunidade.")
@@ -792,9 +797,9 @@ defmodule TainaWeb.FilesLive do
   defp confirm_kind(%{kind: "publish-folder"}), do: "confirm"
   defp confirm_kind(_confirm), do: "destructive"
 
-  defp confirm_event(%{kind: "publish-folder"}), do: "confirm-zone"
-  defp confirm_event(%{kind: "selection-delete"}), do: "confirm-delete-selected"
-  defp confirm_event(_confirm), do: "confirm-delete"
+  defp confirm_event(%{kind: "publish-folder"}), do: "confirm_zone"
+  defp confirm_event(%{kind: "selection-delete"}), do: "confirm_delete_selected"
+  defp confirm_event(_confirm), do: "confirm_delete"
 
   defp confirm_label(%{kind: "publish-folder"}), do: gettext("Publicar tudo")
   defp confirm_label(_confirm), do: nil
@@ -816,7 +821,7 @@ defmodule TainaWeb.FilesLive do
             :if={can_create_here?(@current_scope, @folder)}
             name="folder-plus"
             label={gettext("Nova pasta")}
-            phx-click="open-modal"
+            phx-click="open_modal"
             phx-value-modal="new-folder"
           />
           <.button kind="primary" size="md" class="hide-mobile" navigate={upload_path(@folder_rkey, @return_to)}>
@@ -860,9 +865,9 @@ defmodule TainaWeb.FilesLive do
       <div :if={MapSet.size(@selection) > 0} id="files-selection-toolbar" class="selection-toolbar row between mb-4">
         <span class="selection-toolbar__count">{selection_name(MapSet.size(@selection))}</span>
         <div class="row gap-2">
-          <.button kind="secondary" size="sm" phx-click="open-move-selected">{gettext("Mover")}</.button>
-          <.button kind="danger" size="sm" phx-click="ask-delete-selected">{gettext("Remover")}</.button>
-          <.button kind="ghost" size="sm" phx-click="clear-selection">{gettext("Cancelar")}</.button>
+          <.button kind="secondary" size="sm" phx-click="open_move_selected">{gettext("Mover")}</.button>
+          <.button kind="danger" size="sm" phx-click="ask_delete_selected">{gettext("Remover")}</.button>
+          <.button kind="ghost" size="sm" phx-click="clear_selection">{gettext("Cancelar")}</.button>
         </div>
       </div>
 
@@ -888,7 +893,7 @@ defmodule TainaWeb.FilesLive do
                     class="selection-checkbox"
                     checked={selected?(@selection, "folder", folder.rkey)}
                     aria-label={gettext("Selecionar %{name}", name: folder.nome)}
-                    phx-click="toggle-selection"
+                    phx-click="toggle_selection"
                     phx-value-kind="folder"
                     phx-value-id={folder.rkey}
                   />
@@ -929,7 +934,7 @@ defmodule TainaWeb.FilesLive do
                     class="selection-checkbox"
                     checked={selected?(@selection, "file", file.rkey)}
                     aria-label={gettext("Selecionar %{name}", name: file.nome)}
-                    phx-click="toggle-selection"
+                    phx-click="toggle_selection"
                     phx-value-kind="file"
                     phx-value-id={file.rkey}
                   />
@@ -950,7 +955,7 @@ defmodule TainaWeb.FilesLive do
         </ul>
       </div>
 
-      <div :if={@next_cursor} id="load-more" phx-viewport-bottom="load-more" class="list-row" aria-hidden="true">
+      <div :if={@next_cursor} id="load-more" phx-viewport-bottom="load_more" class="list-row" aria-hidden="true">
         <span class="service-square service-square--neutral skeleton"></span>
         <span class="skeleton flex-1" style="height: var(--space-4);"></span>
       </div>
@@ -965,9 +970,9 @@ defmodule TainaWeb.FilesLive do
         </:action>
       </.empty_state>
 
-      <.dialog id="new-folder-modal" show={@modal == "new-folder"} on_cancel={JS.push("close-modal")}>
+      <.dialog id="new-folder-modal" show={@modal == "new-folder"} on_cancel={JS.push("close_modal")}>
         <h2 id="new-folder-modal-title" class="type-h3 mb-4">{gettext("Nova pasta")}</h2>
-        <form id="create-folder-form" phx-submit="create-folder" class="col gap-4">
+        <form id="create-folder-form" phx-submit="create_folder" phx-auto-recover="ignore" class="col gap-4">
           <.field
             label={gettext("Nome da pasta")}
             name="folder[name]"
@@ -980,7 +985,7 @@ defmodule TainaWeb.FilesLive do
             {gettext("A pasta nasce na sua casa. Para todos verem, publique na praça depois.")}
           </p>
           <div class="row gap-3">
-            <.button kind="secondary" size="md" class="flex-1" phx-click="close-modal">
+            <.button kind="secondary" size="md" class="flex-1" phx-click="close_modal">
               {gettext("Cancelar")}
             </.button>
             <.button type="submit" kind="primary" size="md" class="flex-1">{gettext("Criar")}</.button>
@@ -988,9 +993,9 @@ defmodule TainaWeb.FilesLive do
         </form>
       </.dialog>
 
-      <.dialog id="rename-modal" show={@modal == "rename"} on_cancel={JS.push("close-modal")}>
+      <.dialog id="rename-modal" show={@modal == "rename"} on_cancel={JS.push("close_modal")}>
         <h2 id="rename-modal-title" class="type-h3 mb-4">{gettext("Renomear")}</h2>
-        <form id="rename-form" :if={@rename_target} phx-submit="rename-item" class="col gap-4">
+        <form id="rename-form" :if={@rename_target} phx-submit="rename_item" phx-auto-recover="ignore" class="col gap-4">
           <.field
             label={gettext("Novo nome")}
             name="folder[name]"
@@ -1000,7 +1005,7 @@ defmodule TainaWeb.FilesLive do
             autofocus
           />
           <div class="row gap-3">
-            <.button kind="secondary" size="md" class="flex-1" phx-click="close-modal">
+            <.button kind="secondary" size="md" class="flex-1" phx-click="close_modal">
               {gettext("Cancelar")}
             </.button>
             <.button type="submit" kind="primary" size="md" class="flex-1">{gettext("Renomear")}</.button>
@@ -1008,7 +1013,7 @@ defmodule TainaWeb.FilesLive do
         </form>
       </.dialog>
 
-      <.dialog id="move-modal" show={@modal == "move"} on_cancel={JS.push("close-modal")}>
+      <.dialog id="move-modal" show={@modal == "move"} on_cancel={JS.push("close_modal")}>
         <h2 id="move-modal-title" class="type-h3 mb-1">{gettext("Mover para...")}</h2>
         <p :if={@move_target} class="type-body-sm text-muted mb-4">{@move_target.name}</p>
         <ul :if={@move_target} class="list move-tree__destinations">
@@ -1026,7 +1031,7 @@ defmodule TainaWeb.FilesLive do
             <.move_folder_tree nodes={@move_tree} move_target={@move_target} />
           </li>
         </ul>
-        <.button kind="secondary" size="md" class="w-full mt-4" phx-click="close-modal">
+        <.button kind="secondary" size="md" class="w-full mt-4" phx-click="close_modal">
           {gettext("Cancelar")}
         </.button>
       </.dialog>
@@ -1039,7 +1044,7 @@ defmodule TainaWeb.FilesLive do
         body={confirm_body(@confirm)}
         confirm_label={confirm_label(@confirm)}
         on_confirm={confirm_event(@confirm)}
-        on_cancel={JS.push("close-modal")}
+        on_cancel={JS.push("close_modal")}
       />
     </Layouts.service>
     """
@@ -1088,14 +1093,14 @@ defmodule TainaWeb.FilesLive do
       <:item
         :if={:mover in @actions}
         icon="move"
-        click={JS.push("open-move", value: %{kind: @item_kind, id: @id, name: @name})}
+        click={JS.push("open_move", value: %{kind: @item_kind, id: @id, name: @name})}
       >
         {gettext("Mover")}
       </:item>
       <:item
         :if={:renomear in @actions}
         icon="pencil"
-        click={JS.push("open-rename", value: %{kind: @item_kind, id: @id, name: @name})}
+        click={JS.push("open_rename", value: %{kind: @item_kind, id: @id, name: @name})}
       >
         {gettext("Renomear")}
       </:item>
@@ -1103,7 +1108,7 @@ defmodule TainaWeb.FilesLive do
         :if={:remover in @actions}
         icon="trash"
         kind="danger"
-        click={JS.push("ask-delete", value: %{kind: @item_kind, id: @id, name: @name})}
+        click={JS.push("ask_delete", value: %{kind: @item_kind, id: @id, name: @name})}
       >
         {gettext("Remover")}
       </:item>

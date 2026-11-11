@@ -126,9 +126,9 @@ defmodule TainaWeb.UI.FeedbackTest do
     assert html =~ "Não conseguimos falar com a nuvem agora."
     assert html =~ "Tentar de novo"
     assert html =~ "button--secondary"
-    assert html =~ ~s(phx-click="retry")
+    assert html =~ ~S(phx-click="retry")
     # ícone de alerta (triângulo do Penpot): nunca só cor
-    assert html =~ ~s(d="M12,2L22,22L2,22Z")
+    assert html =~ ~S(d="M12,2L22,22L2,22Z")
   end
 
   test "error_card sem body: só título e ação" do
@@ -148,7 +148,7 @@ defmodule TainaWeb.UI.FeedbackTest do
     html = error_card_html(title: "Este convite não é mais válido.", retry_event: "voltar", contact_event: "contato")
 
     assert html =~ "Falar com quem cuida"
-    assert html =~ ~s(phx-click="contato")
+    assert html =~ ~S(phx-click="contato")
     assert html =~ "button--ghost"
   end
 
@@ -168,7 +168,7 @@ defmodule TainaWeb.UI.FeedbackTest do
       )
 
     assert html =~ "Voltar"
-    assert html =~ ~s(d="m15 18-6-6 6-6")
+    assert html =~ ~S(d="m15 18-6-6 6-6")
     refute html =~ "Tentar de novo"
   end
 
@@ -201,7 +201,7 @@ defmodule TainaWeb.UI.FeedbackTest do
   test "skeleton uso legado (class): bloco solto, igual de antes" do
     html = skeleton_html(class: "flex-1")
 
-    assert html =~ ~s(class="skeleton flex-1")
+    assert html =~ ~S(class="skeleton flex-1")
     refute html =~ "skeleton--"
   end
 

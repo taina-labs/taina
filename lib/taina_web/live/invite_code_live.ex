@@ -24,10 +24,10 @@ defmodule TainaWeb.InviteCodeLive do
 
     {:ok,
      socket
-     |> assign(:page_title, gettext("Convite"))
-     |> assign(:community_host, uri && uri.host)
      |> assign(:code, nil)
-     |> assign(:code_error, nil)}
+     |> assign(:code_error, nil)
+     |> assign(:community_host, uri && uri.host)
+     |> assign(:page_title, gettext("Convite"))}
   end
 
   # O parser decide: link desta comunidade (ou só o código) navega para o
@@ -70,7 +70,7 @@ defmodule TainaWeb.InviteCodeLive do
 
       <.connection_notice :if={@secure_connection? == false} />
 
-      <form id="invite-code-form" phx-submit="continue" class="col gap-4">
+      <form id="invite-code-form" phx-submit="continue" phx-auto-recover="ignore" class="col gap-4">
         <.field
           label={gettext("Link ou código do convite")}
           name="code"

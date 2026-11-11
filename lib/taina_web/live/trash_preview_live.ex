@@ -17,12 +17,12 @@ defmodule TainaWeb.TrashPreviewLive do
       {:ok, file} ->
         {:ok,
          socket
-         |> assign(:page_title, gettext("Documentos"))
          |> assign(:file, file)
+         |> assign(:page_title, gettext("Documentos"))
          |> assign(:photo_metadata, load_photo_metadata(scope, file))
+         |> assign(:show_purge_confirm, false)
          |> assign(:text_preview, load_text_preview(file))
-         |> assign(:video_preview_unavailable, false)
-         |> assign(:show_purge_confirm, false)}
+         |> assign(:video_preview_unavailable, false)}
 
       {:error, :not_found} ->
         {:ok,
@@ -52,14 +52,16 @@ defmodule TainaWeb.TrashPreviewLive do
     end
   end
 
+  # This event name is the contract with the JavaScript video fallback hook.
+  # credo:disable-for-next-line OptimumCredo.Check.Readability.EventNameSnakeCase
   def handle_event("video-preview-unavailable", _params, socket) do
     {:noreply, assign(socket, :video_preview_unavailable, true)}
   end
 
-  def handle_event("ask-purge", _params, socket), do: {:noreply, assign(socket, :show_purge_confirm, true)}
-  def handle_event("close-purge", _params, socket), do: {:noreply, assign(socket, :show_purge_confirm, false)}
+  def handle_event("ask_purge", _params, socket), do: {:noreply, assign(socket, :show_purge_confirm, true)}
+  def handle_event("close_purge", _params, socket), do: {:noreply, assign(socket, :show_purge_confirm, false)}
 
-  def handle_event("confirm-purge", _params, socket) do
+  def handle_event("confirm_purge", _params, socket) do
     case Ybira.purge_trash_file(socket.assigns.current_scope, socket.assigns.file.rkey) do
       {:ok, _file} ->
         {:noreply,
@@ -76,7 +78,9 @@ defmodule TainaWeb.TrashPreviewLive do
     end
   end
 
+  # The context contract is success-only and returns %{} when no rendition exists.
   defp load_photo_metadata(scope, file) do
+    # credo:disable-for-next-line
     {:ok, metadata} = Ybira.photo_metadata(scope, file)
     metadata
   end
@@ -118,7 +122,7 @@ defmodule TainaWeb.TrashPreviewLive do
             {gettext("Baixar")}
           </:item>
           <:item icon="restore" click={JS.push("restore")}>{gettext("Restaurar")}</:item>
-          <:item icon="trash" kind="danger" click={JS.push("ask-purge")}>
+          <:item icon="trash" kind="danger" click={JS.push("ask_purge")}>
             {gettext("Apagar definitivamente")}
           </:item>
         </.actions_menu>
@@ -149,8 +153,8 @@ defmodule TainaWeb.TrashPreviewLive do
         title={gettext("Apagar %{name} de vez?", name: @file.nome)}
         body={gettext("Este arquivo não poderá ser restaurado.")}
         confirm_label={gettext("Apagar definitivamente")}
-        on_confirm="confirm-purge"
-        on_cancel={JS.push("close-purge")}
+        on_confirm="confirm_purge"
+        on_cancel={JS.push("close_purge")}
       />
     </Layouts.page>
     """

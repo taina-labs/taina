@@ -99,9 +99,9 @@ defmodule TainaWeb.LayoutsTest do
     test "flash, skip-link e main#main-content na casca --hub" do
       html = hub_html()
 
-      assert html =~ ~s(class="shell shell--hub")
-      assert html =~ ~s(main class="shell shell--hub" id="main-content")
-      assert html =~ ~s(class="skip-link")
+      assert html =~ ~S(class="shell shell--hub")
+      assert html =~ ~S(main class="shell shell--hub" id="main-content")
+      assert html =~ ~S(class="skip-link")
       assert html =~ "Pular para o conteúdo"
       assert html =~ "conteudo do hub"
       # flash group entra sempre, mesmo sem mensagem
@@ -122,16 +122,16 @@ defmodule TainaWeb.LayoutsTest do
     test "service-header + service-tab-bar UMA vez (duas formas, o CSS troca em 768)" do
       html = service_html()
 
-      assert html =~ ~s(class="shell shell--service")
-      assert count(html, ~s(class="service-header")) == 1
+      assert html =~ ~S(class="shell shell--service")
+      assert count(html, ~S(class="service-header")) == 1
       assert count(html, "class=\"service-tab-bar\"") == 1
     end
 
     test "aba corrente leva aria-current, main#main-content e skip-link" do
       html = service_html()
 
-      assert html =~ ~s(id="main-content")
-      assert html =~ ~s(aria-current="page")
+      assert html =~ ~S(id="main-content")
+      assert html =~ ~S(aria-current="page")
       assert html =~ "Documentos"
       assert html =~ "Pular para o conteúdo"
     end
@@ -148,7 +148,7 @@ defmodule TainaWeb.LayoutsTest do
     test "jaci segue o mesmo casco" do
       html = service_html(service: "jaci", current: "timeline")
 
-      assert count(html, ~s(class="service-header")) == 1
+      assert count(html, ~S(class="service-header")) == 1
       assert count(html, "class=\"service-tab-bar\"") == 1
       assert html =~ "Linha do tempo"
     end
@@ -158,12 +158,12 @@ defmodule TainaWeb.LayoutsTest do
     test "page_header e nenhuma aba" do
       html = page_html()
 
-      assert html =~ ~s(class="shell shell--page")
-      assert html =~ ~s(class="page-header")
+      assert html =~ ~S(class="shell shell--page")
+      assert html =~ ~S(class="page-header")
       assert html =~ "Mural"
       refute html =~ "service-tab-bar"
       refute html =~ "service-header"
-      assert html =~ ~s(id="main-content")
+      assert html =~ ~S(id="main-content")
       assert html =~ "Pular para o conteúdo"
     end
 
@@ -176,8 +176,8 @@ defmodule TainaWeb.LayoutsTest do
     test "casca de auth: fundo solido e conteudo, sem cabecalho proprio" do
       html = auth_html()
 
-      assert html =~ ~s(class="shell shell--auth")
-      assert html =~ ~s(class="shell__content")
+      assert html =~ ~S(class="shell shell--auth")
+      assert html =~ ~S(class="shell__content")
       assert html =~ "conteudo"
       refute html =~ "page-header"
       refute html =~ "service-tab-bar"
@@ -202,7 +202,7 @@ defmodule TainaWeb.LayoutsTest do
     test "fullscreen: sem skip-link, sem cabecalho, sem abas" do
       html = viewer_html()
 
-      assert html =~ ~s(class="shell shell--viewer")
+      assert html =~ ~S(class="shell shell--viewer")
       refute html =~ "skip-link"
       refute html =~ "page-header"
       refute html =~ "service-header"

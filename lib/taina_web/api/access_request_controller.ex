@@ -12,20 +12,6 @@ defmodule TainaWeb.API.AccessRequestController do
   alias TainaWeb.API.Serializer
   alias Ypy.Wire
 
-  def index(conn, _params) do
-    case Maraca.pedidos_recebidos(conn.assigns[:current_scope]) do
-      {:ok, pedidos} -> json(conn, page(pedidos))
-      {:error, reason} -> Error.reply(conn, reason)
-    end
-  end
-
-  def mine(conn, _params) do
-    case Maraca.pedidos_enviados(conn.assigns[:current_scope]) do
-      {:ok, pedidos} -> json(conn, page(pedidos))
-      {:error, reason} -> Error.reply(conn, reason)
-    end
-  end
-
   def approve(conn, %{"id" => id}) do
     scope = conn.assigns[:current_scope]
 
@@ -44,6 +30,20 @@ defmodule TainaWeb.API.AccessRequestController do
          {:ok, decidido} <- Maraca.negar(scope, pedido) do
       json(conn, Serializer.pedido(decidido))
     else
+      {:error, reason} -> Error.reply(conn, reason)
+    end
+  end
+
+  def index(conn, _params) do
+    case Maraca.pedidos_recebidos(conn.assigns[:current_scope]) do
+      {:ok, pedidos} -> json(conn, page(pedidos))
+      {:error, reason} -> Error.reply(conn, reason)
+    end
+  end
+
+  def mine(conn, _params) do
+    case Maraca.pedidos_enviados(conn.assigns[:current_scope]) do
+      {:ok, pedidos} -> json(conn, page(pedidos))
       {:error, reason} -> Error.reply(conn, reason)
     end
   end

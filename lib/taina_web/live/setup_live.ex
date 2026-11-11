@@ -28,6 +28,7 @@ defmodule TainaWeb.SetupLive do
   alias TainaWeb.Layouts
 
   @gigabyte 1024 * 1024 * 1024
+  @username_key "username"
 
   @impl true
   def mount(_params, _session, socket) do
@@ -36,13 +37,11 @@ defmodule TainaWeb.SetupLive do
     else
       {:ok,
        socket
-       |> assign(:page_title, gettext("Primeiros passos"))
-       |> assign(:step, 1)
        |> assign(
          :data,
          %{
            "community_name" => "",
-           "username" => "",
+           @username_key => "",
            "display_name" => "",
            "password" => "",
            # O board traz "O disco inteiro (recomendado)" já escolhido.
@@ -50,10 +49,12 @@ defmodule TainaWeb.SetupLive do
            "quota_gb" => ""
          }
        )
+       |> assign(:disk_size_bytes, Disk.total_bytes())
        |> assign(:errors, %{})
-       |> assign(:trigger_submit, false)
        |> assign(:free_space, free_space())
-       |> assign(:disk_size_bytes, Disk.total_bytes())}
+       |> assign(:page_title, gettext("Primeiros passos"))
+       |> assign(:step, 1)
+       |> assign(:trigger_submit, false)}
     end
   end
 
@@ -70,7 +71,7 @@ defmodule TainaWeb.SetupLive do
 
   @impl true
   def handle_event("validate", %{"setup" => params}, socket) do
-    data = normalize_data(Map.merge(socket.assigns.data, params))
+    data = maybe_normalize_data(Map.merge(socket.assigns.data, params))
 
     errors =
       if socket.assigns.step == 3 and Enum.any?(Map.keys(params), &(&1 in ["storage_quota", "quota_gb"])) do
@@ -83,7 +84,7 @@ defmodule TainaWeb.SetupLive do
   end
 
   def handle_event("next", %{"setup" => params}, socket) do
-    data = normalize_data(Map.merge(socket.assigns.data, params))
+    data = maybe_normalize_data(Map.merge(socket.assigns.data, params))
 
     case validate_step(socket.assigns.step, data, socket.assigns.disk_size_bytes) do
       %{} = errors when map_size(errors) == 0 ->
@@ -104,7 +105,7 @@ defmodule TainaWeb.SetupLive do
   # SetupController: erro de formulário volta para o passo do problema em vez
   # de virar falha de changeset no servidor.
   def handle_event("final", %{"setup" => params}, socket) do
-    data = normalize_data(Map.merge(socket.assigns.data, params))
+    data = maybe_normalize_data(Map.merge(socket.assigns.data, params))
 
     case validate_all_steps(data, socket.assigns.disk_size_bytes) do
       %{} = errors when map_size(errors) == 0 ->
@@ -121,6 +122,123 @@ defmodule TainaWeb.SetupLive do
 
   def handle_event("final", _params, socket), do: {:noreply, socket}
 
+  defp display_name_or_username(%{"display_name" => <<_::binary-size(1), _::binary>> = name}), do: name
+
+  defp display_name_or_username(data), do: data[@username_key] || ""
+
+  # Primeiro passo que tem problema: para onde a validação final manda de volta.
+  defp error_step(errors) do
+    cond do
+      Map.has_key?(errors, "community_name") ->
+        1
+
+      Map.has_key?(errors, @username_key) or Map.has_key?(errors, "display_name") or
+          Map.has_key?(errors, "password") ->
+        2
+
+      true ->
+        3
+    end
+  end
+
+  defp exceeds_disk?(_quota_gb, nil), do: false
+
+  defp exceeds_disk?(quota_gb, disk_size_bytes) do
+    {gb, ""} = Integer.parse(quota_gb)
+    gb * @gigabyte > disk_size_bytes
+  end
+
+  # Espaço livre no volume do storage, melhor esforço (`df` POSIX). Falhou?
+  # O número simplesmente não aparece: é conforto, não requisito.
+  # O espaço livre do disco para o passo 1: a mesma leitura da interface
+  # (`TainaWeb.Disk`), sem parsing duplicado de `df`.
+  defp free_space do
+    case Disk.stats() do
+      {:ok, %{free_bytes: free}} -> free
+      {:error, _reason} -> nil
+    end
+  end
+
+  defp limite_text(%{"storage_quota" => "limite", "quota_gb" => gb}), do: "#{gb} GB"
+  defp limite_text(_data), do: gettext("o disco inteiro")
+
+  defp maybe_normalize_data(data) do
+    case data[@username_key] do
+      nil -> data
+      username -> Map.put(data, @username_key, username |> String.trim() |> String.downcase())
+    end
+  end
+
+  # Espelha os `validate_length` do servidor (`Tekoa`: nome 3 a 100; `Ava`:
+  # display_name até 80). Vazio não acusa aqui: presença (ou opcionalidade)
+  # cuida disso.
+  defp maybe_validate_length_in(errors, data, key, range, message) do
+    value = data[key] || ""
+
+    if String.trim(value) != "" and String.length(value) not in range,
+      do: Map.put(errors, key, message),
+      else: errors
+  end
+
+  defp maybe_validate_password(errors, data) do
+    if String.length(data["password"] || "") < 8,
+      do: Map.put(errors, "password", gettext("a senha precisa de pelo menos 8 caracteres")),
+      else: errors
+  end
+
+  defp maybe_validate_presence(errors, data, key, message) do
+    if String.trim(data[key] || "") == "", do: Map.put(errors, key, message), else: errors
+  end
+
+  # O username é chave de acesso (e semente do handle federado): normaliza no
+  # cliente como o servidor normaliza (`Ava.normalize_username/1`), antes de
+  # validar. "João" ou "ana clara" falham no campo, não no POST.
+  @username_format ~r/^[a-z0-9._-]+$/
+
+  # Espelha `Ava.maybe_validate_username/1` (3 a 50 caracteres, só minúsculas,
+  # números, ponto, hífen e _): o erro de formato aparece no campo aqui.
+  defp maybe_validate_username(errors, data) do
+    username = data[@username_key] || ""
+
+    cond do
+      username == "" ->
+        Map.put(errors, @username_key, gettext("escolha um nome de usuário"))
+
+      String.length(username) not in 3..50 ->
+        Map.put(errors, @username_key, gettext("de 3 a 50 caracteres"))
+
+      not Regex.match?(@username_format, username) ->
+        Map.put(errors, @username_key, gettext("Use só letras minúsculas, números, ponto, hífen ou _, sem espaços."))
+
+      true ->
+        errors
+    end
+  end
+
+  defp positive_integer?(value) do
+    case Integer.parse(value) do
+      {n, ""} -> n > 0
+      _other -> false
+    end
+  end
+
+  # Formulário mínimo só para o rádio do limite: `to_form` com o valor atual
+  # faz o `radio_card` refletir a escolha (o `used_input?` vê o param).
+  defp quota_form(data) do
+    Phoenix.Component.to_form(%{"storage_quota" => data["storage_quota"]}, as: :setup)
+  end
+
+  # Resumo do board ("Quilombo do Café, quem cuida é Ana. Disco interno,
+  # limite: o disco inteiro."): o nome de exibição quando existe, o username
+  # como reserva.
+  defp resumo(data) do
+    gettext("%{community}, quem cuida é %{quem}. Disco interno, limite: %{limite}.",
+      community: data["community_name"],
+      quem: display_name_or_username(data),
+      limite: limite_text(data)
+    )
+  end
+
   defp step_from_passo(passo, current) when is_binary(passo) do
     case Integer.parse(passo) do
       {step, ""} when step in 1..3 -> step
@@ -130,35 +248,12 @@ defmodule TainaWeb.SetupLive do
 
   defp step_from_passo(_passo, current), do: current
 
-  # O username é chave de acesso (e semente do handle federado): normaliza no
-  # cliente como o servidor normaliza (`Ava.normalize_username/1`), antes de
-  # validar. "João" ou "ana clara" falham no campo, não no POST.
-  @username_format ~r/^[a-z0-9._-]+$/
-
-  defp normalize_data(data) do
-    case data["username"] do
-      nil -> data
-      username -> Map.put(data, "username", username |> String.trim() |> String.downcase())
-    end
+  defp validate_all_steps(data, disk_size_bytes) do
+    1
+    |> validate_step(data, disk_size_bytes)
+    |> Map.merge(validate_step(2, data, disk_size_bytes))
+    |> Map.merge(validate_step(3, data, disk_size_bytes))
   end
-
-  defp validate_step(1, data, _disk_size_bytes) do
-    %{}
-    |> validate_presence(data, "community_name", gettext("dê um nome à comunidade"))
-    |> validate_length_in(data, "community_name", 3..100, gettext("de 3 a 100 caracteres"))
-  end
-
-  defp validate_step(2, data, _disk_size_bytes) do
-    %{}
-    |> validate_username(data)
-    |> validate_length_in(data, "display_name", 0..80, gettext("de no máximo 80 caracteres"))
-    |> validate_password(data)
-  end
-
-  # A escolha exige GB inteiro e positivo, sem ultrapassar o disco disponível.
-  defp validate_step(3, data, disk_size_bytes), do: validate_quota(data, disk_size_bytes)
-
-  defp validate_step(_step, _data, _disk_size_bytes), do: %{}
 
   defp validate_quota(%{"storage_quota" => "limite"} = data, disk_size_bytes) do
     quota_gb = data["quota_gb"] || ""
@@ -178,117 +273,23 @@ defmodule TainaWeb.SetupLive do
 
   defp validate_quota(_data, _disk_size_bytes), do: %{}
 
-  defp exceeds_disk?(_quota_gb, nil), do: false
-
-  defp exceeds_disk?(quota_gb, disk_size_bytes) do
-    {gb, ""} = Integer.parse(quota_gb)
-    gb * @gigabyte > disk_size_bytes
+  defp validate_step(1, data, _disk_size_bytes) do
+    %{}
+    |> maybe_validate_presence(data, "community_name", gettext("dê um nome à comunidade"))
+    |> maybe_validate_length_in(data, "community_name", 3..100, gettext("de 3 a 100 caracteres"))
   end
 
-  defp positive_integer?(value) do
-    case Integer.parse(value) do
-      {n, ""} -> n > 0
-      _other -> false
-    end
+  defp validate_step(2, data, _disk_size_bytes) do
+    %{}
+    |> maybe_validate_username(data)
+    |> maybe_validate_length_in(data, "display_name", 0..80, gettext("de no máximo 80 caracteres"))
+    |> maybe_validate_password(data)
   end
 
-  # Espelha `Ava.validate_username/1` (3 a 50 caracteres, só minúsculas,
-  # números, ponto, hífen e _): o erro de formato aparece no campo aqui.
-  defp validate_username(errors, data) do
-    username = data["username"] || ""
+  # A escolha exige GB inteiro e positivo, sem ultrapassar o disco disponível.
+  defp validate_step(3, data, disk_size_bytes), do: validate_quota(data, disk_size_bytes)
 
-    cond do
-      username == "" ->
-        Map.put(errors, "username", gettext("escolha um nome de usuário"))
-
-      String.length(username) not in 3..50 ->
-        Map.put(errors, "username", gettext("de 3 a 50 caracteres"))
-
-      not Regex.match?(@username_format, username) ->
-        Map.put(errors, "username", gettext("Use só letras minúsculas, números, ponto, hífen ou _, sem espaços."))
-
-      true ->
-        errors
-    end
-  end
-
-  # Espelha os `validate_length` do servidor (`Tekoa`: nome 3 a 100; `Ava`:
-  # display_name até 80). Vazio não acusa aqui: presença (ou opcionalidade)
-  # cuida disso.
-  defp validate_length_in(errors, data, key, range, message) do
-    value = data[key] || ""
-
-    if String.trim(value) != "" and String.length(value) not in range,
-      do: Map.put(errors, key, message),
-      else: errors
-  end
-
-  defp validate_all_steps(data, disk_size_bytes) do
-    1
-    |> validate_step(data, disk_size_bytes)
-    |> Map.merge(validate_step(2, data, disk_size_bytes))
-    |> Map.merge(validate_step(3, data, disk_size_bytes))
-  end
-
-  # Primeiro passo que tem problema: para onde a validação final manda de volta.
-  defp error_step(errors) do
-    cond do
-      Map.has_key?(errors, "community_name") ->
-        1
-
-      Map.has_key?(errors, "username") or Map.has_key?(errors, "display_name") or
-          Map.has_key?(errors, "password") ->
-        2
-
-      true ->
-        3
-    end
-  end
-
-  defp validate_presence(errors, data, key, message) do
-    if String.trim(data[key] || "") == "", do: Map.put(errors, key, message), else: errors
-  end
-
-  defp validate_password(errors, data) do
-    if String.length(data["password"] || "") < 8,
-      do: Map.put(errors, "password", gettext("a senha precisa de pelo menos 8 caracteres")),
-      else: errors
-  end
-
-  # Resumo do board ("Quilombo do Café, quem cuida é Ana. Disco interno,
-  # limite: o disco inteiro."): o nome de exibição quando existe, o username
-  # como reserva.
-  defp resumo(data) do
-    gettext("%{community}, quem cuida é %{quem}. Disco interno, limite: %{limite}.",
-      community: data["community_name"],
-      quem: display_name_or_username(data),
-      limite: limite_text(data)
-    )
-  end
-
-  defp display_name_or_username(%{"display_name" => name}) when is_binary(name) and name != "", do: name
-
-  defp display_name_or_username(data), do: data["username"] || ""
-
-  defp limite_text(%{"storage_quota" => "limite", "quota_gb" => gb}), do: "#{gb} GB"
-  defp limite_text(_data), do: gettext("o disco inteiro")
-
-  # Formulário mínimo só para o rádio do limite: `to_form` com o valor atual
-  # faz o `radio_card` refletir a escolha (o `used_input?` vê o param).
-  defp quota_form(data) do
-    Phoenix.Component.to_form(%{"storage_quota" => data["storage_quota"]}, as: :setup)
-  end
-
-  # Espaço livre no volume do storage, melhor esforço (`df` POSIX). Falhou?
-  # O número simplesmente não aparece: é conforto, não requisito.
-  # O espaço livre do disco para o passo 1: a mesma leitura da interface
-  # (`TainaWeb.Disk`), sem parsing duplicado de `df`.
-  defp free_space do
-    case Disk.stats() do
-      {:ok, %{free_bytes: free}} -> free
-      {:error, _reason} -> nil
-    end
-  end
+  defp validate_step(_step, _data, _disk_size_bytes), do: %{}
 
   @impl true
   def render(assigns) do

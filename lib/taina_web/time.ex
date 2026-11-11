@@ -13,6 +13,14 @@ defmodule TainaWeb.Time do
   """
 
   @default_utc_offset_hours -3
+  @utc_timezone "Etc/UTC"
+
+  @doc "Hora local no formato do relógio, HH:MM."
+  def local_clock(%DateTime{} = at), do: at |> shifted_local() |> Calendar.strftime("%H:%M")
+
+  def local_clock(%NaiveDateTime{} = at) do
+    at |> DateTime.from_naive!(@utc_timezone) |> local_clock()
+  end
 
   @doc """
   Data local da comunidade para um instante. Aceita `DateTime` e
@@ -21,31 +29,24 @@ defmodule TainaWeb.Time do
   def local_date(%DateTime{} = at), do: at |> shifted_local() |> DateTime.to_date()
 
   def local_date(%NaiveDateTime{} = at) do
-    at |> DateTime.from_naive!("Etc/UTC") |> local_date()
-  end
-
-  @doc "Hoje, na data local da comunidade."
-  def local_today, do: local_date(DateTime.utc_now())
-
-  @doc "Hora local no formato do relógio, HH:MM."
-  def local_clock(%DateTime{} = at), do: at |> shifted_local() |> Calendar.strftime("%H:%M")
-
-  def local_clock(%NaiveDateTime{} = at) do
-    at |> DateTime.from_naive!("Etc/UTC") |> local_clock()
+    at |> DateTime.from_naive!(@utc_timezone) |> local_date()
   end
 
   @doc "Hora local da comunidade como número de 0 a 23."
   def local_hour(%DateTime{} = at), do: at |> shifted_local() |> Map.fetch!(:hour)
 
   def local_hour(%NaiveDateTime{} = at) do
-    at |> DateTime.from_naive!("Etc/UTC") |> local_hour()
+    at |> DateTime.from_naive!(@utc_timezone) |> local_hour()
   end
 
-  defp shifted_local(at), do: DateTime.shift(at, second: offset_seconds())
-
-  defp offset_seconds, do: local_offset_hours() * 3600
+  @doc "Hoje, na data local da comunidade."
+  def local_today, do: local_date(DateTime.utc_now())
 
   defp local_offset_hours do
     Application.get_env(:taina, :community_utc_offset, @default_utc_offset_hours)
   end
+
+  defp offset_seconds, do: local_offset_hours() * 3600
+
+  defp shifted_local(at), do: DateTime.shift(at, second: offset_seconds())
 end

@@ -17,7 +17,8 @@ defmodule TainaWeb.API.PhotoController do
     scope = conn.assigns[:current_scope]
     opts = [limit: Query.limit(params), after_cursor: Query.cursor(params)]
 
-    with {:fresh, conn} <- Etag.handle(conn, Etag.photos(scope)),
+    with {:ok, etag} <- Etag.photos(scope),
+         {:fresh, conn} <- Etag.handle(conn, etag),
          {:ok, %{items: items, next_cursor: next}} <- Jaci.list_photos(scope, opts) do
       json(conn, Wire.page(Serializer.files(scope, items), next))
     else
@@ -30,7 +31,8 @@ defmodule TainaWeb.API.PhotoController do
     scope = conn.assigns[:current_scope]
     opts = [limit: Query.limit(params), after_cursor: Query.cursor(params)]
 
-    with {:fresh, conn} <- Etag.handle(conn, Etag.photos(scope)),
+    with {:ok, etag} <- Etag.photos(scope),
+         {:fresh, conn} <- Etag.handle(conn, etag),
          {:ok, %{groups: groups, next_cursor: next}} <- Jaci.timeline(scope, opts) do
       json(conn, Wire.page(timeline_json(scope, groups), next))
     else

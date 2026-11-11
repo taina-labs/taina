@@ -68,7 +68,7 @@ defmodule TainaWeb.API.BatchTest do
 
     assert [%{"rkey" => rkey_restaurado, "ok" => true, "file" => file}] = body["results"]
     assert rkey_restaurado == a["rkey"]
-    assert file["deleted_at"] == nil
+    assert is_nil(file["deleted_at"])
 
     assert scope |> Ybira.get_file(a["rkey"]) |> elem(0) == :ok
   end

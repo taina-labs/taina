@@ -27,7 +27,7 @@ defmodule TainaWeb.API.ManifestEndpointTest do
     assert item["rkey"] == file.rkey
     assert item["sha256"] == file.hash
     assert item["name"] == "doc.txt"
-    assert body["next_cursor"] == nil
+    assert is_nil(body["next_cursor"])
   end
 
   test "o ETag do conjunto inteiro: 304 quando o cliente ja tem", %{conn: conn, scope: scope} do
@@ -36,7 +36,7 @@ defmodule TainaWeb.API.ManifestEndpointTest do
     first = get(conn, ~p"/api/v1/files/manifest")
 
     etag = Enum.find_value(first.resp_headers, fn {k, v} -> k == "etag" && v end)
-    assert is_binary(etag)
+    assert is_binary(etag) and byte_size(etag) > 0
 
     response = conn |> put_req_header("if-none-match", etag) |> get(~p"/api/v1/files/manifest")
     assert response.status == 304
@@ -51,11 +51,11 @@ defmodule TainaWeb.API.ManifestEndpointTest do
     # Pagina cheia (2 de 3): o cursor aponta para a proxima.
     body = conn |> get(~p"/api/v1/files/manifest", limit: "2") |> json_response(200)
     assert Enum.count_until(body["items"], 3) == 2
-    assert is_binary(body["next_cursor"])
+    assert is_binary(body["next_cursor"]) and byte_size(body["next_cursor"]) > 0
 
     # Teto alto pega tudo numa pagina so: sem cursor.
     body = conn |> get(~p"/api/v1/files/manifest", limit: "5000") |> json_response(200)
     assert Enum.count_until(body["items"], 4) == 3
-    assert body["next_cursor"] == nil
+    assert is_nil(body["next_cursor"])
   end
 end

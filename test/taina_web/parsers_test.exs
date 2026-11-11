@@ -1,4 +1,5 @@
 defmodule TainaWeb.ParsersTest do
+  # The test changes global application upload configuration.
   use ExUnit.Case, async: false
 
   alias TainaWeb.Parsers

@@ -30,8 +30,8 @@ defmodule TainaWeb.StorageLive do
     {:ok,
      socket
      |> assign(:page_title, gettext("Armazenamento"))
-     |> assign(:show_quota_sheet, false)
      |> assign(:quota_choice, nil)
+     |> assign(:show_quota_sheet, false)
      |> assign(:zelador?, Maraca.zelador?(socket.assigns.current_scope.ava))
      |> load_stats()}
   end
@@ -49,26 +49,26 @@ defmodule TainaWeb.StorageLive do
 
   # A folha abre com a escolha que a cota atual indica (board zelador): com
   # limite é o "Definir um limite"; sem, o "Usar o disco inteiro".
-  def handle_event("open-quota-sheet", _params, socket) do
+  def handle_event("open_quota_sheet", _params, socket) do
     {:noreply,
      socket
      |> assign(:show_quota_sheet, true)
      |> assign(:quota_choice, quota_choice(socket.assigns.stats))}
   end
 
-  def handle_event("close-quota-sheet", _params, socket) do
+  def handle_event("close_quota_sheet", _params, socket) do
     {:noreply, assign(socket, :show_quota_sheet, false)}
   end
 
   # O rádio manda a escolha; o campo do limite só existe no "Definir um
   # limite" (o servidor decide, sem JS de visibilidade).
-  def handle_event("select-choice", %{"quota" => %{"choice" => choice}}, socket) do
+  def handle_event("select_choice", %{"quota" => %{"choice" => choice}}, socket) do
     {:noreply, assign(socket, :quota_choice, validate_choice(choice))}
   end
 
-  def handle_event("select-choice", _params, socket), do: {:noreply, socket}
+  def handle_event("select_choice", _params, socket), do: {:noreply, socket}
 
-  def handle_event("update-quota", %{"quota" => quota}, socket) do
+  def handle_event("update_quota", %{"quota" => quota}, socket) do
     case quota_bytes(quota["choice"], quota["gigabytes"], socket.assigns.disk_gb) do
       {:ok, bytes} ->
         case Maraca.update_tekoa_quota(socket.assigns.current_scope, bytes) do
@@ -91,8 +91,24 @@ defmodule TainaWeb.StorageLive do
     end
   end
 
+  # Quem cuida da máquina, pelo nome: só quem está ativo. Conta desativada
+  # desativada está, não é gente cuidando da caixa agora.
+  defp caretaker_names(members) do
+    for member <- members,
+        member.papel == :zelador and is_nil(member.deactivated_at),
+        do: person_name(member)
+  end
+
   # Carrega os fatos sem derrubar a tela: se o domínio falhar, o cartão de
   # erro com "Tentar de novo" assume o lugar (sem flash duplicado).
+  # O teto do campo: o disco inteiro em GB (o board diz "de 1 a 256").
+  defp disk_gb do
+    case Disk.total_bytes() do
+      total when is_integer(total) and total > 0 -> div(total, @gigabyte)
+      _other -> nil
+    end
+  end
+
   defp load_stats(socket) do
     scope = socket.assigns.current_scope
 
@@ -100,39 +116,23 @@ defmodule TainaWeb.StorageLive do
          {:ok, zones} <- Ybira.storage_stats_by_zone(scope),
          {:ok, members} <- Maraca.list_members(scope) do
       socket
-      |> assign(:stats, Map.put(stats, :disk_bytes, Disk.total_bytes()))
-      |> assign(:disk_gb, disk_gb())
-      |> assign(:zones, zones)
       |> assign(:caretakers, caretaker_names(members))
+      |> assign(:disk_gb, disk_gb())
       |> assign(:load_error, false)
+      |> assign(:stats, Map.put(stats, :disk_bytes, Disk.total_bytes()))
+      |> assign(:zones, zones)
     else
       _error ->
         socket
-        |> assign(:stats, nil)
-        |> assign(:zones, nil)
         |> assign(:caretakers, [])
         |> assign(:disk_gb, nil)
         |> assign(:load_error, true)
+        |> assign(:stats, nil)
+        |> assign(:zones, nil)
     end
   end
 
   # --- core puro: dados -> dados ---
-
-  # A escolha que a folha abre marcada: a cota de hoje é o "Definir um
-  # limite"; sem cota (disco inteiro), o "Usar o disco inteiro".
-  defp quota_choice(%{quota_bytes: quota}) when is_integer(quota), do: "limite"
-  defp quota_choice(_stats), do: "inteiro"
-
-  defp validate_choice("inteiro"), do: "inteiro"
-  defp validate_choice("limite"), do: "limite"
-  defp validate_choice(_other), do: nil
-
-  # A escolha do board vira bytes: "inteiro" remove o limite (cota `nil`, o
-  # changeset da Tekoa aceita); "limite" valida o campo, com o teto do disco
-  # quando a tela sabe o tamanho dele. Decisão pura.
-  defp quota_bytes("inteiro", _gigabytes, _disk_gb), do: {:ok, nil}
-  defp quota_bytes("limite", gigabytes, disk_gb), do: parse_gigabytes(gigabytes, disk_gb)
-  defp quota_bytes(_choice, _gigabytes, _disk_gb), do: :error
 
   defp parse_gigabytes(gigabytes, disk_gb) when is_binary(gigabytes) do
     case Integer.parse(gigabytes) do
@@ -148,19 +148,27 @@ defmodule TainaWeb.StorageLive do
 
   defp parse_gigabytes(_nil, _disk_gb), do: :error
 
+  # A escolha que a folha abre marcada: a cota de hoje é o "Definir um
+  # limite"; sem cota (disco inteiro), o "Usar o disco inteiro".
+  # A escolha do board vira bytes: "inteiro" remove o limite (cota `nil`, o
+  # changeset da Tekoa aceita); "limite" valida o campo, com o teto do disco
+  # quando a tela sabe o tamanho dele. Decisão pura.
+  defp quota_bytes("inteiro", _gigabytes, _disk_gb), do: {:ok, nil}
+  defp quota_bytes("limite", gigabytes, disk_gb), do: parse_gigabytes(gigabytes, disk_gb)
+  defp quota_bytes(_choice, _gigabytes, _disk_gb), do: :error
+
+  defp quota_choice(%{quota_bytes: quota}) when is_integer(quota), do: "limite"
+  defp quota_choice(_stats), do: "inteiro"
+
   defp quota_error(disk_gb) when is_integer(disk_gb) do
     gettext("Escreva um número inteiro de GB, de 1 a %{max}.", max: disk_gb)
   end
 
   defp quota_error(_disk_gb), do: gettext("Escreva um número inteiro de GB, sem vírgula.")
 
-  # O teto do campo: o disco inteiro em GB (o board diz "de 1 a 256").
-  defp disk_gb do
-    case Disk.total_bytes() do
-      total when is_integer(total) and total > 0 -> div(total, @gigabyte)
-      _other -> nil
-    end
-  end
+  # O valor do campo quando a folha abre: o limite de hoje, em GB.
+  defp quota_gb(%{quota_bytes: quota}) when is_integer(quota), do: max(div(quota, @gigabyte), 1)
+  defp quota_gb(_stats), do: nil
 
   defp quota_help(disk_gb) when is_integer(disk_gb) do
     gettext("Em GB, de 1 a %{max}.", max: disk_gb)
@@ -168,9 +176,9 @@ defmodule TainaWeb.StorageLive do
 
   defp quota_help(_disk_gb), do: gettext("Um número inteiro, em GB.")
 
-  # O valor do campo quando a folha abre: o limite de hoje, em GB.
-  defp quota_gb(%{quota_bytes: quota}) when is_integer(quota), do: max(div(quota, @gigabyte), 1)
-  defp quota_gb(_stats), do: nil
+  defp validate_choice("inteiro"), do: "inteiro"
+  defp validate_choice("limite"), do: "limite"
+  defp validate_choice(_other), do: nil
 
   # As linhas do "O que ocupa espaço" (board), na ordem: casas (a soma das
   # casas de cada morador, sem nomes), praça e lixeira. A soma fecha com o
@@ -181,14 +189,6 @@ defmodule TainaWeb.StorageLive do
       %{mark: "praca", title: gettext("Praça"), bytes: praca},
       %{mark: "lixeira", title: gettext("Lixeira"), bytes: lixeira}
     ]
-  end
-
-  # Quem cuida da máquina, pelo nome: só quem está ativo. Conta desativada
-  # desativada está, não é gente cuidando da caixa agora.
-  defp caretaker_names(members) do
-    members
-    |> Enum.filter(&(&1.papel == :zelador and is_nil(&1.deactivated_at)))
-    |> Enum.map(&person_name/1)
   end
 
   # --- shell imperativo: assign/render ---
@@ -251,7 +251,7 @@ defmodule TainaWeb.StorageLive do
         </ul>
       </section>
 
-      <.button :if={@zelador?} kind="secondary" class="w-full" phx-click="open-quota-sheet">
+      <.button :if={@zelador?} kind="secondary" class="w-full" phx-click="open_quota_sheet">
         {gettext("Mudar limite")}
       </.button>
 
@@ -266,11 +266,11 @@ defmodule TainaWeb.StorageLive do
       :if={@zelador?}
       id="quota-sheet"
       show={@show_quota_sheet}
-      on_cancel="close-quota-sheet"
+      on_cancel="close_quota_sheet"
       title={gettext("Limite de espaço")}
       kind="content"
     >
-      <form id="quota-form" phx-submit="update-quota" phx-change="select-choice" class="col gap-4">
+      <form id="quota-form" phx-submit="update_quota" phx-change="select_choice" class="col gap-4">
         <.radio_card
           field={@form[:choice]}
           value="inteiro"

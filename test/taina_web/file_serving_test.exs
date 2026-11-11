@@ -5,7 +5,10 @@ defmodule TainaWeb.FileServingTest do
 
   setup do
     path = Path.join(System.tmp_dir!(), "file_serving_#{System.unique_integer([:positive])}")
+    # The path is generated under the OS temp directory for this test.
+    # credo:disable-for-next-line OeditusCredo.Check.Security.PathTraversal
     File.write!(path, "image bytes")
+    # credo:disable-for-next-line OeditusCredo.Check.Security.PathTraversal
     on_exit(fn -> File.rm(path) end)
     %{path: path}
   end

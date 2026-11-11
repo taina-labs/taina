@@ -60,7 +60,7 @@ defmodule TainaWeb.TrashPreviewLiveTest do
     assert has_element?(lv, "#confirm-trash-purge .dialog__title", "Apagar apagado.txt de vez?")
 
     assert {:error, {:live_redirect, %{to: "/documentos/lixeira"}}} =
-             lv |> element("#confirm-trash-purge button[phx-click=\"confirm-purge\"]") |> render_click()
+             lv |> element("#confirm-trash-purge button[phx-click=\"confirm_purge\"]") |> render_click()
 
     assert {:error, :not_found} = Ybira.get_trashed_file(Scope.new(owner, tekoa), file.rkey)
   end

@@ -57,28 +57,19 @@ defmodule TainaWeb.HomeLive do
 
   # --- core puro: dados -> dados ---
 
-  # Uma leitura por bloco: `%{care:, community:, storage:, recent:}`, cada uma
-  # `{:ok, dados} | {:error, motivo}`. O bloco que falha não derruba os outros.
-  defp load_hub(scope) do
-    storage = Ybira.storage_stats(scope)
+  defp active_member?(%{activated_at: activated_at, deactivated_at: deactivated_at}),
+    do: not is_nil(activated_at) and is_nil(deactivated_at)
 
-    %{
-      care: load_care(scope),
-      community: load_community(scope, storage),
-      storage: storage,
-      recent: load_recent(scope)
-    }
-  end
+  # O CareLine só existe com pedido esperando; bloco que falhou não inventa um
+  # aviso que não sabe.
+  defp block_rows({:ok, rows}), do: rows
+  defp block_rows({:error, _reason}), do: nil
 
-  # "Carla pediu para abrir um arquivo da sua casa" (board `com pedido`).
-  # Só os pedidos recebidos pedem resposta; sem pedido, a linha não existe.
-  defp load_care(scope) do
-    case Maraca.pedidos_recebidos(scope) do
-      {:ok, []} -> {:ok, nil}
-      {:ok, [pedido | _] = pedidos} -> {:ok, care_text(pedido, length(pedidos))}
-      {:error, reason} -> {:error, reason}
-    end
-  end
+  defp block_value({:ok, value}), do: value
+  defp block_value({:error, _reason}), do: nil
+
+  defp care_line_text(%{care: {:ok, text}}), do: text
+  defp care_line_text(_hub), do: nil
 
   defp care_text(pedido, 1) do
     gettext("%{name} pediu para abrir %{what} da sua casa",
@@ -94,8 +85,39 @@ defmodule TainaWeb.HomeLive do
     )
   end
 
-  defp request_what("ypy.folder.v0"), do: gettext("uma pasta")
-  defp request_what(_tipo), do: gettext("um arquivo")
+  defp community_rows(members, events, storage, resource_names) do
+    actor_names = Map.new(members, &{&1.public_id, person_name(&1)})
+    names = %{actors: actor_names, resources: resource_names}
+    summary = Saude.summary_line(%{storage: storage, backup: Backup.last_backup()})
+
+    [
+      %{mark: "mural", title: gettext("Mural"), meta: mural_meta(events, names), path: ~p"/mural"},
+      %{mark: "saude", title: gettext("Saúde da comunidade"), meta: summary.line, path: ~p"/saude"},
+      %{mark: "moradores", title: gettext("Moradores"), meta: residents_meta(members), path: ~p"/moradores"}
+    ]
+  end
+
+  # A nuvem não respondeu em algum bloco? O cartão de erro do board cobre a
+  # falha; cada seção afetada mostra esqueleto (nunca um vazio mentiroso).
+  defp degraded?(hub) do
+    Enum.any?([hub.community, hub.storage, hub.recent], &match?({:error, _}, &1))
+  end
+
+  # A saudação segue o fuso configurado para a comunidade, nao o do sistema.
+  defp greeting(name) do
+    hour = TainaWeb.Time.local_hour(DateTime.utc_now())
+    gettext("%{period}, %{name}", period: period(hour), name: name)
+  end
+
+  # "Carla pediu para abrir um arquivo da sua casa" (board `com pedido`).
+  # Só os pedidos recebidos pedem resposta; sem pedido, a linha não existe.
+  defp load_care(scope) do
+    case Maraca.pedidos_recebidos(scope) do
+      {:ok, []} -> {:ok, nil}
+      {:ok, [pedido | _] = pedidos} -> {:ok, care_text(pedido, length(pedidos))}
+      {:error, reason} -> {:error, reason}
+    end
+  end
 
   # "Da comunidade": as três linhas cívicas do board, com meta viva. O bloco
   # inteiro depende da nuvem, então falha inteiro.
@@ -113,31 +135,23 @@ defmodule TainaWeb.HomeLive do
     end
   end
 
-  defp community_rows(members, events, storage, resource_names) do
-    actor_names = Map.new(members, &{&1.public_id, person_name(&1)})
-    names = %{actors: actor_names, resources: resource_names}
-    summary = Saude.summary_line(%{storage: storage, backup: Backup.last_backup()})
+  # Uma leitura por bloco: `%{care:, community:, storage:, recent:}`, cada uma
+  # `{:ok, dados} | {:error, motivo}`. O bloco que falha não derruba os outros.
+  defp load_hub(scope) do
+    storage = Ybira.storage_stats(scope)
 
-    [
-      %{
-        mark: "mural",
-        title: gettext("Mural"),
-        meta: mural_meta(events, names),
-        path: ~p"/mural"
-      },
-      %{
-        mark: "saude",
-        title: gettext("Saúde da comunidade"),
-        meta: summary.line,
-        path: ~p"/saude"
-      },
-      %{
-        mark: "moradores",
-        title: gettext("Moradores"),
-        meta: residents_meta(members),
-        path: ~p"/moradores"
-      }
-    ]
+    %{
+      care: load_care(scope),
+      community: load_community(scope, storage),
+      storage: storage,
+      recent: load_recent(scope)
+    }
+  end
+
+  defp load_recent(scope) do
+    with {:ok, files} <- Ybira.list_recent(scope, limit: @recent_limit) do
+      {:ok, Enum.map(files, &recent_row/1)}
+    end
   end
 
   # "Ana publicou um arquivo, hoje": a frase do último ato do mural, sem o
@@ -150,20 +164,15 @@ defmodule TainaWeb.HomeLive do
     sentence <> ", " <> relative_time(event.inserted_at)
   end
 
-  # Convites não aceitos e contas desativadas não são moradores da comunidade.
-  defp residents_meta(members) do
-    count = Enum.count(members, &active_member?/1)
+  defp period(hour) when hour in 5..11, do: gettext("Bom dia")
+  defp period(hour) when hour in 12..17, do: gettext("Boa tarde")
+  defp period(_hour), do: gettext("Boa noite")
 
-    ngettext("1 pessoa na comunidade", "%{count} pessoas na comunidade", count)
-  end
-
-  defp active_member?(%{activated_at: activated_at, deactivated_at: deactivated_at}),
-    do: not is_nil(activated_at) and is_nil(deactivated_at)
-
-  defp load_recent(scope) do
-    with {:ok, files} <- Ybira.list_recent(scope, limit: @recent_limit) do
-      {:ok, Enum.map(files, &recent_row/1)}
-    end
+  # "PDF, 2,4 MB, hoje" (spec 1.6: metadados separados por vírgula).
+  defp recent_meta(file) do
+    [file_kind(file.mime), format_bytes(file.tamanho), relative_time(file.inserted_at)]
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.join(", ")
   end
 
   # O quadradinho da linha: foto leva o acento do Jaci, vídeo o do vídeo, o
@@ -177,22 +186,15 @@ defmodule TainaWeb.HomeLive do
     }
   end
 
-  # "PDF, 2,4 MB, hoje" (spec 1.6: metadados separados por vírgula).
-  defp recent_meta(file) do
-    [file_kind(file.mime), format_bytes(file.tamanho), relative_time(file.inserted_at)]
-    |> Enum.reject(&(&1 == ""))
-    |> Enum.join(", ")
-  end
+  defp request_what("ypy.folder.v0"), do: gettext("uma pasta")
+  defp request_what(_tipo), do: gettext("um arquivo")
 
-  # A saudação segue o fuso configurado para a comunidade, nao o do sistema.
-  defp greeting(name) do
-    hour = TainaWeb.Time.local_hour(DateTime.utc_now())
-    gettext("%{period}, %{name}", period: period(hour), name: name)
-  end
+  # Convites não aceitos e contas desativadas não são moradores da comunidade.
+  defp residents_meta(members) do
+    count = Enum.count(members, &active_member?/1)
 
-  defp period(hour) when hour in 5..11, do: gettext("Bom dia")
-  defp period(hour) when hour in 12..17, do: gettext("Boa tarde")
-  defp period(_hour), do: gettext("Boa noite")
+    ngettext("1 pessoa na comunidade", "%{count} pessoas na comunidade", count)
+  end
 
   # --- shell imperativo: assign/render ---
 
@@ -216,12 +218,12 @@ defmodule TainaWeb.HomeLive do
   def hub_body(assigns) do
     assigns =
       assigns
-      |> assign(:greeting, greeting(person_name(assigns.scope.ava)))
       |> assign(:care_line_text, care_line_text(assigns.hub))
       |> assign(:community_rows, block_rows(assigns.hub.community))
-      |> assign(:storage_stats, block_value(assigns.hub.storage))
-      |> assign(:recent_rows, block_rows(assigns.hub.recent))
       |> assign(:degraded?, degraded?(assigns.hub))
+      |> assign(:greeting, greeting(person_name(assigns.scope.ava)))
+      |> assign(:recent_rows, block_rows(assigns.hub.recent))
+      |> assign(:storage_stats, block_value(assigns.hub.storage))
 
     ~H"""
     <div class="col gap-6">
@@ -318,22 +320,5 @@ defmodule TainaWeb.HomeLive do
       </section>
     </div>
     """
-  end
-
-  # O CareLine só existe com pedido esperando; bloco que falhou não inventa um
-  # aviso que não sabe.
-  defp care_line_text(%{care: {:ok, text}}), do: text
-  defp care_line_text(_hub), do: nil
-
-  defp block_rows({:ok, rows}), do: rows
-  defp block_rows({:error, _reason}), do: nil
-
-  defp block_value({:ok, value}), do: value
-  defp block_value({:error, _reason}), do: nil
-
-  # A nuvem não respondeu em algum bloco? O cartão de erro do board cobre a
-  # falha; cada seção afetada mostra esqueleto (nunca um vazio mentiroso).
-  defp degraded?(hub) do
-    Enum.any?([hub.community, hub.storage, hub.recent], &match?({:error, _}, &1))
   end
 end

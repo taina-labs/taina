@@ -1,4 +1,5 @@
 defmodule TainaWeb.HealthControllerTest do
+  # This smoke test queries the shared Repo directly through the health endpoint.
   use TainaWeb.ConnCase, async: false
 
   test "GET /health returns ok when the database responds", %{conn: conn} do

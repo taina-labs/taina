@@ -93,30 +93,30 @@ defmodule TainaWeb.UI.MediaTest do
   test "viewer: dialog fullscreen com ViewerNav, legenda e contador" do
     html = viewer_html()
 
-    assert html =~ ~s(class="viewer")
-    assert html =~ ~s(role="dialog")
-    assert html =~ ~s(aria-modal="true")
-    assert html =~ ~s(aria-label="Visualizador de fotos")
-    assert html =~ ~s(phx-hook="ViewerNav")
+    assert html =~ ~S(class="viewer")
+    assert html =~ ~S(role="dialog")
+    assert html =~ ~S(aria-modal="true")
+    assert html =~ ~S(aria-label="Visualizador de fotos")
+    assert html =~ ~S(phx-hook="ViewerNav")
     assert html =~ "trilha-da-praia.jpg"
     assert html =~ "04/10/2026"
     assert html =~ "2 de 2"
   end
 
   test "viewer: id do painel preservado" do
-    assert viewer_html() =~ ~s(id="viewer")
+    assert viewer_html() =~ ~S(id="viewer")
   end
 
   test "viewer: FECHAR no cabeçalho, sem barra de ações" do
     html = viewer_html()
 
-    assert html =~ ~s(aria-label="Fechar")
-    assert html =~ ~s(phx-click="close")
-    assert html =~ ~s(id="viewer-close")
+    assert html =~ ~S(aria-label="Fechar")
+    assert html =~ ~S(phx-click="close")
+    assert html =~ ~S(id="viewer-close")
 
     # o board não tem ações no visualizador: elas moram em /documentos/:id
     refute html =~ "viewer__actions"
-    refute html =~ ~s(id="viewer-copy-link")
+    refute html =~ ~S(id="viewer-copy-link")
   end
 
   test "viewer: legenda do board traz nome, data e zona" do
@@ -130,15 +130,15 @@ defmodule TainaWeb.UI.MediaTest do
     html = viewer_html()
 
     # 1_000 bytes cabem: troca entra
-    assert html =~ ~s(id="viewer-full-swap")
-    assert html =~ ~s(phx-hook="FullSwap")
-    assert html =~ ~s(src="/files/abc/thumbnail/md")
-    assert html =~ ~s(data-full="/files/abc")
+    assert html =~ ~S(id="viewer-full-swap")
+    assert html =~ ~S(phx-hook="FullSwap")
+    assert html =~ ~S(src="/files/abc/thumbnail/md")
+    assert html =~ ~S(data-full="/files/abc")
 
     grande = Map.put(@viewer_file, :tamanho, 30 * 1024 * 1024)
     html = viewer_html(file: grande)
 
-    assert html =~ ~s(src="/files/abc/thumbnail/md")
+    assert html =~ ~S(src="/files/abc/thumbnail/md")
   end
 
   test "viewer: vídeo troca img por video tag" do
@@ -194,7 +194,7 @@ defmodule TainaWeb.UI.MediaTest do
     assert html =~ "Não deu para enviar"
     assert html =~ "O espaço da comunidade acabou. Peça a quem cuida da nuvem para liberar."
     assert html =~ "Ver espaço"
-    assert html =~ ~s(href="/armazenamento")
+    assert html =~ ~S(href="/armazenamento")
     assert html =~ "dropzone--error-cota"
   end
 

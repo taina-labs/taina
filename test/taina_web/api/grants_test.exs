@@ -31,10 +31,10 @@ defmodule TainaWeb.API.GrantsTest do
       body = conn |> get(~p"/api/v1/grants") |> json_response(200)
 
       assert [item] = body["items"]
-      assert body["next_cursor"] == nil
+      assert is_nil(body["next_cursor"])
       assert item["dono"]["public_id"] == dono.public_id
       assert item["leitor"]["public_id"] == leitor.public_id
-      assert item["revogada_em"] == nil
+      assert is_nil(item["revogada_em"])
     end
 
     test "quem recebeu ve a ponta do leitor, com a dona", %{leitor_conn: leitor_conn, dono: dono, leitor: leitor} do
@@ -52,7 +52,7 @@ defmodule TainaWeb.API.GrantsTest do
 
       body = conn |> get(~p"/api/v1/grants") |> json_response(200)
       assert [%{"revogada_em" => revogada_em}] = body["items"]
-      assert is_binary(revogada_em)
+      assert byte_size(revogada_em) > 0
     end
 
     test "papel desconhecido cai na ponta da dona", %{conn: conn} do
@@ -75,7 +75,7 @@ defmodule TainaWeb.API.GrantsTest do
 
       primeira = conn |> get(~p"/api/v1/grants", limit: "2") |> json_response(200)
       assert Enum.count_until(primeira["items"], 3) == 2
-      assert is_binary(primeira["next_cursor"])
+      assert byte_size(primeira["next_cursor"]) > 0
 
       segunda =
         conn
@@ -83,7 +83,7 @@ defmodule TainaWeb.API.GrantsTest do
         |> json_response(200)
 
       assert Enum.count_until(segunda["items"], 2) == 1
-      assert segunda["next_cursor"] == nil
+      assert is_nil(segunda["next_cursor"])
 
       # as paginas nao se repetem nem se sobrepõem
       ids_primeira = Enum.map(primeira["items"], & &1["public_id"])
@@ -105,7 +105,7 @@ defmodule TainaWeb.API.GrantsTest do
       etag =
         Enum.find_value(first.resp_headers, fn {k, v} -> k == "etag" && v end)
 
-      assert is_binary(etag)
+      assert byte_size(etag) > 0
 
       response =
         conn
@@ -125,7 +125,7 @@ defmodule TainaWeb.API.GrantsTest do
 
       body = leitor_conn |> get(~p"/api/v1/grants", role: "reader") |> json_response(200)
       assert [%{"revogada_em" => revogada_em}] = body["items"]
-      assert is_binary(revogada_em)
+      assert byte_size(revogada_em) > 0
     end
 
     test "revogar de novo responde 409 invalid_status", %{conn: conn} do

@@ -2,7 +2,12 @@ defmodule TainaWeb.API.EtagTest do
   use TainaWeb.ConnCase, async: true
 
   import Plug.Conn
+  import Taina.Fixtures
 
+  alias Taina.Jaci.Photo
+  alias Taina.Repo
+  alias Taina.Scope
+  alias Taina.Ybira
   alias TainaWeb.API.Etag
 
   @moduletag capture_log: true
@@ -10,62 +15,55 @@ defmodule TainaWeb.API.EtagTest do
   test "o token leva a contagem e o unix do maior updated_at" do
     at = ~U[2026-10-20 12:30:00Z]
 
-    assert Etag.token(0, nil) == ~s(W/"0-0")
+    assert Etag.token(0, nil) == ~S(W/"0-0")
     assert Etag.token(3, at) == ~s(W/"3-#{DateTime.to_unix(at)}")
   end
 
   test "sem If-None-Match, a listagem segue com o ETag anotado" do
-    {:fresh, conn} = Etag.handle(build_conn(), ~s(W/"3-10"))
+    {:fresh, conn} = Etag.handle(build_conn(), ~S(W/"3-10"))
 
-    assert get_resp_header(conn, "etag") == [~s(W/"3-10")]
+    assert get_resp_header(conn, "etag") == [~S(W/"3-10")]
   end
 
   test "If-None-Match igual responde 304 sem corpo, com o ETag na resposta" do
-    conn = put_req_header(build_conn(), "if-none-match", ~s(W/"3-10"))
+    conn = put_req_header(build_conn(), "if-none-match", ~S(W/"3-10"))
 
-    {:not_modified, conn} = Etag.handle(conn, ~s(W/"3-10"))
+    {:not_modified, conn} = Etag.handle(conn, ~S(W/"3-10"))
 
     assert conn.status == 304
     assert conn.resp_body == ""
-    assert get_resp_header(conn, "etag") == [~s(W/"3-10")]
+    assert get_resp_header(conn, "etag") == [~S(W/"3-10")]
   end
 
   test "ETag diferente nao bate: a listagem segue" do
-    conn = put_req_header(build_conn(), "if-none-match", ~s(W/"9-99"))
+    conn = put_req_header(build_conn(), "if-none-match", ~S(W/"9-99"))
 
-    assert {:fresh, _conn} = Etag.handle(conn, ~s(W/"3-10"))
+    assert {:fresh, _conn} = Etag.handle(conn, ~S(W/"3-10"))
   end
 
   test "`*` casa com qualquer representacao existente: 304" do
     conn = put_req_header(build_conn(), "if-none-match", "*")
 
-    {:not_modified, conn} = Etag.handle(conn, ~s(W/"3-10"))
+    {:not_modified, conn} = Etag.handle(conn, ~S(W/"3-10"))
 
     assert conn.status == 304
   end
 
   test "comparacao fraca: o token sem o `W/` da frente tambem bate" do
-    conn = put_req_header(build_conn(), "if-none-match", ~s("3-10"))
+    conn = put_req_header(build_conn(), "if-none-match", ~S("3-10"))
 
-    {:not_modified, conn} = Etag.handle(conn, ~s(W/"3-10"))
+    {:not_modified, conn} = Etag.handle(conn, ~S(W/"3-10"))
 
     assert conn.status == 304
   end
 
   test "header repetido e com varios tokens: qualquer um que bata faz 304" do
-    conn = put_req_header(build_conn(), "if-none-match", ~s(W/"1-1", W/"3-10"))
+    conn = put_req_header(build_conn(), "if-none-match", ~S(W/"1-1", W/"3-10"))
 
-    {:not_modified, _conn} = Etag.handle(conn, ~s(W/"3-10"))
+    {:not_modified, _conn} = Etag.handle(conn, ~S(W/"3-10"))
   end
 
   describe "agregados (precisa de banco)" do
-    import Taina.Fixtures
-
-    alias Taina.Jaci.Photo
-    alias Taina.Repo
-    alias Taina.Scope
-    alias Taina.Ybira
-
     setup do
       tekoa = tekoa_fixture()
       dono = active_ava_fixture(tekoa)

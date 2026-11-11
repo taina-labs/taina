@@ -31,7 +31,7 @@ defmodule TainaWeb.AuthTest do
     test "assigns nil without a session", %{conn: conn} do
       conn = conn |> Plug.Test.init_test_session(%{}) |> Auth.fetch_current_scope([])
 
-      assert conn.assigns.current_scope == nil
+      assert is_nil(conn.assigns.current_scope)
     end
   end
 
@@ -72,7 +72,7 @@ defmodule TainaWeb.AuthTest do
     test "mount_current_scope assigns nil without a session" do
       {:cont, socket} = Auth.on_mount(:mount_current_scope, %{}, %{}, socket())
 
-      assert socket.assigns.current_scope == nil
+      assert is_nil(socket.assigns.current_scope)
     end
 
     test "require_authenticated continues for a logged-in session", %{ava: ava} do

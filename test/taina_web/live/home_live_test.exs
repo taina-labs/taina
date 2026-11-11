@@ -34,7 +34,7 @@ defmodule TainaWeb.HomeLiveTest do
     assert has_element?(lv, ".hub-header")
     assert lv |> element(".hub-header__greeting") |> render() =~ ", Ana"
     assert has_element?(lv, ".hub-header__community", "Quilombo do Café")
-    assert has_element?(lv, ~s(.hub-header a[aria-label="Sua conta"]))
+    assert has_element?(lv, ~S(.hub-header a[aria-label="Sua conta"]))
 
     # Serviços: dois cartões, os mesmos do board.
     assert has_element?(lv, ".service-card", "Documentos")
@@ -54,7 +54,7 @@ defmodule TainaWeb.HomeLiveTest do
 
     # Espaço da comunidade no cartão compacto, com o destino dos detalhes.
     assert has_element?(lv, ".storage-card", "Espaço da comunidade")
-    assert has_element?(lv, ~s(.storage-card a[href="/armazenamento"]))
+    assert has_element?(lv, ~S(.storage-card a[href="/armazenamento"]))
     assert has_element?(lv, ".storage-card__meta", "de 1,0 GB usados")
 
     # Recentes: metadados separados por vírgula, sem a zona no meio.
@@ -74,7 +74,7 @@ defmodule TainaWeb.HomeLiveTest do
 
     assert has_element?(lv, ".care-line", "Carla pediu para abrir um arquivo da sua casa")
     assert has_element?(lv, ".care-line", "Responder")
-    assert has_element?(lv, ~s(.care-line[href="/conta/pedidos"]))
+    assert has_element?(lv, ~S(.care-line[href="/conta/pedidos"]))
   end
 
   test "recentes vazio: estado honesto, sem chamada para agir", %{conn: conn} do

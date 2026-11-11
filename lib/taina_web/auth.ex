@@ -55,6 +55,32 @@ defmodule TainaWeb.Auth do
   end
 
   @doc """
+  Callbacks de `on_mount` para LiveView:
+
+    * `:mount_current_scope`, assina `:current_scope` (ou `nil`) e segue.
+    * `:require_authenticated`, assina o scope e, sem login, redireciona para
+      o login e interrompe a montagem.
+  """
+  def on_mount(:mount_current_scope, _params, session, socket) do
+    {:cont, mount_current_scope(socket, session)}
+  end
+
+  def on_mount(:require_authenticated, _params, session, socket) do
+    socket = mount_current_scope(socket, session)
+
+    if socket.assigns.current_scope do
+      {:cont, socket}
+    else
+      socket =
+        socket
+        |> LiveView.put_flash(:error, "Você precisa entrar para acessar esta página.")
+        |> LiveView.redirect(to: @login_path)
+
+      {:halt, socket}
+    end
+  end
+
+  @doc """
   Plug: exige sessão autenticada. Sem `:current_scope`, redireciona para o login
   e interrompe o pipeline. Use depois de `fetch_current_scope/2`.
   """
@@ -86,39 +112,11 @@ defmodule TainaWeb.Auth do
     end
   end
 
-  @doc """
-  Callbacks de `on_mount` para LiveView:
-
-    * `:mount_current_scope`, assina `:current_scope` (ou `nil`) e segue.
-    * `:require_authenticated`, assina o scope e, sem login, redireciona para
-      o login e interrompe a montagem.
-  """
-  def on_mount(:mount_current_scope, _params, session, socket) do
-    {:cont, mount_current_scope(socket, session)}
-  end
-
-  def on_mount(:require_authenticated, _params, session, socket) do
-    socket = mount_current_scope(socket, session)
-
-    if socket.assigns.current_scope do
-      {:cont, socket}
-    else
-      socket =
-        socket
-        |> LiveView.put_flash(:error, "Você precisa entrar para acessar esta página.")
-        |> LiveView.redirect(to: @login_path)
-
-      {:halt, socket}
-    end
-  end
-
   # `assign_new` evita reconsultar o banco quando o LiveView remonta (HTTP ->
   # WebSocket) com a mesma sessão.
   defp mount_current_scope(socket, session) do
     Component.assign_new(socket, :current_scope, fn -> resolve_scope(session) end)
   end
-
-  defp scope_from(conn), do: resolve_scope(conn)
 
   defp resolve_scope(conn_or_session) do
     case Maraca.get_session_user(conn_or_session) do
@@ -126,4 +124,6 @@ defmodule TainaWeb.Auth do
       {:error, :not_authenticated} -> nil
     end
   end
+
+  defp scope_from(conn), do: resolve_scope(conn)
 end

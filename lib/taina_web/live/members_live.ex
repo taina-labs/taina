@@ -29,11 +29,11 @@ defmodule TainaWeb.MembersLive do
   def mount(_params, _session, socket) do
     {:ok,
      socket
+     |> assign(:confirm_revoke, nil)
      |> assign(:page_title, gettext("Moradores"))
      |> assign(:query, "")
      |> assign(:reset_link, nil)
      |> assign(:reset_member, nil)
-     |> assign(:confirm_revoke, nil)
      |> assign_members()}
   end
 
@@ -47,7 +47,9 @@ defmodule TainaWeb.MembersLive do
     {:noreply, assign(socket, :query, query)}
   end
 
-  def handle_event("reset-link", %{"id" => public_id}, socket) do
+  def handle_event("retry_load", _params, socket), do: {:noreply, assign_members(socket)}
+
+  def handle_event("reset_link", %{"id" => public_id}, socket) do
     scope = socket.assigns.current_scope
     member = Enum.find(socket.assigns.members, &(&1.public_id == public_id))
 
@@ -62,7 +64,7 @@ defmodule TainaWeb.MembersLive do
     end
   end
 
-  def handle_event("close-reset", _params, socket) do
+  def handle_event("close_reset", _params, socket) do
     {:noreply, socket |> assign(:reset_link, nil) |> assign(:reset_member, nil)}
   end
 
@@ -73,6 +75,8 @@ defmodule TainaWeb.MembersLive do
   # A guarda de clipboard fica no hook (JS); quando ele não consegue copiar
   # (origem insegura, sem permissão), a saída é a mão: selecionar o link e
   # copiar por conta própria.
+  # Clipboard reports this event name from the JavaScript hook.
+  # credo:disable-for-next-line OptimumCredo.Check.Readability.EventNameSnakeCase
   def handle_event("copy-failed", _params, socket) do
     {:noreply,
      Phoenix.LiveView.put_flash(
@@ -83,12 +87,12 @@ defmodule TainaWeb.MembersLive do
   end
 
   # Convite pendente se revoga apagando a linha (não tem identidade nem dados).
-  def handle_event("ask-revoke", %{"id" => public_id}, socket) do
+  def handle_event("ask_revoke", %{"id" => public_id}, socket) do
     invite = Enum.find(socket.assigns.pendings, &(&1.public_id == public_id))
     {:noreply, assign(socket, :confirm_revoke, invite)}
   end
 
-  def handle_event("close-confirm", _params, socket) do
+  def handle_event("close_confirm", _params, socket) do
     {:noreply, assign(socket, :confirm_revoke, nil)}
   end
 
@@ -104,23 +108,54 @@ defmodule TainaWeb.MembersLive do
     end
   end
 
+  defp active_member?(member), do: not is_nil(member.activated_at) and is_nil(member.deactivated_at)
+
   defp assign_members(socket) do
-    {:ok, all} = Maraca.list_members(socket.assigns.current_scope)
-    # Convite pendente não é morador: a lista separa quem já entrou de quem
-    # só foi convidado, cada um com as ações certas.
-    {pendings, members} = Enum.split_with(all, &invite_pending?/1)
-    members = Enum.filter(members, &active_member?/1)
-    assign(socket, members: members, pendings: pendings)
+    case Maraca.list_members(socket.assigns.current_scope) do
+      {:ok, all} ->
+        # Convite pendente não é morador: a lista separa quem já entrou de quem
+        # só foi convidado, cada um com as ações certas.
+        {pendings, members} = Enum.split_with(all, &invite_pending?/1)
+        members = Enum.filter(members, &active_member?/1)
+
+        socket
+        |> assign(:load_error, false)
+        |> assign(:members, members)
+        |> assign(:pendings, pendings)
+
+      {:error, _reason} ->
+        socket
+        |> assign(:load_error, true)
+        |> assign(:members, [])
+        |> assign(:pendings, [])
+    end
   end
 
-  defp flash_info(socket, msg), do: Phoenix.LiveView.put_flash(socket, :info, msg)
-  defp flash_error(socket, msg), do: Phoenix.LiveView.put_flash(socket, :error, msg)
+  # Zelador agindo sobre outra conta (nunca a própria) e ativa: o link de
+  # redefinição é para quem NAO consegue entrar, a pessoa troca a senha
+  # sozinha em Conta ("Trocar senha").
+  defp can_reset?(member, scope) do
+    Maraca.zelador?(scope.ava) and member.id != scope.ava.id and not is_nil(member.activated_at)
+  end
+
+  defp deactivated?(member), do: not is_nil(member.deactivated_at)
+
+  defp display_name(member) do
+    member.display_name || member.username || gettext("Convite pendente")
+  end
+
+  defp flash_error(socket, message), do: Phoenix.LiveView.put_flash(socket, :error, message)
+  defp flash_info(socket, message), do: Phoenix.LiveView.put_flash(socket, :info, message)
+
+  defp invite_path(return_to), do: ~p"/moradores/convidar?#{[return_to: return_to]}"
+
+  defp invite_pending?(member), do: is_nil(member.activated_at)
 
   # Busca sem sotaque: normaliza acentos (NFD + remove marcas) e procura no nome
   # de exibição e no nome de usuário, então "joao" acha "João" e vice-versa.
-  defp filtered(members, ""), do: members
+  defp maybe_filtered(members, ""), do: members
 
-  defp filtered(members, query) do
+  defp maybe_filtered(members, query) do
     needle = normalize(query)
 
     Enum.filter(members, fn member ->
@@ -129,17 +164,7 @@ defmodule TainaWeb.MembersLive do
     end)
   end
 
-  defp normalize(value) do
-    value
-    |> String.normalize(:nfd)
-    |> String.replace(~r/\p{M}/u, "")
-    |> String.downcase()
-  end
-
-  defp display_name(member) do
-    member.display_name || member.username || gettext("Convite pendente")
-  end
-
+  # Convite ainda não aceito: a linha existe, a pessoa ainda não entrou.
   # "Zeladora, entrou em 2024" (board): papel e ano de entrada. O ano é o da
   # comunidade (o banco grava em UTC; o ano de quem lê não é o do banco).
   defp member_meta(member) do
@@ -153,6 +178,19 @@ defmodule TainaWeb.MembersLive do
     end
   end
 
+  # O trilho da direita: quem não tem menu (morador comum, conta própria)
+  # fica com o chevron do board; quem tem ações leva o kebab delas.
+  defp member_trailing(member, scope) do
+    if can_reset?(member, scope), do: "action", else: "none"
+  end
+
+  defp normalize(value) do
+    value
+    |> String.normalize(:nfd)
+    |> String.replace(~r/\p{M}/u, "")
+    |> String.downcase()
+  end
+
   defp pending_meta(invite) do
     if Maraca.invite_expired?(invite),
       do: gettext("convite expirado"),
@@ -160,20 +198,8 @@ defmodule TainaWeb.MembersLive do
   end
 
   # Convite ainda não aceito: a linha existe, a pessoa ainda não entrou.
-  defp invite_pending?(member), do: is_nil(member.activated_at)
-  defp active_member?(member), do: not is_nil(member.activated_at) and is_nil(member.deactivated_at)
-
   defp role_label(:zelador), do: gettext("Zelador(a)")
   defp role_label(:morador), do: gettext("Morador(a)")
-
-  # Zelador agindo sobre outra conta (nunca a própria) e ativa: o link de
-  # redefinição é para quem NAO consegue entrar, a pessoa troca a senha
-  # sozinha em Conta ("Trocar senha").
-  defp can_reset?(member, scope) do
-    Maraca.zelador?(scope.ava) and member.id != scope.ava.id and not is_nil(member.activated_at)
-  end
-
-  defp deactivated?(member), do: not is_nil(member.deactivated_at)
 
   @impl true
   def render(assigns) do
@@ -186,8 +212,14 @@ defmodule TainaWeb.MembersLive do
       </:action>
 
       <div class="col gap-6">
-        <% members = filtered(@members, @query) %>
-        <% pendings = filtered(@pendings, @query) %>
+        <.error_card
+          :if={@load_error}
+          title={gettext("Não conseguimos carregar os moradores agora.")}
+          retry_event="retry_load"
+        />
+
+        <% members = maybe_filtered(@members, @query) %>
+        <% pendings = maybe_filtered(@pendings, @query) %>
 
         <%!-- phx-submit cobre a tecla "ir" do teclado mobile, que submete o
         form de verdade e recarregaria a página limpando a busca --%>
@@ -222,7 +254,7 @@ defmodule TainaWeb.MembersLive do
                   label={gettext("Ações do convite")}
                   title={gettext("Convite pendente")}
                 >
-                  <:item icon="trash" kind="danger" click={JS.push("ask-revoke", value: %{id: invite.public_id})}>
+                  <:item icon="trash" kind="danger" click={JS.push("ask_revoke", value: %{id: invite.public_id})}>
                     {gettext("Revogar convite")}
                   </:item>
                 </.actions_menu>
@@ -250,7 +282,7 @@ defmodule TainaWeb.MembersLive do
               >
                 <:item
                   icon="link"
-                  click={JS.push("reset-link", value: %{id: member.public_id})}
+                  click={JS.push("reset_link", value: %{id: member.public_id})}
                 >
                   {gettext("Gerar link de redefinição de senha")}
                 </:item>
@@ -260,7 +292,7 @@ defmodule TainaWeb.MembersLive do
         </ul>
 
         <.empty_state
-          :if={members == [] and pendings == []}
+          :if={members == [] and pendings == [] and not @load_error}
           icon="folder"
           title={gettext("Ninguém com esse nome")}
           body={gettext("Confira a escrita ou procure por outro nome.")}
@@ -269,7 +301,7 @@ defmodule TainaWeb.MembersLive do
 
       </div>
 
-      <.dialog id="reset-link-modal" show={@reset_link != nil} on_cancel={JS.push("close-reset")}>
+      <.dialog id="reset-link-modal" show={@reset_link != nil} on_cancel={JS.push("close_reset")}>
         <h2 id="reset-link-modal-title" class="type-h3 mb-3">{gettext("Link de redefinição de senha")}</h2>
         <p class="type-body text-secondary mb-4">
           {gettext(
@@ -298,17 +330,9 @@ defmodule TainaWeb.MembersLive do
         }
         confirm_label={gettext("Revogar convite")}
         on_confirm={JS.push("revoke", value: %{id: @confirm_revoke && @confirm_revoke.public_id})}
-        on_cancel={JS.push("close-confirm")}
+        on_cancel={JS.push("close_confirm")}
       />
     </Layouts.page>
     """
   end
-
-  # O trilho da direita: quem não tem menu (morador comum, conta própria)
-  # fica com o chevron do board; quem tem ações leva o kebab delas.
-  defp member_trailing(member, scope) do
-    if can_reset?(member, scope), do: "action", else: "none"
-  end
-
-  defp invite_path(return_to), do: ~p"/moradores/convidar?#{[return_to: return_to]}"
 end

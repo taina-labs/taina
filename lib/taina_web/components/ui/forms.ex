@@ -31,7 +31,7 @@ defmodule TainaWeb.UI.Forms do
       <.field field={@form[:username]} label="Nome de usuário" />
       <.field field={@form[:senha]} kind="password" />
   """
-  attr :kind, :string, default: "text", values: ~w(text password search address)
+  attr :kind, :string, default: "text", values: ~W(text password search address)
 
   attr :id, :any, default: nil
   attr :name, :any
@@ -44,14 +44,15 @@ defmodule TainaWeb.UI.Forms do
   slot :trailing,
     doc: "controle anexo à direita do campo (ex.: <.password_toggle>)"
 
-  attr :rest, :global, include: ~w(autocomplete placeholder required minlength maxlength inputmode autofocus)
+  attr :rest, :global, include: ~W(autocomplete placeholder required minlength maxlength inputmode autofocus)
 
   def field(%{field: %FormField{} = field} = assigns) do
     errors = if Phoenix.Component.used_input?(field), do: field.errors, else: []
 
     assigns
-    |> assign(field: nil, id: assigns.id || field.id)
     |> assign(:errors, Enum.map(errors, &translate_error/1))
+    |> assign(:field, nil)
+    |> assign(:id, assigns.id || field.id)
     |> assign_new(:name, fn -> field.name end)
     |> assign_new(:value, fn -> field.value end)
     |> resolve_field()
@@ -69,7 +70,7 @@ defmodule TainaWeb.UI.Forms do
       |> resolve_field()
 
     ~H"""
-    <div class={["field", @kind in ~w(password search address) && "field--#{@kind}", @errors != [] && "field--invalid"]}>
+    <div class={["field", @kind in ~W(password search address) && "field--#{@kind}", @errors != [] && "field--invalid"]}>
       <label :if={@label} for={@id}>{@label}</label>
       <div class={["field__control", @kind == "search" && "search"]}>
         <.icon :if={@kind == "search"} name="search" size={20} class="field__icon" />
@@ -94,18 +95,6 @@ defmodule TainaWeb.UI.Forms do
       >{error}</span>
     </div>
     """
-  end
-
-  defp resolve_field(assigns) do
-    input_type =
-      case assigns[:kind] do
-        "password" -> "password"
-        "search" -> "search"
-        "address" -> "text"
-        _ -> "text"
-      end
-
-    assign(assigns, :input_type, input_type)
   end
 
   # O span de ajuda só entra quando não há erro (mesma condição do template).
@@ -174,30 +163,31 @@ defmodule TainaWeb.UI.Forms do
   attr :value, :string, required: true
   attr :label, :string, required: true
   attr :description, :string, default: nil
-  attr :rest, :global, include: ~w(autofocus)
+  attr :rest, :global, include: ~W(autofocus)
 
   def radio_card(%{field: %FormField{} = field} = assigns) do
     assigns
-    |> assign(
-      field: nil,
-      name: field.name,
-      id: "#{field.id}-#{assigns.value}",
-      checked: Phoenix.Component.used_input?(field) && value_checked?(field.value, assigns.value)
-    )
+    |> assign(:checked, Phoenix.Component.used_input?(field) && value_checked?(field.value, assigns.value))
+    |> assign(:field, nil)
+    |> assign(:id, "#{field.id}-#{assigns.value}")
+    |> assign(:name, field.name)
     |> do_radio_card()
   end
 
   def radio_card(%{field: name} = assigns) when is_binary(name) do
     assigns
-    |> assign(field: nil, name: name, id: nil, checked: false)
+    |> assign(:checked, false)
+    |> assign(:field, nil)
+    |> assign(:id, nil)
+    |> assign(:name, name)
     |> do_radio_card()
   end
 
   def radio_card(assigns) do
     assigns
-    |> assign_new(:name, fn -> nil end)
-    |> assign_new(:id, fn -> nil end)
     |> assign_new(:checked, fn -> false end)
+    |> assign_new(:id, fn -> nil end)
+    |> assign_new(:name, fn -> nil end)
     |> do_radio_card()
   end
 
@@ -212,6 +202,18 @@ defmodule TainaWeb.UI.Forms do
       <span class="radio-card__ring" aria-hidden="true"></span>
     </label>
     """
+  end
+
+  defp resolve_field(assigns) do
+    input_type =
+      case assigns.kind do
+        "password" -> "password"
+        "search" -> "search"
+        "address" -> "text"
+        _ -> "text"
+      end
+
+    assign(assigns, :input_type, input_type)
   end
 
   defp value_checked?(field_value, value), do: to_string(field_value) == value

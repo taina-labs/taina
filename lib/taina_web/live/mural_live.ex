@@ -32,16 +32,16 @@ defmodule TainaWeb.MuralLive do
   def mount(_params, _session, socket) do
     {:ok,
      socket
-     |> assign(:page_title, gettext("Mural"))
-     |> assign(:next_offset, nil)
      |> assign(:event_count, 0)
      |> assign(:load_error, false)
      |> assign(:more_error, false)
+     |> assign(:next_offset, nil)
+     |> assign(:page_title, gettext("Mural"))
      |> assign_events()}
   end
 
   @impl true
-  def handle_event("load-more", _params, socket) do
+  def handle_event("load_more", _params, socket) do
     if offset = socket.assigns.next_offset do
       case Maraca.list_events(socket.assigns.current_scope, offset: offset) do
         {:ok, %{events: events, next_offset: next}} ->
@@ -49,9 +49,9 @@ defmodule TainaWeb.MuralLive do
 
           {:noreply,
            socket
-           |> assign(:next_offset, next)
            |> assign(:event_count, socket.assigns.event_count + length(entries))
            |> assign(:more_error, false)
+           |> assign(:next_offset, next)
            |> stream(:events, entries)}
 
         # Paginação que falha não fica em silêncio nem presa no "Carregando
@@ -84,9 +84,9 @@ defmodule TainaWeb.MuralLive do
         entries = load_page_entries(socket.assigns.current_scope, events)
 
         socket
-        |> assign(:next_offset, next)
         |> assign(:event_count, socket.assigns.event_count + length(entries))
         |> assign(:load_error, false)
+        |> assign(:next_offset, next)
         |> stream(:events, entries, reset: true)
 
       {:error, _reason} ->
@@ -97,6 +97,28 @@ defmodule TainaWeb.MuralLive do
   end
 
   # --- core puro: dados -> dados ---
+
+  defp entry(%Entry{} = event, names) do
+    # A linha do board não fecha com ponto (o hub enxuga a mesma frase).
+    sentence = event |> MuralText.sentence(names) |> String.trim_trailing(".")
+
+    %{id: event.id, sentence: sentence, meta: entry_meta(event.inserted_at)}
+  end
+
+  # O dia no meta: "Hoje", "Ontem" e "Antes de ontem" (board); mais velho que
+  # isso, a data por extenso, o mesmo falar que o mural já usava para os
+  # grupos de dia.
+  defp entry_meta(at) do
+    day_label =
+      case Date.diff(Time.local_today(), Time.local_date(at)) do
+        0 -> gettext("Hoje")
+        1 -> gettext("Ontem")
+        2 -> gettext("Antes de ontem")
+        _days -> Calendar.strftime(Time.local_date(at), "%d/%m/%Y")
+      end
+
+    day_label <> ", " <> Time.local_clock(at)
+  end
 
   # Modela a página para o render: frase pronta e o meta do board ("Hoje,
   # 09:12"). Datas no horário da comunidade (o banco grava em UTC; o dia de
@@ -125,28 +147,6 @@ defmodule TainaWeb.MuralLive do
 
   defp page_entries(events, names) do
     Enum.map(events, &entry(&1, names))
-  end
-
-  defp entry(%Entry{} = event, names) do
-    # A linha do board não fecha com ponto (o hub enxuga a mesma frase).
-    sentence = event |> MuralText.sentence(names) |> String.trim_trailing(".")
-
-    %{id: event.id, sentence: sentence, meta: entry_meta(event.inserted_at)}
-  end
-
-  # O dia no meta: "Hoje", "Ontem" e "Antes de ontem" (board); mais velho que
-  # isso, a data por extenso, o mesmo falar que o mural já usava para os
-  # grupos de dia.
-  defp entry_meta(at) do
-    day_label =
-      case Date.diff(Time.local_today(), Time.local_date(at)) do
-        0 -> gettext("Hoje")
-        1 -> gettext("Ontem")
-        2 -> gettext("Antes de ontem")
-        _days -> Calendar.strftime(Time.local_date(at), "%d/%m/%Y")
-      end
-
-    day_label <> ", " <> Time.local_clock(at)
   end
 
   # --- shell imperativo: assign/render ---
@@ -215,9 +215,9 @@ defmodule TainaWeb.MuralLive do
       <div :if={@next_offset} id="mural-load-more" class="col gap-2 center py-4">
         <div :if={@more_error} class="col gap-2 center">
           <p class="type-caption text-muted">{gettext("Não foi possível carregar mais do mural.")}</p>
-          <.button kind="secondary" size="sm" phx-click="load-more">{gettext("Tentar de novo")}</.button>
+          <.button kind="secondary" size="sm" phx-click="load_more">{gettext("Tentar de novo")}</.button>
         </div>
-        <p :if={!@more_error} phx-viewport-bottom="load-more" class="type-caption text-muted">
+        <p :if={!@more_error} phx-viewport-bottom="load_more" class="type-caption text-muted">
           {gettext("Carregando mais...")}
         </p>
       </div>

@@ -29,9 +29,9 @@ defmodule TainaWeb.AccessRequestsLive do
     # inscrever de novo entrega cada evento duas vezes.
     {:ok,
      socket
-     |> assign(:page_title, gettext("Pedidos"))
      |> assign(:confirm_deny, nil)
      |> assign(:confirm_revoke, nil)
+     |> assign(:page_title, gettext("Pedidos"))
      |> assign_requests()}
   end
 
@@ -51,19 +51,19 @@ defmodule TainaWeb.AccessRequestsLive do
         {:noreply, socket |> assign_requests() |> decision_gone()}
 
       {:error, _reason} ->
-        {:noreply, Phoenix.LiveView.put_flash(socket, :error, gettext("Este pedido já foi resolvido."))}
+        {:noreply, Phoenix.LiveView.put_flash(socket, :error, resolved_request_message())}
     end
   end
 
-  def handle_event("ask-deny", %{"id" => id}, socket) do
+  def handle_event("ask_deny", %{"id" => id}, socket) do
     {:noreply, assign(socket, :confirm_deny, id)}
   end
 
-  def handle_event("ask-revoke", %{"id" => id}, socket) do
+  def handle_event("ask_revoke", %{"id" => id}, socket) do
     {:noreply, assign(socket, :confirm_revoke, id)}
   end
 
-  def handle_event("close-confirm", _params, socket) do
+  def handle_event("close_confirm", _params, socket) do
     {:noreply, socket |> assign(:confirm_deny, nil) |> assign(:confirm_revoke, nil)}
   end
 
@@ -89,7 +89,7 @@ defmodule TainaWeb.AccessRequestsLive do
         {:noreply,
          socket
          |> assign(:confirm_deny, nil)
-         |> Phoenix.LiveView.put_flash(:error, gettext("Este pedido já foi resolvido."))}
+         |> Phoenix.LiveView.put_flash(:error, resolved_request_message())}
     end
   end
 
@@ -121,7 +121,7 @@ defmodule TainaWeb.AccessRequestsLive do
     end
   end
 
-  def handle_event("retry-grants", _params, socket), do: {:noreply, assign_requests(socket)}
+  def handle_event("retry_grants", _params, socket), do: {:noreply, assign_requests(socket)}
 
   defp access_gone(socket) do
     socket
@@ -155,25 +155,23 @@ defmodule TainaWeb.AccessRequestsLive do
 
   # --- shell imperativo: assign/put_flash ---
 
-  defp assign_requests(socket) do
-    scope = socket.assigns.current_scope
-    {:ok, requests} = Maraca.pedidos_recebidos(scope)
-    {:ok, outgoing} = Maraca.pedidos_enviados(scope)
-    {:ok, decisions} = Maraca.list_my_recent_decisions(scope)
-    {:ok, refusals} = Maraca.list_owner_recent_refusals(scope)
-    resource_requests = requests ++ outgoing ++ decisions ++ refusals
-
-    socket
-    |> assign(:requests, requests)
-    |> assign(:outgoing, outgoing)
-    |> assign(:decisions, decisions)
-    |> assign(:refusals, refusals)
-    |> assign_grants(resource_requests)
-  end
-
   # A seção concedida ("João recebeu acesso", board) carrega por último e
   # decai sozinha: se falhar, o resto da tela continua no ar, com o estado de
   # erro (e a saída) só nela.
+  # Pedido tem o instante no `inserted_at`; concessão, no `concedida_em`.
+  defp acted_at(%{concedida_em: nil, inserted_at: at}), do: at
+  defp acted_at(%{concedida_em: at}), do: at
+  defp acted_at(%{inserted_at: at}), do: at
+
+  # Flash da aprovação nomeia o arquivo: a decisão é sobre aquele arquivo, não
+  # sobre "um pedido".
+  defp approved_message(names, pedido) do
+    case pedido && Map.get(names, {pedido.tipo, pedido.recurso}) do
+      file when is_binary(file) -> gettext("Acesso a %{file} liberado. A pessoa já pode ler.", file: file)
+      _other -> gettext("Acesso liberado. A pessoa já pode ler.")
+    end
+  end
+
   defp assign_grants(socket, resource_requests) do
     scope = socket.assigns.current_scope
 
@@ -191,21 +189,39 @@ defmodule TainaWeb.AccessRequestsLive do
 
     socket
     |> assign(:grants, grants)
-    |> assign(:resource_names, resource_names)
     |> assign(:grants_error, grants_error)
+    |> assign(:resource_names, resource_names)
   end
 
-  # O Maraca devolve `{:ok, lista}` (e `{:error, motivo}` em falha de banco);
-  # a borda da tela degrada para o estado de erro da seção, sem exceção.
-  defp load_grants(scope), do: Maraca.concessoes_concedidas(scope)
+  defp assign_requests(socket) do
+    scope = socket.assigns.current_scope
 
-  # Pedido resolvido entre o render e o clique (decidido em outra aba): some a
-  # linha sem mensagem de erro tecnica.
-  defp decision_gone(socket) do
-    Phoenix.LiveView.put_flash(socket, :error, gettext("Este pedido já foi resolvido."))
+    with {:ok, requests} <- Maraca.pedidos_recebidos(scope),
+         {:ok, outgoing} <- Maraca.pedidos_enviados(scope),
+         {:ok, decisions} <- Maraca.list_my_recent_decisions(scope),
+         {:ok, refusals} <- Maraca.list_owner_recent_refusals(scope) do
+      resource_requests = requests ++ outgoing ++ decisions ++ refusals
+
+      socket
+      |> assign(:decisions, decisions)
+      |> assign(:load_error, false)
+      |> assign(:outgoing, outgoing)
+      |> assign(:refusals, refusals)
+      |> assign(:requests, requests)
+      |> assign_grants(resource_requests)
+    else
+      {:error, _reason} ->
+        socket
+        |> assign(:decisions, [])
+        |> assign(:grants, [])
+        |> assign(:grants_error, false)
+        |> assign(:load_error, true)
+        |> assign(:outgoing, [])
+        |> assign(:refusals, [])
+        |> assign(:requests, [])
+        |> assign(:resource_names, %{})
+    end
   end
-
-  # --- core puro: dados -> dados ---
 
   # O estado do board é função pura do que há em cada lado (spec 1.3):
   #   * nada em lugar nenhum: `vazio` ("Nenhum pedido ainda");
@@ -215,53 +231,13 @@ defmodule TainaWeb.AccessRequestsLive do
   #     concedida que falhou também conta: erro nunca vira vazio mentiroso.
   defp board_state(assigns) do
     cond do
+      assigns.load_error -> :load_error
       assigns.grants_error -> :com_pedidos
       nothing_here?(assigns) and assigns.outgoing == [] -> :vazio
       nothing_here?(assigns) -> :enviado
       true -> :com_pedidos
     end
   end
-
-  # A fila do dono (o que há para decidir ou já foi decidido) está vazia.
-  defp nothing_here?(assigns) do
-    assigns.requests == [] and assigns.grants == [] and assigns.decisions == [] and assigns.refusals == []
-  end
-
-  # --- core puro: dados -> dados ---
-  # (decidido em `board_state/1` abaixo: o estado do board é função pura do
-  # que há em cada lado)
-
-  defp requester_name(request) do
-    request.pedinte.display_name || request.pedinte.username
-  end
-
-  defp owner_name(request) do
-    request.dono.display_name || request.dono.username
-  end
-
-  defp recipient_name(concessao) do
-    concessao.leitor.display_name || concessao.leitor.username
-  end
-
-  defp resource_display_name(names, resource) do
-    case Map.fetch(names, {resource.tipo, resource.recurso}) do
-      {:ok, name} -> name
-      :error -> deleted_resource_label(resource.tipo)
-    end
-  end
-
-  defp deleted_resource_label("ypy.folder.v0"), do: gettext("pasta apagada")
-  defp deleted_resource_label(_kind), do: gettext("arquivo apagado")
-
-  # "doc.txt, hoje 09:12" (board: metadados separados por vírgula, o relógio
-  # da comunidade).
-  defp row_meta(names, resource) do
-    Enum.join([resource_display_name(names, resource), day_clock(acted_at(resource))], ", ")
-  end
-
-  # Pedido tem o instante no `inserted_at`; concessão, no `concedida_em`.
-  defp acted_at(%{concedida_em: at}) when not is_nil(at), do: at
-  defp acted_at(%{inserted_at: at}), do: at
 
   # "hoje 09:12" / "ontem 18:20" (board); mais velho que isso, o relativo do
   # design system.
@@ -277,57 +253,50 @@ defmodule TainaWeb.AccessRequestsLive do
   # fala pt-BR, então o mês curto é da tela).
   defp day_label(at) do
     date = Time.local_date(at)
-    months = ~w(jan fev mar abr mai jun jul ago set out nov dez)
+    months = ~W(jan fev mar abr mai jun jul ago set out nov dez)
 
     "#{date.day} #{Enum.at(months, date.month - 1)}"
   end
+
+  # Pedido resolvido entre o render e o clique (decidido em outra aba): some a
+  # linha sem mensagem de erro tecnica.
+  defp decided_sent_rows(decisions, names) do
+    Enum.map(decisions, fn decision ->
+      %{
+        id: decision.id,
+        state: decision_state(decision.status),
+        title: decision_title(decision),
+        meta: row_meta(names, decision),
+        status_state: nil,
+        status: nil,
+        revocable: false
+      }
+    end)
+  end
+
+  defp decision_gone(socket) do
+    Phoenix.LiveView.put_flash(socket, :error, resolved_request_message())
+  end
+
+  defp decision_state(:aprovado), do: "dado"
+  defp decision_state(:negado), do: "recusado"
+
+  defp decision_title(%{status: :aprovado} = decision) do
+    gettext("%{name} liberou o acesso", name: owner_name(decision))
+  end
+
+  defp decision_title(%{status: :negado} = decision) do
+    gettext("%{name} recusou o pedido", name: owner_name(decision))
+  end
+
+  defp deleted_resource_label("ypy.folder.v0"), do: gettext("pasta apagada")
+  defp deleted_resource_label(_kind), do: gettext("arquivo apagado")
 
   defp find_grant(grants, id) when is_binary(id) do
     Enum.find(grants, &("#{&1.id}" == id))
   end
 
   defp find_grant(_grants, nil), do: nil
-
-  defp revoke_title(grants, id) do
-    case find_grant(grants, id) do
-      nil -> gettext("Tirar este acesso?")
-      grant -> gettext("Tirar o acesso de %{name}?", name: recipient_name(grant))
-    end
-  end
-
-  defp revoked_message(grant) do
-    gettext("Acesso de %{name} tirado.", name: recipient_name(grant))
-  end
-
-  # Flash da aprovação nomeia o arquivo: a decisão é sobre aquele arquivo, não
-  # sobre "um pedido".
-  defp approved_message(names, pedido) do
-    case pedido && Map.get(names, {pedido.tipo, pedido.recurso}) do
-      file when is_binary(file) -> gettext("Acesso a %{file} liberado. A pessoa já pode ler.", file: file)
-      _other -> gettext("Acesso liberado. A pessoa já pode ler.")
-    end
-  end
-
-  # Aprovação chegando pelo PubSub nomeia o arquivo quando o nome já está na
-  # tela (pedido que veio depois do mount deixa o flash genérico).
-  defp outgoing_approved_message(names, kind, rkey) do
-    case Map.get(names, {kind, rkey}) do
-      file when is_binary(file) -> gettext("Pedido aprovado: agora você pode abrir %{file}.", file: file)
-      _other -> gettext("Seu pedido foi aprovado. Você já pode abrir.")
-    end
-  end
-
-  # O motivo vem na sequência do meta e a linha quebra em vez de cortar com
-  # reticências (`list-row__meta--wrap` no render): decidir sem ler o porquê
-  # é decidir às cegas.
-  defp request_meta(request, names) do
-    base = row_meta(names, request)
-
-    case request.motivo do
-      nil -> base
-      reason -> base <> " " <> gettext("Motivo: %{reason}", reason: reason)
-    end
-  end
 
   # As linhas decididas do board (spec 1.3; a composição mora aqui para o
   # render ficar plano). São dois lados:
@@ -351,18 +320,36 @@ defmodule TainaWeb.AccessRequestsLive do
     end)
   end
 
-  defp decided_sent_rows(decisions, names) do
-    Enum.map(decisions, fn decision ->
-      %{
-        id: decision.id,
-        state: decision_state(decision.status),
-        title: decision_title(decision),
-        meta: row_meta(names, decision),
-        status_state: nil,
-        status: nil,
-        revocable: false
-      }
-    end)
+  # O Maraca devolve `{:ok, lista}` (e `{:error, motivo}` em falha de banco);
+  # a borda da tela degrada para o estado de erro da seção, sem exceção.
+  defp load_grants(scope), do: Maraca.concessoes_concedidas(scope)
+
+  # --- core puro: dados -> dados ---
+
+  # --- core puro: dados -> dados ---
+  # (decidido em `board_state/1` abaixo: o estado do board é função pura do
+  # que há em cada lado)
+
+  # A fila do dono (o que há para decidir ou já foi decidido) está vazia.
+  defp nothing_here?(assigns) do
+    assigns.requests == [] and assigns.grants == [] and assigns.decisions == [] and assigns.refusals == []
+  end
+
+  # Aprovação chegando pelo PubSub nomeia o arquivo quando o nome já está na
+  # tela (pedido que veio depois do mount deixa o flash genérico).
+  defp outgoing_approved_message(names, kind, rkey) do
+    case Map.get(names, {kind, rkey}) do
+      file when is_binary(file) -> gettext("Pedido aprovado: agora você pode abrir %{file}.", file: file)
+      _other -> gettext("Seu pedido foi aprovado. Você já pode abrir.")
+    end
+  end
+
+  defp owner_name(request) do
+    request.dono.display_name || request.dono.username
+  end
+
+  defp recipient_name(concessao) do
+    concessao.leitor.display_name || concessao.leitor.username
   end
 
   # A recusa que EU dei (dono): o board mostra a linha e o dia, sem ação -
@@ -381,32 +368,69 @@ defmodule TainaWeb.AccessRequestsLive do
     end)
   end
 
-  defp decision_state(:aprovado), do: "dado"
-  defp decision_state(:negado), do: "recusado"
+  # O motivo vem na sequência do meta e a linha quebra em vez de cortar com
+  # reticências (`list-row__meta--wrap` no render): decidir sem ler o porquê
+  # é decidir às cegas.
+  defp request_meta(request, names) do
+    base = row_meta(names, request)
 
-  defp decision_title(%{status: :aprovado} = decision) do
-    gettext("%{name} liberou o acesso", name: owner_name(decision))
+    case request.motivo do
+      nil -> base
+      reason -> base <> " " <> gettext("Motivo: %{reason}", reason: reason)
+    end
   end
 
-  defp decision_title(%{status: :negado} = decision) do
-    gettext("%{name} recusou o pedido", name: owner_name(decision))
+  defp requester_name(request) do
+    request.pedinte.display_name || request.pedinte.username
+  end
+
+  defp resolved_request_message, do: gettext("Este pedido já foi resolvido.")
+
+  defp resource_display_name(names, resource) do
+    case Map.fetch(names, {resource.tipo, resource.recurso}) do
+      {:ok, name} -> name
+      :error -> deleted_resource_label(resource.tipo)
+    end
+  end
+
+  defp revoke_title(grants, id) do
+    case find_grant(grants, id) do
+      nil -> gettext("Tirar este acesso?")
+      grant -> gettext("Tirar o acesso de %{name}?", name: recipient_name(grant))
+    end
+  end
+
+  defp revoked_message(grant) do
+    gettext("Acesso de %{name} tirado.", name: recipient_name(grant))
+  end
+
+  # "doc.txt, hoje 09:12" (board: metadados separados por vírgula, o relógio
+  # da comunidade).
+  defp row_meta(names, resource) do
+    Enum.join([resource_display_name(names, resource), day_clock(acted_at(resource))], ", ")
   end
 
   @impl true
   def render(assigns) do
     assigns =
       assigns
-      |> assign(:state, board_state(assigns))
       |> assign(:decided_grants, granted_rows(assigns.grants, assigns.resource_names))
+      |> assign(:decided_refused, refused_rows(assigns.refusals, assigns.resource_names))
       |> assign(
         :decided_sent,
         decided_sent_rows(assigns.decisions, assigns.resource_names)
       )
-      |> assign(:decided_refused, refused_rows(assigns.refusals, assigns.resource_names))
+      |> assign(:state, board_state(assigns))
 
     ~H"""
     <Layouts.page flash={@flash} title={@page_title} back={~p"/conta"} back_label={back_label("Conta")}>
       <div class="col gap-6">
+        <.error_card
+          :if={@state == :load_error}
+          title={gettext("Não conseguimos carregar os pedidos agora.")}
+          retry_event="retry_grants"
+        />
+
         <.empty_state
           :if={@state == :vazio}
           icon="folder"
@@ -443,7 +467,7 @@ defmodule TainaWeb.AccessRequestsLive do
                 <.service_square mark="pedidos" tone="service" />
               </:leading>
               <:actions>
-                <.button kind="secondary" size="sm" phx-click="ask-deny" phx-value-id={request.id}>
+                <.button kind="secondary" size="sm" phx-click="ask_deny" phx-value-id={request.id}>
                   {gettext("Recusar")}
                 </.button>
                 <.button kind="primary" size="sm" phx-click="approve" phx-value-id={request.id}>
@@ -458,7 +482,7 @@ defmodule TainaWeb.AccessRequestsLive do
                   <.service_square mark="pedidos" tone="service" />
                 </:leading>
                 <:actions>
-                  <.button kind="ghost" size="sm" phx-click="ask-revoke" phx-value-id={row.id}>
+                  <.button kind="ghost" size="sm" phx-click="ask_revoke" phx-value-id={row.id}>
                     {gettext("Tirar acesso")}
                   </.button>
                 </:actions>
@@ -499,7 +523,7 @@ defmodule TainaWeb.AccessRequestsLive do
             body={gettext("Pode ter sido um instante de rede ou da caixa. Tente de novo.")}
           >
             <:action>
-              <.button kind="secondary" phx-click="retry-grants">
+              <.button kind="secondary" phx-click="retry_grants">
                 {gettext("Tentar de novo")}
               </.button>
             </:action>
@@ -515,7 +539,7 @@ defmodule TainaWeb.AccessRequestsLive do
         body={gettext("A pessoa não vai poder abrir o arquivo. Ela pode pedir de novo depois.")}
         confirm_label={gettext("Negar")}
         on_confirm={JS.push("deny", value: %{id: @confirm_deny})}
-        on_cancel={JS.push("close-confirm")}
+        on_cancel={JS.push("close_confirm")}
       />
 
       <.dialog
@@ -526,7 +550,7 @@ defmodule TainaWeb.AccessRequestsLive do
         body={gettext("Para abrir de novo, ela precisa pedir.")}
         confirm_label={gettext("Tirar acesso")}
         on_confirm={JS.push("revoke")}
-        on_cancel={JS.push("close-confirm")}
+        on_cancel={JS.push("close_confirm")}
       />
     </Layouts.page>
     """

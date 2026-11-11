@@ -215,14 +215,14 @@ defmodule TainaWeb.MuralLiveTest do
     assert html =~ "Carregando mais..."
     refute html =~ "Fim do mural."
 
-    html = render_hook(lv, "load-more")
+    html = render_hook(lv, "load_more")
 
     refute html =~ "Carregando mais..."
     assert html =~ "mudou o limite de armazenamento para"
     assert html =~ "Fim do mural."
   end
 
-  test "Mural renderiza a casca page com o título no cabeçalho (a casca é quem possui o título)", %{
+  test "mural renderiza a casca page com o título no cabeçalho (a casca é quem possui o título)", %{
     conn: conn,
     morador: morador
   } do

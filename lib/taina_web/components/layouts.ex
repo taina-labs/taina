@@ -25,8 +25,29 @@ defmodule TainaWeb.Layouts do
 
   embed_templates "layouts/*"
 
-  @doc false
-  def theme_color, do: @theme_color
+  @doc """
+  Shell de auth (setup, login, convite, redefinir): fundo sólido `--bg-deep`
+  (sem céu, sem estrelas, sem horizonte - spec 6.5), conteúdo limitado a
+  `--measure-card` e, do tablet para cima, o cartão do board (superfície
+  elevada, hairline, `--radius-lg`). O ConnectionNotice não mora aqui: cada
+  tela o coloca abaixo do próprio cabeçalho, como nos boards ("sem https" em
+  `02 - Mobile`), e o `secure_connection?` vem de `Hooks.on_mount(:connection)`.
+
+      <Layouts.auth flash={@flash}>
+        ...
+      </Layouts.auth>
+  """
+  attr :flash, :map, required: true
+  slot :inner_block, required: true
+
+  def auth(assigns) do
+    ~H"""
+    <.flash_group flash={@flash} />
+    <main class="shell shell--auth">
+      <div class="shell__content">{render_slot(@inner_block)}</div>
+    </main>
+    """
+  end
 
   @doc """
   Shell do hub (`/`): flash, pular-para-conteúdo e `main` com conteúdo limitado
@@ -48,47 +69,6 @@ defmodule TainaWeb.Layouts do
     <main class="shell shell--hub" id="main-content">
       <div class="shell__content">{render_slot(@inner_block)}</div>
     </main>
-    """
-  end
-
-  @doc """
-  Shell de serviço (Documentos, Galeria): `service_header` com o `service_tab_bar`
-  no slot `:tabs` - o componente renderiza as DUAS formas (barra fixa no pé do
-  mobile, fileira no desktop) e o CSS troca sozinho em 768 (spec 4.3); a barra
-  entra UMA vez aqui, nunca na tela. Conteúdo limitado a `--measure-shell`,
-  FAB opcional (slots) fixado pelo próprio CSS.
-
-      <Layouts.service flash={@flash} service="ybira" current="praca"
-        title={gettext("Documentos")} back={~p"/"}>
-        <:actions><.button ... /></:actions>
-        <:fab><.fab navigate={~p"/documentos/enviar"} /></:fab>
-        conteúdo
-      </Layouts.service>
-  """
-  attr :flash, :map, required: true
-  attr :service, :string, required: true, values: ~w(ybira jaci)
-  attr :current, :string, required: true, doc: "key da aba corrente, do service_tab_bar"
-  attr :title, :string, required: true
-  attr :back, :string, required: true, doc: "caminho de retorno (mesma história do back do navegador)"
-  attr :back_label, :string, default: nil
-  slot :actions, doc: "ações do cabeçalho (ex: botão Enviar)"
-  slot :fab, doc: "FAB mobile; o CSS o esconde no desktop"
-  slot :inner_block, required: true
-
-  def service(assigns) do
-    ~H"""
-    <.flash_group flash={@flash} />
-    <a class="skip-link" href="#main-content">{gettext("Pular para o conteúdo")}</a>
-    <div class="shell shell--service">
-      <.service_header service={@service} title={@title} back={@back} back_label={@back_label}>
-        <:actions>{render_slot(@actions)}</:actions>
-        <:tabs><.service_tab_bar service={@service} current={@current} /></:tabs>
-      </.service_header>
-      <main class="shell__content" id="main-content">
-        {render_slot(@inner_block)}
-        {render_slot(@fab)}
-      </main>
-    </div>
     """
   end
 
@@ -123,28 +103,48 @@ defmodule TainaWeb.Layouts do
   end
 
   @doc """
-  Shell de auth (setup, login, convite, redefinir): fundo sólido `--bg-deep`
-  (sem céu, sem estrelas, sem horizonte - spec 6.5), conteúdo limitado a
-  `--measure-card` e, do tablet para cima, o cartão do board (superfície
-  elevada, hairline, `--radius-lg`). O ConnectionNotice não mora aqui: cada
-  tela o coloca abaixo do próprio cabeçalho, como nos boards ("sem https" em
-  `02 - Mobile`), e o `secure_connection?` vem de `Hooks.on_mount(:connection)`.
+  Shell de serviço (Documentos, Galeria): `service_header` com o `service_tab_bar`
+  no slot `:tabs` - o componente renderiza as DUAS formas (barra fixa no pé do
+  mobile, fileira no desktop) e o CSS troca sozinho em 768 (spec 4.3); a barra
+  entra UMA vez aqui, nunca na tela. Conteúdo limitado a `--measure-shell`,
+  FAB opcional (slots) fixado pelo próprio CSS.
 
-      <Layouts.auth flash={@flash}>
-        ...
-      </Layouts.auth>
+      <Layouts.service flash={@flash} service="ybira" current="praca"
+        title={gettext("Documentos")} back={~p"/"}>
+        <:actions><.button ... /></:actions>
+        <:fab><.fab navigate={~p"/documentos/enviar"} /></:fab>
+        conteúdo
+      </Layouts.service>
   """
   attr :flash, :map, required: true
+  attr :service, :string, required: true, values: ~W(ybira jaci)
+  attr :current, :string, required: true, doc: "key da aba corrente, do service_tab_bar"
+  attr :title, :string, required: true
+  attr :back, :string, required: true, doc: "caminho de retorno (mesma história do back do navegador)"
+  attr :back_label, :string, default: nil
+  slot :actions, doc: "ações do cabeçalho (ex: botão Enviar)"
+  slot :fab, doc: "FAB mobile; o CSS o esconde no desktop"
   slot :inner_block, required: true
 
-  def auth(assigns) do
+  def service(assigns) do
     ~H"""
     <.flash_group flash={@flash} />
-    <main class="shell shell--auth">
-      <div class="shell__content">{render_slot(@inner_block)}</div>
-    </main>
+    <a class="skip-link" href="#main-content">{gettext("Pular para o conteúdo")}</a>
+    <div class="shell shell--service">
+      <.service_header service={@service} title={@title} back={@back} back_label={@back_label}>
+        <:actions>{render_slot(@actions)}</:actions>
+        <:tabs><.service_tab_bar service={@service} current={@current} /></:tabs>
+      </.service_header>
+      <main class="shell__content" id="main-content">
+        {render_slot(@inner_block)}
+        {render_slot(@fab)}
+      </main>
+    </div>
     """
   end
+
+  @doc false
+  def theme_color, do: @theme_color
 
   @doc """
   Shell do visualizador (`/galeria/:id`): tela cheia, sem cabeçalho, sem abas,

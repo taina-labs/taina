@@ -20,9 +20,9 @@ defmodule TainaWeb.ResetPasswordLive do
     {:ok,
      socket
      |> assign(:page_title, gettext("Redefinir senha"))
+     |> assign(:show_contact, false)
      |> assign(:token, token)
-     |> assign(:token_status, Maraca.reset_status(token))
-     |> assign(:show_contact, false)}
+     |> assign(:token_status, Maraca.reset_status(token))}
   end
 
   # O "Voltar" do cartão, num link vencido, só tem um lugar para onde ir:
@@ -38,7 +38,7 @@ defmodule TainaWeb.ResetPasswordLive do
     {:noreply, assign(socket, :show_contact, true)}
   end
 
-  def handle_event("close-contact", _params, socket) do
+  def handle_event("close_contact", _params, socket) do
     {:noreply, assign(socket, :show_contact, false)}
   end
 
@@ -90,7 +90,7 @@ defmodule TainaWeb.ResetPasswordLive do
       <.dialog
         id="contact-help"
         show={@show_contact}
-        on_cancel={JS.push("close-contact")}
+        on_cancel={JS.push("close_contact")}
       >
         <h2 id="contact-help-title" class="type-h3 mb-3">{gettext("Fale com quem cuida")}</h2>
         <p class="type-body text-secondary mb-4">
@@ -98,7 +98,7 @@ defmodule TainaWeb.ResetPasswordLive do
             "Quem cuida da sua comunidade gera um link novo para você, que vale uma hora e só pode ser usado uma vez."
           )}
         </p>
-        <.button kind="secondary" class="w-full" phx-click="close-contact">
+        <.button kind="secondary" class="w-full" phx-click="close_contact">
           {gettext("Entendi")}
         </.button>
       </.dialog>

@@ -5,6 +5,10 @@ defmodule TainaWeb.Router do
   import TainaWeb.API.Auth
   import TainaWeb.Auth
 
+  @api_v1_path "/api/v1"
+  @file_id_path "/files/:id"
+  @folder_id_path "/folders/:id"
+
   pipeline :api do
     plug :accepts, ["json"]
   end
@@ -54,7 +58,7 @@ defmodule TainaWeb.Router do
 
   # Superficie v1 (RFC_005 secao 9). Fatia 1: a vertical minima do app
   # (login, navegar, subir, ver). As fatias 2 e 3 entram nos mesmos escopos.
-  scope "/api/v1", TainaWeb.API do
+  scope @api_v1_path, TainaWeb.API do
     pipe_through :api_v1
 
     get "/instance", InstanceController, :show
@@ -68,7 +72,7 @@ defmodule TainaWeb.Router do
     post "/password-resets/:token", PasswordController, :update
   end
 
-  scope "/api/v1", TainaWeb.API do
+  scope @api_v1_path, TainaWeb.API do
     pipe_through [:api_v1, :api_v1_auth]
 
     delete "/session", SessionController, :delete
@@ -76,19 +80,19 @@ defmodule TainaWeb.Router do
 
     get "/folders", FolderController, :index
     post "/folders", FolderController, :create
-    get "/folders/:id", FolderController, :show
-    patch "/folders/:id", FolderController, :update
+    get @folder_id_path, FolderController, :show
+    patch @folder_id_path, FolderController, :update
     post "/folders/:id/move", FolderController, :move
-    delete "/folders/:id", FolderController, :delete
+    delete @folder_id_path, FolderController, :delete
     get "/contents", FolderController, :contents
 
     post "/files", FileController, :create
     get "/files/manifest", FileController, :manifest
     post "/files/batch", FileController, :batch
-    get "/files/:id", FileController, :show
-    patch "/files/:id", FileController, :update
+    get @file_id_path, FileController, :show
+    patch @file_id_path, FileController, :update
     post "/files/:id/move", FileController, :move
-    delete "/files/:id", FileController, :delete
+    delete @file_id_path, FileController, :delete
     get "/files/:id/download", FileController, :download
     get "/files/:id/thumbnail/:size", FileController, :thumbnail
     get "/files/:id/access-target", AccessController, :show
@@ -123,7 +127,7 @@ defmodule TainaWeb.Router do
     get "/saude", SaudeController, :show
   end
 
-  scope "/api/v1", TainaWeb.API do
+  scope @api_v1_path, TainaWeb.API do
     pipe_through [:api_v1, :api_v1_auth, :api_v1_zelador]
 
     post "/members", MemberController, :create

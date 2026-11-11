@@ -13,6 +13,7 @@ defmodule TainaWeb.API.Serializer do
   alias Taina.Maraca.DeviceToken
   alias Taina.Ybira
   alias Taina.Ybira.RenditionStatus
+  alias Ypy.Maraca.Ava
   alias Ypy.Maraca.Concessao
   alias Ypy.Maraca.Pedido
   alias Ypy.Maraca.Tekoa
@@ -20,6 +21,65 @@ defmodule TainaWeb.API.Serializer do
   alias Ypy.Wire
   alias Ypy.Ybira.File
   alias Ypy.Ybira.Folder
+
+  @type access_target_input :: %{owner: Ava.t(), rkey: String.t(), nome: String.t()}
+  @type backup_result :: {:ok, %{at: DateTime.t(), bytes: non_neg_integer()}} | {:error, term()}
+  @type concessao :: Concessao.t()
+  @type counts_by_kind :: %{
+          photos: non_neg_integer(),
+          videos: non_neg_integer(),
+          documents: non_neg_integer(),
+          others: non_neg_integer()
+        }
+  @type device_token :: DeviceToken.t()
+  @type file :: File.t()
+  @type folder :: Folder.t()
+  @type job_counts :: %{renditions: non_neg_integer(), trash_purge: non_neg_integer()}
+  @type json_object :: %{optional(String.t()) => term()}
+  @type pedido :: Pedido.t()
+  @type public_id :: String.t()
+  @type scope :: Scope.t()
+  @type storage_stats :: %{used_bytes: non_neg_integer(), quota_bytes: non_neg_integer() | nil}
+  @type tekoa :: Tekoa.t()
+  @type trash_stats :: %{count: non_neg_integer(), bytes: non_neg_integer()}
+
+  @doc "O alvo de um pedido de acesso: o dono resolvido, o rkey e o nome."
+  @spec access_target(access_target_input()) :: json_object()
+  def access_target(%{owner: owner, rkey: rkey, nome: nome}) do
+    %{"owner" => Wire.Ava.json(owner), "rkey" => rkey, "name" => nome}
+  end
+
+  @doc "A concessao no fio, com as pontas (leitor, dono) quando vieram preload."
+  @spec concessao(concessao()) :: json_object()
+  def concessao(%Concessao{} = concessao) do
+    %{
+      "public_id" => concessao.public_id,
+      "tipo" => concessao.tipo,
+      "recurso" => concessao.recurso,
+      "concedida_em" => Wire.at(concessao.concedida_em),
+      "revogada_em" => Wire.at(concessao.revogada_em),
+      "created_at" => Wire.at(concessao.inserted_at),
+      "leitor" => ava_json(concessao.leitor),
+      "dono" => ava_json(concessao.dono)
+    }
+  end
+
+  @doc "O dispositivo no fio: sem o hash, jamais."
+  @spec device(device_token()) :: json_object()
+  def device(%DeviceToken{} = device), do: device(device, nil)
+
+  @doc "O dispositivo no fio, com a marca da chamada atual quando conhecida."
+  @spec device(device_token(), nil | public_id()) :: json_object()
+  def device(%DeviceToken{} = device, current_public_id) do
+    %{
+      "public_id" => device.public_id,
+      "name" => device.name,
+      "last_used_at" => Wire.at(device.last_used_at),
+      "revoked_at" => Wire.at(device.revoked_at),
+      "created_at" => Wire.at(device.inserted_at),
+      "current" => device.public_id == current_public_id
+    }
+  end
 
   @doc """
   O arquivo no fio do produto (contrato review 0.1.0, A): a forma do kernel
@@ -33,9 +93,12 @@ defmodule TainaWeb.API.Serializer do
   Um arquivo sozinho: quatro leituras curtas (metadados, estado, pasta,
   dono). Para lista, use `files/2`, que carrega tudo em lote.
   """
-  @spec file(Scope.t(), File.t()) :: map()
+  @spec file(scope(), file()) :: json_object()
   def file(%Scope{} = scope, %File{} = file) do
+    # Serialization keeps its map contract; context failures are invariant violations here.
+    # credo:disable-for-next-line OeditusCredo.Check.Warning.MissingErrorHandling
     {:ok, metadata} = Ybira.photo_metadata(scope, file)
+    # credo:disable-for-next-line OeditusCredo.Check.Warning.MissingErrorHandling
     {:ok, donos} = Ybira.donos_public_ids(scope, [file.dono_id])
 
     file
@@ -59,10 +122,14 @@ defmodule TainaWeb.API.Serializer do
   conteúdo, fotos, linha do tempo, lixeira) paga quatro consultas, não
   quatro por arquivo.
   """
-  @spec files(Scope.t(), [File.t()]) :: [map()]
+  @spec files(scope(), [file()]) :: [json_object()]
   def files(%Scope{} = scope, files) when is_list(files) do
+    # Batch serialization has the same contract and invariants as file/2.
+    # credo:disable-for-next-line OeditusCredo.Check.Warning.MissingErrorHandling
     {:ok, metadata_by_file_id} = Ybira.photos_metadata(scope, Enum.map(files, & &1.id))
+    # credo:disable-for-next-line OeditusCredo.Check.Warning.MissingErrorHandling
     {:ok, folder_rkeys} = Ybira.files_folder_rkeys(scope, files)
+    # credo:disable-for-next-line OeditusCredo.Check.Warning.MissingErrorHandling
     {:ok, donos} = Ybira.donos_public_ids(scope, Enum.map(files, & &1.dono_id))
 
     Enum.map(files, fn file ->
@@ -86,8 +153,10 @@ defmodule TainaWeb.API.Serializer do
   `public_id`, `Ybira.donos_public_ids/2`). Sozinha: uma leitura curta.
   Para lista, use `folders/2`.
   """
-  @spec folder(Scope.t(), Folder.t()) :: map()
+  @spec folder(scope(), folder()) :: json_object()
   def folder(%Scope{} = scope, %Folder{} = folder) do
+    # Folder serialization also returns its map directly.
+    # credo:disable-for-next-line OeditusCredo.Check.Warning.MissingErrorHandling
     {:ok, donos} = Ybira.donos_public_ids(scope, [folder.dono_id])
 
     folder
@@ -99,8 +168,10 @@ defmodule TainaWeb.API.Serializer do
   A página de pastas no fio do produto: os mesmos mapas de `folder/2`, com
   os donos da página em uma consulta.
   """
-  @spec folders(Scope.t(), [Folder.t()]) :: [map()]
+  @spec folders(scope(), [folder()]) :: [json_object()]
   def folders(%Scope{} = scope, folders) when is_list(folders) do
+    # Batch folder serialization returns maps directly, like folder/2.
+    # credo:disable-for-next-line OeditusCredo.Check.Warning.MissingErrorHandling
     {:ok, donos} = Ybira.donos_public_ids(scope, Enum.map(folders, & &1.dono_id))
 
     Enum.map(folders, fn folder ->
@@ -110,55 +181,14 @@ defmodule TainaWeb.API.Serializer do
     end)
   end
 
-  @doc "A Tekoa no fio."
-  @spec tekoa(Tekoa.t()) :: map()
-  def tekoa(%Tekoa{} = tekoa) do
-    %{
-      "public_id" => tekoa.public_id,
-      "name" => tekoa.name,
-      "domain" => tekoa.domain,
-      "storage_quota_bytes" => tekoa.storage_quota_bytes,
-      "storage_used_bytes" => tekoa.storage_used_bytes,
-      "created_at" => Wire.at(tekoa.inserted_at)
-    }
-  end
-
   @doc "A instancia: se a caixa ja foi criada, a Tekoa dela, e a versao do box."
-  @spec instance(boolean(), nil | Tekoa.t()) :: map()
+  @spec instance(boolean(), nil | tekoa()) :: json_object()
   def instance(bootstrapped?, tekoa) do
     %{"bootstrapped" => bootstrapped?, "tekoa" => tekoa_json(tekoa), "version" => version()}
   end
 
-  @doc "O dispositivo no fio: sem o hash, jamais."
-  @spec device(DeviceToken.t()) :: map()
-  def device(%DeviceToken{} = device), do: device(device, nil)
-
-  @doc "O dispositivo no fio, com a marca da chamada atual quando conhecida."
-  @spec device(DeviceToken.t(), nil | String.t()) :: map()
-  def device(%DeviceToken{} = device, current_public_id) do
-    %{
-      "public_id" => device.public_id,
-      "name" => device.name,
-      "last_used_at" => Wire.at(device.last_used_at),
-      "revoked_at" => Wire.at(device.revoked_at),
-      "created_at" => Wire.at(device.inserted_at),
-      "current" => device.public_id == current_public_id
-    }
-  end
-
-  @doc "A sessao: o segredo cru volta uma unica vez, aqui."
-  @spec session(String.t(), DeviceToken.t(), Scope.t()) :: map()
-  def session(token, %DeviceToken{} = device, scope) do
-    %{
-      "token" => token,
-      "device" => device(device, device.public_id),
-      "me" => Wire.Ava.json(scope.ava),
-      "tekoa" => tekoa(scope.tekoa)
-    }
-  end
-
   @doc "Quem esta agindo: a pessoa, a Tekoa e o dispositivo da chamada."
-  @spec me(Scope.t(), nil | DeviceToken.t()) :: map()
+  @spec me(scope(), nil | device_token()) :: json_object()
   def me(scope, device) do
     %{
       "ava" => Wire.Ava.json(scope.ava),
@@ -167,30 +197,8 @@ defmodule TainaWeb.API.Serializer do
     }
   end
 
-  @doc """
-  O retrato do armazenamento: os bytes, a cota, a quebra por tipo, as contagens
-  e o lixo.
-  """
-  @spec storage(map(), map(), non_neg_integer(), non_neg_integer(), map()) :: map()
-  def storage(%{used_bytes: used, quota_bytes: quota}, by_kind, files, photos, trash) do
-    %{
-      "used_bytes" => used,
-      "quota_bytes" => quota,
-      "by_kind" => by_kind_json(by_kind),
-      "files" => files,
-      "photos" => photos,
-      "trash" => %{"count" => trash.count, "bytes" => trash.bytes}
-    }
-  end
-
-  @doc "A saude da comunidade: armazenamento, jobs em espera e o ultimo backup."
-  @spec saude(map(), map(), tuple()) :: map()
-  def saude(storage_json, jobs, backup) do
-    %{"storage" => storage_json, "jobs" => jobs, "backup" => backup_json(backup)}
-  end
-
   @doc "O pedido de acesso no fio, com as pontas (pedinte, dono) quando vieram preload."
-  @spec pedido(Pedido.t()) :: map()
+  @spec pedido(pedido()) :: json_object()
   def pedido(%Pedido{} = pedido) do
     %{
       "public_id" => pedido.public_id,
@@ -205,42 +213,67 @@ defmodule TainaWeb.API.Serializer do
     }
   end
 
-  @doc "A concessao no fio, com as pontas (leitor, dono) quando vieram preload."
-  @spec concessao(Concessao.t()) :: map()
-  def concessao(%Concessao{} = concessao) do
+  @doc "A saude da comunidade: armazenamento, jobs em espera e o ultimo backup."
+  @spec saude(json_object(), job_counts(), backup_result()) :: json_object()
+  def saude(storage_json, jobs, backup) do
+    %{"storage" => storage_json, "jobs" => jobs, "backup" => backup_json(backup)}
+  end
+
+  @doc "A sessao: o segredo cru volta uma unica vez, aqui."
+  @spec session(String.t(), device_token(), scope()) :: json_object()
+  def session(token, %DeviceToken{} = device, scope) do
     %{
-      "public_id" => concessao.public_id,
-      "tipo" => concessao.tipo,
-      "recurso" => concessao.recurso,
-      "concedida_em" => Wire.at(concessao.concedida_em),
-      "revogada_em" => Wire.at(concessao.revogada_em),
-      "created_at" => Wire.at(concessao.inserted_at),
-      "leitor" => ava_json(concessao.leitor),
-      "dono" => ava_json(concessao.dono)
+      "token" => token,
+      "device" => device(device, device.public_id),
+      "me" => Wire.Ava.json(scope.ava),
+      "tekoa" => tekoa(scope.tekoa)
     }
   end
 
-  @doc "O alvo de um pedido de acesso: o dono resolvido, o rkey e o nome."
-  @spec access_target(map()) :: map()
-  def access_target(%{owner: owner, rkey: rkey, nome: nome}) do
-    %{"owner" => Wire.Ava.json(owner), "rkey" => rkey, "name" => nome}
+  @doc """
+  O retrato do armazenamento: os bytes, a cota, a quebra por tipo, as contagens
+  e o lixo.
+  """
+  @spec storage(storage_stats(), counts_by_kind(), non_neg_integer(), non_neg_integer(), trash_stats()) :: json_object()
+  def storage(%{used_bytes: used, quota_bytes: quota}, by_kind, files, photos, trash) do
+    %{
+      "used_bytes" => used,
+      "quota_bytes" => quota,
+      "by_kind" => by_kind_json(by_kind),
+      "files" => files,
+      "photos" => photos,
+      "trash" => %{"count" => trash.count, "bytes" => trash.bytes}
+    }
   end
 
-  defp tekoa_json(nil), do: nil
-  defp tekoa_json(%Tekoa{} = tekoa), do: tekoa(tekoa)
+  @doc "A Tekoa no fio."
+  @spec tekoa(tekoa()) :: json_object()
+  def tekoa(%Tekoa{} = tekoa) do
+    %{
+      "public_id" => tekoa.public_id,
+      "name" => tekoa.name,
+      "domain" => tekoa.domain,
+      "storage_quota_bytes" => tekoa.storage_quota_bytes,
+      "storage_used_bytes" => tekoa.storage_used_bytes,
+      "created_at" => Wire.at(tekoa.inserted_at)
+    }
+  end
 
-  defp device_json(nil), do: nil
-  defp device_json(%DeviceToken{} = device), do: device(device, device.public_id)
+  defp ava_json(%Ava{} = ava), do: Wire.Ava.json(ava)
+  defp ava_json(_not_loaded), do: nil
+
+  defp backup_json({:ok, %{at: at, bytes: bytes}}), do: %{"at" => Wire.at(at), "bytes" => bytes}
+  defp backup_json(_error), do: %{"at" => nil, "bytes" => nil}
 
   defp by_kind_json(%{photos: photos, videos: videos, documents: documents, others: others}) do
     %{"photos" => photos, "videos" => videos, "documents" => documents, "others" => others}
   end
 
-  defp backup_json({:ok, %{at: at, bytes: bytes}}), do: %{"at" => Wire.at(at), "bytes" => bytes}
-  defp backup_json(_error), do: %{"at" => nil, "bytes" => nil}
+  defp device_json(nil), do: nil
+  defp device_json(%DeviceToken{} = device), do: device(device, device.public_id)
 
-  defp ava_json(%Ypy.Maraca.Ava{} = ava), do: Wire.Ava.json(ava)
-  defp ava_json(_not_loaded), do: nil
+  defp dimension(value) when is_integer(value), do: value
+  defp dimension(_other), do: nil
 
   # A pasta pai resolvida pela regra de leitura (a mesma que autoriza a
   # leitura do arquivo): null quando ele esta solto na raiz, quando a pasta
@@ -249,6 +282,21 @@ defmodule TainaWeb.API.Serializer do
     case Ybira.file_folder_rkey(scope, file) do
       {:ok, folder_rkey} -> folder_rkey
       _error -> nil
+    end
+  end
+
+  # O fio guarda a data do EXIF sem fuso (ISO8601 cru do worker); com fuso
+  # tambem passa, normalizado para UTC.
+  defp parse_datetime(value) do
+    case DateTime.from_iso8601(value) do
+      {:ok, dt, _offset} ->
+        {:ok, dt}
+
+      _ ->
+        case NaiveDateTime.from_iso8601(value) do
+          {:ok, ndt} -> {:ok, DateTime.from_naive!(ndt, "Etc/UTC")}
+          _error -> :error
+        end
     end
   end
 
@@ -271,25 +319,8 @@ defmodule TainaWeb.API.Serializer do
 
   defp taken_at(_other), do: nil
 
-  # O fio guarda a data do EXIF sem fuso (ISO8601 cru do worker); com fuso
-  # tambem passa, normalizado para UTC.
-  defp parse_datetime(value) do
-    case DateTime.from_iso8601(value) do
-      {:ok, dt, _offset} ->
-        {:ok, dt}
-
-      _ ->
-        case NaiveDateTime.from_iso8601(value) do
-          {:ok, ndt} -> {:ok, DateTime.from_naive!(ndt, "Etc/UTC")}
-          _error -> :error
-        end
-    end
-  end
-
-  defp wire_at(dt), do: dt |> DateTime.truncate(:second) |> DateTime.to_iso8601()
-
-  defp dimension(value) when is_integer(value), do: value
-  defp dimension(_other), do: nil
+  defp tekoa_json(nil), do: nil
+  defp tekoa_json(%Tekoa{} = tekoa), do: tekoa(tekoa)
 
   defp version do
     case Application.spec(:taina, :vsn) do
@@ -297,4 +328,6 @@ defmodule TainaWeb.API.Serializer do
       vsn -> to_string(vsn)
     end
   end
+
+  defp wire_at(dt), do: dt |> DateTime.truncate(:second) |> DateTime.to_iso8601()
 end

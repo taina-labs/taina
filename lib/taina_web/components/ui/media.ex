@@ -19,7 +19,7 @@ defmodule TainaWeb.UI.Media do
   use Phoenix.VerifiedRoutes,
     endpoint: TainaWeb.Endpoint,
     router: TainaWeb.Router,
-    statics: ~w(assets fonts icons robots.txt favicon.ico openapi.yaml)
+    statics: ~W(assets fonts icons robots.txt favicon.ico openapi.yaml)
 
   import TainaWeb.CoreComponents, only: [format_bytes: 1]
 
@@ -121,14 +121,33 @@ defmodule TainaWeb.UI.Media do
     """
   end
 
-  # Legenda do board: "Nome, 12/06/2026, na praça".
-  defp viewer_caption(file, zona) do
-    "#{file.nome}, #{photo_date(file)}, #{viewer_zona(zona)}"
+  # Troca progressiva: o `md` carrega primeiro e o original entra por baixo
+  # (hook `FullSwap`), só quando o tamanho cabe no orçamento do Pi; arquivo
+  # demais trava a caixa por causa de um preview.
+  @full_swap_cap_bytes 20 * 1024 * 1024
+
+  defp done_bytes(%{client_size: size, progress: pct}), do: div(size * pct, 100)
+  defp done_bytes(_entry), do: 0
+
+  # A fila tem a entrada corrente (auto_upload consome quando termina);
+  # primeiro empurrão visível.
+  defp entry(upload) do
+    case upload.entries do
+      [entry | _] -> entry
+      _ -> nil
+    end
   end
 
-  defp viewer_zona(:praca), do: gettext("na praça")
-  defp viewer_zona(:casa), do: gettext("na casa")
+  # Copy do board Ver espaço (cota) e Tentar de novo (rede).
+  defp error_help("error-cota"), do: gettext("O espaço da comunidade acabou. Peça a quem cuida da nuvem para liberar.")
 
+  defp error_help("error-rede"), do: gettext("A conexão caiu no meio do envio. O arquivo não saiu da sua casa.")
+
+  defp error_help(_state), do: nil
+
+  defp full_swap?(%{tamanho: bytes}), do: bytes <= @full_swap_cap_bytes
+
+  # Legenda do board: "Nome, 12/06/2026, na praça".
   # A data do visualizador vem do upload (o kernel nao carrega os metadados
   # de rendicao); a linha do tempo agrupa pela data efetiva, resolvida na
   # consulta do Jaci.
@@ -138,18 +157,18 @@ defmodule TainaWeb.UI.Media do
     |> Calendar.strftime("%d/%m/%Y")
   end
 
+  defp video?(%{mime: mime}), do: String.starts_with?(mime, "video/")
+
+  defp viewer_caption(file, zona) do
+    "#{file.nome}, #{photo_date(file)}, #{viewer_zona(zona)}"
+  end
+
   # ---------- Dropzone ----------
 
   defp viewer_index(ids, %{rkey: id}), do: (Enum.find_index(ids, &(&1 == id)) || 0) + 1
 
-  defp video?(%{mime: mime}), do: String.starts_with?(mime, "video/")
-
-  # Troca progressiva: o `md` carrega primeiro e o original entra por baixo
-  # (hook `FullSwap`), só quando o tamanho cabe no orçamento do Pi; arquivo
-  # demais trava a caixa por causa de um preview.
-  @full_swap_cap_bytes 20 * 1024 * 1024
-
-  defp full_swap?(%{tamanho: bytes}), do: bytes <= @full_swap_cap_bytes
+  defp viewer_zona(:praca), do: gettext("na praça")
+  defp viewer_zona(:casa), do: gettext("na casa")
 
   @doc """
   Caixa de envio (Penpot: Dropzone, State idle/drag/uploading/error-cota/
@@ -172,7 +191,7 @@ defmodule TainaWeb.UI.Media do
 
   attr :state, :string,
     default: "idle",
-    values: ~w(idle drag uploading error-cota error-rede),
+    values: ~W(idle drag uploading error-cota error-rede),
     doc: "State do Penpot; `drag` é a classe trocada pelo hook DragClass"
 
   attr :error_href, :string, default: nil, doc: "destino do Ver espaço (state error-cota)"
@@ -215,7 +234,7 @@ defmodule TainaWeb.UI.Media do
     """
   end
 
-  def dropzone(%{state: state} = assigns) when state in ~w(error-cota error-rede) do
+  def dropzone(%{state: state} = assigns) when state in ~W(error-cota error-rede) do
     ~H"""
     <div class={["dropzone", "dropzone--#{@state}"]} {@rest}>
       <.icon name="close" size={24} />
@@ -230,23 +249,4 @@ defmodule TainaWeb.UI.Media do
     </div>
     """
   end
-
-  # A fila tem a entrada corrente (auto_upload consome quando termina);
-  # primeiro empurrão visível.
-  defp entry(upload) do
-    case upload.entries do
-      [entry | _] -> entry
-      _ -> nil
-    end
-  end
-
-  defp done_bytes(%{client_size: size, progress: pct}), do: div(size * pct, 100)
-  defp done_bytes(_entry), do: 0
-
-  # Copy do board Ver espaço (cota) e Tentar de novo (rede).
-  defp error_help("error-cota"), do: gettext("O espaço da comunidade acabou. Peça a quem cuida da nuvem para liberar.")
-
-  defp error_help("error-rede"), do: gettext("A conexão caiu no meio do envio. O arquivo não saiu da sua casa.")
-
-  defp error_help(_state), do: nil
 end

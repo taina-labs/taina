@@ -56,7 +56,7 @@ defmodule TainaWeb.UI.ActionsTest do
 
   # ---------- Button ----------
 
-  for kind <- ~w(primary secondary ghost danger) do
+  for kind <- ~W(primary secondary ghost danger) do
     test "button kind #{kind}" do
       html = html_button(kind: unquote(kind))
 
@@ -65,7 +65,7 @@ defmodule TainaWeb.UI.ActionsTest do
     end
   end
 
-  for size <- ~w(sm md lg) do
+  for size <- ~W(sm md lg) do
     test "button size #{size}" do
       html = html_button(size: unquote(size))
 
@@ -88,7 +88,7 @@ defmodule TainaWeb.UI.ActionsTest do
   test "button ícone leading chega como <.icon> do design system" do
     html = html_button(icon: "plus")
 
-    assert html =~ ~s(class="icon )
+    assert html =~ ~S(class="icon )
     assert html =~ "M5 12h14"
   end
 
@@ -101,7 +101,7 @@ defmodule TainaWeb.UI.ActionsTest do
   test "button navigate vira link" do
     html = html_button(navigate: "/convite")
 
-    assert html =~ ~s(href="/convite")
+    assert html =~ ~S(href="/convite")
   end
 
   # ---------- IconButton ----------
@@ -121,8 +121,8 @@ defmodule TainaWeb.UI.ActionsTest do
   test "icon_button guarda o rótulo no aria-label e no title" do
     html = html_icon_button()
 
-    assert html =~ ~s(aria-label="Mais opções")
-    assert html =~ ~s(title="Mais opções")
+    assert html =~ ~S(aria-label="Mais opções")
+    assert html =~ ~S(title="Mais opções")
   end
 
   test "icon_button sem navigate vira <button>" do
@@ -133,7 +133,7 @@ defmodule TainaWeb.UI.ActionsTest do
     html = html_icon_button(navigate: "/conta")
 
     assert html =~ "<a"
-    assert html =~ ~s(href="/conta")
+    assert html =~ ~S(href="/conta")
   end
 
   # ---------- FAB ----------
@@ -157,7 +157,7 @@ defmodule TainaWeb.UI.ActionsTest do
   test "fab navigate vira link" do
     html = fab_html(navigate: "/documentos/enviar")
 
-    assert html =~ ~s(href="/documentos/enviar")
+    assert html =~ ~S(href="/documentos/enviar")
   end
 
   test "fab sem navigate vira <button> com o ícone do design system" do

@@ -36,7 +36,7 @@ defmodule TainaWeb.TrashLiveTest do
     assert has_element?(lv, ~s(a[href="/documentos/lixeira/#{file.rkey}"]), file.nome)
     # quadradinho da lixeira em todas as linhas
     assert has_element?(lv, ".service-square--lixeira")
-    assert has_element?(lv, ~s(.service-tab-bar__item[aria-current="page"]), "Lixeira")
+    assert has_element?(lv, ~S(.service-tab-bar__item[aria-current="page"]), "Lixeira")
   end
 
   test "quando a janela fecha, o prazo avisa antes de apagar", %{
@@ -96,7 +96,7 @@ defmodule TainaWeb.TrashLiveTest do
     assert has_element?(lv, "#confirm-purge .dialog__title", "Apagar antiga.txt de vez?")
     assert has_element?(lv, "#confirm-purge .dialog__body", "Este arquivo não poderá ser restaurado.")
 
-    lv |> element("#confirm-purge button[phx-click=\"confirm-purge\"]") |> render_click()
+    lv |> element("#confirm-purge button[phx-click=\"confirm_purge\"]") |> render_click()
 
     assert render(lv) =~ "A lixeira está vazia"
     assert {:error, :not_found} = Ybira.get_file(scope, file.rkey)
@@ -112,7 +112,7 @@ defmodule TainaWeb.TrashLiveTest do
 
     assert has_element?(lv, "#trash-selection-toolbar", "2 itens selecionados")
 
-    lv |> element("button[phx-click=restore-selected]") |> render_click()
+    lv |> element("button[phx-click=restore_selected]") |> render_click()
 
     assert render(lv) =~ "2 itens restaurados."
     assert {:ok, _} = Ybira.get_file(scope, first.rkey)
@@ -131,11 +131,11 @@ defmodule TainaWeb.TrashLiveTest do
 
     lv |> element(~s(input[phx-value-type="file"][phx-value-id="#{first.rkey}"])) |> render_click()
     lv |> element(~s(input[phx-value-type="file"][phx-value-id="#{second.rkey}"])) |> render_click()
-    lv |> element("button[phx-click=ask-purge-selected]") |> render_click()
+    lv |> element("button[phx-click=ask_purge_selected]") |> render_click()
 
     assert has_element?(lv, "#confirm-purge .dialog__title", "Apagar 2 itens de vez?")
 
-    lv |> element("#confirm-purge button[phx-click=\"confirm-purge\"]") |> render_click()
+    lv |> element("#confirm-purge button[phx-click=\"confirm_purge\"]") |> render_click()
 
     assert render(lv) =~ "A lixeira está vazia"
     assert {:error, :not_found} = Ybira.get_trashed_file(scope, first.rkey)
@@ -157,7 +157,7 @@ defmodule TainaWeb.TrashLiveTest do
     lv |> element(~s(input[phx-value-type="folder"][phx-value-id="#{child.rkey}"])) |> render_click()
     lv |> element(~s(input[phx-value-type="file"][phx-value-id="#{file.rkey}"])) |> render_click()
 
-    lv |> element("button[phx-click=restore-selected]") |> render_click()
+    lv |> element("button[phx-click=restore_selected]") |> render_click()
 
     assert render(lv) =~ "1 item restaurado."
     assert {:ok, restored_root} = Ybira.get_folder(scope, root.rkey)

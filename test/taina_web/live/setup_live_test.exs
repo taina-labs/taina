@@ -46,9 +46,9 @@ defmodule TainaWeb.SetupLiveTest do
     assert html =~ "Quanto do disco a comunidade pode usar"
     assert html =~ "O disco inteiro (recomendado)"
     assert html =~ "Quilombo do Café, quem cuida é ana. Disco interno, limite: o disco inteiro."
-    assert has_element?(lv, ~s(form#setup-step-3[action="/setup"]))
-    assert has_element?(lv, ~s(input[name="setup[storage_quota]"][value="inteiro"]))
-    refute has_element?(lv, ~s(input[name="setup[quota_gb]"]))
+    assert has_element?(lv, ~S(form#setup-step-3[action="/setup"]))
+    assert has_element?(lv, ~S(input[name="setup[storage_quota]"][value="inteiro"]))
+    refute has_element?(lv, ~S(input[name="setup[quota_gb]"]))
   end
 
   test "escolhendo Um limite aparece o campo de GB e o resumo mostra o número", %{conn: conn} do
@@ -63,7 +63,7 @@ defmodule TainaWeb.SetupLiveTest do
       |> render_change(%{"setup" => %{"storage_quota" => "limite", "quota_gb" => "1"}})
 
     assert html =~ "Um limite"
-    assert has_element?(lv, ~s(input[name="setup[quota_gb]"]))
+    assert has_element?(lv, ~S(input[name="setup[quota_gb]"]))
 
     html = lv |> element("form#setup-step-3") |> render_submit()
 
@@ -83,7 +83,7 @@ defmodule TainaWeb.SetupLiveTest do
     html = lv |> element("form#setup-step-3") |> render_submit()
 
     assert html =~ "O limite precisa ser um número de GB maior que zero."
-    assert has_element?(lv, ~s(.field--invalid input[name="setup[quota_gb]"]))
+    assert has_element?(lv, ~S(.field--invalid input[name="setup[quota_gb]"]))
   end
 
   test "limite acima do tamanho do disco mostra o erro sem perder os dados anteriores", %{conn: conn} do
@@ -107,9 +107,9 @@ defmodule TainaWeb.SetupLiveTest do
       })
 
     assert html =~ "O disco tem"
-    assert has_element?(lv, ~s(.field--invalid input[name="setup[quota_gb]"]))
-    assert has_element?(lv, ~s(input[name="setup[community_name]"][value="Quilombo do Café"]))
-    assert has_element?(lv, ~s(input[name="setup[username]"][value="ana"]))
+    assert has_element?(lv, ~S(.field--invalid input[name="setup[quota_gb]"]))
+    assert has_element?(lv, ~S(input[name="setup[community_name]"][value="Quilombo do Café"]))
+    assert has_element?(lv, ~S(input[name="setup[username]"][value="ana"]))
   end
 
   test "o passo vive na URL: ?passo=2 abre no passo certo", %{conn: conn} do
