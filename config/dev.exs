@@ -30,7 +30,7 @@ config :taina, TainaWeb.Endpoint,
   debug_errors: true,
   secret_key_base: "318cH01aO0gWN9FThKaSqgINCNwdQL1PkE5zPLns0FQDdgKzFDfBj+VoM8OtCme/",
   watchers: [
-    esbuild: {Esbuild, :install_and_run, [:taina, ~w(--sourcemap=inline --watch)]}
+    esbuild: {Esbuild, :install_and_run, [:taina, ~W(--sourcemap=inline --watch)]}
   ]
 
 # Watch templates and assets for browser live reload
@@ -43,7 +43,9 @@ config :taina, TainaWeb.Endpoint,
     ]
   ]
 
-# Local file storage for Ybira uploads
+# Local file storage for Ybira uploads. Application.app_dir/2 is unavailable
+# while Mix evaluates this file, before the application is loaded.
+# credo:disable-for-next-line ExSlop.Check.Warning.PathExpandPriv
 config :taina, :storage_root, Path.expand("../priv/storage", __DIR__)
 
 # Enable dev routes for dashboard and mailbox

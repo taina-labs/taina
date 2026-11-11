@@ -6,7 +6,7 @@ import Config
 config :esbuild,
   version: "0.25.4",
   taina: [
-    args: ~w(js/app.js css/app.css --bundle --target=es2022 --outdir=../priv/static/assets --external:/fonts/*),
+    args: ~W(js/app.js css/app.css --bundle --target=es2022 --outdir=../priv/static/assets --external:/fonts/*),
     cd: Path.expand("../assets", __DIR__),
     env: %{"NODE_PATH" => Path.expand("../deps", __DIR__)}
   ]
