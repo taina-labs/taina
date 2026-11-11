@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/taina-labs/taina/compare/v0.8.0...v0.8.1) (2026-11-11)
+
+
+### Miscellaneous Chores
+
+* release okena 0.1.0 ([#182](https://github.com/taina-labs/taina/issues/182)) ([760ec5d](https://github.com/taina-labs/taina/commit/760ec5d701e92bf4b1f9f9c6cde1a47aba4d0fc7))
+
 ## [0.8.0](https://github.com/taina-labs/taina/compare/v0.7.1...v0.8.0) (2026-11-11)
 
 
