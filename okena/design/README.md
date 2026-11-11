@@ -17,10 +17,8 @@ Dois níveis, como no Penpot: **primitivos** (paleta e escala cruas) e
 **semânticos** (o que os componentes consomem). Componente nunca usa primitivo
 direto; se um valor novo for preciso, ele nasce primeiro como token semântico.
 
-O tema é noturno por padrão, e o claro é derivado dele: o bloco
-`@media (prefers-color-scheme: light)` só sobrescreve tokens semânticos, os
-mesmos nomes, então nenhum componente sabe que o tema existe. Cada subsistema
-tem seu acento de serviço (`--service-ybira` floresta, `--service-jaci` lua,
+O tema é único e noturno; não há bloco claro nem `prefers-color-scheme` no app.
+Cada subsistema tem seu acento de serviço (`--service-ybira` floresta, `--service-jaci` lua,
 `--service-maraca` ember, `--service-nhaman` céu), que se usa, não se recolore.
 As fontes são fixas: Bricolage Grotesque (display), Schibsted Grotesk (corpo) e
 JetBrains Mono (mono).

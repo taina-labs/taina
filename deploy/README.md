@@ -1,8 +1,10 @@
-# Taina deployment
+# Deploy do Tainá
+
+Este documento cobre os artefatos locais de deploy. Os guias públicos de instalação e operação ficam no [Tekoá](https://github.com/taina-labs/tekoa).
 
 ## Compose
 
-Copy `deploy/compose` to the box, then run:
+Copie `deploy/compose` para a caixa e execute:
 
 ```sh
 cd deploy/compose
@@ -11,14 +13,9 @@ $EDITOR taina.conf
 docker compose up --detach --wait
 ```
 
-The service publishes `127.0.0.1:4000` and stores state in the named Docker
-volumes `taina-data` and `taina-storage`. Backups go to the host directory bound
-to `/app/backups`, `./backups` by default. Put it on a separate disk or mount for
-disaster recovery. The image tag is pinned in `compose.yaml` and updated with
-the server release.
+O serviço publica `127.0.0.1:4000` e guarda estado nos volumes Docker `taina-data` e `taina-storage`. Backups vão para o diretório do host montado em `/app/backups`, por padrão `./backups`. Use outro disco ou ponto de montagem para recuperação de desastre. A tag da imagem fica fixada em `compose.yaml` e muda com o release.
 
-Compose owns lifecycle. Use `docker compose stop`, `restart`, `ps`, `logs` and
-`pull` directly. The adapter forwards release domain commands:
+O Compose controla o ciclo de vida. Use `docker compose stop`, `restart`, `ps`, `logs` e `pull` diretamente. O adaptador encaminha comandos de domínio do release:
 
 ```sh
 ./taina doctor
@@ -28,7 +25,7 @@ Compose owns lifecycle. Use `docker compose stop`, `restart`, `ps`, `logs` and
 ./taina thumbnails regenerate
 ```
 
-Restore is deliberately cold and never stops or starts the service itself:
+A restauração é fria e não para nem inicia o serviço sozinha:
 
 ```sh
 docker compose stop taina
@@ -36,22 +33,15 @@ docker compose stop taina
 docker compose up --detach --wait
 ```
 
-`taina.conf` is a strict, non-secret configuration file. The release creates its
-persistent secret under the configured data directory on first boot and includes
-it in backups.
+`taina.conf` é um arquivo de configuração restrito e sem segredos. No primeiro boot, o release cria seu segredo persistente no diretório de dados configurado e o inclui nos backups.
 
-### Rootless Docker
+### Docker rootless
 
-Under rootless Docker, add `user: "0"` to the `taina` service in `compose.yaml`.
-The adapter already runs commands that touch the backup directory as root in
-that mode. Keep the backup directory owned by your host user.
+No Docker rootless, acrescente `user: "0"` ao serviço `taina` em `compose.yaml`. Nesse modo, o adaptador já executa como root os comandos que tocam o diretório de backup. Mantenha esse diretório pertencendo ao usuário do host.
 
 ## NixOS
 
-The Taina flake exports the application module and imports the shared BEAM
-container runtime. Image, identity, data directory, port and required mounts
-belong to `services.beam.containers.taina`; application configuration belongs to
-`services.taina`.
+O flake do Tainá exporta o módulo da aplicação e importa o runtime compartilhado de containers BEAM. Imagem, identidade, diretório de dados, porta e mounts obrigatórios pertencem a `services.beam.containers.taina`; a configuração da aplicação pertence a `services.taina`.
 
 ```nix
 inputs.taina.url = "github:taina-labs/taina/v0.7.1";
@@ -73,10 +63,8 @@ services.taina = {
 };
 ```
 
-Systemd owns lifecycle. Use the configured `taina` command only for domain
-operations and `systemctl` or `journalctl` for service operations.
+O systemd controla o ciclo de vida. Use o comando `taina` configurado apenas para operações de domínio, e `systemctl` ou `journalctl` para o serviço.
 
-## Checks
+## Verificações
 
-`deploy/compose/smoke.sh` runs the static Compose checks. Set `TAINA_SMOKE_IMAGE`
-to a locally built image to run the Docker backup and restore integration test.
+`deploy/compose/smoke.sh` executa as verificações estáticas do Compose. Defina `TAINA_SMOKE_IMAGE` com uma imagem local para rodar o teste de integração de backup e restore no Docker.

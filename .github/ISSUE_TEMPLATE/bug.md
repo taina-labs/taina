@@ -35,7 +35,7 @@ docker images ghcr.io/taina-labs/taina
 se apareceram erros no terminal, cole aqui:
 
 ```
-docker compose logs app
+docker compose logs taina
 ```
 
 **Notas**

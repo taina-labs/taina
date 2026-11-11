@@ -1,9 +1,32 @@
 This is a web application written using the Phoenix web framework.
 
+## Source of truth and current scope
+
+`../tekoa/` is the canonical product documentation. Read it before proposing architecture, scope or behavior, and surface drift instead of inventing another answer.
+
+- `../tekoa/ROADMAP.md`: current state, 1.0.0 scope and future directions.
+- `../tekoa/tecnico/ARQUITETURA.md`: current decisions and the camera-roll/off-site-backup design.
+- `../tekoa/guias/`: operator guides and field-validation evidence.
+
+Tekoá is a separate repository. Do not edit it as a side effect of app work.
+
+The 1.0.0 goal is to capture, store and recover files and photos: Flutter app on iOS/Android, one-way camera-roll mirror and encrypted off-site backup with equivalent recovery kits. E2E, bidirectional sync and delete propagation are out of scope.
+
+## Stack and commands
+
+- Elixir 1.20/OTP 28, Phoenix 1.8 + LiveView, SQLite/WAL, Oban and libvips.
+- Ypy is internal to this monorepo, under `lib/ypy`. There is no PostgreSQL or RLS.
+- Flutter app in `okena/`, targeting iOS and Android.
+- Nix flake + direnv for development. Compose/NixOS deployment lives in `deploy/`.
+- `mix setup`: dependencies, database and seeds.
+- `mix test` or `mix test test/path_test.exs`.
+- `mix precommit`: required final gate. Fix every finding.
+- `cd okena && just check`: analyzer and tests for the Flutter core and app.
+
 ## Project guidelines
 
-- Use `mix precommit` alias when you are done with all changes and fix any pending issues
-- Use the already included and available `:req` (`Req`) library for HTTP requests, **avoid** `:httpoison`, `:tesla`, and `:httpc`. Req is included by default and is the preferred HTTP client for Phoenix apps
+- Use `mix precommit` alias when you are done with all changes and fix any pending issues.
+- Existing external HTTP uses `:httpc`. Do not introduce Req, Finch, HTTPoison or Tesla without an explicit decision.
 
 <!-- usage-rules-start -->
 
@@ -129,7 +152,7 @@ This is the single most important rule and it applies to the frontend too.
   callbacks, callbacks just wire results in.
 - **Domain logic lives in contexts** (Maracá / Ybira / Jaci). The LiveView
   *calls* the context and shapes the result for the view; it never reimplements
-  business rules. Always pass through `current_scope` (RLS boundary).
+  business rules. Always pass through `current_scope`; authorization and isolation live in the application, not in RLS.
 - `assign_new/3` for derived/cached state that must survive the HTTP → WebSocket
   handoff (see `hooks.ex` `storage_stats` — computed once, not re-queried).
 - **JS hooks are the edge, kept minimal.** Before writing a hook, check a native
@@ -184,8 +207,10 @@ These are build directives distilled from `community-ux-reviewer` — apply them
 - **LiveView / Raspberry Pi feasibility lens on every interaction.** Server-
   rendered, mobile-first, low client state. No offline-PWA assumptions, no heavy
   client-side state machines. Don't fight the architecture.
-- **Respect the scope cuts.** MVP = the community's file + photo vault. Chat
-  (Guará) is out of MVP — never propose chat as the way to be "more
+- **Respect the scope cuts.** The 1.0.0 closes capture, storage and recovery:
+  the community's file + photo vault, Flutter clients, one-way camera-roll
+  mirror and encrypted off-site backup. Chat (Guará), E2E, bidirectional sync
+  and delete propagation are out. Never propose chat as the way to be "more
   communitarian"; find that value in files / photos / people / governance.
 
 ### Plain text: no AI-typography, no emoji
@@ -213,7 +238,7 @@ rewrites a *leading* `grep`/`find`, which silently breaks unicode scans, so run
 
 ### Social model & transparency (Tainá-specific, non-negotiable)
 
-Decided 2026-06-15 (canonical record: `tekoa/tecnico/RFC_003_GOVERNANCA_E_TRANSPARENCIA.md`).
+Canonical current record: `tekoa/tecnico/ARQUITETURA.md`. RFC 003 in `tekoa/tecnico/arquivo/` preserves the original rationale.
 
 - **Two zones, not one pile.** Content lives in **praça** (commons —
   shared-by-norm, every morador reads; placing a file there IS the reversible
@@ -242,12 +267,13 @@ Decided 2026-06-15 (canonical record: `tekoa/tecnico/RFC_003_GOVERNANCA_E_TRANSP
   public code, not in product copy: do not put lines like "promessa de software,
   não cadeado matemático" on a screen. UI copy stays plain, brief and
   non-technical, and does not conflate or conflict with features still planned
-  in the RFCs. No encryption exists yet, and only future Ybira **E2E** (not
-  convergent) would let us say the zelador *cannot* read casa files; until then
+  in the current architecture. Local files are not encrypted. The 1.0.0
+  encrypted off-site backup protects the copy from its provider but does not
+  encrypt the local disk or change root's capabilities. E2E is out of scope;
   the UI says what access means without technical justification.
 - **Governance is collective.** Sensitive acts (remove member, appoint/revoke
   zelador) are community-voted *proposals* (assembleia), never a god-button —
-  but that track is beyond RFC_002 and ships only after its tekoa RFC lands.
+  but that track is beyond the 1.0.0 and ships only after an explicit product decision.
 - **Naming is tiered — one source of truth.** **Tupi-Guarani** for *internal*
   subsystem/architecture proper nouns (Tekoa, Maracá, Ybira, Jaci, Guará):
   code, tokens, board ids, federation, docs. They do **not** appear in the

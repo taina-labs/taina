@@ -7,11 +7,13 @@ pt-BR.
 ## Escopo atual
 
 O app de produção é Flutter, com alvos iOS e Android. Desktop e web estão fora
-do escopo. Não adicione espelho do rolo de câmera, sincronização em segundo
-plano, armazenamento offline-first, upload resumível, novos endpoints ou
-redesign sem uma decisão explícita de produto. Esses assuntos ficam para frentes
-separadas. `api/openapi.yaml` é o contrato compartilhado com a caixa e não deve
-ser reescrito pelo cliente.
+do escopo. Para o 1.0.0, implemente o espelho unidirecional do rolo para a
+`casa`, com sincronização em background. A validação em simulador iOS e
+emulador Android locais é um portão pendente, não um resultado já obtido. Não adicione espelho bidirecional, propagação de exclusões,
+armazenamento offline-first, upload resumível, novos endpoints além dos previstos
+na arquitetura atual ou redesign sem uma decisão explícita de produto.
+`api/openapi.yaml` é o contrato compartilhado com a caixa e não deve ser
+reescrito pelo cliente.
 
 ## Estrutura
 
@@ -20,7 +22,7 @@ ser reescrito pelo cliente.
 - `packages/okena_core/`: package Dart puro. API, transporte, modelos
   imutáveis, resultados/erros, fronteiras de sessão, fakes e testes unitários.
 - `app/`: app Flutter para iOS/Android. UI por feature, navegação, design
-  system, runners nativos, widget tests e integration tests.
+  system, runners nativos, widget tests e smoke contra uma caixa real.
 
 ## Arquitetura
 

@@ -1,92 +1,54 @@
-# Política de Segurança
+# Segurança e privacidade
 
-## O que o Tainá guarda, e o que isso significa
+O Tainá guarda arquivos, fotos e contas de uma comunidade. Uma falha de segurança pode expor dados de pessoas reais. Segurança faz parte do produto, não é polimento.
 
-O Tainá é a nuvem privada de uma comunidade: guarda os arquivos, as fotos e as
-contas que aquele grupo resolveu manter para si. Uma falha de segurança aqui
-não é um bug de imagem de perfil, é exposição de arquivos de gente.
+## O que o Tainá não promete
 
-Por isso o Tainá é AGPL e a segurança é tratada como parte do produto, não como
-polimento.
+- **A casa local não é cifrada.** Arquivos são gravados em texto puro. SHA-256 serve para deduplicação, não para proteção. Quem tem acesso físico ou root na caixa pode lê-los.
+- **A privacidade da casa é promessa de software e confiança.** A zeladoria não tem caminho de leitura pelo produto, mas isso não é uma garantia criptográfica contra o host.
+- **E2E não está no escopo atual.** O backup externo cifrado do 1.0.0 protege a cópia contra o provedor; não cifra o disco local nem muda o poder de root.
 
-## O que o Tainá **não** promete
+Documentação que apresentar a casa local como criptografada está errada e deve ser corrigida.
 
-Vale ser explícito aqui, porque é a mesma linguagem que a interface usa:
+## Garantias implementadas
 
-- **Não há criptografia.** Os arquivos são gravados em texto puro no disco. O
-  hash SHA-256 do Ybira existe para deduplicação, não para proteção. Quem tem
-  acesso físico à caixa, ou acesso root a ela, lê o que está na `casa` de
-  qualquer morador.
-- **A privacidade da `casa` é promessa de software e confiança.** O zelador
-  não tem caminho de leitura no produto, e o software não expõe um, mas não é
-  um cadeado matemático. A interface nunca promete o contrário.
-- **Só criptografia E2E** no Ybira permitiria dizer honestamente que o zelador
-  não consegue ler a casa de ninguém. Isso está no pós-MVP e ainda não existe.
+- Uma comunidade por instância, com enforcement no contexto e no banco.
+- SQLite com isolamento e autorização na aplicação. Não há PostgreSQL nem RLS.
+- A varredura `test/taina/isolation_sweep_test.exs` cobre a regra de leitura nos contexts, controllers e telas.
+- Regra `casa`/`praça` aplicada também a metadados, downloads e miniaturas.
+- Zeladoria sem autoridade de leitura sobre a casa de outra pessoa.
+- Sessões rotacionadas e limite de tentativas de login.
+- Tokens de dispositivo revogáveis, guardados como hash no banco.
+- Telemetria, métricas e logs permanecem na caixa.
 
-Qualquer relatório que treat a `casa` como criptografada deve ser considerado
-um bug de documentação.
+## Privacidade e LGPD
 
-## O que já é garantido
+Este é um projeto de código aberto e auto-hospedado. A mantenedora não coleta, armazena, acessa ou processa dados pessoais, arquivos, metadados ou logs das instâncias.
 
-- **Isolamento por comunidade via Row-Level Security do PostgreSQL**, com
-  `FORCE ROW LEVEL SECURITY`. As políticas são testadas com um role
-  não-superuser: o teste de isolamento em `test/taina/rls_isolation_test.exs`
-  falha se um contexto de tekoa enxergar dados de outra.
-- **Uma comunidade por instância**, com índice único no banco e função de
-  context. Não há como criar uma segunda tekoa.
-- **Regra de zona (`casa`/`praca`) aplicada em todo caminho de leitura**,
-  incluindo o controller de download e o de thumbnail, que era o principal
-  vetor de vazamento.
-- **Zelador sem autoridade de leitura.** Cuida do disco, dos backups, das
-  atualizações e dos convites. Não lê a casa de ninguém.
-- **Sessões rotacionadas** no login, com limite de tentativas.
-- **Nunca telefonar para casa**: telemetria, métricas e logs ficam na caixa da
-  comunidade.
+Os dados permanecem na caixa da comunidade. Quando ela configurar o backup externo, uma cópia cifrada também ficará no destino que escolher. Nenhum desses caminhos envia dados à mantenedora por default.
 
-## Reportando uma vulnerabilidade
+A conformidade com a Lei Geral de Proteção de Dados (Lei 13.709/2018) e com outras regulações é responsabilidade de quem hospeda e gerencia a instância:
 
-**Não abra issue pública.** Uma issue aberta entrega o achado a qualquer pessoa
-antes de existir correção.
+- no uso estritamente pessoal e sem fins econômicos, verifique as condições do art. 4º da LGPD;
+- no uso comunitário, comercial ou institucional, a pessoa ou organização operadora precisa cuidar de base legal, consentimento, políticas e segurança do servidor.
 
-Escreva para **security@taina.dev** (ou por DM para
-[@zoedsoupe](https://github.com/zoedsoupe), maintainer do projeto) com:
+O software é fornecido no estado em que se encontra, sem garantia de segurança absoluta contra invasões, vazamentos ou configuração incorreta.
 
-- o que acontece, e por que você acha que é um problema
-- os passos para reproduzir, de preferência em uma instância sua
-- a versão da imagem (`docker images ghcr.io/taina-labs/taina`) e o commit
-- o que você imagina como impacto, e quem seria afetado
+## Reportar uma vulnerabilidade
 
-O que acontece depois:
+**Não abra issue pública.** Escreva para [zoey.spessanha@zeetech.io](mailto:zoey.spessanha@zeetech.io) ou contate [@zoedsoupe](https://github.com/zoedsoupe) por DM.
 
-1. Confirmação de recebimento em até 72 horas.
-2. Uma estimativa de prazo antes de qualquer correção pública.
-3. Correção primeiro, divulgação depois. Avisamos quem reportou antes de
-   publicar.
-4. Creditamos o reporte no changelog, se isso for confortável para quem
-   reportou.
+Inclua, quando possível:
 
-Sem prazo de verdade combinamos com quem reportou. Não tenemos SLA. O que
-temos é a obrigação de não sumir.
+- impacto e quem seria afetado;
+- passos para reproduzir numa instância própria;
+- versão da imagem e commit;
+- logs relevantes, sem dados pessoais ou segredos.
 
-## Escopo
+Não há SLA. Recebimento, correção e divulgação são combinados com quem reportou. A correção vem antes da divulgação pública, e o crédito é opcional.
 
-**No escopo:** qualquer coisa que exponha dados entre moradores, entre
-comunidades, ou a não-membros; bypass de autorização ou de RLS; escalonamento
-de privilégio de morador para zelador; execução de código; perda ou
-corrupção de dados.
+## Escopo de segurança
 
-**Fora do escopo** (e ainda vale issue normal, é bug não é vulnerabilidade):
+**No escopo:** exposição de dados entre moradores ou a não-membros; bypass de autorização ou isolamento; escalonamento de privilégio; execução de código; perda ou corrupção de dados; falha na cifra ou na verificação de backup.
 
-- O Taina roda como `nobody` num container, sem criptografia, num aparelho que
-  você controla. Quem tem root na caixa tem os arquivos. Isso é o modelo
-  documentado, não uma falha.
-- Uma comunidade não técnica escolher senha fraca.
-- Ausência de rate limiting além do que já existe no login.
-- Problemas de navegador ou de acessibilidade sem impacto de segurança.
-
-## Ajudando
-
-O relatório de boa qualidade é o que mais ajuda, mesmo quando não é
-vulnerabilidade: passos de reprodução claros, o que você esperava que
-acontecesse, e o que aconteceu de fato. Um bom achado sem severidade de
-segurança ainda é um bom bug.
+**Bug normal, não vulnerabilidade por si só:** acesso root num aparelho controlado pela comunidade, senha fraca escolhida pela comunidade, ausência de rate limiting fora dos fluxos já protegidos e problemas sem impacto de segurança.

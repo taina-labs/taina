@@ -3,7 +3,7 @@
 Este diretório é o design system Flutter do Tainá e espelha
 `design/tokens.css`. Os
 tokens mantêm os mesmos nomes do CSS, então uma tela pode ser comparada lado a
-lado com a versão iOS.
+lado com a versão web.
 
 ## Como consumir
 
