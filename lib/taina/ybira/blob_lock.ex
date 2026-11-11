@@ -28,13 +28,14 @@ defmodule Taina.Ybira.BlobLock do
   use GenServer
 
   @infinity_timeout :infinity
+  @type cid :: String.t()
 
   @doc """
   Roda `fun` com a travessa do CID retida: enquanto `fun` roda, nenhuma
   outra secao critica do mesmo CID roda em paralelo. Devolve o resultado de
   `fun`; a travessa cai em qualquer saida, inclusive excecao.
   """
-  @spec run(String.t(), (-> result)) :: result when result: var
+  @spec run(cid(), (-> result)) :: result when result: var
   def run(cid, fun) when is_binary(cid) and is_function(fun, 0) do
     case GenServer.call(__MODULE__, {:lock, cid}, @infinity_timeout) do
       :granted ->
@@ -61,8 +62,8 @@ defmodule Taina.Ybira.BlobLock do
 
   @impl true
   # O estado e o mapa de travas retidas: `cid => {dono, monitor, fila}`. A
-  # fila guarda `{pid, monitor, from}` dos processos esperando a vez, na
-  # ordem do pedido (o primeiro da fila e o proximo dono).
+  # fila armazena `{pid, monitor, from}` em ordem inversa de chegada para
+  # inserir em O(1); ao liberar a trava, ela e invertida antes de passar a vez.
   def handle_call({:lock, cid}, {pid, _tag} = from, state) do
     case Map.get(state, cid) do
       nil ->
@@ -74,7 +75,7 @@ defmodule Taina.Ybira.BlobLock do
 
       {owner, owner_mon, queue} ->
         mon = Process.monitor(pid)
-        {:noreply, Map.put(state, cid, {owner, owner_mon, queue ++ [{pid, mon, from}]})}
+        {:noreply, Map.put(state, cid, {owner, owner_mon, [{pid, mon, from} | queue]})}
     end
   end
 
@@ -82,7 +83,7 @@ defmodule Taina.Ybira.BlobLock do
     case Map.get(state, cid) do
       {^pid, mon, queue} ->
         Process.demonitor(mon, [:flush])
-        {:reply, :ok, grant(cid, queue, Map.delete(state, cid))}
+        {:reply, :ok, grant(cid, Enum.reverse(queue), Map.delete(state, cid))}
 
       _trava_alheia_ou_ausente ->
         # Sem a trava (ja solta ou de outro dono): nao ha o que fazer. A saida
@@ -98,7 +99,7 @@ defmodule Taina.Ybira.BlobLock do
   def handle_info({:DOWN, mon, :process, _pid, _reason}, state) do
     state =
       Enum.reduce(state, state, fn
-        {cid, {_pid, ^mon, queue}}, acc -> grant(cid, queue, Map.delete(acc, cid))
+        {cid, {_pid, ^mon, queue}}, acc -> grant(cid, Enum.reverse(queue), Map.delete(acc, cid))
         _outra_trava, acc -> acc
       end)
 

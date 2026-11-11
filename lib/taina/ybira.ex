@@ -61,116 +61,117 @@ defmodule Taina.Ybira do
   @default_limit 50
   @tipo_file "ypy.file.v0"
   @tipo_folder "ypy.folder.v0"
+  @chunk_bytes 65_536
+  @folder_path_max_depth 32
 
-  @doc "O limite configurado por arquivo, em bytes."
-  @spec max_blob_size() :: pos_integer()
-  def max_blob_size, do: Taina.Config.max_blob_size()
+  @type datetime :: DateTime.t()
+  @type file :: File.t()
+  @type id :: integer()
+  @type metadata :: map()
+  @type path :: Path.t()
+  @type scope :: Scope.t()
+  @type text :: String.t()
 
-  @doc """
-  O upload: o kernel le o arquivo, confere cota e MIME, guarda os bytes no
-  `Ypy.BlobStore` e commita blob, record, arquivo e cota com a entrada na
-  cadeia. O mime vem dos magic bytes (produto); a rendition de imagem
-  enfileira depois do commit (best-effort: a foto existe sem thumbnail).
-
-  O kernel inteiro roda sob a travessa do CID dos bytes (`Taina.Ybira.BlobLock`):
-  os bytes entram no disco antes de a referencia commitar, e o GC diferido so
-  pode apagar bytes sem referencia DENTRO da mesma travessa. Sem ela, o GC
-  conferiria referencias entre a gravacao dos bytes e o commit, apagaria o
-  blob e o arquivo commitaria apontando para bytes que nao existem mais. So
-  espera a vez quem sobe os MESMOS bytes (mesmo CID, a corrida da dedup);
-  upload de conteudo diferente nunca espera.
-  """
-  def upload(%Scope{} = scope, tmp_path, opts \\ []) do
-    opts =
-      [
-        mime: MimeDetector.detect(tmp_path),
-        nome: Keyword.get(opts, :filename, Path.basename(tmp_path)),
-        folder: Keyword.get(opts, :folder_rkey)
-      ]
-
-    with {:ok, %{size: size}} <- Elixir.File.stat(tmp_path),
-         :ok <- blob_size_allowed?(size),
-         {:ok, cid} <- blob_cid(tmp_path),
-         {:ok, file} <- locked_upload(scope, tmp_path, opts, cid) do
-      maybe_enqueue_rendition(scope, file)
-      {:ok, file}
+  @doc "O caminho no disco dos bytes do arquivo (endereçados pelo CID do blob)."
+  @spec blob_path(file()) :: {:ok, path()} | {:error, :not_found}
+  def blob_path(%File{} = file) do
+    case Disk.open(Blobs.new(), Ypy.Cid.parse(file.blob_cid)) do
+      {:ok, path} -> {:ok, path}
+      {:error, _reason} -> {:error, :not_found}
     end
   end
 
-  defp blob_size_allowed?(size) do
-    if size <= max_blob_size(), do: :ok, else: {:error, :blob_too_large}
+  @doc "Alguma linha de arquivo referencia o CID? (a mesma conferência do expurgo, agora no GC)."
+  @spec blob_referenced?(text()) :: boolean()
+  def blob_referenced?(blob_cid) when is_binary(blob_cid) do
+    Repo.exists?(from(f in File, where: f.blob_cid == ^blob_cid), skip_tekoa_id: true)
   end
 
-  # O kernel inteiro sob a travessa do CID dos bytes: os bytes entram no disco
-  # dentro da secao critica, e a referencia commita nela tambem. Fora dela, o
-  # GC diferido nao apaga blob que este upload esta para referenciar.
-  defp locked_upload(%Scope{} = scope, tmp_path, opts, cid) do
-    BlobLock.run(Ypy.Cid.to_string(cid), fn ->
-      within_tekoa(scope, fn ->
-        Kernel.upload(Repo, Keys.new(), Blobs.new(), scope, tmp_path, opts)
-      end)
+  @doc "Cabe `byte_size` na cota da Tekoa? (o upload do kernel cobra de novo)."
+  def check_capacity(%Scope{} = scope, byte_size) do
+    within_tekoa(scope, fn ->
+      {:ok, quota_check(scope.tekoa.id, byte_size)}
     end)
   end
 
-  # O mesmo CID que o kernel calcula ao transmitir (`Disk.put_file/2`):
-  # sha2-256 em stream sobre o arquivo, uma passada a mais sobre os bytes so
-  # para chavear a travessa ANTES de o kernel abrir a secao critica.
-  @chunk_bytes 65_536
-
-  defp blob_cid(path) do
-    case Elixir.File.open(path, [:read, :binary]) do
-      {:ok, dev} ->
-        try do
-          {:ok, cid_of_stream(dev, :crypto.hash_init(:sha256))}
-        after
-          :file.close(dev)
-        end
-
-      {:error, reason} ->
-        {:error, reason}
-    end
+  def count_files(%Scope{} = scope) do
+    within_tekoa(scope, fn ->
+      {:ok, Repo.aggregate(readable_files_query(scope), :count)}
+    end)
   end
 
-  defp cid_of_stream(dev, hash) do
-    case :file.read(dev, @chunk_bytes) do
-      {:ok, chunk} -> cid_of_stream(dev, :crypto.hash_update(hash, chunk))
-      :eof -> Ypy.Cid.from_digest(:crypto.hash_final(hash), Ypy.Cid.raw())
-      {:error, reason} -> {:error, reason}
-    end
-  end
+  def count_photos(%Scope{} = scope) do
+    within_tekoa(scope, fn ->
+      count =
+        scope
+        |> readable_files_query()
+        |> where([f], like(f.mime, "image/%"))
+        |> Repo.aggregate(:count)
 
-  # Imagens ganham thumbnails + metadados (dimensões, EXIF) num job pós-upload.
-  # Enfileirado depois do commit do upload: só roda se o arquivo existir, e o
-  # job só toca o disco/banco depois (fila do Oban).
-  defp maybe_enqueue_rendition(%Scope{} = scope, %File{} = file) do
-    if image?(file.mime) do
-      %{file_id: file.id, tekoa_public_id: scope.tekoa.public_id}
-      |> Rendition.new()
-      |> Oban.insert()
-    end
+      {:ok, count}
+    end)
   end
-
-  defp image?("image/" <> _rest), do: true
-  defp image?(_mime), do: false
 
   @doc """
-  O arquivo pelo rkey, sob a regra de leitura: casa alheia sem concessao
-  responde {:error, :forbidden}, rkey inexistente responde {:error, :not_found}.
+  Cria a pasta (kernel: `Ypy.Ybira.criar_pasta/4`), sempre na casa; a praca
+  e um ato proprio (`publicar_folder/2`), nunca uma escolha na criacao.
   """
-  def get_file(%Scope{} = scope, rkey) when is_binary(rkey) do
-    within_tekoa(scope, fn -> Kernel.get_file(Repo, scope, rkey) end)
+  def create_folder(%Scope{} = scope, %{} = attrs) do
+    within_tekoa(scope, fn ->
+      Kernel.criar_pasta(Repo, Keys.new(), scope, fetch_attr(attrs, :name), parent: fetch_attr(attrs, :parent_rkey))
+    end)
   end
 
-  @doc "O arquivo apagado do proprio morador, para o preview da lixeira."
-  def get_trashed_file(%Scope{} = scope, rkey) when is_binary(rkey) do
-    within_tekoa(scope, fn -> trashed_file(scope, rkey) end)
+  @doc "Manda o arquivo para a lixeira (kernel: `Ypy.Ybira.apagar/5`)."
+  def delete_file(%Scope{} = scope, rkey) when is_binary(rkey) do
+    within_tekoa(scope, fn -> Kernel.apagar(Repo, Keys.new(), scope, @tipo_file, rkey) end)
   end
 
-  defp trashed_file(%Scope{} = scope, rkey) do
-    case KernelStore.get_file(Repo, scope.tekoa.id, rkey, true) do
-      %File{dono_id: dono_id} = file when dono_id == scope.ava.id -> {:ok, file}
-      _ -> {:error, :not_found}
-    end
+  @doc "Apaga a pasta da lixeira e toda a subarvore dela."
+  def delete_folder(%Scope{} = scope, rkey) when is_binary(rkey) do
+    within_tekoa(scope, fn ->
+      with {:ok, folder} <- fetch_owned_folder(scope, rkey),
+           :ok <- soft_delete_tree(scope.tekoa.id, folder.id) do
+        {:ok, :deleted}
+      end
+    end)
+  end
+
+  @doc """
+  O `public_id` do dono de vários recursos, em UMA consulta sobre
+  `Ypy.Maraca.Ava` (o serializer da API): mapa `dono_id => public_id`. Sem
+  entrada para id nulo (arquivo/pasta órfão, caso defensivo do FK).
+  """
+  @spec donos_public_ids(scope(), [id()]) :: {:ok, %{id() => text()}}
+  def donos_public_ids(%Scope{} = scope, dono_ids) when is_list(dono_ids) do
+    within_tekoa(scope, fn ->
+      ids = dono_ids |> Enum.reject(&is_nil/1) |> Enum.uniq()
+
+      donos = Repo.all(from(a in Ava, where: a.id in ^ids, select: {a.id, a.public_id}))
+
+      {:ok, Map.new(donos)}
+    end)
+  end
+
+  @doc """
+  Enfileira CIDs de blobs expurgados para o GC diferido (`Taina.Ybira.BlobGc`).
+  Idempotente: CID que já está na fila fica com o `enqueued_at` de origem,
+  para não re-envelhecer (a graça de uma hora conta do primeiro expurgo).
+  """
+  @spec enqueue_blob_gc([text()]) :: {:ok, non_neg_integer()}
+  def enqueue_blob_gc(blob_cids) when is_list(blob_cids) do
+    agora = DateTime.truncate(DateTime.utc_now(), :second)
+
+    {count, _} =
+      Repo.insert_all(
+        BlobGc,
+        blob_cids |> Enum.uniq() |> Enum.map(&%{blob_cid: &1, enqueued_at: agora}),
+        on_conflict: :nothing,
+        conflict_target: :blob_cid,
+        skip_tekoa_id: true
+      )
+
+    {:ok, count}
   end
 
   @doc """
@@ -182,22 +183,110 @@ defmodule Taina.Ybira do
     within_tekoa(scope, fn -> access_target(scope, rkey) end)
   end
 
-  defp access_target(%Scope{} = scope, rkey) do
-    case KernelStore.get_file(Repo, scope.tekoa.id, rkey) do
-      nil -> {:error, :not_found}
-      file -> access_target_readable(scope, rkey, file)
+  @doc """
+  Pasta que contém um arquivo, pelo rkey dela, quando visível para quem
+  pergunta. Serve para o botão de voltar da tela do arquivo: ele devolve para
+  a pasta onde o arquivo mora, não para o início. `{:error, :no_folder}` para
+  arquivo solto na raiz; `{:error, :not_found}` quando a pasta já está na
+  lixeira; `{:error, :forbidden}` para a casa de outra pessoa.
+  """
+  @spec file_folder_rkey(scope(), file()) ::
+          {:ok, text()} | {:error, :no_folder | :not_found | :forbidden}
+  def file_folder_rkey(_scope, %File{folder_id: nil}), do: {:error, :no_folder}
+
+  def file_folder_rkey(%Scope{} = scope, %File{folder_id: folder_id}) when is_integer(folder_id) do
+    within_tekoa(scope, fn -> folder_rkey_visivel(scope, folder_id) end)
+  end
+
+  @doc """
+  A pasta pai de vários arquivos, resolvida pela regra de leitura em lote (o
+  `file_folder_rkey/2` de página): mapa `file_id => rkey` da pasta, e `nil`
+  para arquivo solto, pasta na lixeira ou casa não-legível -- os mesmos
+  nulos do unitário. As pastas distintas da página saem em uma consulta; a
+  regra de leitura (as concessões) carrega uma vez só.
+  """
+  @spec files_folder_rkeys(scope(), [file()]) :: {:ok, %{id() => nil | text()}}
+  def files_folder_rkeys(%Scope{} = scope, files) when is_list(files) do
+    within_tekoa(scope, fn ->
+      folder_ids = files |> Enum.map(& &1.folder_id) |> Enum.reject(&is_nil/1) |> Enum.uniq()
+
+      # As concessões do leitor: uma consulta para a página inteira.
+      concessoes = Store.concessoes_ativas(Repo, scope.tekoa.id, scope.ava.id)
+
+      readable_rkeys = readable_folder_rkeys(scope, folder_ids, concessoes)
+
+      {:ok,
+       Map.new(files, fn %File{id: id, folder_id: folder_id} ->
+         {id, Map.get(readable_rkeys, folder_id, nil)}
+       end)}
+    end)
+  end
+
+  @doc """
+  Quantos itens cada pasta da listagem tem, para o meta "Pasta, 4 itens" do
+  board: subpastas mais arquivos, sem a lixeira, na mesma regra de leitura da
+  própria pasta. Uma consulta por tipo, agrupada por pasta, a listagem não vira N+1.
+
+  Devolve `%{folder_id => count}`; pasta sem filho aparece com 0.
+  """
+  def folder_item_counts(%Scope{} = scope, folder_ids) when is_list(folder_ids) do
+    ids = folder_ids |> Enum.reject(&is_nil/1) |> Enum.uniq()
+
+    if ids == [] do
+      {:ok, %{}}
+    else
+      within_tekoa(scope, fn -> {:ok, sum_counts(scope, ids)} end)
     end
   end
 
-  defp access_target_readable(%Scope{} = scope, rkey, file) do
-    if Kernel.readable?(Repo, scope, @tipo_file, rkey) do
-      {:error, :already_readable}
-    else
-      # O PubSub do pedido usa o topico do dono, que precisa da Tekoa
-      # para o `for_ava`; o preload cobre.
-      owner = Repo.preload(file, dono: :tekoa).dono
-      {:ok, %{owner: owner, rkey: rkey, nome: file.nome}}
-    end
+  @doc """
+  Cadeia de pastas de uma pasta até a raiz (raiz -> atual, inclusive), na ordem
+  do breadcrumb. Cada elo é `%{rkey: rkey, nome: nome}`; quem pergunta só recebe
+  a cadeia até a última pasta que pode ler.
+  """
+  @spec folder_path(scope(), text()) :: {:ok, [%{rkey: text(), nome: text()}]} | {:error, :not_found}
+  def folder_path(%Scope{} = scope, folder_rkey) when is_binary(folder_rkey) do
+    within_tekoa(scope, fn ->
+      with {:ok, rows} <- folder_chain(folder_rkey) do
+        {:ok, readable_chain(scope, rows)}
+      end
+    end)
+  end
+
+  @doc """
+  Uma rodada do GC diferido: para cada fila enfileirada antes do `cutoff` (a
+  graça de uma hora fecha a janela entre o enfileiramento e a rodada), apaga
+  os bytes do disco quando nenhuma linha de `ybira_files` referencia o CID;
+  quando o blob voltou a viver (o upload concorrente que o compartilhou
+  commitou), só a fila cai. Devolve o placar `deleted`/`kept`.
+  """
+  @spec gc_blobs(datetime()) :: {:ok, %{deleted: non_neg_integer(), kept: non_neg_integer()}}
+  def gc_blobs(%DateTime{} = cutoff) do
+    rows = Repo.all(from(g in BlobGc, where: g.enqueued_at < ^cutoff), skip_tekoa_id: true)
+
+    placar =
+      rows
+      |> Enum.map(&gc_blob_row/1)
+      |> Enum.frequencies()
+
+    {:ok, %{deleted: Map.get(placar, :deleted, 0), kept: Map.get(placar, :kept, 0)}}
+  end
+
+  @doc """
+  O arquivo pelo rkey, sob a regra de leitura: casa alheia sem concessao
+  responde {:error, :forbidden}, rkey inexistente responde {:error, :not_found}.
+  """
+  def get_file(%Scope{} = scope, rkey) when is_binary(rkey) do
+    within_tekoa(scope, fn -> Kernel.get_file(Repo, scope, rkey) end)
+  end
+
+  def get_folder(%Scope{} = scope, rkey) when is_binary(rkey) do
+    within_tekoa(scope, fn -> Kernel.get_folder(Repo, scope, rkey) end)
+  end
+
+  @doc "O arquivo apagado do proprio morador, para o preview da lixeira."
+  def get_trashed_file(%Scope{} = scope, rkey) when is_binary(rkey) do
+    within_tekoa(scope, fn -> trashed_file(scope, rkey) end)
   end
 
   @doc """
@@ -211,67 +300,61 @@ defmodule Taina.Ybira do
   end
 
   @doc """
-  Pasta que contém um arquivo, pelo rkey dela, quando visível para quem
-  pergunta. Serve para o botão de voltar da tela do arquivo: ele devolve para
-  a pasta onde o arquivo mora, não para o início. `{:error, :no_folder}` para
-  arquivo solto na raiz; `{:error, :not_found}` quando a pasta já está na
-  lixeira; `{:error, :forbidden}` para a casa de outra pessoa.
+  O conteudo combinado de uma pasta (pastas e arquivos legiveis, com a
+  ordenacao da tela). Composto sobre as queries do kernel, que ja trazem a
+  regra de leitura no nivel do SQL.
   """
-  @spec file_folder_rkey(Scope.t(), File.t()) ::
-          {:ok, String.t()} | {:error, :no_folder | :not_found | :forbidden}
-  def file_folder_rkey(_scope, %File{folder_id: nil}), do: {:error, :no_folder}
+  def list_folder_contents(%Scope{} = scope, folder_rkey \\ nil, opts \\ []) do
+    sort = normalize_sort(Keyword.get(opts, :sort))
+    limit = Keyword.get(opts, :limit, @default_limit)
+    offset = Keyword.get(opts, :offset, 0)
+    zona = Keyword.get(opts, :zona)
 
-  def file_folder_rkey(%Scope{} = scope, %File{folder_id: folder_id}) when is_integer(folder_id) do
-    within_tekoa(scope, fn -> folder_rkey_visivel(scope, folder_id) end)
-  end
-
-  defp folder_rkey_visivel(%Scope{} = scope, folder_id) do
-    case Repo.one(from(p in Folder, where: p.id == ^folder_id and is_nil(p.apagado_em))) do
-      nil -> {:error, :not_found}
-      folder -> if readable?(scope, folder), do: {:ok, folder.rkey}, else: {:error, :forbidden}
-    end
-  end
-
-  @doc "Manda o arquivo para a lixeira (kernel: `Ypy.Ybira.apagar/5`)."
-  def delete_file(%Scope{} = scope, rkey) when is_binary(rkey) do
-    within_tekoa(scope, fn -> Kernel.apagar(Repo, Keys.new(), scope, @tipo_file, rkey) end)
-  end
-
-  @doc """
-  Tira da lixeira (kernel: `Ypy.Ybira.restaurar/5`). Se a pasta-pai do
-  arquivo também estiver na lixeira (ou já tiver sido expurgada), o arquivo
-  volta solto na raiz: com o `folder_id` apontando para pasta apagada, ele
-  não apareceria em listagem nenhuma.
-  """
-  def restore_file(%Scope{} = scope, rkey) when is_binary(rkey) do
     within_tekoa(scope, fn ->
-      with {:ok, file} <- Kernel.restaurar(Repo, Keys.new(), scope, @tipo_file, rkey) do
-        restore_to_root_if_orphaned(scope, file)
+      with {:ok, folder} <- resolve_folder(scope, folder_rkey) do
+        folders =
+          scope
+          |> folders_query(folder && folder.id)
+          |> maybe_filter_zone(root_listing_zone(folder, zona))
+          |> apply_folder_sort(sort)
+          # Folder owners are resolved through the existing batched serializer lookup.
+          # credo:disable-for-next-line OeditusCredo.Check.Warning.MissingPreload
+          |> Repo.all()
+
+        {files, next_cursor} =
+          scope
+          |> files_query(folder)
+          |> maybe_filter_zone(root_listing_zone(folder, zona))
+          |> apply_file_sort(sort)
+          |> paginate_offset(limit, offset)
+
+        {:ok, %{folders: folders, files: files, next_cursor: next_cursor}}
       end
     end)
   end
 
-  @doc "Apaga de vez um arquivo da lixeira do proprio morador."
-  def purge_trash_file(%Scope{} = scope, rkey) when is_binary(rkey) do
+  @doc "As pastas legiveis (drop-down de destino, navegacao)."
+  def list_folders(%Scope{} = scope) do
     within_tekoa(scope, fn ->
-      with {:ok, file} <- fetch_trashed_owned_file(scope, rkey),
-           {:ok, 1} <- purge_files(scope.tekoa.id, [file]) do
-        {:ok, file}
-      end
+      {:ok, Kernel.list_folders(Repo, scope, [])}
     end)
   end
 
-  @doc "Apaga de vez uma pasta da lixeira e toda a subarvore dela."
-  def purge_trash_folder(%Scope{} = scope, rkey) when is_binary(rkey) do
+  @doc "Os arquivos mais recentes legiveis (home)."
+  def list_recent(%Scope{} = scope, opts \\ []) do
+    limit = Keyword.get(opts, :limit, 4)
+
     within_tekoa(scope, fn ->
-      with {:ok, folder} <- fetch_trashed_owned_folder(scope, rkey),
-           {:ok, folder_ids} <- owned_subtree_folder_ids(scope, folder.id),
-           {:ok, files} <- trashed_subtree_files(scope, folder_ids),
-           {:ok, _folders} <- trashed_subtree_folders(scope, folder_ids),
-           {:ok, _file_count} <- purge_files(scope.tekoa.id, files),
-           {:ok, folder_count} <- purge_folders(scope.tekoa.id, folder_ids) do
-        {:ok, %{folder: folder, folders: folder_count, files: length(files)}}
-      end
+      files =
+        scope
+        |> readable_files_query()
+        |> order_by([f], desc: f.rkey)
+        |> limit(^limit)
+        # File associations are resolved through existing batched lookups.
+        # credo:disable-for-next-line OeditusCredo.Check.Warning.MissingPreload
+        |> Repo.all()
+
+      {:ok, files}
     end)
   end
 
@@ -303,57 +386,13 @@ defmodule Taina.Ybira do
     end)
   end
 
-  @doc "Quantos arquivos e bytes há na lixeira da Tekoa (painel, agregado sem dono)."
-  def trash_stats(%Scope{} = scope) do
-    within_tekoa(scope, fn ->
-      stats =
-        Repo.one(
-          from(f in File,
-            where: f.tekoa_id == ^scope.tekoa.id and not is_nil(f.apagado_em),
-            select: %{count: count(f.id), bytes: sum(f.tamanho)}
-          )
-        )
-
-      {:ok, %{count: stats.count, bytes: to_integer(stats.bytes)}}
-    end)
-  end
-
-  @doc "Renomeia (o nome do record, nao os bytes; kernel: `Ypy.Ybira.renomear/6`)."
-  def rename_file(%Scope{} = scope, rkey, new_name) when is_binary(rkey) do
-    within_tekoa(scope, fn -> Kernel.renomear(Repo, Keys.new(), scope, @tipo_file, rkey, new_name) end)
-  end
+  @doc "O limite configurado por arquivo, em bytes."
+  @spec max_blob_size() :: pos_integer()
+  def max_blob_size, do: Taina.Config.max_blob_size()
 
   @doc "Move para a pasta de rkey dado (ou nil, para solto; kernel: `Ypy.Ybira.mover/5`)."
   def move_file(%Scope{} = scope, rkey, folder_rkey) when is_binary(rkey) do
     within_tekoa(scope, fn -> Kernel.mover(Repo, Keys.new(), scope, rkey, folder_rkey) end)
-  end
-
-  @doc "Publica na praca (kernel: `Ypy.Ybira.publicar/5`)."
-  def publicar_file(%Scope{} = scope, rkey) when is_binary(rkey) do
-    within_tekoa(scope, fn -> Kernel.publicar(Repo, Keys.new(), scope, @tipo_file, rkey) end)
-  end
-
-  @doc "Tira da praca, de volta para a casa (kernel: `Ypy.Ybira.tirar_da_praca/5`)."
-  def tirar_file_da_praca(%Scope{} = scope, rkey) when is_binary(rkey) do
-    within_tekoa(scope, fn -> Kernel.tirar_da_praca(Repo, Keys.new(), scope, @tipo_file, rkey) end)
-  end
-
-  @doc """
-  Cria a pasta (kernel: `Ypy.Ybira.criar_pasta/4`), sempre na casa; a praca
-  e um ato proprio (`publicar_folder/2`), nunca uma escolha na criacao.
-  """
-  def create_folder(%Scope{} = scope, attrs) when is_map(attrs) do
-    within_tekoa(scope, fn ->
-      Kernel.criar_pasta(Repo, Keys.new(), scope, fetch_attr(attrs, :name), parent: fetch_attr(attrs, :parent_rkey))
-    end)
-  end
-
-  def get_folder(%Scope{} = scope, rkey) when is_binary(rkey) do
-    within_tekoa(scope, fn -> Kernel.get_folder(Repo, scope, rkey) end)
-  end
-
-  def rename_folder(%Scope{} = scope, rkey, new_name) when is_binary(rkey) do
-    within_tekoa(scope, fn -> Kernel.renomear(Repo, Keys.new(), scope, @tipo_folder, rkey, new_name) end)
   end
 
   @doc """
@@ -371,127 +410,34 @@ defmodule Taina.Ybira do
     end)
   end
 
-  @doc """
-  A lixeira de pastas tambem e da caixa: apaga suave a subarvore inteira (a
-  lixeira do kernel e de um recurso por vez). Nota: sem entrada na cadeia
-  (mesmo gap do `move_folder/3`).
-  """
-  def delete_folder(%Scope{} = scope, rkey) when is_binary(rkey) do
-    within_tekoa(scope, fn ->
-      with {:ok, folder} <- fetch_owned_folder(scope, rkey) do
-        soft_delete_tree(scope.tekoa.id, folder.id)
-        {:ok, :deleted}
-      end
-    end)
+  def pending_job_counts do
+    %{
+      renditions: count_pending_jobs("Taina.Ybira.Workers.Rendition"),
+      trash_purge: count_pending_jobs("Taina.Ybira.Workers.PurgeTrash")
+    }
   end
-
-  def publicar_folder(%Scope{} = scope, rkey) when is_binary(rkey) do
-    within_tekoa(scope, fn -> change_folder_tree_zone(scope, rkey, :publicar) end)
-  end
-
-  def tirar_folder_da_praca(%Scope{} = scope, rkey) when is_binary(rkey) do
-    within_tekoa(scope, fn -> change_folder_tree_zone(scope, rkey, :tirar) end)
-  end
-
-  defp change_folder_tree_zone(scope, rkey, action) do
-    with {:ok, folder} <- change_zone(scope, @tipo_folder, rkey, action),
-         {:ok, folder_rkeys, file_rkeys} <- folder_tree_items(scope, folder),
-         :ok <- change_tree_items(scope, action, folder_rkeys, file_rkeys) do
-      {:ok, folder}
-    end
-  end
-
-  defp folder_tree_items(scope, root_folder) do
-    folders =
-      Repo.all(
-        from(f in Folder,
-          where: f.tekoa_id == ^scope.tekoa.id and f.dono_id == ^scope.ava.id and is_nil(f.apagado_em)
-        )
-      )
-
-    descendant_ids = descendant_folder_ids(root_folder.id, folders)
-    folders_by_id = Map.new(folders, &{&1.id, &1})
-    folder_rkeys = Enum.map(descendant_ids, &Map.fetch!(folders_by_id, &1).rkey)
-    folder_ids = [root_folder.id | descendant_ids]
-
-    file_rkeys =
-      Repo.all(
-        from(f in File,
-          where:
-            f.tekoa_id == ^scope.tekoa.id and f.dono_id == ^scope.ava.id and f.folder_id in ^folder_ids and
-              is_nil(f.apagado_em),
-          select: f.rkey
-        )
-      )
-
-    {:ok, folder_rkeys, file_rkeys}
-  end
-
-  defp descendant_folder_ids(parent_id, folders) do
-    folders
-    |> Enum.filter(&(&1.parent_id == parent_id))
-    |> Enum.flat_map(fn folder -> [folder.id | descendant_folder_ids(folder.id, folders)] end)
-  end
-
-  defp change_tree_items(scope, action, folder_rkeys, file_rkeys) do
-    items = Enum.map(folder_rkeys, &{@tipo_folder, &1}) ++ Enum.map(file_rkeys, &{@tipo_file, &1})
-
-    Enum.reduce_while(items, :ok, fn {kind, rkey}, :ok ->
-      case change_zone(scope, kind, rkey, action) do
-        {:ok, _item} -> {:cont, :ok}
-        {:error, reason} -> {:halt, {:error, reason}}
-      end
-    end)
-  end
-
-  defp change_zone(scope, kind, rkey, :publicar), do: Kernel.publicar(Repo, Keys.new(), scope, kind, rkey)
-
-  defp change_zone(scope, kind, rkey, :tirar), do: Kernel.tirar_da_praca(Repo, Keys.new(), scope, kind, rkey)
 
   @doc """
-  Restaura a pasta como unidade: ela e tudo o que foi apagado junto com ela
-  (a subárvore com o mesmo `apagado_em`) volta. Se a pasta-pai dela também
-  estiver na lixeira, a pasta volta solta na raiz. Só a dona restaura;
-  `{:error, :invalid_status}` para pasta fora da lixeira. Sem entrada na
-  cadeia (mesmo gap do `move_folder/3`).
+  Os metadados de rendição do arquivo (dimensões, EXIF, thumbnails): gravados
+  pelo worker no expurgo, se o job ainda não rodou, mapa vazio.
   """
-  def restore_folder(%Scope{} = scope, rkey) when is_binary(rkey) do
+  @spec photo_metadata(scope(), file()) :: {:ok, metadata()}
+  def photo_metadata(%Scope{} = scope, %File{} = file) do
     within_tekoa(scope, fn ->
-      with {:ok, folder} <- fetch_trashed_owned_folder(scope, rkey) do
-        restore_folder_subtree(scope, folder)
-      end
+      {:ok, photo_metadata!(file.id)}
     end)
   end
 
   @doc """
-  O conteudo combinado de uma pasta (pastas e arquivos legiveis, com a
-  ordenacao da tela). Composto sobre as queries do kernel, que ja trazem a
-  regra de leitura no nivel do SQL.
+  Os metadados de vários arquivos, em UMA consulta (o lote do serializer da
+  API): mapa `file_id => metadata`, sem entrada para quem ainda não tem linha
+  de foto (o worker não rodou).
   """
-  def list_folder_contents(%Scope{} = scope, folder_rkey \\ nil, opts \\ []) do
-    sort = normalize_sort(Keyword.get(opts, :sort))
-    limit = Keyword.get(opts, :limit, @default_limit)
-    offset = Keyword.get(opts, :offset, 0)
-    zona = Keyword.get(opts, :zona)
-
+  @spec photos_metadata(scope(), [id()]) :: {:ok, %{id() => metadata()}}
+  def photos_metadata(%Scope{} = scope, file_ids) when is_list(file_ids) do
     within_tekoa(scope, fn ->
-      with {:ok, folder} <- resolve_folder(scope, folder_rkey) do
-        folders =
-          scope
-          |> folders_query(folder && folder.id)
-          |> maybe_filter_zone(root_listing_zone(folder, zona))
-          |> apply_folder_sort(sort)
-          |> Repo.all()
-
-        {files, next_cursor} =
-          scope
-          |> files_query(folder)
-          |> maybe_filter_zone(root_listing_zone(folder, zona))
-          |> apply_file_sort(sort)
-          |> paginate_offset(limit, offset)
-
-        {:ok, %{folders: folders, files: files, next_cursor: next_cursor}}
-      end
+      photos = Repo.all(from(p in Photo, where: p.file_id in ^file_ids))
+      {:ok, Map.new(photos, fn p -> {p.file_id, p.metadata || %{}} end)}
     end)
   end
 
@@ -533,172 +479,88 @@ defmodule Taina.Ybira do
     end)
   end
 
-  defp resource_rkeys(resources, tipo) do
-    resources
-    |> Enum.filter(fn
-      {^tipo, rkey} when is_binary(rkey) -> true
-      _other -> false
-    end)
-    |> Enum.map(&elem(&1, 1))
-    |> Enum.uniq()
+  @doc "Publica na praca (kernel: `Ypy.Ybira.publicar/5`)."
+  def publicar_file(%Scope{} = scope, rkey) when is_binary(rkey) do
+    within_tekoa(scope, fn -> Kernel.publicar(Repo, Keys.new(), scope, @tipo_file, rkey) end)
+  end
+
+  def publicar_folder(%Scope{} = scope, rkey) when is_binary(rkey) do
+    within_tekoa(scope, fn -> change_folder_tree_zone(scope, rkey, :publicar) end)
   end
 
   @doc """
-  Quantos itens cada pasta da listagem tem, para o meta "Pasta, 4 itens" do
-  board: subpastas mais arquivos, sem a lixeira, na mesma regra de leitura da
-  própria pasta. Uma consulta por tipo, agrupada por pasta - a listagem não
-  vira N+1.
-
-  Devolve `%{folder_id => count}`; pasta sem filho aparece com 0.
+  Expurga a lixeira: apaga de vez arquivos e pastas com `apagado_em` anterior
+  ao cutoff, devolve a cota e enfileira os CIDs dos bytes para o GC diferido
+  (o worker `Taina.Ybira.Workers.BlobGc` tira do disco, uma hora depois, o
+  CID que nenhuma linha referencia mais). Job de sistema, cruza todas as
+  Tekoas.
   """
-  def folder_item_counts(%Scope{} = scope, folder_ids) when is_list(folder_ids) do
-    ids = folder_ids |> Enum.reject(&is_nil/1) |> Enum.uniq()
-
-    if ids == [] do
-      {:ok, %{}}
-    else
-      within_tekoa(scope, fn -> {:ok, sum_counts(scope, ids)} end)
+  def purge_deleted_files(%DateTime{} = cutoff) do
+    # Job de sistema que cruza todas as Tekoas: sem contexto, as queries
+    # declaram `skip_tekoa_id: true`. Blobs originais ficam para o GC diferido;
+    # thumbnails das imagens purgadas sao removidas junto com os registros.
+    with {:ok, files} <- Repo.with_system(fn -> purge_deleted_files_in_system(cutoff) end) do
+      {:ok, length(files)}
     end
   end
 
-  defp sum_counts(%Scope{} = scope, ids) do
-    folders = counts_by(scope, :folder, ids)
-    files = counts_by(scope, :file, ids)
-
-    Map.new(ids, fn id ->
-      {id, Map.get(folders, id, 0) + Map.get(files, id, 0)}
-    end)
-  end
-
-  defp counts_by(%Scope{} = scope, :folder, parent_ids) do
-    scope
-    |> folders_by_parent(parent_ids)
-    |> group_by([p], p.parent_id)
-    |> select([p], {p.parent_id, count(p.id)})
-    |> Repo.all()
-    |> Map.new()
-  end
-
-  defp counts_by(%Scope{} = scope, :file, parent_ids) do
-    scope
-    |> base()
-    |> where([f], f.folder_id in ^parent_ids)
-    |> group_by([f], f.folder_id)
-    |> select([f], {f.folder_id, count(f.id)})
-    |> Repo.all()
-    |> Map.new()
-  end
-
-  defp folders_by_parent(%Scope{} = scope, parent_ids) do
-    KernelQueries.readable_folder(
-      from(p in Folder,
-        where: p.tekoa_id == ^scope.tekoa.id and p.parent_id in ^parent_ids and is_nil(p.apagado_em)
-      ),
-      scope
-    )
-  end
-
-  defp paginate_offset(query, limit, offset) do
-    rows =
-      query
-      |> limit(^(limit + 1))
-      |> offset(^offset)
-      |> Repo.all()
-
-    if length(rows) > limit, do: {Enum.take(rows, limit), offset + limit}, else: {rows, nil}
-  end
-
-  # Pastas de uma pasta (ou da raiz), legiveis pela regra do kernel.
-  defp folders_query(%Scope{} = scope, nil) do
-    KernelQueries.readable_folder(
-      from(p in Folder, where: p.tekoa_id == ^scope.tekoa.id and is_nil(p.parent_id) and is_nil(p.apagado_em)),
-      scope
-    )
-  end
-
-  defp folders_query(%Scope{} = scope, parent_id) do
-    KernelQueries.readable_folder(
-      from(p in Folder, where: p.tekoa_id == ^scope.tekoa.id and p.parent_id == ^parent_id and is_nil(p.apagado_em)),
-      scope
-    )
-  end
-
-  @doc "As pastas legiveis (drop-down de destino, navegacao)."
-  def list_folders(%Scope{} = scope) do
+  @doc "Apaga de vez um arquivo da lixeira do proprio morador."
+  def purge_trash_file(%Scope{} = scope, rkey) when is_binary(rkey) do
     within_tekoa(scope, fn ->
-      {:ok, Kernel.list_folders(Repo, scope, [])}
-    end)
-  end
-
-  @doc """
-  Cadeia de pastas de uma pasta até a raiz (raiz -> atual, inclusive), na ordem
-  do breadcrumb. Cada elo é `%{rkey: rkey, nome: nome}`; a subida é uma CTE
-  recursiva com teto de profundidade (o `move_folder/3` garante o grafo sem
-  ciclos, mas a caixa não pode travar se algo escapar) e cada elo só entra se
-  quem pergunta pode ler a pasta: na casa de outra pessoa a cadeia para no
-  último elo legível.
-  """
-  @spec folder_path(Scope.t(), String.t()) ::
-          {:ok, [%{rkey: String.t(), nome: String.t()}]} | {:error, :not_found}
-  def folder_path(%Scope{} = scope, folder_rkey) when is_binary(folder_rkey) do
-    within_tekoa(scope, fn ->
-      with {:ok, rows} <- folder_chain(folder_rkey) do
-        {:ok, readable_chain(scope, rows)}
+      with {:ok, file} <- fetch_trashed_owned_file(scope, rkey),
+           {:ok, 1} <- purge_files(scope.tekoa.id, [file]) do
+        {:ok, file}
       end
     end)
   end
 
-  # Sobe da pasta atual (primeira linha) e para no primeiro elo que não pode
-  # ler: a cadeia fica com o trecho contíguo que termina nela, da raiz para a
-  # pasta atual. O CTE devolve folha->raiz, então o `reverse` no fim entrega a
-  # ordem que o breadcrumb espera (raiz->atual).
-  defp readable_chain(scope, rows) do
-    rows
-    |> Enum.take_while(&readable?(scope, &1))
-    |> Enum.map(&%{rkey: &1.rkey, nome: &1.nome})
-    |> Enum.reverse()
-  end
-
-  # Linhas chegam da pasta atual para a raiz (depth 0 -> 32). O teto existe
-  # para um grafo corrompido: sem ele, um ciclo no parent_id faria a consulta
-  # crescer o resultado até estourar.
-  @folder_path_max_depth 32
-
-  defp folder_chain(folder_rkey) do
-    statement = """
-    WITH RECURSIVE chain AS (
-      SELECT f.id, f.parent_id, f.rkey, f.nome, f.dono_id, f.zona, 0 AS depth
-      FROM ybira_folders f
-      WHERE f.rkey = $1 AND f.apagado_em IS NULL
-      UNION ALL
-      SELECT p.id, p.parent_id, p.rkey, p.nome, p.dono_id, p.zona, c.depth + 1
-      FROM ybira_folders p
-      JOIN chain c ON p.id = c.parent_id AND c.depth < $2
-      WHERE p.apagado_em IS NULL
-    )
-    SELECT rkey, nome, dono_id, zona FROM chain ORDER BY depth ASC
-    """
-
-    {:ok, %{rows: rows}} = Repo.query(statement, [folder_rkey, @folder_path_max_depth])
-
-    rows
-    |> Enum.map(fn [rkey, nome, dono_id, zona] ->
-      %{rkey: rkey, nome: nome, dono_id: dono_id, zona: zona_atom(zona)}
-    end)
-    |> case do
-      [] -> {:error, :not_found}
-      rows -> {:ok, rows}
-    end
-  end
-
-  # `zona` chega do SQL como texto; os átomos existem (Ecto.Enum do schema).
-  defp zona_atom("casa"), do: :casa
-  defp zona_atom("praca"), do: :praca
-
-  @doc "Cabe `byte_size` na cota da Tekoa? (o upload do kernel cobra de novo)."
-  def check_capacity(%Scope{} = scope, byte_size) do
+  @doc "Apaga de vez uma pasta da lixeira e toda a subarvore dela."
+  def purge_trash_folder(%Scope{} = scope, rkey) when is_binary(rkey) do
     within_tekoa(scope, fn ->
-      {:ok, quota_check(scope.tekoa.id, byte_size)}
+      with {:ok, folder} <- fetch_trashed_owned_folder(scope, rkey),
+           {:ok, folder_ids} <- owned_subtree_folder_ids(scope, folder.id),
+           {:ok, files} <- trashed_subtree_files(scope, folder_ids),
+           {:ok, _folders} <- trashed_subtree_folders(scope, folder_ids),
+           {:ok, _file_count} <- purge_files(scope.tekoa.id, files),
+           {:ok, folder_count} <- purge_folders(scope.tekoa.id, folder_ids) do
+        {:ok, %{folder: folder, folders: folder_count, files: length(files)}}
+      end
+    end)
+  end
+
+  @doc "Renomeia (o nome do record, nao os bytes; kernel: `Ypy.Ybira.renomear/6`)."
+  def rename_file(%Scope{} = scope, rkey, new_name) when is_binary(rkey) do
+    within_tekoa(scope, fn -> Kernel.renomear(Repo, Keys.new(), scope, @tipo_file, rkey, new_name) end)
+  end
+
+  def rename_folder(%Scope{} = scope, rkey, new_name) when is_binary(rkey) do
+    within_tekoa(scope, fn -> Kernel.renomear(Repo, Keys.new(), scope, @tipo_folder, rkey, new_name) end)
+  end
+
+  @doc """
+  Tira da lixeira (kernel: `Ypy.Ybira.restaurar/5`). Se a pasta-pai do
+  arquivo também estiver na lixeira (ou já tiver sido expurgada), o arquivo
+  volta solto na raiz: com o `folder_id` apontando para pasta apagada, ele
+  não apareceria em listagem nenhuma.
+  """
+  def restore_file(%Scope{} = scope, rkey) when is_binary(rkey) do
+    within_tekoa(scope, fn ->
+      with {:ok, file} <- Kernel.restaurar(Repo, Keys.new(), scope, @tipo_file, rkey) do
+        restore_to_root_if_orphaned(scope, file)
+      end
+    end)
+  end
+
+  @doc """
+  Restaura a pasta como unidade: ela e tudo o que foi apagado junto com ela
+  (a subárvore com o mesmo `apagado_em`) volta. Se a pasta-pai dela também
+  estiver na lixeira, a pasta volta solta na raiz. Só a dona restaura.
+  """
+  def restore_folder(%Scope{} = scope, rkey) when is_binary(rkey) do
+    within_tekoa(scope, fn ->
+      with {:ok, folder} <- fetch_trashed_owned_folder(scope, rkey) do
+        restore_folder_subtree(scope, folder)
+      end
     end)
   end
 
@@ -709,73 +571,92 @@ defmodule Taina.Ybira do
     end)
   end
 
-  @doc "Os arquivos mais recentes legiveis (home)."
-  def list_recent(%Scope{} = scope, opts \\ []) do
-    limit = Keyword.get(opts, :limit, 4)
-
-    within_tekoa(scope, fn ->
-      files =
-        scope
-        |> readable_files_query()
-        |> order_by([f], desc: f.rkey)
-        |> limit(^limit)
-        |> Repo.all()
-
-      {:ok, files}
-    end)
-  end
-
-  def count_files(%Scope{} = scope) do
-    within_tekoa(scope, fn ->
-      {:ok, Repo.aggregate(readable_files_query(scope), :count)}
-    end)
-  end
-
-  def count_photos(%Scope{} = scope) do
-    within_tekoa(scope, fn ->
-      count =
-        scope
-        |> readable_files_query()
-        |> where([f], like(f.mime, "image/%"))
-        |> Repo.aggregate(:count)
-
-      {:ok, count}
-    end)
-  end
-
-  # O conjunto legivel (a regra de leitura do kernel no SQL, sem N+1), sem
-  # limite de pagina: os agregados do painel contam tudo.
-  defp readable_files_query(%Scope{} = scope) do
-    KernelQueries.readable(from(f in File, where: f.tekoa_id == ^scope.tekoa.id and is_nil(f.apagado_em)), scope)
-  end
-
-  # O SQLite não tem `split_part`; `substr/instr` corta o MIME antes da
-  # primeira barra (mime sempre tem `/`). Macro porque a mesma expressão
-  # precisa bater no `group_by` e no `select`.
-  defmacrop mime_prefix_expr(mime_field) do
-    quote do
-      fragment(
-        "CASE WHEN instr(?, '/') = 0 THEN ? ELSE substr(?, 1, instr(?, '/') - 1) END",
-        unquote(mime_field),
-        unquote(mime_field),
-        unquote(mime_field),
-        unquote(mime_field)
-      )
+  defp access_target(%Scope{} = scope, rkey) do
+    case KernelStore.get_file(Repo, scope.tekoa.id, rkey) do
+      nil -> {:error, :not_found}
+      file -> access_target_readable(scope, rkey, file)
     end
   end
 
-  @doc "Armazenamento por tipo (painel): fotos, videos, documentos, outros."
-  def storage_stats_by_kind(%Scope{} = scope) do
-    within_tekoa(scope, fn ->
-      rows =
-        scope
-        |> readable_files_query()
-        |> group_by([f], mime_prefix_expr(f.mime))
-        |> select([f], {mime_prefix_expr(f.mime), sum(f.tamanho)})
-        |> Repo.all()
+  defp access_target_readable(%Scope{} = scope, rkey, file) do
+    if Kernel.readable?(Repo, scope, @tipo_file, rkey) do
+      {:error, :already_readable}
+    else
+      # O PubSub do pedido usa o topico do dono, que precisa da Tekoa
+      # para o `for_ava`; o preload cobre.
+      owner = Repo.preload(file, dono: :tekoa).dono
+      {:ok, %{owner: owner, rkey: rkey, nome: file.nome}}
+    end
+  end
 
-      {:ok, classify_storage_kinds(rows)}
+  # Soma por Tekoa dos bytes dos arquivos apagados: um ajuste de cota por
+  # comunidade, não um por arquivo.
+  defp adjust_storage_used(tekoa_id, delta) do
+    Repo.update_all(
+      from(t in Tekoa, where: t.id == ^tekoa_id),
+      [inc: [storage_used_bytes: delta]],
+      skip_tekoa_id: true
+    )
+  end
+
+  defp blob_cid(path) do
+    case Elixir.File.open(path, [:read, :binary]) do
+      {:ok, dev} ->
+        try do
+          {:ok, cid_of_stream(dev, :crypto.hash_init(:sha256))}
+        after
+          :file.close(dev)
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp blob_size_allowed?(size) do
+    if size <= max_blob_size(), do: :ok, else: {:error, :blob_too_large}
+  end
+
+  defp bytes_per_tekoa(files) do
+    files
+    |> Enum.group_by(& &1.tekoa_id)
+    |> Enum.map(fn {tekoa_id, trashed} ->
+      {tekoa_id, trashed |> Enum.map(& &1.tamanho) |> Enum.sum()}
     end)
+  end
+
+  ## Helpers internos
+
+  # Ajuste de cota de sistema (fora de contexto de Tekoa, job que cruza todas).
+  defp change_folder_tree_zone(scope, rkey, action) do
+    with {:ok, folder} <- change_zone(scope, @tipo_folder, rkey, action),
+         {:ok, folder_rkeys, file_rkeys} <- folder_tree_items(scope, folder),
+         :ok <- change_tree_items(scope, action, folder_rkeys, file_rkeys) do
+      {:ok, folder}
+    end
+  end
+
+  defp change_tree_items(scope, action, folder_rkeys, file_rkeys) do
+    items = Enum.map(folder_rkeys, &{@tipo_folder, &1}) ++ Enum.map(file_rkeys, &{@tipo_file, &1})
+
+    Enum.reduce_while(items, :ok, fn {kind, rkey}, :ok ->
+      case change_zone(scope, kind, rkey, action) do
+        {:ok, _item} -> {:cont, :ok}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+  end
+
+  defp change_zone(scope, kind, rkey, :publicar), do: Kernel.publicar(Repo, Keys.new(), scope, kind, rkey)
+
+  defp change_zone(scope, kind, rkey, :tirar), do: Kernel.tirar_da_praca(Repo, Keys.new(), scope, kind, rkey)
+
+  defp cid_of_stream(dev, hash) do
+    case :file.read(dev, @chunk_bytes) do
+      {:ok, chunk} -> cid_of_stream(dev, :crypto.hash_update(hash, chunk))
+      :eof -> Ypy.Cid.from_digest(:crypto.hash_final(hash), Ypy.Cid.raw())
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   # Categorias da tela de armazenamento: o prefixo do MIME decide; tudo que
@@ -795,52 +676,11 @@ defmodule Taina.Ybira do
     end)
   end
 
-  # Fato da máquina, tekoa inteiro (não o subconjunto legível): a cota cobre
-  # os bytes de todo mundo, incluída a casa de quem não leu (RFC_003 D2 é a
-  # regra de leitura, não a de ocupação). A lixeira ainda ocupa até o expurgo,
-  # então casa + praça + lixeira bate com `storage_stats/1` (`used_bytes`).
-  @doc "Armazenamento por zona (armazenamento): casas, praca e lixeira em bytes."
-  def storage_stats_by_zone(%Scope{} = scope) do
-    within_tekoa(scope, fn ->
-      live =
-        from(f in File,
-          where: f.tekoa_id == ^scope.tekoa.id and is_nil(f.apagado_em),
-          group_by: f.zona,
-          select: {f.zona, sum(f.tamanho)}
-        )
-        |> Repo.all()
-        |> Map.new(fn {zona, bytes} -> {zona, to_integer(bytes)} end)
-
-      lixeira =
-        from(f in File,
-          where: f.tekoa_id == ^scope.tekoa.id and not is_nil(f.apagado_em),
-          select: sum(f.tamanho)
-        )
-        |> Repo.one()
-        |> to_integer()
-
-      {:ok, %{casa: Map.get(live, :casa, 0), praca: Map.get(live, :praca, 0), lixeira: lixeira}}
-    end)
-  end
-
-  # `sum/1` sobre inteiro volta como `Decimal` no SQLite; normalizamos para
-  # inteiro (bytes são sempre inteiros) antes de somar no acumulador.
-  defp to_integer(nil), do: 0
-  defp to_integer(%Decimal{} = bytes), do: Decimal.to_integer(bytes)
-  defp to_integer(bytes) when is_integer(bytes), do: bytes
-
   ## Jobs (saúde da caixa, painel)
 
   # Trabalho em espera ou em execução; `scheduled` é o cron no calendário, não
   # trabalho atrasado.
-  @job_pending_states ~w(available executing retryable)
-
-  def pending_job_counts do
-    %{
-      renditions: count_pending_jobs("Taina.Ybira.Workers.Rendition"),
-      trash_purge: count_pending_jobs("Taina.Ybira.Workers.PurgeTrash")
-    }
-  end
+  @job_pending_states ~W(available executing retryable)
 
   # A fila do Oban é infraestrutura da caixa: tabela `oban_jobs`, isenta do
   # contexto de Tekoa em `Repo.prepare_query/3`.
@@ -851,107 +691,167 @@ defmodule Taina.Ybira do
     )
   end
 
-  @doc """
-  Expurga a lixeira: apaga de vez arquivos e pastas com `apagado_em` anterior
-  ao cutoff, devolve a cota e enfileira os CIDs dos bytes para o GC diferido
-  (o worker `Taina.Ybira.Workers.BlobGc` tira do disco, uma hora depois, o
-  CID que nenhuma linha referencia mais). Job de sistema, cruza todas as
-  Tekoas.
-  """
-  def purge_deleted_files(%DateTime{} = cutoff) do
-    # Job de sistema que cruza todas as Tekoas: sem contexto, as queries
-    # declaram `skip_tekoa_id: true`. Blobs originais ficam para o GC diferido;
-    # thumbnails das imagens purgadas sao removidas junto com os registros.
-    with {:ok, files} <- Repo.with_system(fn -> purge_deleted_files_in_system(cutoff) end) do
-      {:ok, length(files)}
+  defp counts_by(%Scope{} = scope, :folder, parent_ids) do
+    scope
+    |> folders_by_parent(parent_ids)
+    |> group_by([p], p.parent_id)
+    |> select([p], {p.parent_id, count(p.id)})
+    # Aggregate tuple projection; there are no associations to preload.
+    # credo:disable-for-next-line OeditusCredo.Check.Warning.MissingPreload
+    |> Repo.all()
+    |> Map.new()
+  end
+
+  defp counts_by(%Scope{} = scope, :file, parent_ids) do
+    scope
+    |> base()
+    |> where([f], f.folder_id in ^parent_ids)
+    |> group_by([f], f.folder_id)
+    |> select([f], {f.folder_id, count(f.id)})
+    # Aggregate tuple projection; there are no associations to preload.
+    # credo:disable-for-next-line OeditusCredo.Check.Warning.MissingPreload
+    |> Repo.all()
+    |> Map.new()
+  end
+
+  defp delete_thumbnail_paths(paths) do
+    Enum.reduce_while(Map.values(paths), :ok, fn path, :ok ->
+      case Elixir.File.rm(path) do
+        :ok -> {:cont, :ok}
+        {:error, :enoent} -> {:cont, :ok}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+  end
+
+  defp delete_thumbnails(files, tekoa_public_ids) do
+    files
+    |> Enum.filter(&image?(&1.mime))
+    |> Enum.reduce_while(:ok, fn file, :ok ->
+      paths = Rendition.thumbnail_paths(Map.fetch!(tekoa_public_ids, file.tekoa_id), file.rkey)
+
+      case delete_thumbnail_paths(paths) do
+        :ok -> {:cont, :ok}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+  end
+
+  defp descendant_folder_ids(parent_id, folders) do
+    folders
+    |> Enum.filter(&(&1.parent_id == parent_id))
+    |> Enum.flat_map(fn folder -> [folder.id | descendant_folder_ids(folder.id, folders)] end)
+  end
+
+  defp drop_blob_gc_row(%BlobGc{} = row), do: Repo.delete!(row, skip_tekoa_id: true)
+
+  # A regra de leitura sobre cada pasta pai distinta da página: fora do mapa
+  # (nil, como no `file_folder_rkey/2`) pasta expurgada ou casa não-legível.
+  defp fetch_trashed_owned_file(%Scope{} = scope, rkey) do
+    case KernelStore.get_file(Repo, scope.tekoa.id, rkey, true) do
+      nil ->
+        {:error, :not_found}
+
+      %File{} = file ->
+        cond do
+          file.dono_id != scope.ava.id -> {:error, :not_found}
+          is_nil(file.apagado_em) -> {:error, :invalid_status}
+          true -> {:ok, file}
+        end
     end
   end
 
-  defp purge_deleted_files_in_system(cutoff) do
-    # Registros saem num só `delete_all` (com `select: f`, devolve as linhas
-    # apagadas na mesma viagem). Arquivos saem ANTES das pastas: o FK de
-    # `folder_id` (nilify) não dispara em lote vazio.
-    {_count, files} =
-      Repo.delete_all(
+  # A regra de leitura sobre cada pasta pai distinta da página: fora do mapa
+  # (nil, como no `file_folder_rkey/2`) pasta expurgada ou casa não-legível.
+  defp folder_chain(folder_rkey) do
+    statement = """
+    WITH RECURSIVE chain AS (
+      SELECT f.id, f.parent_id, f.rkey, f.nome, f.dono_id, f.zona, 0 AS depth
+      FROM ybira_folders f
+      WHERE f.rkey = $1 AND f.apagado_em IS NULL
+      UNION ALL
+      SELECT p.id, p.parent_id, p.rkey, p.nome, p.dono_id, p.zona, c.depth + 1
+      FROM ybira_folders p
+      JOIN chain c ON p.id = c.parent_id AND c.depth < $2
+      WHERE p.apagado_em IS NULL
+    )
+    SELECT rkey, nome, dono_id, zona FROM chain ORDER BY depth ASC
+    """
+
+    case Repo.query(statement, [folder_rkey, @folder_path_max_depth]) do
+      {:ok, %{rows: rows}} ->
+        rows
+        |> Enum.map(fn [rkey, nome, dono_id, zona] ->
+          %{rkey: rkey, nome: nome, dono_id: dono_id, zona: zona_atom(zona)}
+        end)
+        |> case do
+          [] -> {:error, :not_found}
+          rows -> {:ok, rows}
+        end
+
+      {:error, _reason} = error ->
+        error
+    end
+  end
+
+  # Pastas de uma pasta (ou da raiz), legiveis pela regra do kernel.
+  defp folder_rkey_visivel(%Scope{} = scope, folder_id) do
+    case Repo.one(from(p in Folder, where: p.id == ^folder_id and is_nil(p.apagado_em))) do
+      nil -> {:error, :not_found}
+      folder -> if readable?(scope, folder), do: {:ok, folder.rkey}, else: {:error, :forbidden}
+    end
+  end
+
+  defp folder_tree_items(scope, root_folder) do
+    folders =
+      Repo.all(
+        from(f in Folder,
+          where: f.tekoa_id == ^scope.tekoa.id and f.dono_id == ^scope.ava.id and is_nil(f.apagado_em)
+        )
+      )
+
+    descendant_ids = descendant_folder_ids(root_folder.id, folders)
+    folders_by_id = Map.new(folders, &{&1.id, &1})
+    folder_rkeys = Enum.map(descendant_ids, &Map.fetch!(folders_by_id, &1).rkey)
+    folder_ids = [root_folder.id | descendant_ids]
+
+    file_rkeys =
+      Repo.all(
         from(f in File,
-          where: not is_nil(f.apagado_em) and f.apagado_em < ^cutoff,
-          select: f
-        ),
-        skip_tekoa_id: true
+          where:
+            f.tekoa_id == ^scope.tekoa.id and f.dono_id == ^scope.ava.id and f.folder_id in ^folder_ids and
+              is_nil(f.apagado_em),
+          select: f.rkey
+        )
       )
 
-    with :ok <- delete_thumbnails(files, tekoa_public_ids(files, skip_tekoa_id: true)) do
-      # Pastas na lixeira só guardam metadados (sem bytes nem cota), apaga em
-      # lote. `delete_folder/2` faz soft delete em cascata; sem isto, os
-      # registros de pasta ficariam para sempre com `apagado_em` preenchido.
-      Repo.delete_all(
-        from(p in Folder, where: not is_nil(p.apagado_em) and p.apagado_em < ^cutoff),
-        skip_tekoa_id: true
-      )
-
-      # Cota em lote: soma por Tekoa dos bytes apagados e ajusta uma vez por
-      # comunidade, na MESMA transação dos deletes -- invariante de crash
-      # preservado: registro e cota caem juntos, ou nada cai.
-      Enum.each(bytes_per_tekoa(files), fn {tekoa_id, bytes} ->
-        adjust_storage_used(tekoa_id, -bytes)
-      end)
-
-      # A corrida da dedup (revisão 0.1.0, 1c): apagar os bytes aqui, logo
-      # após o commit da conferência, deixava uma janela em que um upload
-      # concorrente commita um arquivo que compartilha o CID -- e o expurgo
-      # apagava bytes de arquivo vivo. Os CIDs vão para a fila do GC
-      # diferido, na MESMA transação dos deletes: registro apagado e blob
-      # enfileirado caem juntos, ou nada cai.
-      _ = enqueue_blob_gc(Enum.map(files, & &1.blob_cid))
-
-      {:ok, files}
-    end
+    {:ok, folder_rkeys, file_rkeys}
   end
 
-  @doc """
-  Enfileira CIDs de blobs expurgados para o GC diferido (`Taina.Ybira.BlobGc`).
-  Idempotente: CID que já está na fila fica com o `enqueued_at` de origem,
-  para não re-envelhecer (a graça de uma hora conta do primeiro expurgo).
-  """
-  @spec enqueue_blob_gc([String.t()]) :: {:ok, non_neg_integer()}
-  def enqueue_blob_gc(blob_cids) when is_list(blob_cids) do
-    agora = DateTime.truncate(DateTime.utc_now(), :second)
-
-    {count, _} =
-      Repo.insert_all(
-        BlobGc,
-        blob_cids |> Enum.uniq() |> Enum.map(&%{blob_cid: &1, enqueued_at: agora}),
-        on_conflict: :nothing,
-        conflict_target: :blob_cid,
-        skip_tekoa_id: true
-      )
-
-    {:ok, count}
+  # A regra de leitura sobre cada pasta pai distinta da página: fora do mapa
+  # (nil, como no `file_folder_rkey/2`) pasta expurgada ou casa não-legível.
+  defp folders_by_parent(%Scope{} = scope, parent_ids) do
+    KernelQueries.readable_folder(
+      from(p in Folder,
+        where: p.tekoa_id == ^scope.tekoa.id and p.parent_id in ^parent_ids and is_nil(p.apagado_em)
+      ),
+      scope
+    )
   end
 
-  @doc """
-  Uma rodada do GC diferido: para cada fila enfileirada antes do `cutoff` (a
-  graça de uma hora fecha a janela entre o enfileiramento e a rodada), apaga
-  os bytes do disco quando nenhuma linha de `ybira_files` referencia o CID;
-  quando o blob voltou a viver (o upload concorrente que o compartilhou
-  commitou), só a fila cai. Devolve o placar `deleted`/`kept`.
-  """
-  @spec gc_blobs(DateTime.t()) :: {:ok, %{deleted: non_neg_integer(), kept: non_neg_integer()}}
-  def gc_blobs(%DateTime{} = cutoff) do
-    rows = Repo.all(from(g in BlobGc, where: g.enqueued_at < ^cutoff), skip_tekoa_id: true)
-
-    placar =
-      rows
-      |> Enum.map(&gc_blob_row/1)
-      |> Enum.frequencies()
-
-    {:ok, %{deleted: Map.get(placar, :deleted, 0), kept: Map.get(placar, :kept, 0)}}
+  # Pastas de uma pasta (ou da raiz), legiveis pela regra do kernel.
+  defp folders_query(%Scope{} = scope, nil) do
+    KernelQueries.readable_folder(
+      from(p in Folder, where: p.tekoa_id == ^scope.tekoa.id and is_nil(p.parent_id) and is_nil(p.apagado_em)),
+      scope
+    )
   end
 
-  @doc "Alguma linha de arquivo referencia o CID? (a mesma conferência do expurgo, agora no GC)."
-  @spec blob_referenced?(String.t()) :: boolean()
-  def blob_referenced?(blob_cid) when is_binary(blob_cid) do
-    Repo.exists?(from(f in File, where: f.blob_cid == ^blob_cid), skip_tekoa_id: true)
+  defp folders_query(%Scope{} = scope, parent_id) do
+    KernelQueries.readable_folder(
+      from(p in Folder, where: p.tekoa_id == ^scope.tekoa.id and p.parent_id == ^parent_id and is_nil(p.apagado_em)),
+      scope
+    )
   end
 
   # A travessa e o predio: a secao critica (a conferencia seguida do
@@ -995,40 +895,22 @@ defmodule Taina.Ybira do
     end
   end
 
-  defp drop_blob_gc_row(%BlobGc{} = row), do: Repo.delete!(row, skip_tekoa_id: true)
+  defp image?("image/" <> _rest), do: true
+  defp image?(_mime), do: false
 
-  # Soma por Tekoa dos bytes dos arquivos apagados: um ajuste de cota por
-  # comunidade, não um por arquivo.
-  defp bytes_per_tekoa(files) do
-    files
-    |> Enum.group_by(& &1.tekoa_id)
-    |> Enum.map(fn {tekoa_id, trashed} ->
-      {tekoa_id, trashed |> Enum.map(& &1.tamanho) |> Enum.sum()}
+  defp locked_upload(%Scope{} = scope, temporary_path, opts, cid) do
+    BlobLock.run(Ypy.Cid.to_string(cid), fn ->
+      within_tekoa(scope, fn ->
+        Kernel.upload(Repo, Keys.new(), Blobs.new(), scope, temporary_path, opts)
+      end)
     end)
   end
 
-  ## Helpers internos
-
-  # Ajuste de cota de sistema (fora de contexto de Tekoa, job que cruza todas).
-  defp adjust_storage_used(tekoa_id, delta) do
-    Repo.update_all(
-      from(t in Tekoa, where: t.id == ^tekoa_id),
-      [inc: [storage_used_bytes: delta]],
-      skip_tekoa_id: true
-    )
-  end
-
-  defp fetch_trashed_owned_file(%Scope{} = scope, rkey) do
-    case KernelStore.get_file(Repo, scope.tekoa.id, rkey, true) do
-      nil ->
-        {:error, :not_found}
-
-      %File{} = file ->
-        cond do
-          file.dono_id != scope.ava.id -> {:error, :not_found}
-          is_nil(file.apagado_em) -> {:error, :invalid_status}
-          true -> {:ok, file}
-        end
+  defp maybe_enqueue_rendition(%Scope{} = scope, %File{} = file) do
+    if image?(file.mime) do
+      %{file_id: file.id, tekoa_public_id: scope.tekoa.public_id}
+      |> Rendition.new()
+      |> Oban.insert()
     end
   end
 
@@ -1036,47 +918,89 @@ defmodule Taina.Ybira do
   # da mesma comunidade; ownership e estado da lixeira sao verificados antes
   # dos deletes, dentro da mesma transacao.
   defp owned_subtree_folder_ids(%Scope{} = scope, root_id) do
-    {:ok, %{rows: rows}} =
-      Repo.query(
-        """
-        WITH RECURSIVE subtree AS (
-          SELECT id, parent_id, dono_id FROM ybira_folders
-          WHERE id = $1 AND tekoa_id = $2
-          UNION ALL
-          SELECT f.id, f.parent_id, f.dono_id FROM ybira_folders f
-          JOIN subtree s ON f.parent_id = s.id
-          WHERE f.tekoa_id = $2
-        )
-        SELECT id, dono_id FROM subtree
-        """,
-        [root_id, scope.tekoa.id]
+    case Repo.query(
+           """
+           WITH RECURSIVE subtree AS (
+             SELECT id, parent_id, dono_id FROM ybira_folders
+             WHERE id = $1 AND tekoa_id = $2
+             UNION ALL
+             SELECT f.id, f.parent_id, f.dono_id FROM ybira_folders f
+             JOIN subtree s ON f.parent_id = s.id
+             WHERE f.tekoa_id = $2
+           )
+           SELECT id, dono_id FROM subtree
+           """,
+           [root_id, scope.tekoa.id]
+         ) do
+      {:ok, %{rows: rows}} ->
+        owned_subtree_result(rows, scope.ava.id)
+
+      {:error, _reason} = error ->
+        error
+    end
+  end
+
+  defp owned_subtree_result(rows, owner_id) do
+    case Enum.find(rows, fn [_id, row_owner_id] -> row_owner_id != owner_id end) do
+      nil -> {:ok, Enum.map(rows, fn [id, _row_owner_id] -> id end)}
+      _other_owner -> {:error, :not_found}
+    end
+  end
+
+  defp paginate_offset(query, limit, offset) do
+    rows =
+      query
+      |> limit(^(limit + 1))
+      |> offset(^offset)
+      # Callers use batched association lookups instead of per-row preloads.
+      # credo:disable-for-next-line OeditusCredo.Check.Warning.MissingPreload
+      |> Repo.all()
+
+    if length(rows) > limit, do: {Enum.take(rows, limit), offset + limit}, else: {rows, nil}
+  end
+
+  # Sobe da pasta atual (primeira linha) e para no primeiro elo que não pode
+  # ler: a cadeia fica com o trecho contíguo que termina nela, da raiz para a
+  # pasta atual. O CTE devolve folha->raiz, então o `reverse` no fim entrega a
+  # ordem que o breadcrumb espera (raiz->atual).
+  defp purge_deleted_files_in_system(cutoff) do
+    # Registros saem num só `delete_all` (com `select: f`, devolve as linhas
+    # apagadas na mesma viagem). Arquivos saem ANTES das pastas: o FK de
+    # `folder_id` (nilify) não dispara em lote vazio.
+    {_count, files} =
+      Repo.delete_all(
+        from(f in File,
+          where: not is_nil(f.apagado_em) and f.apagado_em < ^cutoff,
+          select: f
+        ),
+        skip_tekoa_id: true
       )
 
-    if Enum.all?(rows, fn [_id, owner_id] -> owner_id == scope.ava.id end) do
-      {:ok, Enum.map(rows, fn [id, _owner_id] -> id end)}
-    else
-      {:error, :not_found}
-    end
-  end
+    with :ok <- delete_thumbnails(files, tekoa_public_ids(files, skip_tekoa_id: true)) do
+      # Pastas na lixeira só guardam metadados (sem bytes nem cota), apaga em
+      # lote. `delete_folder/2` faz soft delete em cascata; sem isto, os
+      # registros de pasta ficariam para sempre com `apagado_em` preenchido.
+      Repo.delete_all(
+        from(p in Folder, where: not is_nil(p.apagado_em) and p.apagado_em < ^cutoff),
+        skip_tekoa_id: true
+      )
 
-  defp trashed_subtree_files(%Scope{} = scope, folder_ids) do
-    files = Repo.all(from(f in File, where: f.tekoa_id == ^scope.tekoa.id and f.folder_id in ^folder_ids))
+      # Cota em lote: soma por Tekoa dos bytes apagados e ajusta uma vez por
+      # comunidade, na MESMA transação dos deletes -- invariante de crash
+      # preservado: registro e cota caem juntos, ou nada cai.
+      Enum.each(bytes_per_tekoa(files), fn {tekoa_id, bytes} ->
+        adjust_storage_used(tekoa_id, -bytes)
+      end)
 
-    if Enum.all?(files, &(&1.dono_id == scope.ava.id and not is_nil(&1.apagado_em))) do
+      # A corrida da dedup (revisão 0.1.0, 1c): apagar os bytes aqui, logo
+      # após o commit da conferência, deixava uma janela em que um upload
+      # concorrente commita um arquivo que compartilha o CID -- e o expurgo
+      # apagava bytes de arquivo vivo. Os CIDs vão para a fila do GC
+      # diferido, na MESMA transação dos deletes: registro apagado e blob
+      # enfileirado caem juntos, ou nada cai.
+      _ = enqueue_blob_gc(Enum.map(files, & &1.blob_cid))
+
       {:ok, files}
-    else
-      {:error, :invalid_status}
-    end
-  end
-
-  defp trashed_subtree_folders(%Scope{} = scope, folder_ids) do
-    folders = Repo.all(from(f in Folder, where: f.tekoa_id == ^scope.tekoa.id and f.id in ^folder_ids))
-
-    if length(folders) == length(folder_ids) and
-         Enum.all?(folders, &(&1.dono_id == scope.ava.id and not is_nil(&1.apagado_em))) do
-      {:ok, folders}
-    else
-      {:error, :invalid_status}
     end
   end
 
@@ -1094,43 +1018,14 @@ defmodule Taina.Ybira do
 
       with :ok <- delete_thumbnails(files, %{tekoa_id => tekoa.public_id}) do
         adjust_storage_used(tekoa_id, -bytes)
+        # enqueue_blob_gc/1 returns only {:ok, count}; Repo.insert_all raises on failure.
+        # credo:disable-for-next-line OeditusCredo.Check.Warning.MissingErrorHandling
         {:ok, _queued} = enqueue_blob_gc(Enum.map(files, & &1.blob_cid))
         {:ok, count}
       end
     else
       {:error, :not_found}
     end
-  end
-
-  defp tekoa_public_ids(files, opts) do
-    tekoa_ids = files |> Enum.filter(&image?(&1.mime)) |> Enum.map(& &1.tekoa_id) |> Enum.uniq()
-
-    from(t in Tekoa, where: t.id in ^tekoa_ids, select: {t.id, t.public_id})
-    |> Repo.all(opts)
-    |> Map.new()
-  end
-
-  defp delete_thumbnails(files, tekoa_public_ids) do
-    files
-    |> Enum.filter(&image?(&1.mime))
-    |> Enum.reduce_while(:ok, fn file, :ok ->
-      paths = Rendition.thumbnail_paths(Map.fetch!(tekoa_public_ids, file.tekoa_id), file.rkey)
-
-      case delete_thumbnail_paths(paths) do
-        :ok -> {:cont, :ok}
-        {:error, reason} -> {:halt, {:error, reason}}
-      end
-    end)
-  end
-
-  defp delete_thumbnail_paths(paths) do
-    Enum.reduce_while(Map.values(paths), :ok, fn path, :ok ->
-      case Elixir.File.rm(path) do
-        :ok -> {:cont, :ok}
-        {:error, :enoent} -> {:cont, :ok}
-        {:error, reason} -> {:halt, {:error, reason}}
-      end
-    end)
   end
 
   defp purge_folders(tekoa_id, folder_ids) do
@@ -1140,81 +1035,19 @@ defmodule Taina.Ybira do
     if count == length(folder_ids), do: {:ok, count}, else: {:error, :not_found}
   end
 
-  @doc "O caminho no disco dos bytes do arquivo (endereçados pelo CID do blob)."
-  @spec blob_path(File.t()) :: {:ok, Path.t()} | {:error, :not_found}
-  def blob_path(%File{} = file) do
-    case Disk.open(Blobs.new(), Ypy.Cid.parse(file.blob_cid)) do
-      {:ok, path} -> {:ok, path}
-      {:error, _reason} -> {:error, :not_found}
-    end
+  defp readable_chain(scope, rows) do
+    rows
+    |> Enum.take_while(&readable?(scope, &1))
+    |> Enum.map(&%{rkey: &1.rkey, nome: &1.nome})
+    |> Enum.reverse()
   end
 
-  @doc """
-  Os metadados de rendição do arquivo (dimensões, EXIF, thumbnails): gravados
-  pelo worker no expurgo, se o job ainda não rodou, mapa vazio.
-  """
-  @spec photo_metadata(Scope.t(), File.t()) :: {:ok, map()}
-  def photo_metadata(%Scope{} = scope, %File{} = file) do
-    within_tekoa(scope, fn ->
-      {:ok, photo_metadata!(file.id)}
-    end)
+  # O conjunto legivel (a regra de leitura do kernel no SQL, sem N+1), sem
+  # limite de pagina: os agregados do painel contam tudo.
+  defp readable_files_query(%Scope{} = scope) do
+    KernelQueries.readable(from(f in File, where: f.tekoa_id == ^scope.tekoa.id and is_nil(f.apagado_em)), scope)
   end
 
-  @doc """
-  Os metadados de vários arquivos, em UMA consulta (o lote do serializer da
-  API): mapa `file_id => metadata`, sem entrada para quem ainda não tem linha
-  de foto (o worker não rodou).
-  """
-  @spec photos_metadata(Scope.t(), [integer()]) :: {:ok, %{integer() => map()}}
-  def photos_metadata(%Scope{} = scope, file_ids) when is_list(file_ids) do
-    within_tekoa(scope, fn ->
-      photos = Repo.all(from(p in Photo, where: p.file_id in ^file_ids))
-      {:ok, Map.new(photos, fn p -> {p.file_id, p.metadata || %{}} end)}
-    end)
-  end
-
-  @doc """
-  O `public_id` do dono de vários recursos, em UMA consulta sobre
-  `Ypy.Maraca.Ava` (o serializer da API): mapa `dono_id => public_id`. Sem
-  entrada para id nulo (arquivo/pasta órfão, caso defensivo do FK).
-  """
-  @spec donos_public_ids(Scope.t(), [integer()]) :: {:ok, %{integer() => String.t()}}
-  def donos_public_ids(%Scope{} = scope, dono_ids) when is_list(dono_ids) do
-    within_tekoa(scope, fn ->
-      ids = dono_ids |> Enum.reject(&is_nil/1) |> Enum.uniq()
-
-      donos = Repo.all(from(a in Ava, where: a.id in ^ids, select: {a.id, a.public_id}))
-
-      {:ok, Map.new(donos)}
-    end)
-  end
-
-  @doc """
-  A pasta pai de vários arquivos, resolvida pela regra de leitura em lote (o
-  `file_folder_rkey/2` de página): mapa `file_id => rkey` da pasta, e `nil`
-  para arquivo solto, pasta na lixeira ou casa não-legível -- os mesmos
-  nulos do unitário. As pastas distintas da página saem em uma consulta; a
-  regra de leitura (as concessões) carrega uma vez só.
-  """
-  @spec files_folder_rkeys(Scope.t(), [File.t()]) :: {:ok, %{integer() => nil | String.t()}}
-  def files_folder_rkeys(%Scope{} = scope, files) when is_list(files) do
-    within_tekoa(scope, fn ->
-      folder_ids = files |> Enum.map(& &1.folder_id) |> Enum.reject(&is_nil/1) |> Enum.uniq()
-
-      # As concessões do leitor: uma consulta para a página inteira.
-      concessoes = Store.concessoes_ativas(Repo, scope.tekoa.id, scope.ava.id)
-
-      readable_rkeys = readable_folder_rkeys(scope, folder_ids, concessoes)
-
-      {:ok,
-       Map.new(files, fn %File{id: id, folder_id: folder_id} ->
-         {id, Map.get(readable_rkeys, folder_id, nil)}
-       end)}
-    end)
-  end
-
-  # A regra de leitura sobre cada pasta pai distinta da página: fora do mapa
-  # (nil, como no `file_folder_rkey/2`) pasta expurgada ou casa não-legível.
   defp readable_folder_rkeys(_scope, [], _concessoes), do: %{}
 
   defp readable_folder_rkeys(%Scope{} = scope, folder_ids, concessoes) do
@@ -1236,10 +1069,196 @@ defmodule Taina.Ybira do
     end)
   end
 
+  # The SQLite expression extracts the MIME prefix before its first slash.
+  # Keep the fragment directly in both query clauses so Ecto can validate it.
+  @doc "Armazenamento por tipo (painel): fotos, videos, documentos, outros."
+  def storage_stats_by_kind(%Scope{} = scope) do
+    within_tekoa(scope, fn ->
+      rows =
+        scope
+        |> readable_files_query()
+        |> group_by(
+          [f],
+          fragment(
+            "CASE WHEN instr(?, '/') = 0 THEN ? ELSE substr(?, 1, instr(?, '/') - 1) END",
+            f.mime,
+            f.mime,
+            f.mime,
+            f.mime
+          )
+        )
+        |> select(
+          [f],
+          {fragment(
+             "CASE WHEN instr(?, '/') = 0 THEN ? ELSE substr(?, 1, instr(?, '/') - 1) END",
+             f.mime,
+             f.mime,
+             f.mime,
+             f.mime
+           ), sum(f.tamanho)}
+        )
+        # Aggregate MIME tuples; there are no associations to preload.
+        # credo:disable-for-next-line OeditusCredo.Check.Warning.MissingPreload
+        |> Repo.all()
+
+      {:ok, classify_storage_kinds(rows)}
+    end)
+  end
+
+  # Fato da máquina, tekoa inteiro (não o subconjunto legível): a cota cobre
+  # os bytes de todo mundo, incluída a casa de quem não leu (RFC_003 D2 é a
+  # regra de leitura, não a de ocupação). A lixeira ainda ocupa até o expurgo,
+  # então casa + praça + lixeira bate com `storage_stats/1` (`used_bytes`).
+  @doc "Armazenamento por zona (armazenamento): casas, praca e lixeira em bytes."
+  def storage_stats_by_zone(%Scope{} = scope) do
+    within_tekoa(scope, fn ->
+      live =
+        from(f in File,
+          where: f.tekoa_id == ^scope.tekoa.id and is_nil(f.apagado_em),
+          group_by: f.zona,
+          select: {f.zona, sum(f.tamanho)}
+        )
+        # Aggregate zone tuples; there are no associations to preload.
+        # credo:disable-for-next-line OeditusCredo.Check.Warning.MissingPreload
+        |> Repo.all()
+        |> Map.new(fn {zona, bytes} -> {zona, to_integer(bytes)} end)
+
+      lixeira =
+        from(f in File,
+          where: f.tekoa_id == ^scope.tekoa.id and not is_nil(f.apagado_em),
+          select: sum(f.tamanho)
+        )
+        |> Repo.one()
+        |> to_integer()
+
+      {:ok, %{casa: Map.get(live, :casa, 0), praca: Map.get(live, :praca, 0), lixeira: lixeira}}
+    end)
+  end
+
+  @doc "Tira da praca, de volta para a casa (kernel: `Ypy.Ybira.tirar_da_praca/5`)."
+  def tirar_file_da_praca(%Scope{} = scope, rkey) when is_binary(rkey) do
+    within_tekoa(scope, fn -> Kernel.tirar_da_praca(Repo, Keys.new(), scope, @tipo_file, rkey) end)
+  end
+
+  def tirar_folder_da_praca(%Scope{} = scope, rkey) when is_binary(rkey) do
+    within_tekoa(scope, fn -> change_folder_tree_zone(scope, rkey, :tirar) end)
+  end
+
+  @doc "Quantos arquivos e bytes há na lixeira da Tekoa (painel, agregado sem dono)."
+  def trash_stats(%Scope{} = scope) do
+    within_tekoa(scope, fn ->
+      stats =
+        Repo.one(
+          from(f in File,
+            where: f.tekoa_id == ^scope.tekoa.id and not is_nil(f.apagado_em),
+            select: %{count: count(f.id), bytes: sum(f.tamanho)}
+          )
+        )
+
+      {:ok, %{count: stats.count, bytes: to_integer(stats.bytes)}}
+    end)
+  end
+
+  defp resource_rkeys(resources, tipo) do
+    rkeys = for {^tipo, rkey} when is_binary(rkey) <- resources, do: rkey
+    Enum.uniq(rkeys)
+  end
+
+  defp sum_counts(%Scope{} = scope, ids) do
+    folders = counts_by(scope, :folder, ids)
+    files = counts_by(scope, :file, ids)
+
+    Map.new(ids, fn id ->
+      {id, Map.get(folders, id, 0) + Map.get(files, id, 0)}
+    end)
+  end
+
+  defp tekoa_public_ids(files, opts) do
+    tekoa_ids = for %File{mime: mime, tekoa_id: tekoa_id} <- files, image?(mime), do: tekoa_id
+    tekoa_ids = Enum.uniq(tekoa_ids)
+
+    from(t in Tekoa, where: t.id in ^tekoa_ids, select: {t.id, t.public_id})
+    # Tuple projection used for thumbnail paths; no associations are read.
+    # credo:disable-for-next-line OeditusCredo.Check.Warning.MissingPreload
+    |> Repo.all(opts)
+    |> Map.new()
+  end
+
+  # `sum/1` sobre inteiro volta como `Decimal` no SQLite; normalizamos para
+  # inteiro (bytes são sempre inteiros) antes de somar no acumulador.
+  defp to_integer(nil), do: 0
+  defp to_integer(%Decimal{} = bytes), do: Decimal.to_integer(bytes)
+  defp to_integer(bytes) when is_integer(bytes), do: bytes
+
+  defp trashed_file(%Scope{} = scope, rkey) do
+    case KernelStore.get_file(Repo, scope.tekoa.id, rkey, true) do
+      %File{dono_id: dono_id} = file when dono_id == scope.ava.id -> {:ok, file}
+      _ -> {:error, :not_found}
+    end
+  end
+
+  # Linhas chegam da pasta atual para a raiz (depth 0 -> 32). O teto existe
+  # para um grafo corrompido: sem ele, um ciclo no parent_id faria a consulta
+  # crescer o resultado até estourar.
+  # `zona` chega do SQL como texto; os átomos existem (Ecto.Enum do schema).
   defp photo_metadata!(file_id) do
     case Repo.one(from(p in Photo, where: p.file_id == ^file_id)) do
       nil -> %{}
       photo -> photo.metadata || %{}
+    end
+  end
+
+  defp trashed_subtree_folders(%Scope{} = scope, folder_ids) do
+    folders = Repo.all(from(f in Folder, where: f.tekoa_id == ^scope.tekoa.id and f.id in ^folder_ids))
+
+    if length(folders) == length(folder_ids) and
+         Enum.all?(folders, &(&1.dono_id == scope.ava.id and not is_nil(&1.apagado_em))) do
+      {:ok, folders}
+    else
+      {:error, :invalid_status}
+    end
+  end
+
+  defp trashed_subtree_files(%Scope{} = scope, folder_ids) do
+    files = Repo.all(from(f in File, where: f.tekoa_id == ^scope.tekoa.id and f.folder_id in ^folder_ids))
+
+    if Enum.all?(files, &(&1.dono_id == scope.ava.id and not is_nil(&1.apagado_em))) do
+      {:ok, files}
+    else
+      {:error, :invalid_status}
+    end
+  end
+
+  defp zona_atom("casa"), do: :casa
+  defp zona_atom("praca"), do: :praca
+
+  @doc """
+  O upload: o kernel le o arquivo, confere cota e MIME, guarda os bytes no
+  `Ypy.BlobStore` e commita blob, record, arquivo e cota com a entrada na
+  cadeia. O mime vem dos magic bytes (produto); a rendition de imagem
+  enfileira depois do commit (best-effort: a foto existe sem thumbnail).
+
+  O kernel inteiro roda sob a travessa do CID dos bytes (`Taina.Ybira.BlobLock`):
+  os bytes entram no disco antes de a referencia commitar, e o GC diferido so
+  pode apagar bytes sem referencia DENTRO da mesma travessa. Sem ela, o GC
+  conferiria referencias entre a gravacao dos bytes e o commit, apagaria o
+  blob e o arquivo commitaria apontando para bytes que nao existem mais. So
+  espera a vez quem sobe os MESMOS bytes (mesmo CID, a corrida da dedup);
+  upload de conteudo diferente nunca espera.
+  """
+  def upload(%Scope{} = scope, temporary_path, opts \\ []) do
+    opts = [
+      mime: MimeDetector.detect(temporary_path),
+      nome: Keyword.get(opts, :filename, Path.basename(temporary_path)),
+      folder: Keyword.get(opts, :folder_rkey)
+    ]
+
+    with {:ok, %{size: size}} <- Elixir.File.stat(temporary_path),
+         :ok <- blob_size_allowed?(size),
+         {:ok, cid} <- blob_cid(temporary_path),
+         {:ok, file} <- locked_upload(scope, temporary_path, opts, cid) do
+      maybe_enqueue_rendition(scope, file)
+      {:ok, file}
     end
   end
 
@@ -1333,30 +1352,32 @@ defmodule Taina.Ybira do
   defp ensure_acyclic(_folder_id, nil), do: :ok
 
   defp ensure_acyclic(folder_id, new_parent_id) do
-    if ancestor_or_self?(new_parent_id, folder_id),
-      do: {:error, :circular_reference},
-      else: :ok
+    case ancestor_or_self?(new_parent_id, folder_id) do
+      {:ok, true} -> {:error, :circular_reference}
+      {:ok, false} -> :ok
+      {:error, _reason} = error -> error
+    end
   end
 
   # Uma única CTE recursiva sobe a cadeia de ancestrais de `start_id` (incluindo
   # ele) e responde se `folder_id` aparece lá, sem N+1 nem recursão Elixir
   # ilimitada. Roda sob o contexto de Tekoa.
   defp ancestor_or_self?(start_id, folder_id) do
-    {:ok, %{rows: [[count]]}} =
-      Repo.query(
-        """
-        WITH RECURSIVE ancestors AS (
-          SELECT id, parent_id FROM ybira_folders WHERE id = $1
-          UNION ALL
-          SELECT f.id, f.parent_id FROM ybira_folders f
-          JOIN ancestors a ON f.id = a.parent_id
-        )
-        SELECT count(*) FROM ancestors WHERE id = $2
-        """,
-        [start_id, folder_id]
-      )
-
-    count > 0
+    case Repo.query(
+           """
+           WITH RECURSIVE ancestors AS (
+             SELECT id, parent_id FROM ybira_folders WHERE id = $1
+             UNION ALL
+             SELECT f.id, f.parent_id FROM ybira_folders f
+             JOIN ancestors a ON f.id = a.parent_id
+           )
+           SELECT count(*) FROM ancestors WHERE id = $2
+           """,
+           [start_id, folder_id]
+         ) do
+      {:ok, %{rows: [[count]]}} -> {:ok, count > 0}
+      {:error, _reason} = error -> error
+    end
   end
 
   # Soft delete em cascata sem recursão Elixir: uma CTE coleta a subárvore (raiz
@@ -1367,44 +1388,45 @@ defmodule Taina.Ybira do
   # no mesmo segundo da pasta herdaria o carimbo e voltaria junto na
   # restauração (que casa pelo `apagado_em` exato dela).
   defp soft_delete_tree(tekoa_id, root_id) do
-    folder_ids = descendant_folder_ids(root_id)
-    subtree_ids = subtree_folder_ids(root_id)
-    now = batch_timestamp(tekoa_id, subtree_ids)
+    with {:ok, folder_ids} <- descendant_folder_ids(root_id),
+         {:ok, subtree_ids} <- subtree_folder_ids(root_id) do
+      now = batch_timestamp(tekoa_id, subtree_ids)
 
-    Repo.update_all(
-      from(f in File,
-        where: f.tekoa_id == ^tekoa_id and f.folder_id in ^folder_ids and is_nil(f.apagado_em)
-      ),
-      set: [apagado_em: now]
-    )
+      Repo.update_all(
+        from(f in File,
+          where: f.tekoa_id == ^tekoa_id and f.folder_id in ^folder_ids and is_nil(f.apagado_em)
+        ),
+        set: [apagado_em: now]
+      )
 
-    Repo.update_all(
-      from(p in Folder,
-        where: p.tekoa_id == ^tekoa_id and p.id in ^folder_ids and is_nil(p.apagado_em)
-      ),
-      set: [apagado_em: now]
-    )
+      Repo.update_all(
+        from(p in Folder,
+          where: p.tekoa_id == ^tekoa_id and p.id in ^folder_ids and is_nil(p.apagado_em)
+        ),
+        set: [apagado_em: now]
+      )
 
-    :ok
+      :ok
+    end
   end
 
   defp descendant_folder_ids(root_id) do
-    {:ok, %{rows: rows}} =
-      Repo.query(
-        """
-        WITH RECURSIVE subtree AS (
-          SELECT id FROM ybira_folders WHERE id = $1
-          UNION ALL
-          SELECT f.id FROM ybira_folders f
-          JOIN subtree s ON f.parent_id = s.id
-          WHERE f.apagado_em IS NULL
-        )
-        SELECT id FROM subtree
-        """,
-        [root_id]
-      )
-
-    List.flatten(rows)
+    case Repo.query(
+           """
+           WITH RECURSIVE subtree AS (
+             SELECT id FROM ybira_folders WHERE id = $1
+             UNION ALL
+             SELECT f.id FROM ybira_folders f
+             JOIN subtree s ON f.parent_id = s.id
+             WHERE f.apagado_em IS NULL
+           )
+           SELECT id FROM subtree
+           """,
+           [root_id]
+         ) do
+      {:ok, %{rows: rows}} -> {:ok, List.flatten(rows)}
+      {:error, _reason} = error -> error
+    end
   end
 
   # O maior `apagado_em` da subárvore inteira (pastas e arquivos, inclusive o
@@ -1431,7 +1453,7 @@ defmodule Taina.Ybira do
 
     case Enum.reject([file_last, folder_last], &is_nil/1) do
       [] -> agora()
-      taken -> bump_until_after(agora(), Enum.max_by(taken, &DateTime.to_unix/1))
+      taken -> maybe_bump_until_after(agora(), Enum.max_by(taken, &DateTime.to_unix/1))
     end
   end
 
@@ -1441,7 +1463,7 @@ defmodule Taina.Ybira do
   # restauração usa. Sem laço: um `apagado_em` muito à frente do relógio (um
   # relógio adiantado que foi corrigido) não pode prender a requisição
   # subindo segundo a segundo.
-  defp bump_until_after(%DateTime{} = candidate, %DateTime{} = taken) do
+  defp maybe_bump_until_after(%DateTime{} = candidate, %DateTime{} = taken) do
     if DateTime.after?(candidate, taken), do: candidate, else: DateTime.shift(taken, second: 1)
   end
 
@@ -1468,40 +1490,40 @@ defmodule Taina.Ybira do
   # uma vez, com um só horário). Um item apagado antes, por conta própria,
   # fica na lixeira.
   defp restore_folder_subtree(%Scope{} = scope, folder) do
-    folder_ids = subtree_folder_ids(folder.id)
+    with {:ok, folder_ids} <- subtree_folder_ids(folder.id) do
+      Repo.update_all(
+        from(p in Folder, where: p.id in ^folder_ids and p.apagado_em == ^folder.apagado_em),
+        set: [apagado_em: nil]
+      )
 
-    Repo.update_all(
-      from(p in Folder, where: p.id in ^folder_ids and p.apagado_em == ^folder.apagado_em),
-      set: [apagado_em: nil]
-    )
+      Repo.update_all(
+        from(f in File, where: f.folder_id in ^folder_ids and f.apagado_em == ^folder.apagado_em),
+        set: [apagado_em: nil]
+      )
 
-    Repo.update_all(
-      from(f in File, where: f.folder_id in ^folder_ids and f.apagado_em == ^folder.apagado_em),
-      set: [apagado_em: nil]
-    )
-
-    folder = Repo.one!(from(p in Folder, where: p.id == ^folder.id))
-    restore_to_root_if_orphaned(scope, folder)
+      folder = Repo.one!(from(p in Folder, where: p.id == ^folder.id))
+      restore_to_root_if_orphaned(scope, folder)
+    end
   end
 
   # Mesma CTE de `descendant_folder_ids/1`, sem o filtro de lixeira: para
   # restaurar, os descendentes estão (normalmente) apagados.
   defp subtree_folder_ids(root_id) do
-    {:ok, %{rows: rows}} =
-      Repo.query(
-        """
-        WITH RECURSIVE subtree AS (
-          SELECT id FROM ybira_folders WHERE id = $1
-          UNION ALL
-          SELECT f.id FROM ybira_folders f
-          JOIN subtree s ON f.parent_id = s.id
-        )
-        SELECT id FROM subtree
-        """,
-        [root_id]
-      )
-
-    List.flatten(rows)
+    case Repo.query(
+           """
+           WITH RECURSIVE subtree AS (
+             SELECT id FROM ybira_folders WHERE id = $1
+             UNION ALL
+             SELECT f.id FROM ybira_folders f
+             JOIN subtree s ON f.parent_id = s.id
+           )
+           SELECT id FROM subtree
+           """,
+           [root_id]
+         ) do
+      {:ok, %{rows: rows}} -> {:ok, List.flatten(rows)}
+      {:error, _reason} = error -> error
+    end
   end
 
   # Restaurar só limpa `apagado_em`: se a pasta-pai também estiver na lixeira,
@@ -1559,8 +1581,8 @@ defmodule Taina.Ybira do
   # Ordenação dinâmica (nome/data/tamanho x asc/desc), com `rkey` como desempate
   # estável. A paginação aqui é por offset (não keyset), o que permite qualquer
   # ordem sem cursor composto, suficiente para uma caixa de comunidade.
-  @sort_fields ~w(name date size)a
-  @sort_dirs ~w(asc desc)a
+  @sort_fields ~W(date name size)a
+  @sort_dirs ~W(asc desc)a
 
   defp normalize_sort({field, dir}) when field in @sort_fields and dir in @sort_dirs, do: {field, dir}
   defp normalize_sort(_other), do: {:date, :desc}
@@ -1592,6 +1614,8 @@ defmodule Taina.Ybira do
     rows =
       query
       |> limit(^(limit + 1))
+      # Callers use batched association lookups instead of per-row preloads.
+      # credo:disable-for-next-line OeditusCredo.Check.Warning.MissingPreload
       |> Repo.all()
 
     if length(rows) > limit do

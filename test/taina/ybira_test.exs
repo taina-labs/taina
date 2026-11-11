@@ -12,9 +12,9 @@ defmodule Taina.YbiraTest do
   describe "upload/3" do
     test "stores the file on disk, inserts the record and updates usage" do
       scope = scope_fixture()
-      tmp = tmp_upload_fixture("olá ybira", "ferias.txt")
+      upload_path = tmp_upload_fixture("olá ybira", "ferias.txt")
 
-      assert {:ok, file} = Ybira.upload(scope, tmp, filename: "minhas_ferias.txt")
+      assert {:ok, file} = Ybira.upload(scope, upload_path, filename: "minhas_ferias.txt")
 
       assert file.nome == "minhas_ferias.txt"
       assert file.mime == "text/plain"
@@ -32,11 +32,10 @@ defmodule Taina.YbiraTest do
 
     test "rejects upload beyond the tekoa quota" do
       tekoa = tekoa_fixture(%{storage_quota_bytes: 4})
-      ava = ava_fixture(tekoa)
-      scope = Scope.new(ava, tekoa)
-      tmp = tmp_upload_fixture("mais que quatro bytes")
+      scope = tekoa |> ava_fixture() |> Scope.new(tekoa)
+      upload_path = tmp_upload_fixture("mais que quatro bytes")
 
-      assert {:error, :storage_quota_exceeded} = Ybira.upload(scope, tmp)
+      assert {:error, :storage_quota_exceeded} = Ybira.upload(scope, upload_path)
 
       tekoa = Repo.get!(Tekoa, tekoa.id, skip_tekoa_id: true)
       assert tekoa.storage_used_bytes == 0
@@ -92,7 +91,7 @@ defmodule Taina.YbiraTest do
                Ybira.list_files(scope, nil, limit: 2)
 
       assert [first.id, second.id] == [c.id, b.id]
-      assert is_binary(cursor)
+      assert is_binary(cursor) and byte_size(cursor) > 0
 
       assert {:ok, %{items: [third], next_cursor: nil}} =
                Ybira.list_files(scope, nil, limit: 2, after_cursor: cursor)
@@ -156,8 +155,7 @@ defmodule Taina.YbiraTest do
     test "trash stays owner-only: the zelador does not see a morador's trash" do
       tekoa = tekoa_fixture()
       zelador = zelador_fixture(tekoa)
-      morador = active_ava_fixture(tekoa)
-      morador_scope = Scope.new(morador, tekoa)
+      morador_scope = tekoa |> active_ava_fixture() |> Scope.new(tekoa)
       zelador_scope = Scope.new(zelador, tekoa)
 
       {:ok, file} = Ybira.upload(morador_scope, tmp_upload_fixture("x", "arquivo_da_casa.txt"))
@@ -210,7 +208,7 @@ defmodule Taina.YbiraTest do
       # ou em lote: o caminho de um arquivo só já era assim, o lote não era.
       assert {:error, :not_found} = Ybira.file_folder_rkey(scope, file)
       assert {:ok, rkeys} = Ybira.files_folder_rkeys(scope, [file])
-      assert rkeys[file.id] == nil
+      assert is_nil(rkeys[file.id])
     end
   end
 
@@ -352,26 +350,26 @@ defmodule Taina.YbiraTest do
     test "detects PNG by magic bytes regardless of extension" do
       scope = scope_fixture()
       png = <<0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0>>
-      tmp = tmp_upload_fixture(png, "nao_eh_texto.txt")
+      upload_path = tmp_upload_fixture(png, "nao_eh_texto.txt")
 
-      assert {:ok, file} = Ybira.upload(scope, tmp)
+      assert {:ok, file} = Ybira.upload(scope, upload_path)
       assert file.mime == "image/png"
     end
 
     test "detects PDF by magic bytes" do
       scope = scope_fixture()
-      tmp = tmp_upload_fixture("%PDF-1.7\n...", "doc.bin")
+      upload_path = tmp_upload_fixture("%PDF-1.7\n...", "doc.bin")
 
-      assert {:ok, file} = Ybira.upload(scope, tmp)
+      assert {:ok, file} = Ybira.upload(scope, upload_path)
       assert file.mime == "application/pdf"
     end
 
     test "rejects executables disguised with an allowed extension" do
       scope = scope_fixture()
       # Cabeçalho "MZ" de um executável Windows, com extensão .jpg.
-      tmp = tmp_upload_fixture(<<0x4D, 0x5A, 0x90, 0x00, "rest">>, "foto.jpg")
+      upload_path = tmp_upload_fixture(<<0x4D, 0x5A, 0x90, 0x00, "rest">>, "foto.jpg")
 
-      assert {:error, :mime_not_allowed} = Ybira.upload(scope, tmp)
+      assert {:error, :mime_not_allowed} = Ybira.upload(scope, upload_path)
       tekoa = Repo.get!(Tekoa, scope.tekoa.id, skip_tekoa_id: true)
       assert tekoa.storage_used_bytes == 0
     end
@@ -379,9 +377,9 @@ defmodule Taina.YbiraTest do
     test "detects Matroska by magic bytes and labels it honestly" do
       scope = scope_fixture()
       mkv = <<0x1A, 0x45, 0xDF, 0xA3, 0x8B, 0x42, 0x82, 0x88, "matroska">>
-      tmp = tmp_upload_fixture(mkv, "filme.bin")
+      upload_path = tmp_upload_fixture(mkv, "filme.bin")
 
-      assert {:ok, file} = Ybira.upload(scope, tmp)
+      assert {:ok, file} = Ybira.upload(scope, upload_path)
       assert file.mime == "video/x-matroska"
     end
   end
@@ -483,8 +481,7 @@ defmodule Taina.YbiraTest do
   describe "storage_stats/1" do
     test "reports used and quota bytes for the tekoa" do
       tekoa = tekoa_fixture(%{storage_quota_bytes: 1000})
-      ava = ava_fixture(tekoa)
-      scope = Scope.new(ava, tekoa)
+      scope = tekoa |> ava_fixture() |> Scope.new(tekoa)
       {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("12345", "n.txt"))
 
       assert {:ok, %{used_bytes: used, quota_bytes: 1000}} = Ybira.storage_stats(scope)

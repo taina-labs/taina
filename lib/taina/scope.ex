@@ -12,6 +12,9 @@ defmodule Taina.Scope do
   alias Ypy.Maraca.Ava
   alias Ypy.Maraca.Tekoa
 
+  @type ava :: Ava.t()
+  @type scope :: Ypy.Scope.t()
+
   @doc """
   Constrói um scope a partir de um Ava com a Tekoa pré-carregada.
 
@@ -21,7 +24,7 @@ defmodule Taina.Scope do
   levanta `ArgumentError` apontando o preload, em vez de um
   `FunctionClauseError` sem pista.
   """
-  @spec for_ava(Ava.t()) :: Ypy.Scope.t()
+  @spec for_ava(ava()) :: scope()
   def for_ava(%Ava{tekoa: %Tekoa{} = tekoa} = ava) do
     new(ava, tekoa)
   end

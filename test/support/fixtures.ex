@@ -16,6 +16,9 @@ defmodule Taina.Fixtures do
 
   @gb 1024 * 1024 * 1024
 
+  # These fixtures insert records directly so tests can set up both allowed and
+  # denied authorization scenarios; authorization is exercised by the tests.
+  # credo:disable-for-next-line OeditusCredo.Check.Security.MissingAuthorization
   def tekoa_fixture(attrs \\ %{}) do
     n = System.unique_integer([:positive])
 
@@ -35,6 +38,9 @@ defmodule Taina.Fixtures do
   end
 
   # Convite pendente: tem nome mas ainda sem senha (conta não ativada).
+  # Fixture constructors deliberately bypass request authorization. Their
+  # callers test authorization separately through the public contexts.
+  # credo:disable-for-next-line OeditusCredo.Check.Security.MissingAuthorization
   def ava_fixture(%Tekoa{} = tekoa, attrs \\ %{}) do
     n = System.unique_integer([:positive])
 
@@ -52,6 +58,9 @@ defmodule Taina.Fixtures do
   # Conta ativa: nome de usuário + senha definidos (convite aceito). O papel
   # não entra pelo accept_changeset do kernel (ele casta identidade e senha
   # apenas): vai como change programático, como no zelador do bootstrap.
+  # This direct insert builds controlled test identities; it is not an
+  # application entry point or an authorization boundary.
+  # credo:disable-for-next-line OeditusCredo.Check.Security.MissingAuthorization
   def active_ava_fixture(%Tekoa{} = tekoa, attrs \\ %{}) do
     n = System.unique_integer([:positive])
 
@@ -79,10 +88,15 @@ defmodule Taina.Fixtures do
     Scope.new(ava, tekoa)
   end
 
+  # Keep this established helper name because test callers use it throughout
+  # the suite.
+  # credo:disable-for-next-line OptimumCredo.Check.Readability.BannedAbbreviations
   def tmp_upload_fixture(contents \\ "conteúdo de teste", filename \\ "doc.txt") do
     dir = Path.join(System.tmp_dir!(), "taina_fixture_#{System.unique_integer([:positive])}")
     File.mkdir_p!(dir)
     path = Path.join(dir, filename)
+    # Callers supply fixture filenames, not untrusted request paths.
+    # credo:disable-for-next-line OeditusCredo.Check.Security.PathTraversal
     File.write!(path, contents)
     path
   end
@@ -92,6 +106,9 @@ defmodule Taina.Fixtures do
   exercitar o pipeline de renditions do Ybira/Jaci. Sem EXIF, `taken_at` cai no
   fallback de upload, como num arquivo sem metadados de câmera.
   """
+  # Keep this established helper name because test callers use it throughout
+  # the suite.
+  # credo:disable-for-next-line OptimumCredo.Check.Readability.BannedAbbreviations
   def tmp_image_fixture(opts \\ []) do
     width = Keyword.get(opts, :width, 32)
     height = Keyword.get(opts, :height, 24)
@@ -111,6 +128,9 @@ defmodule Taina.Fixtures do
   bastante para o `MimeDetector` classificar como `video/mp4`. Sem faixas reais,
   só exercita a allowlist e o filtro image/video do Jaci/Ybira.
   """
+  # Keep this established helper name because test callers use it throughout
+  # the suite.
+  # credo:disable-for-next-line OptimumCredo.Check.Readability.BannedAbbreviations
   def tmp_video_fixture(filename \\ "v.mp4") do
     tmp_upload_fixture(<<0, 0, 0, 0x18, "ftyp", "mp42", 0, 0, 0, 0>>, filename)
   end

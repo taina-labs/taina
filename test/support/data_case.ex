@@ -27,7 +27,7 @@ defmodule Taina.DataCase do
   Sets up the sandbox based on the test tags.
   """
   def setup_sandbox(tags) do
-    pid = Sandbox.start_owner!(Taina.Repo, shared: not tags[:async])
+    pid = Sandbox.start_owner!(Taina.Repo, shared: not Map.get(tags, :async))
     on_exit(fn -> Sandbox.stop_owner(pid) end)
   end
 

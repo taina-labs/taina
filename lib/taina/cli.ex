@@ -35,10 +35,11 @@ defmodule Taina.CLI do
 
   defstruct verb: nil, opts: []
 
+  @type exit_code :: 0 | 1 | 2 | 3
+  @type t :: %__MODULE__{verb: verb(), opts: keyword()}
+  @type text :: String.t()
   @type verb ::
           :backup | :restore | :doctor | :version | :config_validate | :config_template | :reset_password | :thumbnails
-  @type t :: %__MODULE__{verb: verb(), opts: keyword()}
-  @type exit_code :: 0 | 1 | 2 | 3
 
   @exit_ok 0
   @exit_domain_failure 1
@@ -60,7 +61,7 @@ defmodule Taina.CLI do
   """
 
   @doc "Roda o verbo e encerra o processo com o código de saída."
-  @spec main([String.t()]) :: no_return()
+  @spec main([text()]) :: no_return()
   def main(argv), do: System.halt(run(argv))
 
   @doc """
@@ -68,7 +69,7 @@ defmodule Taina.CLI do
 
   `{:error, :usage}` para argv vazio, verbo desconhecido ou flags incompletos.
   """
-  @spec parse([String.t()]) :: {:ok, t()} | {:error, :usage}
+  @spec parse([text()]) :: {:ok, t()} | {:error, :usage}
   def parse(["backup"]), do: {:ok, %__MODULE__{verb: :backup}}
   def parse(["backup", "--out", dir]), do: {:ok, %__MODULE__{verb: :backup, opts: [dir: dir]}}
   def parse(["restore", archive]), do: {:ok, %__MODULE__{verb: :restore, opts: [archive: archive]}}
@@ -85,8 +86,18 @@ defmodule Taina.CLI do
   def parse(["thumbnails", "regenerate", "--tekoa", id]), do: {:ok, %__MODULE__{verb: :thumbnails, opts: [tekoa: id]}}
   def parse(_argv), do: {:error, :usage}
 
+  @doc "Reads and confirms a password without accepting argv or environment input."
+  def read_password do
+    password = prompt_password("Nova senha (minimo 8 caracteres): ")
+    confirm = prompt_password("Confirme a senha nova: ")
+
+    password = String.trim_trailing(password, "\n")
+    confirm = String.trim_trailing(confirm, "\n")
+    if password == confirm and byte_size(password) >= 8, do: {:ok, password}, else: {:error, :invalid_password}
+  end
+
   @doc "Roda o verbo e devolve o código de saída, sem encerrar o processo."
-  @spec run([String.t()]) :: exit_code()
+  @spec run([text()]) :: exit_code()
   def run(argv) do
     case parse(argv) do
       {:ok, command} -> dispatch(command)
@@ -94,22 +105,11 @@ defmodule Taina.CLI do
     end
   end
 
-  defp dispatch(%__MODULE__{verb: :backup, opts: opts}), do: backup(opts)
-  defp dispatch(%__MODULE__{verb: :restore, opts: opts}), do: restore(opts)
-  defp dispatch(%__MODULE__{verb: :doctor}), do: doctor()
-  defp dispatch(%__MODULE__{verb: :version}), do: version()
-  defp dispatch(%__MODULE__{verb: :config_validate}), do: config_validate()
-  defp dispatch(%__MODULE__{verb: :config_template, opts: opts}), do: config_template(opts)
-  defp dispatch(%__MODULE__{verb: :reset_password, opts: opts}), do: reset_password(opts)
-  defp dispatch(%__MODULE__{verb: :thumbnails, opts: opts}), do: thumbnails(opts)
-
-  ## Verbos
-
-  # O destino é decisão do CLI (flag ou config): sem o flag, ler a config aqui
+  # O destino e decisao do CLI (flag ou config): sem o flag, ler a config aqui
   # em vez de depender do raise interno de Backup.run/1, porque config ausente
-  # é ambiente quebrado (código 3) e não deve estourar como crash.
+  # e ambiente quebrado (codigo 3) e nao deve estourar como crash.
   defp backup(opts) do
-    case backup_dir(opts[:dir]) do
+    case backup_dir(Keyword.get(opts, :dir)) do
       {:ok, dir} ->
         run_backup(dir)
 
@@ -125,6 +125,280 @@ defmodule Taina.CLI do
     case :taina |> Application.get_env(:backup, []) |> Keyword.get(:dir) do
       dir when is_binary(dir) -> {:ok, dir}
       _other -> {:error, :no_dir}
+    end
+  end
+
+  defp config_template(opts) do
+    output = Taina.Config.template()
+
+    case Keyword.get(opts, :out) do
+      nil ->
+        IO.write(output)
+        @exit_ok
+
+      path ->
+        # This path is supplied by the local operator through `--out`.
+        # credo:disable-for-next-line OeditusCredo.Check.Security.PathTraversal
+        case File.write(path, output, [:exclusive]) do
+          :ok ->
+            IO.puts(path)
+            @exit_ok
+
+          {:error, :eexist} ->
+            error("arquivo já existe: #{path}")
+            @exit_domain_failure
+
+          {:error, reason} ->
+            error(inspect(reason))
+            @exit_environment
+        end
+    end
+  end
+
+  defp config_validate do
+    case Taina.Config.effective() do
+      {:ok, settings} ->
+        Enum.each(Map.from_struct(settings), fn {key, value} -> IO.puts("#{key} = #{inspect(value)}") end)
+        @exit_ok
+
+      {:error, reason} ->
+        error(Taina.Config.describe(reason))
+        @exit_environment
+    end
+  end
+
+  defp count_migrations(conn) do
+    with {:ok, stmt} <- Exqlite.Sqlite3.prepare(conn, "SELECT version FROM schema_migrations"),
+         {:ok, rows} <- Exqlite.Sqlite3.fetch_all(conn, stmt),
+         {:ok, available} <- migration_versions() do
+      applied = MapSet.new(rows, fn [version] -> version end)
+      pending = Enum.count(available, &(not MapSet.member?(applied, &1)))
+      {:ok, MapSet.size(applied), pending}
+    end
+  end
+
+  # Abre o arquivo do banco à margem do pool do Repo (leitura pura; :readonly
+  # não cria arquivo) e fecha em seguida: o que interessa é conseguir abrir.
+  defp db_reachable?(path) do
+    if File.exists?(path) do
+      with {:ok, conn} <- open_readonly(path) do
+        Exqlite.Sqlite3.close(conn)
+        :ok
+      end
+    else
+      {:error, :enoent}
+    end
+  end
+
+  defp dispatch(%__MODULE__{verb: :backup, opts: opts}), do: backup(opts)
+  defp dispatch(%__MODULE__{verb: :restore, opts: opts}), do: restore(opts)
+  defp dispatch(%__MODULE__{verb: :doctor}), do: doctor()
+  defp dispatch(%__MODULE__{verb: :version}), do: version()
+  defp dispatch(%__MODULE__{verb: :config_validate}), do: config_validate()
+  defp dispatch(%__MODULE__{verb: :config_template, opts: opts}), do: config_template(opts)
+  defp dispatch(%__MODULE__{verb: :reset_password, opts: opts}), do: reset_password(opts)
+  defp dispatch(%__MODULE__{verb: :thumbnails, opts: opts}), do: thumbnails(opts)
+
+  ## Verbos
+
+  # Diagnóstico de leitura: linhas secas, uma por fato. Código 3 quando o
+  # ambiente está quebrado (banco ou armazenamento inacessíveis); achados
+  # operacionais (nenhum backup ainda, migração pendente) são informação,
+  # não falha.
+  defp doctor do
+    IO.puts("versão: #{version_string()}")
+    db_ok = doctor_db?()
+    storage_ok = doctor_storage()
+    doctor_backup()
+    doctor_migrations()
+
+    if db_ok and storage_ok do
+      @exit_ok
+    else
+      @exit_environment
+    end
+  end
+
+  defp doctor_backup do
+    enabled = if Backup.enabled?(), do: "habilitado", else: "desabilitado"
+    IO.puts("backup: #{enabled}")
+    IO.puts("último backup: #{last_backup_text()}")
+  end
+
+  defp doctor_db? do
+    case repo_db_path() do
+      {:ok, path} ->
+        doctor_db?(path)
+
+      {:error, :no_config} ->
+        IO.puts("banco de dados: config ausente (`config :taina, Taina.Repo, :database`)")
+        false
+    end
+  end
+
+  defp doctor_db?(path) do
+    case db_reachable?(path) do
+      :ok ->
+        IO.puts("banco de dados: #{path} (acessível)")
+        true
+
+      {:error, reason} ->
+        IO.puts("banco de dados: #{path} (não acessível: #{inspect(reason)})")
+        false
+    end
+  end
+
+  defp doctor_migrations do
+    case migrations_status() do
+      {:ok, applied, pending} ->
+        IO.puts("migrações: #{applied} aplicadas, #{pending} pendentes")
+
+      {:error, reason} ->
+        IO.puts("migrações: não foi possível ler (#{inspect(reason)})")
+    end
+  end
+
+  defp doctor_storage do
+    case Application.get_env(:taina, :storage_root) do
+      root when is_binary(root) ->
+        storage_healthy?(root)
+
+      _other ->
+        IO.puts("armazenamento: config ausente (`config :taina, :storage_root`)")
+        false
+    end
+  end
+
+  defp ensure_repo do
+    with {:ok, _} <- Application.ensure_all_started(:ecto_sqlite3) do
+      start_repo_if_needed()
+    end
+  end
+
+  defp error(message), do: IO.puts(:stderr, message)
+
+  defp last_backup_text do
+    case Backup.last_backup() do
+      {:ok, %{at: at, bytes: bytes}} -> "#{DateTime.to_iso8601(at)} (#{format_bytes(bytes)})"
+      {:error, :none} -> "nenhum ainda"
+      {:error, :no_dir} -> "sem destino configurado"
+      {:error, :unreadable} -> "destino ilegível agora"
+    end
+  end
+
+  # Só nomes `YYYYMMDDHHMMSS_descricao.exs` contam: outros arquivos no dir
+  # (do editor ou de tooling) não são migração.
+  defp migration_version(file) do
+    case Regex.run(~r/^(\d+)_.+\.exs$/, file) do
+      [_, version] -> String.to_integer(version)
+      _other -> nil
+    end
+  end
+
+  defp migration_versions do
+    case File.ls(migrations_dir()) do
+      {:ok, files} ->
+        {:ok, for(file <- files, version = migration_version(file), do: version)}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp migrations_dir, do: Path.join(:code.priv_dir(:taina), "repo/migrations")
+
+  # Aplicadas lidas da tabela do Ecto no banco, pendentes por diferença com os
+  # arquivos de migração do app. Leitura à margem do Repo, como o Backup.
+  defp migrations_status do
+    with {:ok, path} <- repo_db_path(),
+         {:ok, conn} <- open_readonly(path) do
+      try do
+        count_migrations(conn)
+      after
+        Exqlite.Sqlite3.close(conn)
+      end
+    end
+  end
+
+  defp open_readonly(path) do
+    with {:ok, _apps} <- Application.ensure_all_started(:exqlite) do
+      Exqlite.Sqlite3.open(path, mode: [:readonly])
+    end
+  end
+
+  defp terminal_input do
+    case :io.get_password() do
+      :eof -> stdin_input()
+      input -> to_binary(input)
+    end
+  end
+
+  defp to_binary(input), do: IO.iodata_to_binary(input)
+
+  defp thumbnails(opts) do
+    with :ok <- ensure_repo(), {:ok, results} <- Taina.ThumbnailOperator.regenerate(Keyword.get(opts, :tekoa)) do
+      Enum.each(results, fn {tekoa, counts} ->
+        IO.puts(
+          "#{tekoa.name}: #{Map.get(counts, :rendered, 0)} geradas, #{Map.get(counts, :gone, 0)} ausentes, #{Map.get(counts, :failed, 0)} falharam"
+        )
+      end)
+
+      @exit_ok
+    else
+      {:error, reason} ->
+        error("miniaturas falharam: #{inspect(reason)}")
+        @exit_domain_failure
+    end
+  end
+
+  defp storage_healthy?(root) do
+    if File.dir?(root) do
+      print_storage_line(root)
+      true
+    else
+      IO.puts("armazenamento: #{root} (diretório não existe)")
+      false
+    end
+  end
+
+  defp start_sqlite do
+    case Application.ensure_all_started(:exqlite) do
+      {:ok, _apps} -> :ok
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp start_repo_if_needed do
+    case Process.whereis(Taina.Repo) do
+      nil -> start_repo()
+      _pid -> :ok
+    end
+  end
+
+  # O `eval` carrega a aplicação sem startar: o app do NIF do SQLite pode não
+  # estar no ar (o Repo não é started aqui). Start mínimo, sem supervision tree.
+  defp start_repo do
+    case Taina.Repo.start_link() do
+      {:ok, _} -> :ok
+      error -> error
+    end
+  end
+
+  defp prompt_password(prompt) do
+    IO.write(:stderr, prompt)
+    prompt_input()
+  rescue
+    _ -> stdin_input()
+  end
+
+  defp prompt_input do
+    if function_exported?(:io, :get_password, 0), do: terminal_input(), else: stdin_input()
+  end
+
+  defp print_storage_line(root) do
+    case free_bytes(root) do
+      {:ok, bytes} -> IO.puts("armazenamento: #{root} (#{format_bytes(bytes)} livres)")
+      :error -> IO.puts("armazenamento: #{root} (espaço livre: desconhecido)")
     end
   end
 
@@ -150,7 +424,7 @@ defmodule Taina.CLI do
   defp restore(opts) do
     case start_sqlite() do
       :ok ->
-        case Backup.restore(opts[:archive]) do
+        case Backup.restore(Keyword.get(opts, :archive)) do
           {:ok, :restored} ->
             IO.puts("restaurado: banco e armazenamento no estado do backup")
             @exit_ok
@@ -166,287 +440,35 @@ defmodule Taina.CLI do
     end
   end
 
-  # Diagnóstico de leitura: linhas secas, uma por fato. Código 3 quando o
-  # ambiente está quebrado (banco ou armazenamento inacessíveis); achados
-  # operacionais (nenhum backup ainda, migração pendente) são informação,
-  # não falha.
-  defp doctor do
-    IO.puts("versão: #{version_string()}")
-    db_ok = doctor_db()
-    storage_ok = doctor_storage()
-    doctor_backup()
-    doctor_migrations()
-
-    if db_ok and storage_ok do
-      @exit_ok
-    else
-      @exit_environment
-    end
+  defp reset_password_error(:not_found) do
+    error("usuário não encontrado")
+    @exit_domain_failure
   end
 
-  defp doctor_db do
-    case repo_db_path() do
-      {:ok, path} ->
-        doctor_db(path)
-
-      {:error, :no_config} ->
-        IO.puts("banco de dados: config ausente (`config :taina, Taina.Repo, :database`)")
-        false
-    end
+  defp reset_password_error(:invalid_password) do
+    error("a senha precisa ter pelo menos 8 caracteres")
+    @exit_domain_failure
   end
 
-  defp doctor_db(path) do
-    case db_reachable?(path) do
-      :ok ->
-        IO.puts("banco de dados: #{path} (acessível)")
-        true
-
-      {:error, reason} ->
-        IO.puts("banco de dados: #{path} (não acessível: #{inspect(reason)})")
-        false
-    end
+  defp reset_password_error(:not_bootstrapped) do
+    error("a comunidade ainda não foi criada")
+    @exit_domain_failure
   end
 
-  # Abre o arquivo do banco à margem do pool do Repo (leitura pura; :readonly
-  # não cria arquivo) e fecha em seguida: o que interessa é conseguir abrir.
-  defp db_reachable?(path) do
-    if File.exists?(path) do
-      with {:ok, conn} <- open_readonly(path) do
-        Exqlite.Sqlite3.close(conn)
-        :ok
-      end
-    else
-      {:error, :enoent}
-    end
-  end
-
-  defp doctor_storage do
-    case Application.get_env(:taina, :storage_root) do
-      root when is_binary(root) ->
-        storage_healthy?(root)
-
-      _other ->
-        IO.puts("armazenamento: config ausente (`config :taina, :storage_root`)")
-        false
-    end
-  end
-
-  defp storage_healthy?(root) do
-    if File.dir?(root) do
-      print_storage_line(root)
-      true
-    else
-      IO.puts("armazenamento: #{root} (diretório não existe)")
-      false
-    end
-  end
-
-  defp print_storage_line(root) do
-    case free_bytes(root) do
-      {:ok, bytes} -> IO.puts("armazenamento: #{root} (#{format_bytes(bytes)} livres)")
-      :error -> IO.puts("armazenamento: #{root} (espaço livre: desconhecido)")
-    end
-  end
-
-  defp doctor_backup do
-    enabled = if Backup.enabled?(), do: "habilitado", else: "desabilitado"
-    IO.puts("backup: #{enabled}")
-    IO.puts("último backup: #{last_backup_text()}")
-  end
-
-  defp last_backup_text do
-    case Backup.last_backup() do
-      {:ok, %{at: at, bytes: bytes}} -> "#{DateTime.to_iso8601(at)} (#{format_bytes(bytes)})"
-      {:error, :none} -> "nenhum ainda"
-      {:error, :no_dir} -> "sem destino configurado"
-      {:error, :unreadable} -> "destino ilegível agora"
-    end
-  end
-
-  defp doctor_migrations do
-    case migrations_status() do
-      {:ok, applied, pending} ->
-        IO.puts("migrações: #{applied} aplicadas, #{pending} pendentes")
-
-      {:error, reason} ->
-        IO.puts("migrações: não foi possível ler (#{inspect(reason)})")
-    end
-  end
-
-  # Aplicadas lidas da tabela do Ecto no banco, pendentes por diferença com os
-  # arquivos de migração do app. Leitura à margem do Repo, como o Backup.
-  defp migrations_status do
-    with {:ok, path} <- repo_db_path(),
-         {:ok, conn} <- open_readonly(path) do
-      try do
-        count_migrations(conn)
-      after
-        Exqlite.Sqlite3.close(conn)
-      end
-    end
-  end
-
-  defp count_migrations(conn) do
-    with {:ok, stmt} <- Exqlite.Sqlite3.prepare(conn, "SELECT version FROM schema_migrations"),
-         {:ok, rows} <- Exqlite.Sqlite3.fetch_all(conn, stmt),
-         {:ok, available} <- migration_versions() do
-      applied = MapSet.new(rows, fn [version] -> version end)
-      pending = Enum.count(available, &(not MapSet.member?(applied, &1)))
-      {:ok, MapSet.size(applied), pending}
-    end
-  end
-
-  defp migration_versions do
-    case File.ls(migrations_dir()) do
-      {:ok, files} ->
-        {:ok, for(file <- files, version = migration_version(file), do: version)}
-
-      {:error, reason} ->
-        {:error, reason}
-    end
-  end
-
-  # Só nomes `YYYYMMDDHHMMSS_descricao.exs` contam: outros arquivos no dir
-  # (do editor ou de tooling) não são migração.
-  defp migration_version(file) do
-    case Regex.run(~r/^(\d+)_.+\.exs$/, file) do
-      [_, version] -> String.to_integer(version)
-      _other -> nil
-    end
-  end
-
-  defp migrations_dir, do: Path.join(:code.priv_dir(:taina), "repo/migrations")
-
-  defp version do
-    IO.puts(version_string())
-    @exit_ok
-  end
-
-  defp version_string, do: to_string(Application.spec(:taina, :vsn))
-
-  defp config_validate do
-    case Taina.Config.effective() do
-      {:ok, settings} ->
-        Enum.each(Map.from_struct(settings), fn {key, value} -> IO.puts("#{key} = #{inspect(value)}") end)
-        @exit_ok
-
-      {:error, reason} ->
-        error(Taina.Config.describe(reason))
-        @exit_environment
-    end
-  end
-
-  defp config_template(opts) do
-    output = Taina.Config.template()
-
-    case opts[:out] do
-      nil ->
-        IO.write(output)
-        @exit_ok
-
-      path ->
-        case File.write(path, output, [:exclusive]) do
-          :ok ->
-            IO.puts(path)
-            @exit_ok
-
-          {:error, :eexist} ->
-            error("arquivo já existe: #{path}")
-            @exit_domain_failure
-
-          {:error, reason} ->
-            error(inspect(reason))
-            @exit_environment
-        end
-    end
+  defp reset_password_error(reason) do
+    error("reset falhou: #{inspect(reason)}")
+    @exit_environment
   end
 
   defp reset_password(opts) do
     with :ok <- ensure_repo(),
          {:ok, password} <- read_password(),
-         {:ok, _ava} <- Taina.AccountOperator.reset_password(opts[:username], password) do
+         {:ok, _ava} <- Taina.AccountOperator.reset_password(Keyword.get(opts, :username), password) do
       IO.puts("senha atualizada")
       @exit_ok
     else
-      {:error, :not_found} ->
-        error("usuário não encontrado")
-        @exit_domain_failure
-
-      {:error, :invalid_password} ->
-        error("a senha precisa ter pelo menos 8 caracteres")
-        @exit_domain_failure
-
-      {:error, :not_bootstrapped} ->
-        error("a comunidade ainda não foi criada")
-        @exit_domain_failure
-
       {:error, reason} ->
-        error("reset falhou: #{inspect(reason)}")
-        @exit_environment
-    end
-  end
-
-  defp thumbnails(opts) do
-    with :ok <- ensure_repo(), {:ok, results} <- Taina.ThumbnailOperator.regenerate(opts[:tekoa]) do
-      Enum.each(results, fn {tekoa, counts} ->
-        IO.puts(
-          "#{tekoa.name}: #{Map.get(counts, :rendered, 0)} geradas, #{Map.get(counts, :gone, 0)} ausentes, #{Map.get(counts, :failed, 0)} falharam"
-        )
-      end)
-
-      @exit_ok
-    else
-      {:error, reason} ->
-        error("miniaturas falharam: #{inspect(reason)}")
-        @exit_domain_failure
-    end
-  end
-
-  defp ensure_repo do
-    with {:ok, _} <- Application.ensure_all_started(:ecto_sqlite3) do
-      start_repo_if_needed()
-    end
-  end
-
-  defp start_repo_if_needed do
-    case Process.whereis(Taina.Repo) do
-      nil -> start_repo()
-      _pid -> :ok
-    end
-  end
-
-  defp start_repo do
-    case Taina.Repo.start_link() do
-      {:ok, _} -> :ok
-      error -> error
-    end
-  end
-
-  @doc "Reads and confirms a password without accepting argv or environment input."
-  def read_password do
-    password = prompt_password("Nova senha (minimo 8 caracteres): ")
-    confirm = prompt_password("Confirme a senha nova: ")
-
-    password = String.trim_trailing(password, "\n")
-    confirm = String.trim_trailing(confirm, "\n")
-    if password == confirm and byte_size(password) >= 8, do: {:ok, password}, else: {:error, :invalid_password}
-  end
-
-  defp prompt_password(prompt) do
-    IO.write(:stderr, prompt)
-    prompt_input()
-  rescue
-    _ -> stdin_input()
-  end
-
-  defp prompt_input do
-    if function_exported?(:io, :get_password, 0), do: terminal_input(), else: stdin_input()
-  end
-
-  defp terminal_input do
-    case :io.get_password() do
-      :eof -> stdin_input()
-      input -> to_binary(input)
+        reset_password_error(reason)
     end
   end
 
@@ -458,30 +480,18 @@ defmodule Taina.CLI do
     end
   end
 
-  defp to_binary(input), do: IO.iodata_to_binary(input)
-
-  ## Borda com o sistema
-
   defp usage do
     IO.puts(:stderr, @usage)
     @exit_usage
   end
 
-  defp error(message), do: IO.puts(:stderr, message)
+  defp version_string, do: to_string(Application.spec(:taina, :vsn))
 
-  # O `eval` carrega a aplicação sem startar: o app do NIF do SQLite pode não
-  # estar no ar (o Repo não é started aqui). Start mínimo, sem supervision tree.
-  defp start_sqlite do
-    case Application.ensure_all_started(:exqlite) do
-      {:ok, _apps} -> :ok
-      {:error, reason} -> {:error, reason}
-    end
-  end
+  ## Borda com o sistema
 
-  defp open_readonly(path) do
-    with {:ok, _apps} <- Application.ensure_all_started(:exqlite) do
-      Exqlite.Sqlite3.open(path, mode: [:readonly])
-    end
+  defp version do
+    IO.puts(version_string())
+    @exit_ok
   end
 
   # Espaço livre de verdade (o que sobra no disco, não a cota do app): lê o
@@ -492,8 +502,9 @@ defmodule Taina.CLI do
       nil ->
         :error
 
-      df ->
-        case System.cmd(df, ["-k", path]) do
+      _df ->
+        # System.cmd passes arguments directly without invoking a shell.
+        case System.cmd("df", ["-k", path]) do
           {output, 0} -> parse_free_bytes(output)
           {_output, _status} -> :error
         end

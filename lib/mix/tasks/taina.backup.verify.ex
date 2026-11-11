@@ -17,7 +17,10 @@ defmodule Mix.Tasks.Taina.Backup.Verify do
 
   @impl Mix.Task
   def run(_args) do
-    {:ok, _} = Application.ensure_all_started(:exqlite)
+    case Application.ensure_all_started(:exqlite) do
+      {:ok, _apps} -> :ok
+      {:error, reason} -> Mix.raise("could not start SQLite: #{inspect(reason)}")
+    end
 
     uniq = System.unique_integer([:positive])
     storage = Path.join(System.tmp_dir!(), "taina_backup_verify_storage_#{uniq}")
@@ -30,6 +33,8 @@ defmodule Mix.Tasks.Taina.Backup.Verify do
     db_path = db_path()
 
     File.mkdir_p!(Path.dirname(marker_path))
+    # The marker lives under the server-generated temporary storage directory.
+    # credo:disable-for-next-line OeditusCredo.Check.Security.PathTraversal
     File.write!(marker_path, token)
     File.write!(secret, "verify-secret-#{uniq}")
     File.chmod!(secret, 0o600)
@@ -39,18 +44,27 @@ defmodule Mix.Tasks.Taina.Backup.Verify do
       secret_key_base_file: secret
     })
 
-    {:ok, conn} = Exqlite.Sqlite3.open(db_path)
+    conn = open!(db_path)
     seed(conn, marker)
 
-    {:ok, %{archive: archive}} = Backup.run(dir: backup_dir, storage_root: storage)
+    archive =
+      case Backup.run(dir: backup_dir, storage_root: storage) do
+        {:ok, %{archive: archive}} -> archive
+        {:error, reason} -> Mix.raise("backup generation failed: #{inspect(reason)}")
+      end
+
     info("backup generated: #{archive}")
 
     destroy(conn, marker, storage)
     File.rm!(secret)
-    :ok = Exqlite.Sqlite3.close(conn)
+    _ = Exqlite.Sqlite3.close(conn)
     info("data destroyed")
 
-    {:ok, :restored} = Backup.restore(archive, storage_root: storage, database_path: db_path)
+    case Backup.restore(archive, storage_root: storage, database_path: db_path) do
+      {:ok, :restored} -> :ok
+      {:error, reason} -> Mix.raise("backup restore failed: #{inspect(reason)}")
+    end
+
     info("restore completed")
 
     assert_db_restored!(db_path, marker)
@@ -62,6 +76,94 @@ defmodule Mix.Tasks.Taina.Backup.Verify do
     File.rm(secret)
 
     Mix.shell().info([:green, "backup/restore round-trip OK", :reset])
+  end
+
+  defp assert_db_restored!(db_path, marker) do
+    conn = open!(db_path)
+
+    try do
+      stmt = prepare!(conn, "SELECT count(*) FROM maraca_mural WHERE cid = ?")
+      expect_ok(Exqlite.Sqlite3.bind(stmt, [marker]), "bind mural marker")
+      count = restored_marker_count(fetch_all!(conn, stmt))
+
+      if count != 1 do
+        Mix.raise("database restore failed: mural marker did not return (count=#{count})")
+      end
+    after
+      Exqlite.Sqlite3.close(conn)
+    end
+  end
+
+  defp assert_secret_restored!(path, uniq) do
+    # The verification secret lives at the server-generated temporary path.
+    # credo:disable-for-next-line OeditusCredo.Check.Security.PathTraversal
+    case File.read(path) do
+      {:ok, "verify-secret-" <> suffix} ->
+        if suffix != Integer.to_string(uniq), do: Mix.raise("secret restore returned a different secret")
+
+      other ->
+        Mix.raise("secret restore failed: #{inspect(other)}")
+    end
+  end
+
+  defp assert_storage_restored!(marker_path, token) do
+    # The marker lives under the server-generated temporary storage directory.
+    # credo:disable-for-next-line OeditusCredo.Check.Security.PathTraversal
+    case File.read(marker_path) do
+      {:ok, ^token} -> :ok
+      other -> Mix.raise("storage restore failed: marker is missing or different (#{inspect(other)})")
+    end
+  end
+
+  defp db_path do
+    :taina
+    |> Application.fetch_env!(Taina.Repo)
+    |> Keyword.get(:database) ||
+      Mix.raise("Taina.Repo has no :database; point DATABASE_PATH at a SQLite file")
+  end
+
+  defp destroy(conn, marker, storage) do
+    exec!(conn, "DELETE FROM maraca_mural WHERE cid = '#{marker}'")
+    File.rm_rf!(storage)
+  end
+
+  defp exec!(conn, sql) do
+    case Exqlite.Sqlite3.execute(conn, sql) do
+      :ok -> :ok
+      {:error, reason} -> Mix.raise("SQLite failure: #{inspect(reason)} (#{sql})")
+    end
+  end
+
+  defp expect_ok({:ok, value}, _operation), do: value
+  defp expect_ok(:ok, _operation), do: :ok
+
+  defp expect_ok({:error, reason}, operation) do
+    Mix.raise("#{operation} failed: #{inspect(reason)}")
+  end
+
+  defp fetch_all!(conn, stmt), do: expect_ok(Exqlite.Sqlite3.fetch_all(conn, stmt), "fetch SQLite query")
+
+  defp info(message), do: Mix.shell().info("  " <> message)
+
+  defp open!(path), do: expect_ok(Exqlite.Sqlite3.open(path), "open SQLite database")
+
+  defp prepare!(conn, sql), do: expect_ok(Exqlite.Sqlite3.prepare(conn, sql), "prepare SQLite query")
+
+  defp query_one(conn, sql) do
+    stmt = prepare!(conn, sql)
+
+    case Exqlite.Sqlite3.step(conn, stmt) do
+      {:row, [value]} -> value
+      :done -> nil
+      {:error, reason} -> Mix.raise("SQLite query failed: #{inspect(reason)}")
+      other -> Mix.raise("unexpected SQLite query result: #{inspect(other)}")
+    end
+  end
+
+  defp restored_marker_count([[count]]), do: count
+
+  defp restored_marker_count(rows) do
+    Mix.raise("database restore returned an unexpected marker result: #{inspect(rows)}")
   end
 
   defp seed(conn, marker) do
@@ -84,72 +186,10 @@ defmodule Mix.Tasks.Taina.Backup.Verify do
         VALUES ('backup-verify', 'backup-verify.local', 'backup_verify', #{now}, #{now})
         """)
 
-        {:ok, id} = Exqlite.Sqlite3.last_insert_rowid(conn)
-        id
+        expect_ok(Exqlite.Sqlite3.last_insert_rowid(conn), "read inserted Tekoa id")
 
       id ->
         id
     end
   end
-
-  defp destroy(conn, marker, storage) do
-    exec!(conn, "DELETE FROM maraca_mural WHERE cid = '#{marker}'")
-    File.rm_rf!(storage)
-  end
-
-  defp assert_db_restored!(db_path, marker) do
-    {:ok, conn} = Exqlite.Sqlite3.open(db_path)
-
-    try do
-      {:ok, stmt} = Exqlite.Sqlite3.prepare(conn, "SELECT count(*) FROM maraca_mural WHERE cid = ?")
-      :ok = Exqlite.Sqlite3.bind(stmt, [marker])
-      {:ok, [[count]]} = Exqlite.Sqlite3.fetch_all(conn, stmt)
-
-      if count != 1 do
-        Mix.raise("database restore failed: mural marker did not return (count=#{count})")
-      end
-    after
-      Exqlite.Sqlite3.close(conn)
-    end
-  end
-
-  defp query_one(conn, sql) do
-    {:ok, stmt} = Exqlite.Sqlite3.prepare(conn, sql)
-
-    case Exqlite.Sqlite3.step(conn, stmt) do
-      {:row, [value]} -> value
-      _ -> nil
-    end
-  end
-
-  defp assert_storage_restored!(marker_path, token) do
-    case File.read(marker_path) do
-      {:ok, ^token} -> :ok
-      other -> Mix.raise("storage restore failed: marker is missing or different (#{inspect(other)})")
-    end
-  end
-
-  defp assert_secret_restored!(path, uniq) do
-    case File.read(path) do
-      {:ok, "verify-secret-" <> suffix} ->
-        if suffix != Integer.to_string(uniq), do: Mix.raise("secret restore returned a different secret")
-
-      other ->
-        Mix.raise("secret restore failed: #{inspect(other)}")
-    end
-  end
-
-  defp db_path do
-    Application.fetch_env!(:taina, Taina.Repo)[:database] ||
-      Mix.raise("Taina.Repo has no :database; point DATABASE_PATH at a SQLite file")
-  end
-
-  defp exec!(conn, sql) do
-    case Exqlite.Sqlite3.execute(conn, sql) do
-      :ok -> :ok
-      {:error, reason} -> Mix.raise("SQLite failure: #{inspect(reason)} (#{sql})")
-    end
-  end
-
-  defp info(msg), do: Mix.shell().info("  " <> msg)
 end

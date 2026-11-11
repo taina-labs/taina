@@ -30,14 +30,14 @@ defmodule Taina.Maraca.DeviceToken do
         }
 
   schema "maraca_device_tokens" do
+    belongs_to :ava, Ava
+
+    field :last_used_at, :utc_datetime
     field :name, :string
     field :public_id, PublicId, autogenerate: true
-    field :token_hash, :string
-    field :last_used_at, :utc_datetime
     field :revoked_at, :utc_datetime
-
-    belongs_to :ava, Ava
     belongs_to :tekoa, Tekoa
+    field :token_hash, :string
 
     timestamps(type: :utc_datetime)
   end

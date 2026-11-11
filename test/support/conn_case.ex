@@ -13,6 +13,8 @@ defmodule TainaWeb.ConnCase do
       import Plug.Conn
       import TainaWeb.ConnCase
       # The default endpoint for testing
+      # Phoenix.ConnTest reads this exact caller attribute name.
+      # credo:disable-for-next-line OptimumCredo.Check.Warning.CallerModuleAttributes
       @endpoint TainaWeb.Endpoint
 
       # Import conveniences for testing with connections
@@ -36,6 +38,9 @@ defmodule TainaWeb.ConnCase do
   Autentica a conn com um token de dispositivo da pessoa, como o app faz:
   cria o token e poe o `Authorization: Bearer`.
   """
+  # Test-only setup creates a token through the database so requests can exercise
+  # the normal authentication pipeline.
+  # credo:disable-for-next-line OeditusCredo.Check.Warning.BlockingInPlug
   def authorize_device(conn, ava) do
     tekoa = Taina.Repo.get!(Ypy.Maraca.Tekoa, ava.tekoa_id, skip_tekoa_id: true)
     {:ok, %{token: token}} = Taina.Maraca.create_device_token(Taina.Scope.new(ava, tekoa), "teste")

@@ -81,6 +81,8 @@ defmodule Taina.Ybira.Workers.RenditionTest do
 
       # bytes destruídos por baixo: o processamento falha, o registro fica
       {:ok, path} = Ybira.blob_path(photo)
+      # blob_path returns an app-managed path rooted in configured storage.
+      # credo:disable-for-next-line OeditusCredo.Check.Security.PathTraversal
       File.write!(path, "não é imagem nenhuma")
 
       assert {:error, _reason} = Rendition.render_file(photo.id, scope.tekoa.public_id)
@@ -94,6 +96,8 @@ defmodule Taina.Ybira.Workers.RenditionTest do
       # bytes destruídos por baixo: a falha fica registrada na foto, não só
       # no log, e a linha deixa de apontar thumbnails
       {:ok, path} = Ybira.blob_path(photo)
+      # blob_path returns an app-managed path rooted in configured storage.
+      # credo:disable-for-next-line OeditusCredo.Check.Security.PathTraversal
       File.write!(path, "não é imagem nenhuma")
 
       assert {:error, _reason} = Rendition.render_file(photo.id, scope.tekoa.public_id)
@@ -108,13 +112,19 @@ defmodule Taina.Ybira.Workers.RenditionTest do
       {:ok, photo} = Ybira.get_file(scope, photo.rkey)
 
       {:ok, path} = Ybira.blob_path(photo)
+      # blob_path returns an app-managed path rooted in configured storage.
+      # credo:disable-for-next-line OeditusCredo.Check.Security.PathTraversal
       good = File.read!(path)
+      # blob_path returns an app-managed path rooted in configured storage.
+      # credo:disable-for-next-line OeditusCredo.Check.Security.PathTraversal
       File.write!(path, "não é imagem nenhuma")
 
       assert {:error, _reason} = Rendition.render_file(photo.id, scope.tekoa.public_id)
       assert metadata!(scope, photo)["rendition_error"]
 
       # bytes de volta: a rodada seguinte grava metadados novos, sem o erro
+      # blob_path returns an app-managed path rooted in configured storage.
+      # credo:disable-for-next-line OeditusCredo.Check.Security.PathTraversal
       File.write!(path, good)
 
       assert :ok = Rendition.render_file(photo.id, scope.tekoa.public_id)
@@ -181,12 +191,18 @@ defmodule Taina.Ybira.Workers.RenditionTest do
       {:ok, photo} = Ybira.get_file(scope, photo.rkey)
 
       {:ok, path} = Ybira.blob_path(photo)
+      # blob_path returns an app-managed path rooted in configured storage.
+      # credo:disable-for-next-line OeditusCredo.Check.Security.PathTraversal
       good = File.read!(path)
+      # blob_path returns an app-managed path rooted in configured storage.
+      # credo:disable-for-next-line OeditusCredo.Check.Security.PathTraversal
       File.write!(path, "não é imagem nenhuma")
 
       assert {:error, _reason} = Rendition.render_file(photo.id, scope.tekoa.public_id)
       assert metadata!(scope, photo)["rendition_error"]
 
+      # blob_path returns an app-managed path rooted in configured storage.
+      # credo:disable-for-next-line OeditusCredo.Check.Security.PathTraversal
       File.write!(path, good)
 
       ThumbnailOperator.regenerate(scope.tekoa.public_id)

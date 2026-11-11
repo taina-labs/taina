@@ -1,4 +1,5 @@
 defmodule Taina.YbiraUploadLimitTest do
+  # This test changes application-wide upload configuration.
   use Taina.DataCase, async: false
 
   import Taina.Fixtures

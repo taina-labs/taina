@@ -29,10 +29,10 @@ defmodule Taina.Ybira.Workers.BlobGc do
   @impl Oban.Worker
   def perform(%Oban.Job{}) do
     cutoff = DateTime.shift(DateTime.utc_now(), second: -@grace_seconds)
+
+    # gc_blobs/1 returns {:ok, counts}; repository failures raise and must fail the job.
+    # credo:disable-for-next-line OeditusCredo.Check.Warning.MissingErrorHandling
     {:ok, %{deleted: deleted, kept: kept}} = Ybira.gc_blobs(cutoff)
-
     Logger.info("BlobGc: #{deleted} blob(s) apagado(s), #{kept} fila(s) de blob vivo")
-
-    :ok
   end
 end

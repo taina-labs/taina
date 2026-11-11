@@ -17,14 +17,19 @@ defmodule Taina.Ybira.Manifest do
   alias Ypy.Ybira.Queries, as: KernelQueries
 
   @default_limit 200
+  @type file :: File.t()
+  @type opts :: keyword()
+  @type query :: Ecto.Query.t()
+  @type scope :: Scope.t()
+  @type text :: String.t()
 
   @doc """
   A pagina do manifesto: `{:ok, %{items: [File], next_cursor: rkey | nil}}`.
   O `:after` e o rkey do ultimo item da pagina anterior; o `:limit` chega da
   borda ja parseado (padrao 200, teto 1000, em `TainaWeb.API.Query`).
   """
-  @spec page(Scope.t(), keyword()) ::
-          {:ok, %{items: [File.t()], next_cursor: String.t() | nil}}
+  @spec page(scope(), opts()) ::
+          {:ok, %{items: [file()], next_cursor: text() | nil}}
   def page(%Scope{} = scope, opts \\ []) do
     Repo.with_tekoa(scope.tekoa.public_id, fn ->
       limit = Keyword.get(opts, :limit, @default_limit)
@@ -33,8 +38,10 @@ defmodule Taina.Ybira.Manifest do
         scope
         |> readable_query()
         |> order_by([f], asc: f.rkey)
-        |> apply_cursor(Keyword.get(opts, :after))
+        |> maybe_apply_cursor(Keyword.get(opts, :after))
         |> limit(^(limit + 1))
+        # The API serializer uses batched lookups instead of per-file preloads.
+        # credo:disable-for-next-line OeditusCredo.Check.Warning.MissingPreload
         |> Repo.all()
 
       if length(rows) > limit do
@@ -51,7 +58,7 @@ defmodule Taina.Ybira.Manifest do
   agregados do ETag da colecao (`TainaWeb.API.Etag`), que conta e mede o
   `updated_at` maximo sobre ele.
   """
-  @spec readable_query(Scope.t()) :: Ecto.Query.t()
+  @spec readable_query(scope()) :: query()
   def readable_query(%Scope{} = scope) do
     KernelQueries.readable(
       from(f in File, where: f.tekoa_id == ^scope.tekoa.id and is_nil(f.apagado_em)),
@@ -61,7 +68,7 @@ defmodule Taina.Ybira.Manifest do
 
   # O cursor e o rkey do ultimo item da pagina anterior; a pagina seguinte e
   # o que vem depois dele (rkey asc).
-  defp apply_cursor(query, rkey) when is_binary(rkey) and rkey != "", do: where(query, [f], f.rkey > ^rkey)
+  defp maybe_apply_cursor(query, <<_byte, _rest::binary>> = rkey), do: where(query, [f], f.rkey > ^rkey)
 
-  defp apply_cursor(query, _cursor), do: query
+  defp maybe_apply_cursor(query, _cursor), do: query
 end

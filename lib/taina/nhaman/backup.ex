@@ -27,8 +27,28 @@ defmodule Taina.Nhaman.Backup do
   pode ser disparado sob demanda ("backup com um clique").
   """
 
+  @database_dump "db.dump"
+  # Archive member name, not a credential value.
+  # credo:disable-for-next-line OeditusCredo.Check.Security.HardcodedCredentials
+  @secret_file "secret_key_base"
+
+  @doc "Nome do arquivo de backup para um instante (UTC): `taina-backup-<stamp>.tar.gz`."
+  def archive_filename(%DateTime{} = now) do
+    stamp = now |> DateTime.truncate(:second) |> Calendar.strftime("%Y%m%dT%H%M%SZ")
+    "taina-backup-#{stamp}.tar.gz"
+  end
+
   @doc "O backup agendado está habilitado? (`config :taina, :backup, enabled:`)."
   def enabled?, do: Keyword.get(config(), :enabled, false)
+
+  @doc "Extrai um `.tar.gz` em `dest` (criado se necessário)."
+  def extract_archive(archive_path, dest) do
+    with :ok <- File.mkdir_p(dest),
+         {:ok, names} <- :erl_tar.table(String.to_charlist(archive_path), [:compressed]),
+         :ok <- safe_members(names) do
+      extract(archive_path, dest)
+    end
+  end
 
   @doc """
   O último backup que terminou bem: o `.tar.gz` mais recente no destino
@@ -65,83 +85,61 @@ defmodule Taina.Nhaman.Backup do
     end
   end
 
+  defp all_files(dir) do
+    dir
+    |> File.ls!()
+    |> Enum.flat_map(fn entry ->
+      path = Path.join(dir, entry)
+      if File.dir?(path), do: all_files(path), else: [path]
+    end)
+  end
+
+  defp backup_dir do
+    Keyword.get(config(), :dir) ||
+      raise "backup sem destino: configure `config :taina, :backup, dir: …` (ou BACKUP_DIR)"
+  end
+
+  defp config, do: Application.get_env(:taina, :backup, [])
+
   # O mais recente entre os arquivos de backup válidos; nomes estranhos no
   # destino (destino compartilhado) são ignorados, não derrubam a leitura.
+  defp extract(archive_path, dest) do
+    case :erl_tar.extract(String.to_charlist(archive_path), [
+           :compressed,
+           {:cwd, String.to_charlist(dest)}
+         ]) do
+      :ok -> :ok
+      {:error, reason} -> {:error, {:extract_failed, reason}}
+    end
+  end
+
+  defp file_size(path) do
+    case File.stat(path) do
+      {:ok, %{size: size}} -> size
+      _ -> 0
+    end
+  end
+
+  defp int(part), do: String.to_integer(part)
+
   defp latest_archive(entries, dir) do
-    entries
-    |> Enum.map(fn name -> {name, parse_archive_filename(name)} end)
-    |> Enum.filter(fn {_name, parsed} -> match?({:ok, _at}, parsed) end)
-    |> case do
+    valid =
+      Enum.flat_map(entries, fn name ->
+        case parse_archive_filename(name) do
+          {:ok, at} -> [{name, at}]
+          :error -> []
+        end
+      end)
+
+    case valid do
       [] ->
         {:error, :none}
 
       valid ->
-        {name, {:ok, at}} = Enum.max_by(valid, fn {_name, {:ok, at}} -> at end)
+        {name, at} = Enum.max_by(valid, fn {_name, at} -> at end)
         {:ok, %{at: at, bytes: file_size(Path.join(dir, name))}}
     end
   end
-
-  @doc """
-  Roda um backup completo. Opções (todas com default sensato):
-
-    * `:dir` — diretório destino do `.tar.gz` (default: config `:backup, :dir`)
-    * `:storage_root` — árvore de arquivos a arquivar (default: config)
-    * `:database_path` — arquivo SQLite a copiar (default: config do Repo)
-    * `:now` — `DateTime` para o nome do arquivo (injetável em teste)
-
-  Retorna `{:ok, %{archive: path, bytes: n}}` ou `{:error, reason}`.
-  """
-  def run(opts \\ []) do
-    dir = Keyword.get(opts, :dir) || backup_dir()
-    storage_root = Keyword.get(opts, :storage_root, storage_root())
-    db_path = Keyword.get(opts, :database_path) || repo_db_path()
-    now = Keyword.get(opts, :now, DateTime.utc_now())
-    workdir = tmp_workdir()
-    secret = secret_path()
-
-    try do
-      with :ok <- validate_secret(secret),
-           :ok <- File.mkdir_p(dir),
-           :ok <- File.mkdir_p(workdir),
-           dump_path = Path.join(workdir, "db.dump"),
-           :ok <- snapshot_db(db_path, dump_path),
-           archive_path = Path.join(dir, archive_filename(now)),
-           :ok <- package_archive(archive_path, dump_path, storage_root, secret) do
-        {:ok, %{archive: archive_path, bytes: file_size(archive_path)}}
-      end
-    after
-      File.rm_rf(workdir)
-    end
-  end
-
-  @doc """
-  Restaura a instância a partir de um `.tar.gz` gerado por `run/1`.
-
-  **Destrutivo:** o arquivo do banco é substituído pelo snapshot arquivado e o
-  `storage_root` recebe a árvore arquivada. Como a instância mantém o banco
-  aberto, o restore é operação de drill/recuperação com o app da caixa parado.
-
-  Opções: `:storage_root`, `:database_path` (mesmos defaults de `run/1`).
-  """
-  def restore(archive_path, opts \\ []) do
-    storage_root = Keyword.get(opts, :storage_root, storage_root())
-    db_path = Keyword.get(opts, :database_path) || repo_db_path()
-    workdir = tmp_workdir()
-
-    try do
-      with :ok <- extract_archive(archive_path, workdir),
-           :ok <- validate_restore_contents(workdir),
-           :ok <- restore_db(Path.join(workdir, "db.dump"), db_path),
-           :ok <- restore_storage(Path.join(workdir, "storage"), storage_root),
-           :ok <- restore_secret(Path.join(workdir, "secret_key_base"), secret_path()) do
-        {:ok, :restored}
-      end
-    after
-      File.rm_rf(workdir)
-    end
-  end
-
-  ## Empacotamento (OTP :erl_tar — sem binário externo)
 
   @doc """
   Monta o `.tar.gz` com `db.dump`, `secret_key_base` e a árvore de `storage_root`
@@ -155,8 +153,8 @@ defmodule Taina.Nhaman.Backup do
   def package_archive(archive_path, dump_path, storage_root, secret_path) do
     with :ok <- validate_secret(secret_path) do
       entries = [
-        {~c"db.dump", String.to_charlist(dump_path)},
-        {~c"secret_key_base", String.to_charlist(secret_path)}
+        {String.to_charlist(@database_dump), String.to_charlist(dump_path)},
+        {String.to_charlist(@secret_file), String.to_charlist(secret_path)}
         | storage_entries(storage_root)
       ]
 
@@ -165,102 +163,6 @@ defmodule Taina.Nhaman.Backup do
         {:error, reason} -> {:error, {:archive_failed, reason}}
       end
     end
-  end
-
-  @doc "Extrai um `.tar.gz` em `dest` (criado se necessário)."
-  def extract_archive(archive_path, dest) do
-    :ok = File.mkdir_p(dest)
-
-    with {:ok, names} <- :erl_tar.table(String.to_charlist(archive_path), [:compressed]),
-         :ok <- safe_members(names) do
-      extract(archive_path, dest)
-    end
-  end
-
-  defp extract(archive_path, dest) do
-    case :erl_tar.extract(String.to_charlist(archive_path), [
-           :compressed,
-           {:cwd, String.to_charlist(dest)}
-         ]) do
-      :ok -> :ok
-      {:error, reason} -> {:error, {:extract_failed, reason}}
-    end
-  end
-
-  defp safe_members(names) do
-    members = Enum.map(names, &to_string/1)
-
-    if "db.dump" in members and Enum.all?(members, &safe_member?/1), do: :ok, else: {:error, :unsafe_archive}
-  end
-
-  defp validate_restore_contents(workdir) do
-    if File.regular?(Path.join(workdir, "db.dump")) do
-      validate_secret(Path.join(workdir, "secret_key_base"))
-    else
-      {:error, :missing_database}
-    end
-  end
-
-  defp safe_member?(name) do
-    not String.starts_with?(name, "/") and ".." not in Path.split(name) and
-      (name in ["db.dump", "secret_key_base"] or String.starts_with?(name, "storage/"))
-  end
-
-  @doc """
-  Coloca a árvore de storage extraída em `storage_root`, substituindo o conteúdo
-  anterior. `rm_rf` antes do `cp_r` garante reposição limpa (sem `storage_root`
-  preexistente, `cp_r` copia a origem *como* o destino — semântica de merge
-  total que queremos num restore).
-  """
-  def restore_storage(extracted_storage, storage_root) do
-    if File.dir?(extracted_storage) do
-      File.rm_rf!(storage_root)
-
-      case File.cp_r(extracted_storage, storage_root) do
-        {:ok, _} -> :ok
-        {:error, reason, _path} -> {:error, {:storage_restore_failed, reason}}
-      end
-    else
-      # Backup sem nenhum arquivo no storage — nada a repor.
-      :ok
-    end
-  end
-
-  defp restore_secret(path, destination) do
-    if File.regular?(path) do
-      with :ok <- File.mkdir_p(Path.dirname(destination)),
-           :ok <- File.cp(path, destination),
-           :ok <- File.chmod(destination, 0o600) do
-        validate_secret(destination)
-      end
-    else
-      {:error, :missing_secret}
-    end
-  end
-
-  defp validate_secret(path) when is_binary(path) do
-    if File.regular?(path), do: validate_secret_file(path), else: {:error, :missing_secret}
-  end
-
-  defp validate_secret(_path), do: {:error, :missing_secret}
-
-  defp validate_secret_file(path) do
-    case File.read(path) do
-      {:ok, secret} -> validate_secret_value(secret)
-      {:error, _reason} -> {:error, :missing_secret}
-    end
-  end
-
-  defp validate_secret_value(secret) do
-    if String.trim(secret) == "", do: {:error, :invalid_secret}, else: :ok
-  end
-
-  ## Construtores puros (testáveis isoladamente)
-
-  @doc "Nome do arquivo de backup para um instante (UTC): `taina-backup-<stamp>.tar.gz`."
-  def archive_filename(%DateTime{} = now) do
-    stamp = now |> DateTime.truncate(:second) |> Calendar.strftime("%Y%m%dT%H%M%SZ")
-    "taina-backup-#{stamp}.tar.gz"
   end
 
   @doc """
@@ -280,40 +182,78 @@ defmodule Taina.Nhaman.Backup do
 
   def parse_archive_filename(_other), do: :error
 
-  # O stamp é o `%Y%m%dT%H%M%SZ` de `archive_filename/1`, sempre UTC (sufixo Z).
-  defp stamp_to_datetime(stamp) do
-    case Regex.run(~r/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/, stamp) do
-      [_, y, mo, d, h, mi, s] ->
-        with {:ok, date} <- Date.new(int(y), int(mo), int(d)),
-             {:ok, time} <- Time.new(int(h), int(mi), int(s)) do
-          DateTime.new(date, time, "Etc/UTC")
-        end
+  @doc """
+  Restaura a instância a partir de um `.tar.gz` gerado por `run/1`.
 
-      nil ->
-        :error
+  **Destrutivo:** o arquivo do banco é substituído pelo snapshot arquivado e o
+  `storage_root` recebe a árvore arquivada. Como a instância mantém o banco
+  aberto, o restore é operação de drill/recuperação com o app da caixa parado.
+
+  Opções: `:storage_root`, `:database_path` (mesmos defaults de `run/1`).
+  """
+  def restore(archive_path, opts \\ []) do
+    storage_root = Keyword.get(opts, :storage_root, storage_root())
+    db_path = Keyword.get(opts, :database_path) || repo_db_path()
+    workdir = temporary_workdir()
+
+    try do
+      with :ok <- extract_archive(archive_path, workdir),
+           :ok <- validate_restore_contents(workdir),
+           :ok <- restore_db(Path.join(workdir, @database_dump), db_path),
+           :ok <- restore_storage(Path.join(workdir, "storage"), storage_root),
+           :ok <- restore_secret(Path.join(workdir, @secret_file), secret_path()) do
+        {:ok, :restored}
+      end
+    after
+      File.rm_rf(workdir)
     end
   end
 
-  defp int(part), do: String.to_integer(part)
-
-  ## Banco (SQLite, à margem do pool do Repo)
-
-  defp repo_db_path do
-    Application.fetch_env!(:taina, Taina.Repo)[:database] ||
-      raise "backup sem banco: Taina.Repo sem :database (passe :database_path)"
+  @doc """
+  Coloca a árvore de storage extraída em `storage_root`, substituindo o conteúdo
+  anterior. `rm_rf` antes do `cp_r` garante reposição limpa (sem `storage_root`
+  preexistente, `cp_r` copia a origem *como* o destino - semântica de merge
+  total que queremos num restore).
+  """
+  def restore_storage(extracted_storage, storage_root) do
+    if File.dir?(extracted_storage) do
+      replace_storage(extracted_storage, storage_root)
+    else
+      # Backup sem nenhum arquivo no storage - nada a repor.
+      :ok
+    end
   end
 
-  # O VACUUM INTO exige destino inexistente e grava um banco standalone: uma
-  # leitura do arquivo atual, feita por conexão efêmera. O busy_timeout cobre
-  # um escritor do app em curso (mesmo motivo do config do Repo).
-  defp snapshot_db(db_path, dump_path) do
-    with :ok <- rm_if_exists(dump_path),
-         {:ok, conn} <- open_db(db_path) do
-      try do
-        vacuum_into(conn, dump_path)
-      after
-        Exqlite.Sqlite3.close(conn)
+  @doc """
+  Roda um backup completo. Opções (todas com default sensato):
+
+    * `:dir` - diretório destino do `.tar.gz` (default: config `:backup, :dir`)
+    * `:storage_root` - árvore de arquivos a arquivar (default: config)
+    * `:database_path` - arquivo SQLite a copiar (default: config do Repo)
+    * `:now` - `DateTime` para o nome do arquivo
+
+  Retorna `{:ok, %{archive: path, bytes: n}}` ou `{:error, reason}`.
+  """
+  def run(opts \\ []) do
+    dir = Keyword.get(opts, :dir) || backup_dir()
+    storage_root = Keyword.get(opts, :storage_root, storage_root())
+    db_path = Keyword.get(opts, :database_path) || repo_db_path()
+    now = Keyword.get(opts, :now, DateTime.utc_now())
+    workdir = temporary_workdir()
+    secret = secret_path()
+
+    try do
+      with :ok <- validate_secret(secret),
+           :ok <- File.mkdir_p(dir),
+           :ok <- File.mkdir_p(workdir),
+           dump_path = Path.join(workdir, @database_dump),
+           :ok <- snapshot_db(db_path, dump_path),
+           archive_path = Path.join(dir, archive_filename(now)),
+           :ok <- package_archive(archive_path, dump_path, storage_root, secret) do
+        {:ok, %{archive: archive_path, bytes: file_size(archive_path)}}
       end
+    after
+      File.rm_rf(workdir)
     end
   end
 
@@ -329,15 +269,18 @@ defmodule Taina.Nhaman.Backup do
     end
   end
 
-  defp vacuum_into(conn, dump_path) do
-    with {:ok, stmt} <- Exqlite.Sqlite3.prepare(conn, "VACUUM INTO ?"),
-         :ok <- Exqlite.Sqlite3.bind(stmt, [dump_path]) do
-      case Exqlite.Sqlite3.step(conn, stmt) do
-        :done -> :ok
-        :busy -> {:error, {:sqlite_failed, :busy}}
-        {:error, reason} -> {:error, {:sqlite_failed, reason}}
-      end
+  defp replace_storage(extracted_storage, storage_root) do
+    with {:ok, _removed} <- File.rm_rf(storage_root),
+         {:ok, _copied} <- File.cp_r(extracted_storage, storage_root) do
+      :ok
+    else
+      {:error, reason, _path} -> {:error, {:storage_restore_failed, reason}}
     end
+  end
+
+  defp repo_db_path do
+    Application.fetch_env!(:taina, Taina.Repo)[:database] ||
+      raise "backup sem banco: Taina.Repo sem :database (passe :database_path)"
   end
 
   # Substitui o arquivo do banco pelo snapshot. Os siblings -wal/-shm do banco
@@ -351,11 +294,68 @@ defmodule Taina.Nhaman.Backup do
     end
   end
 
+  defp restore_secret(path, destination) do
+    if File.regular?(path) do
+      with :ok <- File.mkdir_p(Path.dirname(destination)),
+           :ok <- File.cp(path, destination),
+           :ok <- File.chmod(destination, 0o600) do
+        validate_secret(destination)
+      end
+    else
+      {:error, :missing_secret}
+    end
+  end
+
   defp rm_if_exists(path) do
+    # Paths come from operator configuration or the server-created workdir.
+    # credo:disable-for-next-line OeditusCredo.Check.Security.PathTraversal
     case File.rm(path) do
       :ok -> :ok
       {:error, :enoent} -> :ok
       {:error, reason} -> {:error, {:sqlite_failed, reason}}
+    end
+  end
+
+  defp safe_member?(name) do
+    not String.starts_with?(name, "/") and ".." not in Path.split(name) and
+      (name in [@database_dump, @secret_file] or String.starts_with?(name, "storage/"))
+  end
+
+  defp safe_members(names) do
+    members = Enum.map(names, &to_string/1)
+
+    if @database_dump in members and Enum.all?(members, &safe_member?/1), do: :ok, else: {:error, :unsafe_archive}
+  end
+
+  # The VACUUM INTO requires a missing destination and writes a standalone
+  # database snapshot using an ephemeral connection.
+  defp secret_path do
+    settings = Application.get_env(:taina, :config, %{})
+    Map.get(settings, :secret_key_base_file) || Path.join(Map.get(settings, :data_dir, "/app/data"), "secret_key_base")
+  end
+
+  defp snapshot_db(db_path, dump_path) do
+    with :ok <- rm_if_exists(dump_path),
+         {:ok, conn} <- open_db(db_path) do
+      try do
+        vacuum_into(conn, dump_path)
+      after
+        Exqlite.Sqlite3.close(conn)
+      end
+    end
+  end
+
+  # O stamp é o `%Y%m%dT%H%M%SZ` de `archive_filename/1`, sempre UTC (sufixo Z).
+  defp stamp_to_datetime(stamp) do
+    case Regex.run(~r/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/, stamp) do
+      [_, y, mo, d, h, mi, s] ->
+        with {:ok, date} <- Date.new(int(y), int(mo), int(d)),
+             {:ok, time} <- Time.new(int(h), int(mi), int(s)) do
+          DateTime.new(date, time, "Etc/UTC")
+        end
+
+      nil ->
+        :error
     end
   end
 
@@ -372,37 +372,49 @@ defmodule Taina.Nhaman.Backup do
     end
   end
 
-  defp all_files(dir) do
-    dir
-    |> File.ls!()
-    |> Enum.flat_map(fn entry ->
-      path = Path.join(dir, entry)
-      if File.dir?(path), do: all_files(path), else: [path]
-    end)
-  end
+  defp storage_root, do: Application.fetch_env!(:taina, :storage_root)
 
-  defp tmp_workdir do
+  defp temporary_workdir do
     Path.join(System.tmp_dir!(), "taina_backup_#{System.unique_integer([:positive])}")
   end
 
-  defp file_size(path) do
-    case File.stat(path) do
-      {:ok, %{size: size}} -> size
-      _ -> 0
+  defp vacuum_into(conn, dump_path) do
+    with {:ok, stmt} <- Exqlite.Sqlite3.prepare(conn, "VACUUM INTO ?"),
+         :ok <- Exqlite.Sqlite3.bind(stmt, [dump_path]) do
+      case Exqlite.Sqlite3.step(conn, stmt) do
+        :done -> :ok
+        :busy -> {:error, {:sqlite_failed, :busy}}
+        {:error, reason} -> {:error, {:sqlite_failed, reason}}
+      end
     end
   end
 
-  defp config, do: Application.get_env(:taina, :backup, [])
-
-  defp backup_dir do
-    Keyword.get(config(), :dir) ||
-      raise "backup sem destino: configure `config :taina, :backup, dir: …` (ou BACKUP_DIR)"
+  defp validate_restore_contents(workdir) do
+    if File.regular?(Path.join(workdir, @database_dump)) do
+      validate_secret(Path.join(workdir, @secret_file))
+    else
+      {:error, :missing_database}
+    end
   end
 
-  defp storage_root, do: Application.fetch_env!(:taina, :storage_root)
+  defp validate_secret(path) when is_binary(path) do
+    if File.regular?(path), do: validate_secret_file(path), else: {:error, :missing_secret}
+  end
 
-  defp secret_path do
-    settings = Application.get_env(:taina, :config, %{})
-    Map.get(settings, :secret_key_base_file) || Path.join(Map.get(settings, :data_dir, "/app/data"), "secret_key_base")
+  defp validate_secret(_path), do: {:error, :missing_secret}
+
+  ## Banco (SQLite, à margem do pool do Repo)
+
+  defp validate_secret_file(path) do
+    # The secret path is operator-configured or derived from the server workdir.
+    # credo:disable-for-next-line OeditusCredo.Check.Security.PathTraversal
+    case File.read(path) do
+      {:ok, secret} -> validate_secret_value(secret)
+      {:error, _reason} -> {:error, :missing_secret}
+    end
+  end
+
+  defp validate_secret_value(secret) do
+    if String.trim(secret) == "", do: {:error, :invalid_secret}, else: :ok
   end
 end

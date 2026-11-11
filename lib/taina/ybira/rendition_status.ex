@@ -22,7 +22,11 @@ defmodule Taina.Ybira.RenditionStatus do
   alias Ypy.Ybira.File
 
   @typedoc "Estado da rendição, no vocabulário do contrato da API."
+  @type file :: File.t()
+  @type metadata :: map()
+  @type scope :: Scope.t()
   @type status :: :ready | :pending | :unavailable | :none
+  @type text :: String.t()
 
   @doc """
   Deriva o estado da rendição de `file` dentro da Tekoa do `scope`. Abre o
@@ -31,9 +35,11 @@ defmodule Taina.Ybira.RenditionStatus do
   consulta por arquivo: quem lista muitos e se importa com o custo decide
   como agrupar por fora.
   """
-  @spec status(Scope.t(), File.t()) :: status()
+  @spec status(scope(), file()) :: status()
   def status(%Scope{} = scope, %File{} = file) do
     if image?(file.mime) do
+      # The transaction callback always returns {:ok, status}; query failures raise.
+      # credo:disable-for-next-line OeditusCredo.Check.Warning.MissingErrorHandling
       {:ok, state} =
         Repo.with_tekoa(scope.tekoa.public_id, fn ->
           {:ok, photo_status(file.id)}
@@ -51,7 +57,7 @@ defmodule Taina.Ybira.RenditionStatus do
   serializer usa, uma linha de foto por página em vez de uma por arquivo.
   Metadados que não vieram (`nil`) são a foto sem linha: pendente.
   """
-  @spec from_metadata(String.t() | nil, map() | nil) :: status()
+  @spec from_metadata(text() | nil, metadata() | nil) :: status()
   def from_metadata(mime, metadata) do
     if image?(mime) do
       status_from_metadata(metadata || %{})
@@ -59,6 +65,9 @@ defmodule Taina.Ybira.RenditionStatus do
       :none
     end
   end
+
+  defp has_error?(%{"rendition_error" => error}) when is_binary(error), do: error != ""
+  defp has_error?(_metadata), do: false
 
   defp image?(mime) when is_binary(mime), do: String.starts_with?(mime, "image/")
   defp image?(_mime), do: false
@@ -83,10 +92,6 @@ defmodule Taina.Ybira.RenditionStatus do
     end
   end
 
-  defp thumbnails?(%{"thumbnails" => thumbnails}) when is_map(thumbnails), do: map_size(thumbnails) > 0
-
+  defp thumbnails?(%{"thumbnails" => %{} = thumbnails}), do: map_size(thumbnails) > 0
   defp thumbnails?(_metadata), do: false
-
-  defp has_error?(%{"rendition_error" => error}) when is_binary(error), do: error != ""
-  defp has_error?(_metadata), do: false
 end

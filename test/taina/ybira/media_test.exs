@@ -33,8 +33,8 @@ defmodule Taina.Ybira.MediaTest do
     end
 
     test "sem data no EXIF devolve nil" do
-      assert Media.extract_taken_at(%{make: "Canon"}) == nil
-      assert Media.extract_taken_at(nil) == nil
+      assert is_nil(Media.extract_taken_at(%{make: "Canon"}))
+      assert is_nil(Media.extract_taken_at(nil))
     end
   end
 

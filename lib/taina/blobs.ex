@@ -7,7 +7,9 @@ defmodule Taina.Blobs do
   alias Ypy.BlobStore.Disk
   alias Ypy.Layout
 
-  @spec new :: Disk.t()
+  @type disk :: Disk.t()
+
+  @spec new :: disk()
   def new do
     root = Layout.from_dir(storage_root()).blobs
 

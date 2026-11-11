@@ -9,6 +9,7 @@ defmodule Taina.Nhaman.UpdateTest do
   internet por causa de teste.
   """
 
+  # These tests change application-wide update-check configuration.
   use ExUnit.Case, async: false
 
   alias Taina.Nhaman.Update

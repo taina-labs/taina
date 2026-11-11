@@ -40,7 +40,7 @@ defmodule Taina.JaciTest do
 
       {:ok, %{items: first, next_cursor: cursor}} = Jaci.list_photos(scope, limit: 2)
       assert Enum.count_until(first, 3) == 2
-      assert is_binary(cursor)
+      assert is_binary(cursor) and byte_size(cursor) > 0
 
       {:ok, %{items: rest, next_cursor: nil}} = Jaci.list_photos(scope, limit: 2, after_cursor: cursor)
       assert Enum.count_until(rest, 2) == 1
@@ -57,7 +57,7 @@ defmodule Taina.JaciTest do
       # traz a da praca no meio, e o cursor leva a segunda da casa
       {:ok, %{items: first, next_cursor: cursor}} = Jaci.list_photos(scope, zona: :casa, limit: 1)
       assert Enum.map(first, & &1.rkey) == [casa2.rkey]
-      assert is_binary(cursor)
+      assert is_binary(cursor) and byte_size(cursor) > 0
 
       {:ok, %{items: rest, next_cursor: nil}} =
         Jaci.list_photos(scope, zona: :casa, limit: 1, after_cursor: cursor)
@@ -189,7 +189,7 @@ defmodule Taina.JaciTest do
 
       {:ok, %{groups: first, next_cursor: cursor}} = Jaci.timeline(scope, zona: :casa, limit: 1)
       assert first |> Enum.flat_map(& &1.photos) |> Enum.map(& &1.rkey) == [casa2.rkey]
-      assert is_binary(cursor)
+      assert is_binary(cursor) and byte_size(cursor) > 0
 
       {:ok, %{groups: rest, next_cursor: nil}} =
         Jaci.timeline(scope, zona: :casa, limit: 1, after_cursor: cursor)

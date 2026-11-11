@@ -20,7 +20,93 @@ defmodule Taina.Repo do
   # qualquer outra tabela é tratada como dado de Tekoa e exige contexto. Assim,
   # esquecer de isentar uma nova tabela de infra causa um erro barulhento,
   # nunca um vazamento silencioso.
-  @infra_table_prefixes ~w(oban_)
+  @infra_table_prefixes ~W(oban_)
+
+  @doc """
+  Busca uma entidade por ID e retorna `{:ok, entity}` ou `{:error, :not_found}`.
+
+  Esta é uma versão conveniente de `Repo.get/2` que retorna uma tupla tagged,
+  facilitando o uso com `with` e pattern matching no Elixir.
+
+  ## Parâmetros
+
+    * `schema` - Módulo do schema Ecto (ex: `Taina.Maraca.Ava`)
+    * `id` - ID da entidade (inteiro ou string, dependendo do schema)
+
+  ## Retorno
+
+    * `{:ok, entity}` - Se a entidade foi encontrada
+    * `{:error, :not_found}` - Se não existe entidade com esse ID
+
+  ## Exemplos
+
+      # Sucesso ao encontrar
+      iex> Repo.fetch(Ava, 1)
+      {:ok, %Ava{id: 1, username: "maria"}}
+
+      # Falha ao não encontrar
+      iex> Repo.fetch(Ava, 999999)
+      {:error, :not_found}
+
+      # Uso com `with` para encadear operações
+      iex> with {:ok, ava} <- Repo.fetch(Ava, ava_id),
+      ...>      {:ok, file} <- Repo.fetch(File, file_id),
+      ...>      :ok <- Auth.authorize(ava, :read, file) do
+      ...>   {:ok, file}
+      ...> end
+
+  ## Notas
+
+  Se executada fora do contexto de uma Tekoa, levanta exceção (guard do
+  `prepare_query/3`), a menos que a chamada passe `skip_tekoa_id: true`.
+  """
+  def fetch(schema, id, opts \\ []) do
+    case get(schema, id, opts) do
+      nil -> {:error, :not_found}
+      entity -> {:ok, entity}
+    end
+  end
+
+  @doc """
+  Executa uma função como operação de sistema, fora do contexto de Tekoa.
+
+  No Postgres esta função definia a válvula `app.bypass_rls` das políticas
+  RLS. No SQLite não existe RLS e o contexto é só da aplicação: a função abre
+  uma transação e roda o callback dentro dela (contrato de `Repo.transact/1`:
+  `{:error, _}` desfaz), o que mantém atômicos os bootstrap e jobs que cruzam
+  Tekoas. O que importa no contrato do sistema: o callback roda sem contexto
+  de Tekoa (as queries declaram `skip_tekoa_id: true`), e a função se recusa
+  a rodar aninhada dentro de `with_tekoa/2`.
+
+  Use nas mesmas operações que hoje declaram `skip_tekoa_id: true`:
+  bootstrap de autenticação, resolução de sessão pré-contexto, jobs e
+  tarefas administrativas que cruzam Tekoas. Nenhuma trilha movida por
+  pedido de usuário deve passar por aqui: o caminho normal continua sendo
+  `with_tekoa/2` com o contexto da comunidade.
+
+  Nunca chame `with_system/1` dentro de `with_tekoa/2`. Chamar assim levanta
+  erro.
+
+  ## Exemplos
+
+      # Bootstrap: saber se já existe comunidade, fora de contexto
+      iex> Repo.with_system(fn -> {:ok, Repo.exists?(Tekoa, skip_tekoa_id: true)} end)
+      {:ok, true}
+
+      # Job de sistema que cruza todas as Tekoas
+      iex> Repo.with_system(fn -> {:ok, Repo.all(Taina.Ybira.File, skip_tekoa_id: true)} end)
+      {:ok, [%File{}, %File{}]}
+  """
+  def with_system(cb) do
+    if in_tekoa_context?() do
+      raise """
+      `with_system/1` dentro de `with_tekoa/2`: operações de sistema devem \
+      rodar fora do contexto de Tekoa.
+      """
+    end
+
+    transact(fn -> cb.() end)
+  end
 
   @doc """
   Executa uma função dentro do contexto de uma Tekoa específica.
@@ -75,47 +161,6 @@ defmodule Taina.Repo do
   end
 
   @doc """
-  Executa uma função como operação de sistema, fora do contexto de Tekoa.
-
-  No Postgres esta função definia a válvula `app.bypass_rls` das políticas
-  RLS. No SQLite não existe RLS e o contexto é só da aplicação: a função abre
-  uma transação e roda o callback dentro dela (contrato de `Repo.transact/1`:
-  `{:error, _}` desfaz), o que mantém atômicos os bootstrap e jobs que cruzam
-  Tekoas. O que importa no contrato do sistema: o callback roda sem contexto
-  de Tekoa (as queries declaram `skip_tekoa_id: true`), e a função se recusa
-  a rodar aninhada dentro de `with_tekoa/2`.
-
-  Use nas mesmas operações que hoje declaram `skip_tekoa_id: true`:
-  bootstrap de autenticação, resolução de sessão pré-contexto, jobs e
-  tarefas administrativas que cruzam Tekoas. Nenhuma trilha movida por
-  pedido de usuário deve passar por aqui: o caminho normal continua sendo
-  `with_tekoa/2` com o contexto da comunidade.
-
-  Nunca chame `with_system/1` dentro de `with_tekoa/2`. Chamar assim levanta
-  erro.
-
-  ## Exemplos
-
-      # Bootstrap: saber se já existe comunidade, fora de contexto
-      iex> Repo.with_system(fn -> {:ok, Repo.exists?(Tekoa, skip_tekoa_id: true)} end)
-      {:ok, true}
-
-      # Job de sistema que cruza todas as Tekoas
-      iex> Repo.with_system(fn -> {:ok, Repo.all(Taina.Ybira.File, skip_tekoa_id: true)} end)
-      {:ok, [%File{}, %File{}]}
-  """
-  def with_system(cb) do
-    if in_tekoa_context?() do
-      raise """
-      `with_system/1` dentro de `with_tekoa/2`: operações de sistema devem \
-      rodar fora do contexto de Tekoa.
-      """
-    end
-
-    transact(fn -> cb.() end)
-  end
-
-  @doc """
   Rede de segurança do isolamento multi-tenant.
 
   Toda query (`all`, `one`, `get*`, `update_all`, `delete_all`, preloads)
@@ -135,7 +180,7 @@ defmodule Taina.Repo do
   @impl true
   def prepare_query(_operation, query, opts) do
     cond do
-      opts[:skip_tekoa_id] || opts[:schema_migration] ->
+      Keyword.get(opts, :skip_tekoa_id) || Keyword.get(opts, :schema_migration) ->
         {query, opts}
 
       in_tekoa_context?() ->
@@ -168,50 +213,4 @@ defmodule Taina.Repo do
   end
 
   defp infra_query?(_query), do: false
-
-  @doc """
-  Busca uma entidade por ID e retorna `{:ok, entity}` ou `{:error, :not_found}`.
-
-  Esta é uma versão conveniente de `Repo.get/2` que retorna uma tupla tagged,
-  facilitando o uso com `with` e pattern matching no Elixir.
-
-  ## Parâmetros
-
-    * `schema` - Módulo do schema Ecto (ex: `Taina.Maraca.Ava`)
-    * `id` - ID da entidade (inteiro ou string, dependendo do schema)
-
-  ## Retorno
-
-    * `{:ok, entity}` - Se a entidade foi encontrada
-    * `{:error, :not_found}` - Se não existe entidade com esse ID
-
-  ## Exemplos
-
-      # Sucesso ao encontrar
-      iex> Repo.fetch(Ava, 1)
-      {:ok, %Ava{id: 1, username: "maria"}}
-
-      # Falha ao não encontrar
-      iex> Repo.fetch(Ava, 999999)
-      {:error, :not_found}
-
-      # Uso com `with` para encadear operações
-      iex> with {:ok, ava} <- Repo.fetch(Ava, ava_id),
-      ...>      {:ok, file} <- Repo.fetch(File, file_id),
-      ...>      :ok <- Auth.authorize(ava, :read, file) do
-      ...>   {:ok, file}
-      ...> end
-
-  ## Notas
-
-  Se executada fora do contexto de uma Tekoa, levanta exceção (guard do
-  `prepare_query/3`), a menos que a chamada passe `skip_tekoa_id: true`.
-  """
-  def fetch(schema, id, opts \\ []) do
-    if e = get(schema, id, opts) do
-      {:ok, e}
-    else
-      {:error, :not_found}
-    end
-  end
 end

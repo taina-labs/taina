@@ -43,7 +43,7 @@ defmodule Taina.Ybira.BlobLockTest do
   end
 
   @tag timeout: 10_000
-  test "CIDs diferentes nao se esperam" do
+  test "cids diferentes nao se esperam" do
     parent = self()
     cid_a = unique_cid()
     cid_b = unique_cid()
@@ -100,8 +100,9 @@ defmodule Taina.Ybira.BlobLockTest do
     Process.unlink(dono.pid)
     Process.exit(dono.pid, :kill)
 
-    Task.async(fn -> BlobLock.run(cid, fn -> send(parent, :entrou_depois) end) end)
+    task = Task.async(fn -> BlobLock.run(cid, fn -> send(parent, :entrou_depois) end) end)
     assert_receive :entrou_depois, 1_000
+    assert :entrou_depois = Task.await(task)
   end
 
   defp unique_cid, do: "b#{System.unique_integer([:positive])}"

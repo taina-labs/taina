@@ -9,15 +9,20 @@ defmodule Taina.ThumbnailOperator do
   alias Ypy.Ybira.File
 
   def regenerate(tekoa_id \\ nil) do
-    with {:ok, tekoas} <- list_tekoas(tekoa_id) do
-      {:ok, Enum.map(tekoas, &regenerate_tekoa/1)}
-    end
+    with {:ok, tekoas} <- list_tekoas(tekoa_id), do: regenerate_all(tekoas)
   end
 
-  defp list_tekoas(nil), do: Repo.with_system(fn -> {:ok, Repo.all(Tekoa, skip_tekoa_id: true)} end)
+  defp files_in_tekoa(tekoa) do
+    Repo.with_tekoa(tekoa.public_id, fn ->
+      files =
+        Repo.all(
+          from f in File,
+            where: f.tekoa_id == ^tekoa.id and is_nil(f.apagado_em) and like(f.mime, "image/%"),
+            order_by: [asc: f.id]
+        )
 
-  defp list_tekoas(public_id) do
-    if PublicId.valid?(public_id), do: find_tekoa(public_id), else: {:error, :not_found}
+      {:ok, files}
+    end)
   end
 
   defp find_tekoa(public_id) do
@@ -29,28 +34,43 @@ defmodule Taina.ThumbnailOperator do
     end)
   end
 
+  defp list_tekoas(nil), do: Repo.with_system(fn -> {:ok, Repo.all(Tekoa, skip_tekoa_id: true)} end)
+
+  defp list_tekoas(public_id) do
+    if PublicId.valid?(public_id), do: find_tekoa(public_id), else: {:error, :not_found}
+  end
+
+  defp regenerate_all(tekoas) do
+    case Enum.reduce_while(tekoas, {:ok, []}, &regenerate_next/2) do
+      {:ok, results} -> {:ok, Enum.reverse(results)}
+      {:error, _reason} = error -> error
+    end
+  end
+
+  defp regenerate_next(tekoa, {:ok, results}) do
+    case regenerate_tekoa(tekoa) do
+      {:ok, result} -> {:cont, {:ok, [result | results]}}
+      {:error, _reason} = error -> {:halt, error}
+    end
+  end
+
   defp regenerate_tekoa(tekoa) do
-    {:ok, files} =
-      Repo.with_tekoa(tekoa.public_id, fn ->
-        {:ok,
-         Repo.all(
-           from f in File,
-             where: f.tekoa_id == ^tekoa.id and is_nil(f.apagado_em) and like(f.mime, "image/%"),
-             order_by: [asc: f.id]
-         )}
-      end)
+    with {:ok, files} <- files_in_tekoa(tekoa) do
+      {:ok, {tekoa, rendition_counts(files, tekoa.public_id)}}
+    end
+  end
 
-    counts =
-      files
-      |> Enum.map(fn file ->
-        case Rendition.render_file(file.id, tekoa.public_id) do
-          :ok -> :rendered
-          {:error, :gone} -> :gone
-          _ -> :failed
-        end
-      end)
-      |> Enum.frequencies()
+  defp render_status(file, tekoa_public_id) do
+    case Rendition.render_file(file.id, tekoa_public_id) do
+      :ok -> :rendered
+      {:error, :gone} -> :gone
+      {:error, _reason} -> :failed
+    end
+  end
 
-    {tekoa, counts}
+  defp rendition_counts(files, tekoa_public_id) do
+    files
+    |> Enum.map(&render_status(&1, tekoa_public_id))
+    |> Enum.frequencies()
   end
 end

@@ -24,6 +24,41 @@ defmodule Taina.Nhaman.Update do
   @receive_timeout 3_000
 
   @doc """
+  Compara a versão rodando com a última publicada.
+
+  `:unknown` quando alguma das duas não é um `Version` válido: a tela diz
+  que não deu para comparar, não inventa resposta.
+  """
+  def compare(running, latest) do
+    case {Version.parse(running), Version.parse(latest)} do
+      {{:ok, running_v}, {:ok, latest_v}} ->
+        if Version.compare(running_v, latest_v) in [:eq, :gt] do
+          :up_to_date
+        else
+          {:update_available, latest}
+        end
+
+      _other ->
+        :unknown
+    end
+  end
+
+  @doc "A verificacao esta ligada? (`config :taina, :update_check, enabled:`, default off)."
+  def enabled?, do: Keyword.get(config(), :enabled, false)
+
+  @doc ~S{Normaliza a tag de release do GitHub (`"v0.2.0"` -> `"0.2.0"`).}
+  def normalize_version("v" <> rest), do: String.trim(rest)
+  def normalize_version(other), do: String.trim(other)
+
+  @doc "A versão que está rodando nesta caixa (a do build, `Application.spec/2`)."
+  def running_version do
+    case Application.spec(:taina, :vsn) do
+      nil -> "desconhecida"
+      vsn -> to_string(vsn)
+    end
+  end
+
+  @doc """
   O estado de atualização para a tela de saúde.
 
   ## Retorno
@@ -56,48 +91,15 @@ defmodule Taina.Nhaman.Update do
     %{running: running, result: result}
   end
 
-  @doc "A verificação está ligada? (`config :taina, :update_check, enabled:`, default off)."
-  def enabled?, do: Keyword.get(config(), :enabled, false)
-
-  @doc "A versão que está rodando nesta caixa (a do build, `Application.spec/2`)."
-  def running_version do
-    case Application.spec(:taina, :vsn) do
-      nil -> "desconhecida"
-      vsn -> to_string(vsn)
-    end
-  end
-
-  @doc ~s{Normaliza a tag de release do GitHub (`"v0.2.0"` -> `"0.2.0"`).}
-  def normalize_version("v" <> rest), do: String.trim(rest)
-  def normalize_version(other), do: String.trim(other)
-
-  @doc """
-  Compara a versão rodando com a última publicada.
-
-  `:unknown` quando alguma das duas não é um `Version` válido: a tela diz
-  que não deu para comparar, não inventa resposta.
-  """
-  def compare(running, latest) do
-    case {Version.parse(running), Version.parse(latest)} do
-      {{:ok, running_v}, {:ok, latest_v}} ->
-        if Version.compare(running_v, latest_v) in [:eq, :gt] do
-          :up_to_date
-        else
-          {:update_available, latest}
-        end
-
-      _other ->
-        :unknown
-    end
-  end
-
   # A única coisa que sai da caixa é a própria pergunta (ver o moduledoc): GET
   # sem corpo e sem header de identificação, resposta curta ou nada. Exceção
   # (URL mal configurada e afins) vira :error, a tela nunca cai por causa da
   # pergunta opcional.
+  defp config, do: Application.get_env(:taina, :update_check, [])
+
   defp latest_release(opts) do
     url = Keyword.get(opts, :releases_url) || releases_url()
-    headers = [{~c"accept", ~c"application/json"}, {~c"user-agent", ~c"Taina Cloud/#{running_version()}"}]
+    headers = [{~C"accept", ~C"application/json"}, {~C"user-agent", ~c"Taina Cloud/#{running_version()}"}]
     opts = [body_format: :binary]
     http_opts = [timeout: @receive_timeout]
 
@@ -114,6 +116,4 @@ defmodule Taina.Nhaman.Update do
   end
 
   defp releases_url, do: Keyword.get(config(), :url, @releases_url)
-
-  defp config, do: Application.get_env(:taina, :update_check, [])
 end

@@ -42,12 +42,12 @@ defmodule Taina.Guara.Participant do
 
   @primary_key false
   schema "participants" do
-    belongs_to :chat, Chat, primary_key: true
     belongs_to :ava, Ava, primary_key: true
+    belongs_to :chat, Chat, primary_key: true
 
     field :joined_at, :utc_datetime_usec
     field :last_read_at, :utc_datetime_usec
-    field :role, Ecto.Enum, values: ~w(admin member)a, default: :member
+    field :role, Ecto.Enum, values: ~W(admin member)a, default: :member
 
     timestamps()
   end
@@ -76,9 +76,9 @@ defmodule Taina.Guara.Participant do
   """
   def changeset(participant, attrs) do
     participant
-    |> cast(attrs, [:chat_id, :ava_id, :joined_at, :last_read_at, :role])
-    |> validate_required([:chat_id, :ava_id, :joined_at])
-    |> validate_inclusion(:role, ~w(admin member)a)
+    |> cast(attrs, [:ava_id, :chat_id, :joined_at, :last_read_at, :role])
+    |> validate_required([:ava_id, :chat_id, :joined_at])
+    |> validate_inclusion(:role, ~W(admin member)a)
     |> foreign_key_constraint(:chat_id)
     |> foreign_key_constraint(:ava_id)
   end

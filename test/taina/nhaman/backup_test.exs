@@ -1,4 +1,5 @@
 defmodule Taina.Nhaman.BackupTest do
+  # These tests change application-wide config and create temporary filesystem state.
   use ExUnit.Case, async: false
 
   import Bitwise
@@ -15,35 +16,35 @@ defmodule Taina.Nhaman.BackupTest do
 
   describe "storage archive round-trip" do
     test "package, extract and restore put files back byte-for-byte" do
-      storage = tmp_dir()
+      storage = temporary_directory()
       nested = Path.join(storage, "tekoaA/files/2026/06")
       File.mkdir_p!(nested)
       File.write!(Path.join(nested, "x.txt"), "hello")
       File.write!(Path.join(storage, "root.txt"), "top")
 
-      dump = Path.join(tmp_dir(), "db.dump")
+      dump = Path.join(temporary_directory(), "db.dump")
       File.write!(dump, "FAKE DUMP")
-      secret = Path.join(tmp_dir(), "secret_key_base")
+      secret = Path.join(temporary_directory(), "secret_key_base")
       File.write!(secret, "test-secret")
 
-      archive = Path.join(tmp_dir(), "backup.tar.gz")
+      archive = Path.join(temporary_directory(), "backup.tar.gz")
       assert :ok = Backup.package_archive(archive, dump, storage, secret)
       assert File.exists?(archive)
 
-      extracted = tmp_dir()
+      extracted = temporary_directory()
       assert :ok = Backup.extract_archive(archive, extracted)
       assert File.read!(Path.join(extracted, "db.dump")) == "FAKE DUMP"
       assert File.read!(Path.join(extracted, "storage/tekoaA/files/2026/06/x.txt")) == "hello"
       assert File.read!(Path.join(extracted, "storage/root.txt")) == "top"
 
-      dest = Path.join(tmp_dir(), "restored")
+      dest = Path.join(temporary_directory(), "restored")
       assert :ok = Backup.restore_storage(Path.join(extracted, "storage"), dest)
       assert File.read!(Path.join(dest, "tekoaA/files/2026/06/x.txt")) == "hello"
       assert File.read!(Path.join(dest, "root.txt")) == "top"
     end
 
     test "backup and restore round-trip the persistent secret" do
-      root = tmp_dir()
+      root = temporary_directory()
       storage = Path.join(root, "storage")
       File.mkdir_p!(storage)
       File.write!(Path.join(storage, "file.txt"), "new")
@@ -75,7 +76,7 @@ defmodule Taina.Nhaman.BackupTest do
     end
 
     test "restore rejects a missing secret before changing existing data" do
-      root = tmp_dir()
+      root = temporary_directory()
       dump = Path.join(root, "db.dump")
       File.write!(dump, "new-db")
       archive = Path.join(root, "missing-secret.tar.gz")
@@ -93,7 +94,7 @@ defmodule Taina.Nhaman.BackupTest do
       assert :ok =
                :erl_tar.create(
                  String.to_charlist(archive),
-                 [{~c"db.dump", String.to_charlist(dump)}],
+                 [{~C"db.dump", String.to_charlist(dump)}],
                  [:compressed]
                )
 
@@ -109,10 +110,10 @@ defmodule Taina.Nhaman.BackupTest do
     end
 
     test "restore_storage replaces prior contents" do
-      src = tmp_dir()
+      src = temporary_directory()
       File.write!(Path.join(src, "keep.txt"), "new")
 
-      dest = tmp_dir()
+      dest = temporary_directory()
       File.write!(Path.join(dest, "stale.txt"), "old")
 
       assert :ok = Backup.restore_storage(src, dest)
@@ -121,15 +122,15 @@ defmodule Taina.Nhaman.BackupTest do
     end
 
     test "package handles an absent storage root" do
-      dump = Path.join(tmp_dir(), "db.dump")
+      dump = Path.join(temporary_directory(), "db.dump")
       File.write!(dump, "D")
-      archive = Path.join(tmp_dir(), "b.tar.gz")
-      secret = Path.join(tmp_dir(), "secret_key_base")
+      archive = Path.join(temporary_directory(), "b.tar.gz")
+      secret = Path.join(temporary_directory(), "secret_key_base")
       File.write!(secret, "test-secret")
 
-      assert :ok = Backup.package_archive(archive, dump, Path.join(tmp_dir(), "missing"), secret)
+      assert :ok = Backup.package_archive(archive, dump, Path.join(temporary_directory(), "missing"), secret)
 
-      extracted = tmp_dir()
+      extracted = temporary_directory()
       assert :ok = Backup.extract_archive(archive, extracted)
       assert File.read!(Path.join(extracted, "db.dump")) == "D"
       refute File.exists?(Path.join(extracted, "storage"))
@@ -137,7 +138,7 @@ defmodule Taina.Nhaman.BackupTest do
   end
 
   test "run fails before creating an archive when the secret is missing" do
-    root = tmp_dir()
+    root = temporary_directory()
     secret = Path.join(root, "missing-secret")
     previous = Application.get_env(:taina, :config)
     Application.put_env(:taina, :config, %{secret_key_base_file: secret})
@@ -189,13 +190,13 @@ defmodule Taina.Nhaman.BackupTest do
     end
 
     test "destino existente e vazio: nenhum backup ainda" do
-      Application.put_env(:taina, :backup, enabled: false, dir: tmp_dir())
+      Application.put_env(:taina, :backup, enabled: false, dir: temporary_directory())
 
       assert {:error, :none} = Backup.last_backup()
     end
 
     test "o mais recente entre os arquivos do destino, ignorando intrusos" do
-      dir = tmp_dir()
+      dir = temporary_directory()
       {:ok, recent, 0} = DateTime.from_iso8601("2026-10-04T04:00:00Z")
       {:ok, old, 0} = DateTime.from_iso8601("2026-10-01T04:00:00Z")
 
@@ -210,12 +211,14 @@ defmodule Taina.Nhaman.BackupTest do
     end
 
     test "destino que nunca existiu é 'nenhum backup'; caminho torto é ilegível" do
-      Application.put_env(:taina, :backup, enabled: false, dir: tmp_dir() <> "/nunca_criado")
+      Application.put_env(:taina, :backup, enabled: false, dir: temporary_directory() <> "/nunca_criado")
 
       assert {:error, :none} = Backup.last_backup()
 
       # Caminho que existe mas não é diretório: outra falha, não "vazio".
-      file = Path.join(tmp_dir(), "arquivo-nao-diretorio")
+      file = Path.join(temporary_directory(), "arquivo-nao-diretorio")
+      # The path is inside a test-owned temporary directory with a fixed filename.
+      # credo:disable-for-next-line OeditusCredo.Check.Security.PathTraversal
       File.write!(file, "x")
       Application.put_env(:taina, :backup, enabled: false, dir: file)
 
@@ -230,7 +233,7 @@ defmodule Taina.Nhaman.BackupTest do
     end
   end
 
-  defp tmp_dir do
+  defp temporary_directory do
     dir = Path.join(System.tmp_dir!(), "taina_backup_test_#{System.unique_integer([:positive])}")
     File.mkdir_p!(dir)
     on_exit(fn -> File.rm_rf(dir) end)

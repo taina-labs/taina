@@ -13,7 +13,11 @@ defmodule Taina.Keys do
   alias Ypy.Layout
   alias Ypy.Maraca.TekoaKey
 
-  @spec new :: Files.t()
+  @type files :: Files.t()
+  @type repo :: Ecto.Repo.t()
+  @type tekoa_id :: integer()
+
+  @spec new :: files()
   def new do
     dir = Layout.from_dir(storage_root()).keys
     File.mkdir_p!(dir)
@@ -21,7 +25,7 @@ defmodule Taina.Keys do
   end
 
   @doc "Cunha a chave ativa da Tekoa quando ela nao tem nenhuma."
-  @spec mint(Ecto.Repo.t(), integer()) :: :ok | {:error, term()}
+  @spec mint(repo(), tekoa_id()) :: :ok | {:error, term()}
   def mint(repo \\ Repo, tekoa_id) do
     # Consulta de sistema: a cunhagem acontece no bootstrap e nas fixtures,
     # antes de haver contexto de Tekoa.

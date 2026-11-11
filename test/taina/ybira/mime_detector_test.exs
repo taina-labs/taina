@@ -5,11 +5,15 @@ defmodule Taina.Ybira.MimeDetectorTest do
 
   defp detect(bytes) do
     path = Path.join(System.tmp_dir!(), "mime_#{System.unique_integer([:positive])}")
+    # This is a unique test-owned file directly under the system temp directory.
+    # credo:disable-for-next-line OeditusCredo.Check.Security.PathTraversal
     File.write!(path, bytes)
     on_exit_rm(path)
     MimeDetector.detect(path)
   end
 
+  # This removes the unique test-owned file created by detect/1.
+  # credo:disable-for-next-line OeditusCredo.Check.Security.PathTraversal
   defp on_exit_rm(path), do: ExUnit.Callbacks.on_exit(fn -> File.rm(path) end)
 
   test "recognizes common formats by magic bytes" do

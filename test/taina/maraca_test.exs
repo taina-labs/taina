@@ -59,7 +59,7 @@ defmodule Taina.MaracaTest do
 
     test "invite carries a token (no e-mail) and accept creates the account", %{tekoa: tekoa, zelador: zelador} do
       assert {:ok, %{ava: invited, token: token}} = Maraca.invite_user(zelador, tekoa)
-      assert token
+      assert is_binary(token) and byte_size(token) > 0
       assert invited.papel == :morador
       refute Maraca.activated?(invited)
       assert is_nil(invited.username)
@@ -315,8 +315,8 @@ defmodule Taina.MaracaTest do
 
       assert {:ok, _} = Maraca.reset_password(token, "novasenha123")
 
-      # o token do celular da pessoa cai junto (a web e o shell nao tem
-      # aparelho de chamada: todos os aparelhos caem)
+      # Depois do reset, nenhum dispositivo continua autenticado. A web e o
+      # shell nao tem dispositivo de chamada, entao todos devem ser revogados.
       assert {:error, :not_authenticated} = Maraca.resolve_device_token(raw)
     end
   end

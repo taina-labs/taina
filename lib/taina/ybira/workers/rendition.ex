@@ -45,13 +45,6 @@ defmodule Taina.Ybira.Workers.Rendition do
   # a visualização fullscreen. Os caminhos vão para `metadata["thumbnails"]`.
   @sizes %{"sm" => 400, "md" => 1600}
 
-  @doc false
-  def thumbnail_paths(tekoa_public_id, file_rkey) do
-    Map.new(@sizes, fn {name, _max_edge} ->
-      {name, thumbnail_path(tekoa_public_id, file_rkey, name)}
-    end)
-  end
-
   @doc """
   Gera as renditions de um arquivo de imagem pelo `id`, dentro da Tekoa de
   `tekoa_public_id` (abre o `Repo.with_tekoa/2` por conta própria).
@@ -82,12 +75,94 @@ defmodule Taina.Ybira.Workers.Rendition do
     end
   end
 
+  @doc false
+  # Publica para o teste (o mesmo padrão de `Media.extract_taken_at/1`: uma
+  # imagem com EXIF real não é reproduzível em fixture, a libvips re-encoda
+  # o EXIF e o perde). Grava a dica de ordem do kernel (`effective_at`) com a
+  # data de captura, que o EXIF traz sem fuso (o cast do Ecto a trata como
+  # UTC, a mesma convenção do SQLite na linha do tempo). Best-effort: sem
+  # EXIF não há update, e falha de gravação fica no log sem derrubar o job.
+  def set_effective_at(_file, nil), do: :ok
+
+  # Called with the file loaded under render_file/2's Tekoa context.
+  # credo:disable-for-next-line OeditusCredo.Check.Security.MissingAuthorization
+  def set_effective_at(%YbiraFile{} = file, %NaiveDateTime{} = taken_at) do
+    file
+    |> YbiraFile.changeset(%{effective_at: taken_at})
+    |> Repo.update()
+    |> case do
+      {:ok, _file} ->
+        :ok
+
+      {:error, changeset} ->
+        Logger.warning("Rendition: falha ao gravar a data de captura (effective_at)",
+          file_id: file.id,
+          errors: inspect(changeset.errors)
+        )
+
+        :ok
+    end
+  end
+
+  @doc false
+  def thumbnail_paths(tekoa_public_id, file_rkey) do
+    Map.new(@sizes, fn {name, _max_edge} ->
+      {name, thumbnail_path(tekoa_public_id, file_rkey, name)}
+    end)
+  end
+
   @impl Oban.Worker
   def perform(%Oban.Job{args: %{"file_id" => file_id, "tekoa_public_id" => tekoa_public_id}}) do
     # Best-effort: falha de rendition não vira retentativa nem job morto
     # barulhento, a foto existe, só não ganha thumbnail.
     _ = render_file(file_id, tekoa_public_id)
     :ok
+  end
+
+  defp encode_taken_at(nil), do: nil
+  defp encode_taken_at(%NaiveDateTime{} = dt), do: NaiveDateTime.to_iso8601(dt)
+
+  # O log nomeia a causa: "a libvips desta caixa não abre esse formato" (ex.:
+  # HEIC sem libheif) é problema de ambiente, se resolve na caixa; outros
+  # erros (disco, arquivo corrompido) pertencem ao arquivo. Revisão 0.1.0, C3.
+  defp failure_message(reason) do
+    if Media.unsupported_format?(reason) do
+      "Rendition: a libvips desta caixa não tem decodificador para o formato " <>
+        "da imagem (ex.: HEIC sem libheif); miniatura não será gerada aqui"
+    else
+      "Rendition: processamento falhou"
+    end
+  end
+
+  defp generate_thumbnails(%YbiraFile{} = file, tekoa_public_id, blob_path) do
+    paths = thumbnail_paths(tekoa_public_id, file.rkey)
+
+    Enum.reduce_while(@sizes, {:ok, %{}}, fn {name, max_edge}, {:ok, acc} ->
+      dest = Map.fetch!(paths, name)
+
+      case Media.thumbnail(blob_path, dest, max_edge) do
+        :ok -> {:cont, {:ok, Map.put(acc, name, dest)}}
+        {:error, _reason} = error -> {:halt, error}
+      end
+    end)
+  end
+
+  # A falha fica registrada na foto (`metadata["rendition_error"]`, sem
+  # thumbnails), não só no log: é o que separa "pendente" de "indisponível"
+  # na API (C3). Upsert como na gravação de sucesso: substitui o mapa
+  # inteiro. Best-effort de novo: falhar ao registrar a falha vira log e
+  # segue.
+  defp record_failure(%YbiraFile{} = file, reason) do
+    case save_metadata(file, %{"rendition_error" => inspect(reason)}) do
+      :ok ->
+        :ok
+
+      {:error, changeset} ->
+        Logger.warning("Rendition: falha ao registrar o erro da rendição",
+          file_id: file.id,
+          errors: inspect(changeset.errors)
+        )
+    end
   end
 
   defp render(%YbiraFile{} = file, tekoa_public_id) do
@@ -121,63 +196,6 @@ defmodule Taina.Ybira.Workers.Rendition do
       {:error, e}
   end
 
-  @doc false
-  # Publica para o teste (o mesmo padrão de `Media.extract_taken_at/1`: uma
-  # imagem com EXIF real não é reproduzível em fixture, a libvips re-encoda
-  # o EXIF e o perde). Grava a dica de ordem do kernel (`effective_at`) com a
-  # data de captura, que o EXIF traz sem fuso (o cast do Ecto a trata como
-  # UTC, a mesma convenção do SQLite na linha do tempo). Best-effort: sem
-  # EXIF não há update, e falha de gravação fica no log sem derrubar o job.
-  def set_effective_at(_file, nil), do: :ok
-
-  def set_effective_at(%YbiraFile{} = file, %NaiveDateTime{} = taken_at) do
-    file
-    |> YbiraFile.changeset(%{effective_at: taken_at})
-    |> Repo.update()
-    |> case do
-      {:ok, _file} ->
-        :ok
-
-      {:error, changeset} ->
-        Logger.warning("Rendition: falha ao gravar a data de captura (effective_at)",
-          file_id: file.id,
-          errors: inspect(changeset.errors)
-        )
-
-        :ok
-    end
-  end
-
-  # O log nomeia a causa: "a libvips desta caixa não abre esse formato" (ex.:
-  # HEIC sem libheif) é problema de ambiente, se resolve na caixa; outros
-  # erros (disco, arquivo corrompido) pertencem ao arquivo. Revisão 0.1.0, C3.
-  defp failure_message(reason) do
-    if Media.unsupported_format?(reason) do
-      "Rendition: a libvips desta caixa não tem decodificador para o formato " <>
-        "da imagem (ex.: HEIC sem libheif); miniatura não será gerada aqui"
-    else
-      "Rendition: processamento falhou"
-    end
-  end
-
-  # A falha fica registrada na foto (`metadata["rendition_error"]`, sem
-  # thumbnails), não só no log: é o que separa "pendente" de "indisponível"
-  # na API (C3). Upsert como na gravação de sucesso: substitui o mapa
-  # inteiro. Best-effort de novo: falhar ao registrar a falha vira log e
-  # segue.
-  defp record_failure(%YbiraFile{} = file, reason) do
-    case save_metadata(file, %{"rendition_error" => inspect(reason)}) do
-      :ok ->
-        :ok
-
-      {:error, changeset} ->
-        Logger.warning("Rendition: falha ao registrar o erro da rendição",
-          file_id: file.id,
-          errors: inspect(changeset.errors)
-        )
-    end
-  end
-
   # A rendicao fica na tabela do produto; reprocessar substitui (upsert pelo
   # file_id unico). Best-effort: a foto já existe; logamos a falha e seguimos.
   defp save_metadata(%YbiraFile{} = file, metadata) do
@@ -201,19 +219,6 @@ defmodule Taina.Ybira.Workers.Rendition do
     end
   end
 
-  defp generate_thumbnails(%YbiraFile{} = file, tekoa_public_id, blob_path) do
-    paths = thumbnail_paths(tekoa_public_id, file.rkey)
-
-    Enum.reduce_while(@sizes, {:ok, %{}}, fn {name, max_edge}, {:ok, acc} ->
-      dest = Map.fetch!(paths, name)
-
-      case Media.thumbnail(blob_path, dest, max_edge) do
-        :ok -> {:cont, {:ok, Map.put(acc, name, dest)}}
-        {:error, _reason} = error -> {:halt, error}
-      end
-    end)
-  end
-
   # Thumbnails ficam ao lado dos blobs, sob a Tekoa:
   # {storage_root}/{tekoa}/thumbnails/{rkey}_{tamanho}.webp
   defp thumbnail_path(tekoa_public_id, file_rkey, name) do
@@ -224,7 +229,4 @@ defmodule Taina.Ybira.Workers.Rendition do
       "#{file_rkey}_#{name}.webp"
     ])
   end
-
-  defp encode_taken_at(nil), do: nil
-  defp encode_taken_at(%NaiveDateTime{} = dt), do: NaiveDateTime.to_iso8601(dt)
 end

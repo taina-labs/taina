@@ -20,7 +20,7 @@ defmodule Taina.Ybira.ManifestTest do
 
     {:ok, %{items: items, next_cursor: next}} = Manifest.page(scope)
 
-    assert next == nil
+    assert is_nil(next)
     assert Enum.map(items, & &1.rkey) == [primeira.rkey, segunda.rkey, terceira.rkey]
   end
 
@@ -31,11 +31,11 @@ defmodule Taina.Ybira.ManifestTest do
 
     {:ok, %{items: items, next_cursor: next}} = Manifest.page(scope, limit: 2)
     assert Enum.map(items, & &1.rkey) == [primeira.rkey, segunda.rkey]
-    assert is_binary(next)
+    assert is_binary(next) and byte_size(next) > 0
 
     {:ok, %{items: restantes, next_cursor: fim}} = Manifest.page(scope, limit: 2, after: next)
     assert Enum.map(restantes, & &1.rkey) == [terceira.rkey]
-    assert fim == nil
+    assert is_nil(fim)
   end
 
   test "o que esta na lixeira nao volta no manifesto", %{scope: scope} do

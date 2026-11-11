@@ -21,20 +21,20 @@ defmodule Taina.Config do
             update_check: false,
             secret_key_base_file: nil
 
-  @keys ~w(
-    url_scheme
-    hostname
-    url_port
-    bind_ip
-    port
-    max_blob_size
-    max_concurrent_uploads
-    data_dir
-    storage_dir
+  @keys ~W(
     backup_dir
     backup_enabled
-    update_check
+    bind_ip
+    data_dir
+    hostname
+    max_blob_size
+    max_concurrent_uploads
+    port
     secret_key_base_file
+    storage_dir
+    update_check
+    url_port
+    url_scheme
   )
   @template """
   # Public URL, after TLS termination.
@@ -71,29 +71,18 @@ defmodule Taina.Config do
     Config.Reader.merge(config, taina: application_config(settings))
   end
 
-  def path do
-    path("TAINA_CONFIG")
-  end
-
-  def template, do: @template
-
-  @doc "O limite configurado por arquivo, em bytes."
-  @spec max_blob_size() :: pos_integer()
-  def max_blob_size do
-    :taina
-    |> Application.get_env(:upload, [])
-    |> Keyword.get(:max_blob_size, @default_max_blob_size)
-  end
-
-  @doc "A quantidade de arquivos que uma tela pode enviar em paralelo."
-  @spec max_concurrent_uploads() :: pos_integer()
-  def max_concurrent_uploads do
-    :taina
-    |> Application.get_env(:upload, [])
-    |> Keyword.get(:max_concurrent_uploads, @default_max_concurrent_uploads)
-  end
+  def describe({:missing_file, path}), do: "config file #{path} does not exist"
+  def describe({:invalid, path, reason}), do: "config file #{path} is invalid: #{describe(reason)}"
+  def describe({:unknown_key, key, line}), do: "unknown key #{inspect(key)} on line #{line}"
+  def describe({:duplicate_key, key, line}), do: "duplicate key #{inspect(key)} on line #{line}"
+  def describe({reason, line}) when is_integer(line), do: "#{inspect(reason)} on line #{line}"
+  def describe({:invalid_value, key}), do: "invalid value for #{key}"
+  def describe({:invalid_value, key, line}), do: "invalid value for #{key} on line #{line}"
+  def describe(reason), do: inspect(reason)
 
   def effective(path \\ path()) do
+    # The operator selects the configuration file path.
+    # credo:disable-for-next-line OeditusCredo.Check.Security.PathTraversal
     with {:ok, text} <- File.read(path),
          {:ok, entries} <- parse(text),
          {:ok, settings} <- resolve(entries) do
@@ -109,6 +98,22 @@ defmodule Taina.Config do
       {:ok, settings} -> settings
       {:error, reason} -> raise ArgumentError, describe(reason)
     end
+  end
+
+  @doc "O limite configurado por arquivo, em bytes."
+  @spec max_blob_size() :: pos_integer()
+  def max_blob_size do
+    :taina
+    |> Application.get_env(:upload, [])
+    |> Keyword.get(:max_blob_size, @default_max_blob_size)
+  end
+
+  @doc "A quantidade de arquivos que uma tela pode enviar em paralelo."
+  @spec max_concurrent_uploads() :: pos_integer()
+  def max_concurrent_uploads do
+    :taina
+    |> Application.get_env(:upload, [])
+    |> Keyword.get(:max_concurrent_uploads, @default_max_concurrent_uploads)
   end
 
   def parse(text) when is_binary(text) do
@@ -129,11 +134,123 @@ defmodule Taina.Config do
     end
   end
 
+  def path do
+    path("TAINA_CONFIG")
+  end
+
+  def template, do: @template
+
   defp add_entry(key, value, line, entries) do
     if Map.has_key?(Map.new(entries, fn {key, value, _line} -> {key, value} end), key) do
       {:halt, {:error, {:duplicate_key, key, line}}}
     else
       {:cont, {:ok, [{key, value, line} | entries]}}
+    end
+  end
+
+  defp application_config(settings) do
+    secret = secret(settings.secret_key_base_file || Path.join(settings.data_dir, "secret_key_base"))
+
+    [
+      {Taina.Repo, [database: Path.join(settings.data_dir, "taina.db"), default_transaction_mode: :immediate]},
+      # Runtime endpoint wiring is the intended boundary of this config loader.
+      # credo:disable-for-next-line OptimumCredo.Check.Warning.WebNamespaceInCore
+      {TainaWeb.Endpoint,
+       [
+         url: [host: settings.hostname, port: settings.url_port, scheme: Atom.to_string(settings.url_scheme)],
+         http: [ip: settings.bind_ip, port: settings.port],
+         secret_key_base: secret,
+         check_origin: [public_origin(settings)]
+       ]},
+      storage_root: settings.storage_dir,
+      upload: [
+        max_blob_size: settings.max_blob_size,
+        max_concurrent_uploads: settings.max_concurrent_uploads
+      ],
+      backup: [enabled: settings.backup_enabled, dir: settings.backup_dir],
+      update_check: [enabled: settings.update_check],
+      data_dir: settings.data_dir,
+      config: settings
+    ]
+  end
+
+  defp boolean(values, key, default) do
+    case value(values, key, to_string(default)) do
+      value when value in ["true", "1"] -> {:ok, true}
+      value when value in ["false", "0"] -> {:ok, false}
+      _ -> {:error, invalid_value(values, key)}
+    end
+  end
+
+  defp build_line("", _value), do: {:error, :invalid_line}
+  defp build_line(_key, ""), do: {:error, :missing_value}
+  defp build_line(key, value), do: {:ok, key, value}
+
+  defp enum(values, key, allowed) do
+    current = value(values, key)
+    if current in allowed, do: {:ok, current}, else: {:error, invalid_value(values, key)}
+  end
+
+  defp fetch(values, key, default), do: value(values, key, default)
+
+  defp integer(values, key, min, max) do
+    case Integer.parse(value(values, key, "")) do
+      {value, ""} when value >= min and value <= max -> {:ok, value}
+      _ -> {:error, invalid_value(values, key)}
+    end
+  end
+
+  defp invalid_value(values, key) do
+    case Map.get(values, key) do
+      {_value, line} when is_integer(line) -> {:invalid_value, key, line}
+      _ -> {:invalid_value, key}
+    end
+  end
+
+  defp ip(values, key, default) do
+    value = value(values, key, default)
+
+    case :inet.parse_address(String.to_charlist(value)) do
+      {:ok, address} -> {:ok, address}
+      _ -> {:error, invalid_value(values, key)}
+    end
+  end
+
+  defp parse_line(line) do
+    [before | _] = String.split(line, "#", parts: 2)
+
+    case String.split(before, "=", parts: 2) do
+      [key, value] ->
+        build_line(String.trim(key), String.trim(value))
+
+      [value] ->
+        if String.trim(value) == "", do: :skip, else: {:error, :invalid_line}
+
+      _ ->
+        {:error, :missing_value}
+    end
+  end
+
+  defp path(name) do
+    case System.get_env(name) do
+      nil -> "taina.conf"
+      "" -> "taina.conf"
+      value -> value
+    end
+  end
+
+  defp public_origin(settings) do
+    scheme = Atom.to_string(settings.url_scheme)
+    default_port = if scheme == "https", do: 443, else: 80
+    port = if settings.url_port == default_port, do: "", else: ":#{settings.url_port}"
+
+    "#{scheme}://#{settings.hostname}#{port}"
+  end
+
+  defp required(values, key) do
+    case value(values, key) do
+      current when current in [nil, ""] -> {:error, invalid_value(values, key)}
+      current -> {:ok, current}
     end
   end
 
@@ -148,7 +265,7 @@ defmodule Taina.Config do
 
     values = Map.merge(defaults, file)
 
-    with {:ok, url_scheme} <- enum(values, "url_scheme", ~w(http https)),
+    with {:ok, url_scheme} <- enum(values, "url_scheme", ~W(http https)),
          {:ok, hostname} <- required(values, "hostname"),
          {:ok, url_port} <- integer(values, "url_port", 1, 65_535),
          {:ok, bind_ip} <- ip(values, "bind_ip", "0.0.0.0"),
@@ -179,43 +296,9 @@ defmodule Taina.Config do
     end
   end
 
-  defp required(values, key) do
-    case value(values, key) do
-      current when current in [nil, ""] -> {:error, invalid_value(values, key)}
-      current -> {:ok, current}
-    end
-  end
-
-  defp enum(values, key, allowed) do
-    current = value(values, key)
-    if current in allowed, do: {:ok, current}, else: {:error, invalid_value(values, key)}
-  end
-
-  defp integer(values, key, min, max) do
-    case Integer.parse(value(values, key, "")) do
-      {value, ""} when value >= min and value <= max -> {:ok, value}
-      _ -> {:error, invalid_value(values, key)}
-    end
-  end
-
-  defp boolean(values, key, default) do
-    case value(values, key, to_string(default)) do
-      value when value in ["true", "1"] -> {:ok, true}
-      value when value in ["false", "0"] -> {:ok, false}
-      _ -> {:error, invalid_value(values, key)}
-    end
-  end
-
-  defp ip(values, key, default) do
-    value = value(values, key, default)
-
-    case :inet.parse_address(String.to_charlist(value)) do
-      {:ok, address} -> {:ok, address}
-      _ -> {:error, invalid_value(values, key)}
-    end
-  end
-
-  defp fetch(values, key, default), do: value(values, key, default)
+  # The secret path comes from operator configuration or the configured data directory.
+  # credo:disable-for-next-line OeditusCredo.Check.Security.PathTraversal
+  defp secret(path), do: if(File.regular?(path), do: String.trim(File.read!(path)))
 
   defp value(values, key, default \\ nil) do
     case Map.get(values, key) do
@@ -223,81 +306,4 @@ defmodule Taina.Config do
       nil -> default
     end
   end
-
-  defp invalid_value(values, key) do
-    case Map.get(values, key) do
-      {_value, line} when is_integer(line) -> {:invalid_value, key, line}
-      _ -> {:invalid_value, key}
-    end
-  end
-
-  defp application_config(settings) do
-    secret = secret(settings.secret_key_base_file || Path.join(settings.data_dir, "secret_key_base"))
-
-    [
-      {Taina.Repo, [database: Path.join(settings.data_dir, "taina.db"), default_transaction_mode: :immediate]},
-      {TainaWeb.Endpoint,
-       [
-         url: [host: settings.hostname, port: settings.url_port, scheme: Atom.to_string(settings.url_scheme)],
-         http: [ip: settings.bind_ip, port: settings.port],
-         secret_key_base: secret,
-         check_origin: [public_origin(settings)]
-       ]},
-      storage_root: settings.storage_dir,
-      upload: [
-        max_blob_size: settings.max_blob_size,
-        max_concurrent_uploads: settings.max_concurrent_uploads
-      ],
-      backup: [enabled: settings.backup_enabled, dir: settings.backup_dir],
-      update_check: [enabled: settings.update_check],
-      data_dir: settings.data_dir,
-      config: settings
-    ]
-  end
-
-  defp public_origin(settings) do
-    scheme = Atom.to_string(settings.url_scheme)
-    default_port = if scheme == "https", do: 443, else: 80
-    port = if settings.url_port == default_port, do: "", else: ":#{settings.url_port}"
-
-    "#{scheme}://#{settings.hostname}#{port}"
-  end
-
-  defp secret(path), do: if(File.regular?(path), do: String.trim(File.read!(path)))
-
-  defp path(name) do
-    case System.get_env(name) do
-      nil -> "taina.conf"
-      "" -> "taina.conf"
-      value -> value
-    end
-  end
-
-  defp parse_line(line) do
-    [before | _] = String.split(line, "#", parts: 2)
-
-    case String.split(before, "=", parts: 2) do
-      [key, value] ->
-        build_line(String.trim(key), String.trim(value))
-
-      [value] ->
-        if String.trim(value) == "", do: :skip, else: {:error, :invalid_line}
-
-      _ ->
-        {:error, :missing_value}
-    end
-  end
-
-  defp build_line("", _value), do: {:error, :invalid_line}
-  defp build_line(_key, ""), do: {:error, :missing_value}
-  defp build_line(key, value), do: {:ok, key, value}
-
-  def describe({:missing_file, path}), do: "config file #{path} does not exist"
-  def describe({:invalid, path, reason}), do: "config file #{path} is invalid: #{describe(reason)}"
-  def describe({:unknown_key, key, line}), do: "unknown key #{inspect(key)} on line #{line}"
-  def describe({:duplicate_key, key, line}), do: "duplicate key #{inspect(key)} on line #{line}"
-  def describe({reason, line}) when is_integer(line), do: "#{inspect(reason)} on line #{line}"
-  def describe({:invalid_value, key}), do: "invalid value for #{key}"
-  def describe({:invalid_value, key, line}), do: "invalid value for #{key} on line #{line}"
-  def describe(reason), do: inspect(reason)
 end

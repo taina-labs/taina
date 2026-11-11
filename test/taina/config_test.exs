@@ -1,4 +1,5 @@
 defmodule Taina.ConfigTest do
+  # The tests read and write process-wide environment variables and application config.
   use ExUnit.Case, async: false
 
   alias Taina.Config
@@ -58,13 +59,18 @@ defmodule Taina.ConfigTest do
     on_exit(fn -> System.delete_env("TAINA_CONFIG_TEST") end)
 
     config = Config.load([], {:system, "TAINA_CONFIG_TEST"})
+    taina = Keyword.fetch!(config, :taina)
+    settings = Keyword.fetch!(taina, :config)
+    upload = Keyword.fetch!(taina, :upload)
+    repo = Keyword.fetch!(taina, Taina.Repo)
+    endpoint = Keyword.fetch!(taina, TainaWeb.Endpoint)
 
-    assert config[:taina][:config].port == 4000
-    assert config[:taina][:config].max_blob_size == 2 * 1024 * 1024 * 1024
-    assert config[:taina][:upload][:max_concurrent_uploads] == 10
-    assert config[:taina][Taina.Repo][:database] == "/data/taina.db"
-    assert config[:taina][:storage_root] == "/storage"
-    assert config[:taina][TainaWeb.Endpoint][:check_origin] == ["https://example.org"]
+    assert settings.port == 4000
+    assert settings.max_blob_size == 2 * 1024 * 1024 * 1024
+    assert Keyword.fetch!(upload, :max_concurrent_uploads) == 10
+    assert Keyword.fetch!(repo, :database) == "/data/taina.db"
+    assert Keyword.fetch!(taina, :storage_root) == "/storage"
+    assert Keyword.fetch!(endpoint, :check_origin) == ["https://example.org"]
   end
 
   test "endpoint origin includes a non-default public port" do
@@ -80,7 +86,12 @@ defmodule Taina.ConfigTest do
 
     config = Config.load([], {:system, "TAINA_CONFIG_TEST"})
 
-    assert config[:taina][TainaWeb.Endpoint][:check_origin] == ["https://example.org:8443"]
+    endpoint =
+      config
+      |> Keyword.fetch!(:taina)
+      |> Keyword.fetch!(TainaWeb.Endpoint)
+
+    assert Keyword.fetch!(endpoint, :check_origin) == ["https://example.org:8443"]
   end
 
   test "template contains no secret value" do
@@ -90,7 +101,10 @@ defmodule Taina.ConfigTest do
 
   defp write_config(text) do
     path = Path.join(System.tmp_dir!(), "taina-config-#{System.unique_integer([:positive])}.conf")
+    # This path is generated under the OS temp directory from a fixed prefix and unique integer.
+    # credo:disable-for-next-line OeditusCredo.Check.Security.PathTraversal
     File.write!(path, text)
+    # credo:disable-for-next-line OeditusCredo.Check.Security.PathTraversal
     on_exit(fn -> File.rm(path) end)
     path
   end

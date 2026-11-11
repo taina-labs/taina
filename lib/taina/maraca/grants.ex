@@ -17,6 +17,11 @@ defmodule Taina.Maraca.Grants do
   alias Ypy.Scope
 
   @default_limit 50
+  @type concessao :: Concessao.t()
+  @type datetime :: DateTime.t()
+  @type opts :: keyword()
+  @type scope :: Scope.t()
+  @type text :: String.t()
 
   @doc """
   As concessoes que o morador concedeu, da mais recente para a mais antiga,
@@ -24,47 +29,45 @@ defmodule Taina.Maraca.Grants do
   parametros): a pagina de tras um `next_cursor` opaco, e o `:after_cursor`
   devolve o lote seguinte.
   """
-  @spec concedidas(Scope.t(), keyword()) ::
-          {:ok, %{items: [Concessao.t()], next_cursor: String.t() | nil}}
+  @spec concedidas(scope(), opts()) ::
+          {:ok, %{items: [concessao()], next_cursor: text() | nil}}
   def concedidas(%Scope{} = scope, opts \\ []) do
     page(scope, :owner, opts)
   end
 
+  @doc "A concessao pelo public_id, dentro da Tekoa."
+  @spec get(scope(), text()) :: {:ok, concessao()} | {:error, :not_found}
+  def get(%Scope{} = scope, public_id) when is_binary(public_id) do
+    # O id publico e um tipo proprio no banco: um lixo de cliente nem chega a
+    # virar query (o cast do Ecto levantaria).
+    if PublicId.valid?(public_id), do: fetch(scope, public_id), else: {:error, :not_found}
+  end
+
   @doc "As concessoes que o morador recebeu, na mesma pagina do `concedidas/2`."
-  @spec recebidas(Scope.t(), keyword()) ::
-          {:ok, %{items: [Concessao.t()], next_cursor: String.t() | nil}}
+  @spec recebidas(scope(), opts()) ::
+          {:ok, %{items: [concessao()], next_cursor: text() | nil}}
   def recebidas(%Scope{} = scope, opts \\ []) do
     page(scope, :reader, opts)
   end
 
-  defp page(%Scope{} = scope, role, opts) do
-    Repo.with_tekoa(scope.tekoa.public_id, fn ->
-      limit = Keyword.get(opts, :limit, @default_limit)
-
-      rows =
-        scope
-        |> concessoes_query(role)
-        |> apply_cursor(decode_cursor(Keyword.get(opts, :after_cursor)))
-        |> limit(^(limit + 1))
-        |> Repo.all()
-        |> Repo.preload([:leitor, :dono])
-
-      if length(rows) > limit do
-        page = Enum.take(rows, limit)
-        {:ok, %{items: page, next_cursor: encode_cursor(List.last(page))}}
-      else
-        {:ok, %{items: rows, next_cursor: nil}}
-      end
-    end)
+  # A mesma ordem do kernel (`Ypy.Maraca.concessoes_concedidas`: mais recente
+  # primeiro), com o id desempatando concessoes do mesmo segundo -- a ordem
+  # tem de ser TOTAL para o keyset nao repetir nem pular. O lado do leitor
+  # espelha a consulta, com o papel no lugar.
+  defp concessoes_query(%Scope{} = scope, :owner) do
+    from(c in Concessao,
+      where: c.tekoa_id == ^scope.tekoa.id,
+      where: c.dono_id == ^scope.ava.id,
+      order_by: [desc: c.concedida_em, desc: c.id]
+    )
   end
 
-  # O cursor e opaco: `concedida_em` em epoch + o id do par. A data nao e
-  # unica (duas concessoes no mesmo segundo), entao o id desempata -- o mesmo
-  # par (data, id) da linha do tempo do Jaci.
-  defp apply_cursor(query, nil), do: query
-
-  defp apply_cursor(query, {%DateTime{} = at, id}) do
-    where(query, [c], {c.concedida_em, c.id} < {^at, ^id})
+  defp concessoes_query(%Scope{} = scope, :reader) do
+    from(c in Concessao,
+      where: c.tekoa_id == ^scope.tekoa.id,
+      where: c.leitor_id == ^scope.ava.id,
+      order_by: [desc: c.concedida_em, desc: c.id]
+    )
   end
 
   defp decode_cursor(nil), do: nil
@@ -88,14 +91,6 @@ defmodule Taina.Maraca.Grants do
 
   defp encode_cursor(_sem_data), do: nil
 
-  @doc "A concessao pelo public_id, dentro da Tekoa."
-  @spec get(Scope.t(), String.t()) :: {:ok, Concessao.t()} | {:error, :not_found}
-  def get(%Scope{} = scope, public_id) when is_binary(public_id) do
-    # O id publico e um tipo proprio no banco: um lixo de cliente nem chega a
-    # virar query (o cast do Ecto levantaria).
-    if PublicId.valid?(public_id), do: fetch(scope, public_id), else: {:error, :not_found}
-  end
-
   defp fetch(%Scope{} = scope, public_id) do
     Repo.with_tekoa(scope.tekoa.public_id, fn ->
       case Repo.one(from(c in Concessao, where: c.tekoa_id == ^scope.tekoa.id and c.public_id == ^public_id)) do
@@ -105,12 +100,42 @@ defmodule Taina.Maraca.Grants do
     end)
   end
 
+  # O cursor e opaco: `concedida_em` em epoch + o id do par. A data nao e
+  # unica (duas concessoes no mesmo segundo), entao o id desempata -- o mesmo
+  # par (data, id) da linha do tempo do Jaci.
+  defp maybe_apply_cursor(query, nil), do: query
+
+  defp maybe_apply_cursor(query, {%DateTime{} = at, id}) do
+    where(query, [c], {c.concedida_em, c.id} < {^at, ^id})
+  end
+
+  defp page(%Scope{} = scope, role, opts) do
+    Repo.with_tekoa(scope.tekoa.public_id, fn ->
+      limit = Keyword.get(opts, :limit, @default_limit)
+
+      rows =
+        scope
+        |> concessoes_query(role)
+        |> maybe_apply_cursor(decode_cursor(Keyword.get(opts, :after_cursor)))
+        |> limit(^(limit + 1))
+        |> preload([:leitor, :dono])
+        |> Repo.all()
+
+      if length(rows) > limit do
+        page = Enum.take(rows, limit)
+        {:ok, %{items: page, next_cursor: encode_cursor(List.last(page))}}
+      else
+        {:ok, %{items: rows, next_cursor: nil}}
+      end
+    end)
+  end
+
   @doc """
   A contagem e o maior `updated_at` do conjunto de um papel, para o ETag da
   colecao (`TainaWeb.API.Etag.token/2`).
   """
-  @spec stats(Scope.t(), :owner | :reader) ::
-          {:ok, %{count: non_neg_integer(), max_updated_at: DateTime.t() | nil}}
+  @spec stats(scope(), :owner | :reader) ::
+          {:ok, %{count: non_neg_integer(), max_updated_at: datetime() | nil}}
   def stats(%Scope{} = scope, role) do
     Repo.with_tekoa(scope.tekoa.public_id, fn ->
       %{count: count, last: last} =
@@ -122,25 +147,5 @@ defmodule Taina.Maraca.Grants do
 
       {:ok, %{count: count, max_updated_at: last}}
     end)
-  end
-
-  # A mesma ordem do kernel (`Ypy.Maraca.concessoes_concedidas`: mais recente
-  # primeiro), com o id desempatando concessoes do mesmo segundo -- a ordem
-  # tem de ser TOTAL para o keyset nao repetir nem pular. O lado do leitor
-  # espelha a consulta, com o papel no lugar.
-  defp concessoes_query(%Scope{} = scope, :owner) do
-    from(c in Concessao,
-      where: c.tekoa_id == ^scope.tekoa.id,
-      where: c.dono_id == ^scope.ava.id,
-      order_by: [desc: c.concedida_em, desc: c.id]
-    )
-  end
-
-  defp concessoes_query(%Scope{} = scope, :reader) do
-    from(c in Concessao,
-      where: c.tekoa_id == ^scope.tekoa.id,
-      where: c.leitor_id == ^scope.ava.id,
-      order_by: [desc: c.concedida_em, desc: c.id]
-    )
   end
 end

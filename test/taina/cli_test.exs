@@ -1,10 +1,9 @@
 defmodule Taina.CLITest do
+  # CLI tests change application-wide configuration, which is shared by all tests in the VM.
   use Taina.DataCase, async: false
 
   alias Taina.CLI
 
-  # Módulo exclusive (async: false) porque mexe em Application env, que é
-  # global no VM.
   setup do
     original = Application.fetch_env!(:taina, :backup)
     on_exit(fn -> Application.put_env(:taina, :backup, original) end)
@@ -67,8 +66,8 @@ defmodule Taina.CLITest do
     end
 
     test "com --out: imprime o caminho do arquivo criado e devolve 0" do
-      dir = tmp_dir()
-      secret = Path.join(tmp_dir(), "secret_key_base")
+      dir = temporary_directory()
+      secret = Path.join(temporary_directory(), "secret_key_base")
       File.write!(secret, "test-secret")
       previous = Application.get_env(:taina, :config)
       Application.put_env(:taina, :config, %{secret_key_base_file: secret})
@@ -89,7 +88,7 @@ defmodule Taina.CLITest do
 
   describe "run/1 restore" do
     test "arquivo inexistente: falha de domínio no stderr, código 1" do
-      archive = Path.join(tmp_dir(), "nao-existe.tar.gz")
+      archive = Path.join(temporary_directory(), "nao-existe.tar.gz")
 
       output = capture_stderr(fn -> assert 1 = CLI.run(["restore", archive]) end)
       assert output =~ "restore falhou"
@@ -132,8 +131,8 @@ defmodule Taina.CLITest do
       config = Application.fetch_env!(:taina, Taina.Repo)
       original = {config, Application.get_env(:taina, :storage_root)}
 
-      Application.put_env(:taina, Taina.Repo, Keyword.put(config, :database, tmp_file()))
-      Application.put_env(:taina, :storage_root, Path.join(tmp_dir(), "nunca-criado"))
+      Application.put_env(:taina, Taina.Repo, Keyword.put(config, :database, temporary_file()))
+      Application.put_env(:taina, :storage_root, Path.join(temporary_directory(), "nunca-criado"))
 
       output = ExUnit.CaptureIO.capture_io(fn -> assert 3 = CLI.run(["doctor"]) end)
       assert output =~ "não acessível"
@@ -149,7 +148,7 @@ defmodule Taina.CLITest do
 
   defp capture_stderr(fun), do: ExUnit.CaptureIO.capture_io(:stderr, fun)
 
-  defp tmp_dir do
+  defp temporary_directory do
     dir =
       Path.join(
         System.tmp_dir!(),
@@ -161,5 +160,5 @@ defmodule Taina.CLITest do
     dir
   end
 
-  defp tmp_file, do: Path.join(tmp_dir(), "nunca-criado.db")
+  defp temporary_file, do: Path.join(temporary_directory(), "nunca-criado.db")
 end

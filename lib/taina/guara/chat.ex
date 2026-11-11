@@ -39,16 +39,14 @@ defmodule Taina.Guara.Chat do
   alias Ypy.PublicId
 
   schema "chats" do
-    field :public_id, PublicId, autogenerate: true
-    field :name, :string
-    field :icon, :string
-
-    belongs_to :tekoa, Tekoa
-    belongs_to :created_by, Ava
-
-    has_many :messages, Message
-    has_many :participants, Participant
     many_to_many :avas, Ava, join_through: Participant
+    belongs_to :created_by, Ava
+    field :icon, :string
+    has_many :messages, Message
+    field :name, :string
+    has_many :participants, Participant
+    field :public_id, PublicId, autogenerate: true
+    belongs_to :tekoa, Tekoa
 
     timestamps()
   end
@@ -81,7 +79,7 @@ defmodule Taina.Guara.Chat do
   """
   def changeset(chat, attrs) do
     chat
-    |> cast(attrs, [:name, :icon, :tekoa_id, :created_by_id])
+    |> cast(attrs, [:created_by_id, :icon, :name, :tekoa_id])
     |> validate_required([:tekoa_id, :created_by_id])
     |> validate_length(:name, max: 255)
     |> foreign_key_constraint(:tekoa_id)

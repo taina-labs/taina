@@ -37,6 +37,8 @@ defmodule Taina.Ybira.RenditionStatusTest do
     {:ok, photo} = Ybira.get_file(scope, photo.rkey)
 
     {:ok, path} = Ybira.blob_path(photo)
+    # blob_path/1 returns the configured test-storage path for this fixture photo.
+    # credo:disable-for-next-line OeditusCredo.Check.Security.PathTraversal
     File.write!(path, "não é imagem nenhuma")
 
     assert {:error, _reason} = Rendition.render_file(photo.id, scope.tekoa.public_id)

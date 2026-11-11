@@ -29,19 +29,18 @@ defmodule Taina.Guara.Message do
   alias Ypy.Ybira.File
 
   schema "messages" do
+    belongs_to :chat, Chat
     field :content, :string
-    field :public_id, PublicId, autogenerate: true
+    belongs_to :file, File
 
     field :message_type, Ecto.Enum,
-      values: ~w(text image video audio file)a,
+      values: ~W(text image video audio file)a,
       default: :text
 
     field :metadata, :map, default: %{}
-
-    belongs_to :chat, Chat
-    belongs_to :sender, Ava
     belongs_to :parent, __MODULE__
-    belongs_to :file, File
+    field :public_id, PublicId, autogenerate: true
+    belongs_to :sender, Ava
 
     timestamps()
   end
@@ -76,16 +75,16 @@ defmodule Taina.Guara.Message do
   def changeset(message, attrs) do
     message
     |> cast(attrs, [
+      :chat_id,
       :content,
+      :file_id,
       :message_type,
       :metadata,
-      :chat_id,
-      :sender_id,
       :parent_id,
-      :file_id
+      :sender_id
     ])
     |> validate_required([:chat_id, :sender_id])
-    |> validate_inclusion(:message_type, ~w(text image video audio file)a)
+    |> validate_inclusion(:message_type, ~W(text image video audio file)a)
     |> foreign_key_constraint(:chat_id)
     |> foreign_key_constraint(:sender_id)
     |> foreign_key_constraint(:parent_id)

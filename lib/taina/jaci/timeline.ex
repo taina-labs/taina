@@ -15,8 +15,11 @@ defmodule Taina.Jaci.Timeline do
 
   alias Ypy.Ybira.File
 
+  @type epoch_seconds :: integer()
+  @type file :: File.t()
+
   @typedoc "Um dia da linha do tempo: a data e as fotos daquele dia, mais novas primeiro."
-  @type group :: %{date: Date.t(), photos: [File.t()]}
+  @type group :: %{date: Date.t(), photos: [file()]}
 
   @doc """
   Agrupa linhas **já ordenadas por data efetiva decrescente** (`%{file:,
@@ -26,7 +29,7 @@ defmodule Taina.Jaci.Timeline do
   entre o fim de uma página e o início da próxima; a UI funde grupos de
   mesma data adjacentes.
   """
-  @spec group_by_date([%{file: File.t(), ts: integer()}]) :: [group()]
+  @spec group_by_date([%{file: file(), ts: epoch_seconds()}]) :: [group()]
   def group_by_date(rows) do
     rows
     |> Enum.chunk_by(&date_of/1)
