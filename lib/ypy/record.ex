@@ -22,8 +22,13 @@ defmodule Ypy.Record do
   alias Ypy.Cid
   alias Ypy.Lexicon.Validate
 
-  @enforce_keys [:type, :rkey, :actor, :created_at, :payload]
+  @enforce_keys [:actor, :created_at, :payload, :rkey, :type]
   defstruct [:type, :rkey, :actor, :created_at, :payload]
+
+  @type binary_data :: binary()
+  @type cid :: Cid.t()
+  @type opts :: keyword()
+  @type params :: map()
 
   @typedoc "O envelope de record."
   @type t :: %__MODULE__{
@@ -31,7 +36,7 @@ defmodule Ypy.Record do
           rkey: String.t(),
           actor: String.t(),
           created_at: integer(),
-          payload: map()
+          payload: params()
         }
 
   # A forma do envelope no fio, checada com o mesmo validador dos lexicons.
@@ -55,7 +60,7 @@ defmodule Ypy.Record do
   forma do envelope e o payload contra o lexicon. Chave de fora ou faltante
   levanta.
   """
-  @spec build(keyword()) :: t()
+  @spec build(opts()) :: t()
   def build(attrs) when is_list(attrs) do
     struct!(__MODULE__, Map.new(attrs))
   end
@@ -69,10 +74,10 @@ defmodule Ypy.Record do
   envelope inteiro. O schema e o schema resolvido da colecao; nil responde
   :unknown_collection, porque colecao desconhecida nao e erro de forma.
   """
-  @spec check(t(), map() | nil) :: :ok | {:error, :unknown_collection} | {:error, [term()]}
+  @spec check(t(), params() | nil) :: :ok | {:error, :unknown_collection} | {:error, [term()]}
   def check(_record, nil), do: {:error, :unknown_collection}
 
-  def check(%__MODULE__{} = record, schema) when is_map(schema) do
+  def check(%__MODULE__{} = record, %{} = schema) do
     envelope_errors =
       case Validate.validate(@envelope_schema, to_wire(record)) do
         :ok -> []
@@ -94,15 +99,8 @@ defmodule Ypy.Record do
     end
   end
 
-  @doc "Os bytes DAG-CBOR canonicos do envelope e o CIDv1 deles."
-  @spec encode(t()) :: {binary(), Cid.t()}
-  def encode(%__MODULE__{} = record) do
-    bytes = Cbor.encode(to_wire(record))
-    {bytes, Cid.from_data(bytes)}
-  end
-
   @doc "Decodifica bytes de volta ao envelope: {:ok, record} ou {:error, :malformed}."
-  @spec decode(binary()) :: {:ok, t()} | {:error, :malformed}
+  @spec decode(binary_data()) :: {:ok, t()} | {:error, :malformed}
   def decode(bytes) when is_binary(bytes) do
     case safe_decode(bytes) do
       {:ok, wire} -> from_wire(wire)
@@ -110,12 +108,19 @@ defmodule Ypy.Record do
     end
   end
 
+  @doc "Os bytes DAG-CBOR canonicos do envelope e o CIDv1 deles."
+  @spec encode(t()) :: {binary_data(), cid()}
+  def encode(%__MODULE__{} = record) do
+    bytes = Cbor.encode(to_wire(record))
+    {bytes, Cid.from_data(bytes)}
+  end
+
   @doc """
   O envelope na forma do fio: os campos de controle no nivel de cima e o
   payload aninhado em `"payload"`, a mesma forma dos bytes de `encode/1` e
   da checagem de `check/2`.
   """
-  @spec to_wire(t()) :: map()
+  @spec to_wire(t()) :: params()
   def to_wire(%__MODULE__{} = record) do
     %{
       "$type" => record.type,
@@ -126,12 +131,10 @@ defmodule Ypy.Record do
     }
   end
 
-  defp safe_decode(bytes) do
-    {:ok, Cbor.decode!(bytes)}
-  rescue
-    ArgumentError -> :error
-    MatchError -> :error
-    FunctionClauseError -> :error
+  defp envelope_ok?(wire, type, rkey, actor, created_at, payload) do
+    map_size(wire) == 5 and is_binary(type) and is_binary(rkey) and is_binary(actor) and
+      is_integer(created_at) and
+      is_map(payload)
   end
 
   defp from_wire(
@@ -146,9 +149,11 @@ defmodule Ypy.Record do
 
   defp from_wire(_), do: {:error, :malformed}
 
-  defp envelope_ok?(wire, type, rkey, actor, created_at, payload) do
-    map_size(wire) == 5 and is_binary(type) and is_binary(rkey) and is_binary(actor) and
-      is_integer(created_at) and
-      is_map(payload)
+  defp safe_decode(bytes) do
+    {:ok, Cbor.decode!(bytes)}
+  rescue
+    ArgumentError -> :error
+    MatchError -> :error
+    FunctionClauseError -> :error
   end
 end

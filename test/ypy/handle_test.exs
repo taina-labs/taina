@@ -4,7 +4,9 @@ defmodule Ypy.HandleTest do
 
   alias Ypy.Handle
 
-  @charset ~c"abcdefghijklmnopqrstuvwxyz0123456789._-"
+  doctest Handle
+
+  @charset ~C"abcdefghijklmnopqrstuvwxyz0123456789._-"
 
   test "parses the golden handle into its parts" do
     assert Handle.parse("maria@tekoa.example.org") ==
@@ -100,15 +102,15 @@ defmodule Ypy.HandleTest do
 
   defp label do
     gen all(
-          first <- StreamData.member_of(~c"abcdefghijklmnopqrstuvwxyz0123456789"),
+          first <- StreamData.member_of(~C"abcdefghijklmnopqrstuvwxyz0123456789"),
           middle <-
             StreamData.list_of(
-              StreamData.member_of(~c"abcdefghijklmnopqrstuvwxyz0123456789-"),
+              StreamData.member_of(~C"abcdefghijklmnopqrstuvwxyz0123456789-"),
               max_length: 8
             ),
-          last <- StreamData.member_of(~c"abcdefghijklmnopqrstuvwxyz0123456789")
+          last <- StreamData.member_of(~C"abcdefghijklmnopqrstuvwxyz0123456789")
         ) do
-      List.to_string([first | middle] ++ [last])
+      List.to_string([first | Enum.reverse([last | Enum.reverse(middle)])])
     end
   end
 end

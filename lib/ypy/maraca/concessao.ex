@@ -31,15 +31,15 @@ defmodule Ypy.Maraca.Concessao do
         }
 
   schema "maraca_concessoes" do
-    field(:tipo, :string)
-    field(:recurso, :string)
     field(:concedida_em, :utc_datetime)
-    field(:revogada_em, :utc_datetime)
+    belongs_to(:dono, Ava)
+    belongs_to(:leitor, Ava)
     field(:public_id, PublicId, autogenerate: true)
+    field(:recurso, :string)
+    field(:revogada_em, :utc_datetime)
 
     belongs_to(:tekoa, Tekoa)
-    belongs_to(:leitor, Ava)
-    belongs_to(:dono, Ava)
+    field(:tipo, :string)
 
     timestamps(type: :utc_datetime)
   end
@@ -47,8 +47,8 @@ defmodule Ypy.Maraca.Concessao do
   @doc "Cria uma concessao ativa. Quem pode conceder e guarda o contexto."
   def changeset(concessao, attrs) do
     concessao
-    |> cast(attrs, [:tipo, :recurso, :concedida_em, :tekoa_id, :leitor_id, :dono_id])
-    |> validate_required([:tipo, :recurso, :concedida_em, :tekoa_id, :leitor_id, :dono_id])
+    |> cast(attrs, [:concedida_em, :dono_id, :leitor_id, :recurso, :tekoa_id, :tipo])
+    |> validate_required([:concedida_em, :dono_id, :leitor_id, :recurso, :tekoa_id, :tipo])
     |> validate_inclusion(:tipo, @tipos)
     |> unique_constraint(:recurso,
       name: :maraca_concessoes_tekoa_id_leitor_id_tipo_recurso_index,

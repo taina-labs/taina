@@ -13,10 +13,11 @@ defmodule Ypy.KeyStore.Files do
   @enforce_keys [:dir]
   defstruct [:dir]
 
-  @type t :: %__MODULE__{dir: Path.t()}
+  @type path :: Path.t()
+  @type t :: %__MODULE__{dir: path()}
 
   @doc "Um Files apontando para o diretorio de chaves."
-  @spec new(Path.t()) :: t()
+  @spec new(path()) :: t()
   def new(dir) when is_binary(dir), do: %__MODULE__{dir: dir}
 
   @impl true
@@ -50,6 +51,16 @@ defmodule Ypy.KeyStore.Files do
   def rotate(store, tekoa_id, {_pub, priv}) do
     replace(store, tekoa_id, priv)
   end
+
+  defp load(store, tekoa_id) do
+    case File.read(path(store, tekoa_id)) do
+      {:ok, priv} -> {:ok, priv}
+      {:error, :enoent} -> {:error, :not_found}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp path(%__MODULE__{} = store, tekoa_id), do: Path.join(store.dir, "tekoa-#{tekoa_id}.key")
 
   defp replace(store, tekoa_id, priv) do
     target = path(store, tekoa_id)
@@ -87,14 +98,4 @@ defmodule Ypy.KeyStore.Files do
         {:error, reason}
     end
   end
-
-  defp load(store, tekoa_id) do
-    case File.read(path(store, tekoa_id)) do
-      {:ok, priv} -> {:ok, priv}
-      {:error, :enoent} -> {:error, :not_found}
-      {:error, reason} -> {:error, reason}
-    end
-  end
-
-  defp path(%__MODULE__{} = store, tekoa_id), do: Path.join(store.dir, "tekoa-#{tekoa_id}.key")
 end

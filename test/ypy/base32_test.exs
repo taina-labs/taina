@@ -3,7 +3,7 @@ defmodule Ypy.Base32Test do
 
   alias Ypy.Base32
 
-  @alphabet ~c"abcdefghijklmnopqrstuvwxyz234567"
+  @alphabet ~C"abcdefghijklmnopqrstuvwxyz234567"
 
   test "round trips binaries" do
     for bin <- [

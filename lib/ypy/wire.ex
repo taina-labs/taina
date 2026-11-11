@@ -21,27 +21,31 @@ defmodule Ypy.Wire do
   do box, `priv/static/openapi.yaml`.
   """
 
-  @doc """
-  O envelope uniforme de paginacao: `{"items": [...], "next_cursor": ...}`.
+  @doc false
+  @type datetime :: DateTime.t()
+  @type params :: map()
+  @type text :: String.t()
 
-  Os itens chegam renderizados pelos shapes do `Ypy.Wire`; o cursor e sempre
-  string ou null (RFC_005 secao 7).
-  """
-  @spec page([map()], nil | String.t()) :: map()
-  def page(items, next_cursor), do: %{"items" => items, "next_cursor" => next_cursor}
+  @spec at(nil | datetime()) :: nil | text()
+  def at(nil), do: nil
+  def at(%DateTime{} = quando), do: DateTime.to_iso8601(quando)
 
   @doc """
   O envelope do conteudo de pasta (RFC_005 secao 7): `{"folders": [...],
   "items": [...], "next_cursor": ...}`. As pastas vem completas, so os
   arquivos paginam.
   """
-  @spec folder_page([map()], [map()], nil | String.t()) :: map()
+  @spec folder_page([params()], [params()], nil | text()) :: params()
   def folder_page(folders, items, next_cursor) do
     %{"folders" => folders, "items" => items, "next_cursor" => next_cursor}
   end
 
-  @doc false
-  @spec at(nil | DateTime.t()) :: nil | String.t()
-  def at(nil), do: nil
-  def at(%DateTime{} = quando), do: DateTime.to_iso8601(quando)
+  @doc """
+  O envelope uniforme de paginacao: `{"items": [...], "next_cursor": ...}`.
+
+  Os itens chegam renderizados pelos shapes do `Ypy.Wire`; o cursor e sempre
+  string ou null (RFC_005 secao 7).
+  """
+  @spec page([params()], nil | text()) :: params()
+  def page(items, next_cursor), do: %{"items" => items, "next_cursor" => next_cursor}
 end

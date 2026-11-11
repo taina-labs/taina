@@ -14,31 +14,31 @@ defmodule Ypy.Ops do
   @type primitive_error :: {:error, term()}
 
   @typedoc "Onde os dados da Tekoa vivem."
-  @type data_dir :: {:ok, String.t() | {:volume, String.t()}} | primitive_error
+  @type data_dir :: {:ok, String.t() | {:volume, String.t()}} | primitive_error()
 
   @typedoc "Saude do deploy."
-  @type health :: {:ok, :healthy | :degraded} | primitive_error
+  @type health :: {:ok, :healthy | :degraded} | primitive_error()
 
   @doc "O diretorio de dados do host."
   @callback data_dir() :: data_dir()
 
   @doc "Roda um verbo unico do produto (ex.: `migrate`, `backup`)."
-  @callback run_once(RunOnce.t()) :: :ok | primitive_error
+  @callback run_once(RunOnce.t()) :: :ok | primitive_error()
 
   @doc "Sobe o deploy."
-  @callback up() :: :ok | primitive_error
+  @callback up() :: :ok | primitive_error()
 
   @doc "Derruba o deploy."
-  @callback down() :: :ok | primitive_error
+  @callback down() :: :ok | primitive_error()
 
   @doc "Reinicia o deploy."
-  @callback restart() :: :ok | primitive_error
+  @callback restart() :: :ok | primitive_error()
 
   @doc "Traz a imagem de `nil` (ultima) ou da versao dada."
-  @callback pull(nil | String.t()) :: :ok | primitive_error
+  @callback pull(nil | String.t()) :: :ok | primitive_error()
 
   @doc "Mostra os logs do deploy."
-  @callback logs(keyword()) :: :ok | primitive_error
+  @callback logs(keyword()) :: :ok | primitive_error()
 
   @doc "A saude do deploy."
   @callback health() :: health()

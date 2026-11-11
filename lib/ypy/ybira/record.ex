@@ -26,10 +26,10 @@ defmodule Ypy.Ybira.Record do
         }
 
   schema "ybira_records" do
-    field(:rkey, :string)
-    field(:collection, :string)
     field(:cid, :string)
+    field(:collection, :string)
     field(:record, :map)
+    field(:rkey, :string)
 
     belongs_to(:tekoa, Tekoa)
 
@@ -38,8 +38,8 @@ defmodule Ypy.Ybira.Record do
 
   def changeset(record, attrs) do
     record
-    |> cast(attrs, [:rkey, :collection, :cid, :record, :tekoa_id])
-    |> validate_required([:rkey, :collection, :cid, :record, :tekoa_id])
+    |> cast(attrs, [:cid, :collection, :record, :rkey, :tekoa_id])
+    |> validate_required([:cid, :collection, :record, :rkey, :tekoa_id])
     |> unique_constraint(:cid, name: :ybira_records_tekoa_id_cid_index)
   end
 end

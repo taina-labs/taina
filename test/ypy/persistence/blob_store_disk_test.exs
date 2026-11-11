@@ -20,6 +20,8 @@ defmodule Ypy.BlobStore.DiskTest do
     shard2 = b |> Integer.to_string(16) |> String.pad_leading(2, "0")
 
     path = Path.join([root, shard1, shard2, Cid.to_string(cid)])
+    # This path is rooted in the test's unique temporary store and uses its CID.
+    # credo:disable-for-next-line OeditusCredo.Check.Security.PathTraversal
     assert File.read!(path) == "olá, comunidade"
   end
 
@@ -57,6 +59,8 @@ defmodule Ypy.BlobStore.DiskTest do
           for _ <- 1..20 do
             assert {:ok, ^dados} = Disk.fetch(store, cid)
             assert {:ok, path} = Disk.open(store, cid)
+            # Disk.open returns a path under this test's isolated store root.
+            # credo:disable-for-next-line OeditusCredo.Check.Security.PathTraversal
             assert {:ok, ^dados} = File.read(path)
           end
         end)

@@ -40,15 +40,72 @@ defmodule Ypy.Lexicon.Validate do
   de um produto nao pode recusar toda escrita.
   """
 
+  @type params :: map()
+  @type status :: atom()
+  @type tuple_type :: tuple()
+
   @doc "Valida um valor contra uma definicao de lexicon."
-  @spec validate(map() | nil, term()) :: :ok | {:error, [{[term()], atom() | tuple()}]}
+  @spec validate(params() | nil, term()) :: :ok | {:error, [{[term()], status() | tuple_type()}]}
   def validate(nil, _value), do: :ok
-  def validate(schema, value), do: result(errors(schema, value, []))
 
-  defp result([]), do: :ok
-  defp result(errors), do: {:error, errors}
+  def validate(schema, value) do
+    schema
+    |> errors(value, [])
+    |> Enum.map(fn {path, reason} -> {Enum.reverse(path), reason} end)
+    |> result()
+  end
 
-  defp errors(%{"type" => "object"} = schema, value, path) when is_map(value) do
+  defp accept_errors(nil, _mime, _path), do: []
+
+  defp accept_errors(accepted, mime, path) when is_binary(mime) do
+    if Enum.any?(List.wrap(accepted), &accepts?(&1, mime)),
+      do: [],
+      else: [{path, :bad_mime_type}]
+  end
+
+  defp accept_errors(_accepted, _mime, _path), do: []
+
+  defp accepts?("*/*", _mime), do: true
+  defp accepts?("*", mime), do: String.contains?(mime, "/")
+
+  defp accepts?(pattern, mime) when is_binary(pattern) and is_binary(mime) do
+    cond do
+      String.ends_with?(pattern, "/*") -> String.starts_with?(mime, String.trim_trailing(pattern, "*"))
+      String.starts_with?(pattern, "*/") -> String.ends_with?(mime, String.trim_leading(pattern, "*"))
+      true -> pattern == mime
+    end
+  end
+
+  defp accepts?(_pattern, _mime), do: false
+
+  defp blob_size_errors(nil, _size, _path), do: []
+
+  defp blob_size_errors(max, size, path) when is_integer(size) and size > max, do: [{path, :too_large}]
+
+  defp blob_size_errors(_max, _size, _path), do: []
+
+  defp bounds(schema, path, size) do
+    case schema["minLength"] do
+      nil -> []
+      min when size < min -> [{path, :too_short}]
+      _ -> []
+    end ++
+      case schema["maxLength"] do
+        nil -> []
+        max when size > max -> [{path, :too_long}]
+        _ -> []
+      end
+  end
+
+  defp const_errors(nil, _value, _path), do: []
+
+  defp const_errors(const, value, path), do: if(const === value, do: [], else: [{path, :not_const}])
+
+  defp enum_errors(nil, _value, _path), do: []
+
+  defp enum_errors(allowed, value, path), do: if(value in allowed, do: [], else: [{path, :not_in_enum}])
+
+  defp errors(%{"type" => "object"} = schema, %{} = value, path) do
     properties = Map.get(schema, "properties", %{})
     required = schema["required"] || []
     nullable = nullable(schema)
@@ -56,7 +113,7 @@ defmodule Ypy.Lexicon.Validate do
     Enum.flat_map(required, fn field ->
       if Map.has_key?(value, field) and not is_nil(value[field]),
         do: [],
-        else: [{path ++ [field], :required}]
+        else: [{[field | path], :required}]
     end) ++
       errors_in(value, properties, path, nullable, required)
   end
@@ -99,7 +156,7 @@ defmodule Ypy.Lexicon.Validate do
   defp errors(%{"type" => "boolean"}, _value, path), do: [{path, :expected_boolean}]
   defp errors(%{"type" => "unknown"}, _value, _path), do: []
 
-  defp errors(%{"type" => "union"} = schema, value, path) when is_map(value) do
+  defp errors(%{"type" => "union"} = schema, %{} = value, path) do
     allowed = Enum.reject([schema["ref"] | Map.get(schema, "refs", [])], &is_nil/1)
 
     case value["$type"] do
@@ -116,7 +173,7 @@ defmodule Ypy.Lexicon.Validate do
   defp errors(%{"type" => "bytes"} = schema, value, path) when is_binary(value),
     do: bounds(schema, path, byte_size(value))
 
-  defp errors(%{"type" => "bytes"} = schema, value, path) when is_map(value) do
+  defp errors(%{"type" => "bytes"} = schema, %{} = value, path) do
     with false <- is_struct(value),
          {:ok, b64} when is_binary(b64) <- Map.fetch(value, "$bytes"),
          {:ok, data} <- Base.decode64(b64) do
@@ -128,13 +185,11 @@ defmodule Ypy.Lexicon.Validate do
 
   defp errors(%{"type" => "bytes"}, _value, _path), do: []
 
-  defp errors(%{"type" => "blob"} = schema, value, path) when is_map(value) do
-    if is_struct(value) do
-      []
-    else
-      blob_size_errors(schema["maxSize"], value["size"], path) ++
-        accept_errors(schema["accept"], value["mimeType"], path)
-    end
+  defp errors(%{"type" => "blob"}, %_{} = _value, _path), do: []
+
+  defp errors(%{"type" => "blob"} = schema, %{} = value, path) do
+    blob_size_errors(schema["maxSize"], value["size"], path) ++
+      accept_errors(schema["accept"], value["mimeType"], path)
   end
 
   defp errors(%{"type" => "blob"}, _value, _path), do: []
@@ -143,29 +198,6 @@ defmodule Ypy.Lexicon.Validate do
 
   defp errors(_def, _value, path), do: [{path, :unrecognized_definition}]
 
-  defp union_errors(schema, allowed, type, value, path) do
-    case resolve(schema, allowed, type) do
-      {:ok, target} -> errors(target, value, path)
-      :foreign -> []
-      :unknown -> if(schema["closed"] == true, do: [{path, :unknown_type}], else: [])
-    end
-  end
-
-  defp item_errors(nil, _value, _path), do: []
-
-  defp item_errors(items, value, path) do
-    value
-    |> Enum.with_index()
-    |> Enum.flat_map(fn {element, index} -> errors(items, element, path ++ [index]) end)
-  end
-
-  defp nullable(schema) do
-    case Map.get(schema, "nullable") do
-      list when is_list(list) -> list
-      _ -> []
-    end
-  end
-
   # Um null em campo required ou nullable nao ganha checagem de tipo por
   # cima: o :required ja disse o deslize, e repeti-lo com outro motivo e
   # contar um erro duas vezes.
@@ -173,144 +205,11 @@ defmodule Ypy.Lexicon.Validate do
     Enum.flat_map(properties, fn {key, schema} ->
       case Map.fetch(value, key) do
         {:ok, nil} -> nil_value_errors(schema, key, path, nullable, required)
-        {:ok, nested} -> errors(schema, nested, path ++ [key])
+        {:ok, nested} -> errors(schema, nested, [key | path])
         :error -> []
       end
     end)
   end
-
-  defp nil_value_errors(schema, key, path, nullable, required) do
-    if key in nullable or key in required,
-      do: [],
-      else: errors(schema, nil, path ++ [key])
-  end
-
-  defp resolve(schema, allowed, type) do
-    {target, fragment} = split_ref(type)
-
-    cond do
-      type in allowed -> variant(schema, type, fragment)
-      target == "" -> :unknown
-      is_nil(fragment) -> resolve_target(schema, allowed, target)
-      target in allowed -> variant(schema, target, fragment)
-      ("#" <> fragment) in allowed -> variant(schema, "#" <> fragment, fragment)
-      true -> :unknown
-    end
-  end
-
-  defp split_ref(type) do
-    case String.split(type, "#", parts: 2) do
-      ["#" <> name] -> {"", name}
-      [nsid] -> {nsid, nil}
-      [nsid, name] -> {nsid, name}
-    end
-  end
-
-  defp resolve_target(schema, allowed, target) do
-    if target in allowed, do: variant(schema, target, nil), else: :unknown
-  end
-
-  defp variant(schema, ref, fragment) do
-    case Map.get(Map.get(schema, "variants", %{}), ref) do
-      nil -> local_def(schema, fragment)
-      target -> {:ok, target}
-    end
-  end
-
-  defp local_def(schema, fragment) do
-    case Map.get(Map.get(schema, "defs", %{}), fragment) do
-      nil -> :foreign
-      target -> {:ok, target}
-    end
-  end
-
-  defp string_length_errors(schema, value, path) do
-    case bounds(schema, path, byte_size(value)) do
-      [{_, :too_long}] = too_long -> too_long
-      size_errors -> size_errors ++ grapheme_errors(schema["maxGraphemes"], value, path)
-    end
-  end
-
-  defp length_errors(schema, value, path) when is_list(value) do
-    bounds(schema, path, length(value))
-  end
-
-  defp bounds(schema, path, size) do
-    case schema["minLength"] do
-      nil -> []
-      min when size < min -> [{path, :too_short}]
-      _ -> []
-    end ++
-      case schema["maxLength"] do
-        nil -> []
-        max when size > max -> [{path, :too_long}]
-        _ -> []
-      end
-  end
-
-  defp blob_size_errors(nil, _size, _path), do: []
-
-  defp blob_size_errors(max, size, path) when is_integer(size) and size > max, do: [{path, :too_large}]
-
-  defp blob_size_errors(_max, _size, _path), do: []
-
-  defp accept_errors(nil, _mime, _path), do: []
-
-  defp accept_errors(accepted, mime, path) when is_binary(mime) do
-    if Enum.any?(List.wrap(accepted), &accepts?(&1, mime)),
-      do: [],
-      else: [{path, :bad_mime_type}]
-  end
-
-  defp accept_errors(_accepted, _mime, _path), do: []
-
-  defp accepts?(pattern, mime) when is_binary(pattern) do
-    cond do
-      pattern == "*/*" ->
-        true
-
-      pattern == "*" ->
-        String.contains?(mime, "/")
-
-      String.ends_with?(pattern, "/*") ->
-        String.starts_with?(mime, String.trim_trailing(pattern, "*"))
-
-      String.starts_with?(pattern, "*/") ->
-        String.ends_with?(mime, String.trim_leading(pattern, "*"))
-
-      true ->
-        pattern == mime
-    end
-  end
-
-  defp accepts?(_pattern, _mime), do: false
-
-  defp grapheme_errors(nil, _value, _path), do: []
-
-  defp grapheme_errors(max, value, path) do
-    if String.length(value) > max, do: [{path, :too_many_graphemes}], else: []
-  end
-
-  defp range_errors(schema, value, path) do
-    case schema["minimum"] do
-      nil -> []
-      min when value < min -> [{path, :below_minimum}]
-      _ -> []
-    end ++
-      case schema["maximum"] do
-        nil -> []
-        max when value > max -> [{path, :above_maximum}]
-        _ -> []
-      end
-  end
-
-  defp const_errors(nil, _value, _path), do: []
-
-  defp const_errors(const, value, path), do: if(const === value, do: [], else: [{path, :not_const}])
-
-  defp enum_errors(nil, _value, _path), do: []
-
-  defp enum_errors(allowed, value, path), do: if(value in allowed, do: [], else: [{path, :not_in_enum}])
 
   defp format_errors(nil, _value, _path), do: []
 
@@ -380,7 +279,10 @@ defmodule Ypy.Lexicon.Validate do
   end
 
   defp format_errors("cid", value, path) do
-    if Ypy.Cid.safe_parse(value) == :error, do: [{path, :bad_cid}], else: []
+    case Ypy.Cid.safe_parse(value) do
+      :error -> [{path, :bad_cid}]
+      {:ok, _cid} -> []
+    end
   end
 
   defp format_errors("at-identifier", value, path) do
@@ -393,4 +295,105 @@ defmodule Ypy.Lexicon.Validate do
   end
 
   defp format_errors(format, _value, path), do: [{path, {:unsupported_format, format}}]
+
+  defp grapheme_errors(nil, _value, _path), do: []
+
+  defp grapheme_errors(max, value, path) do
+    if String.length(value) > max, do: [{path, :too_many_graphemes}], else: []
+  end
+
+  defp item_errors(nil, _value, _path), do: []
+
+  defp item_errors(items, value, path) do
+    value
+    |> Enum.with_index()
+    |> Enum.flat_map(fn {element, index} -> errors(items, element, [index | path]) end)
+  end
+
+  defp length_errors(schema, value, path) when is_list(value) do
+    bounds(schema, path, length(value))
+  end
+
+  defp local_def(schema, fragment) do
+    case Map.get(Map.get(schema, "defs", %{}), fragment) do
+      nil -> :foreign
+      target -> {:ok, target}
+    end
+  end
+
+  defp nil_value_errors(schema, key, path, nullable, required) do
+    if key in nullable or key in required,
+      do: [],
+      else: errors(schema, nil, [key | path])
+  end
+
+  defp nullable(schema) do
+    case Map.get(schema, "nullable") do
+      list when is_list(list) -> list
+      _ -> []
+    end
+  end
+
+  defp range_errors(schema, value, path) do
+    case schema["minimum"] do
+      nil -> []
+      min when value < min -> [{path, :below_minimum}]
+      _ -> []
+    end ++
+      case schema["maximum"] do
+        nil -> []
+        max when value > max -> [{path, :above_maximum}]
+        _ -> []
+      end
+  end
+
+  defp resolve(schema, allowed, type) do
+    {target, fragment} = split_ref(type)
+
+    cond do
+      type in allowed -> variant(schema, type, fragment)
+      target == "" -> :unknown
+      is_nil(fragment) -> resolve_target(schema, allowed, target)
+      target in allowed -> variant(schema, target, fragment)
+      ("#" <> fragment) in allowed -> variant(schema, "#" <> fragment, fragment)
+      true -> :unknown
+    end
+  end
+
+  defp resolve_target(schema, allowed, target) do
+    if target in allowed, do: variant(schema, target, nil), else: :unknown
+  end
+
+  defp result([]), do: :ok
+  defp result(errors), do: {:error, errors}
+
+  defp split_ref(type) do
+    case String.split(type, "#", parts: 2) do
+      ["#" <> name] -> {"", name}
+      [nsid] -> {nsid, nil}
+      [nsid, name] -> {nsid, name}
+    end
+  end
+
+  defp string_length_errors(schema, value, path) do
+    case bounds(schema, path, byte_size(value)) do
+      [{_, :too_long}] = too_long -> too_long
+      size_errors -> size_errors ++ grapheme_errors(schema["maxGraphemes"], value, path)
+    end
+  end
+
+  defp union_errors(schema, allowed, type, value, path) do
+    case resolve(schema, allowed, type) do
+      {:ok, target} -> errors(target, value, path)
+      :foreign -> []
+      :unknown -> if(schema["closed"] == true, do: [{path, :unknown_type}], else: [])
+    end
+  end
+
+  defp variant(schema, ref, fragment) do
+    case Map.get(Map.get(schema, "variants", %{}), ref) do
+      nil -> local_def(schema, fragment)
+      target -> {:ok, target}
+    end
+  end
 end

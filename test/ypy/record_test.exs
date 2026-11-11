@@ -124,7 +124,7 @@ defmodule Ypy.RecordTest do
 
     assert Record.decode(Cbor.encode(sem_payload)) == {:error, :malformed}
 
-    com_extra = sem_payload |> Map.put("payload", %{}) |> Map.put("extra", 1)
+    com_extra = Map.merge(sem_payload, %{"payload" => %{}, "extra" => 1})
 
     assert Record.decode(Cbor.encode(com_extra)) == {:error, :malformed}
   end

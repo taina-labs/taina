@@ -3,7 +3,7 @@ defmodule Ypy.PublicIdTest do
 
   alias Ypy.PublicId
 
-  @alphabet ~c"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-"
+  @alphabet ~C"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-"
 
   test "generates 12 characters from the URL-safe alphabet" do
     for _ <- 1..200 do

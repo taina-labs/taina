@@ -27,37 +27,25 @@ defmodule Ypy.Mural do
   alias Ypy.Cid
   alias Ypy.Secp256k1
 
+  @signature_field "signature"
+  @signing_key_field "signing_key"
+
+  @type binary_data :: binary()
+  @type cid :: Cid.t()
   @typedoc "Uma entrada da cadeia: mapa de chaves de string com `seq` inteiro, `prev` como CID ou nil, `payload` de mapa e `signature` de 64 bytes."
   @type entry :: map()
-
-  @doc """
-  Sela a entrada `seq`: os bytes canonicos do corpo mais a assinatura da
-  chave da Tekoa. `prev` e o CID da entrada anterior, ou nil na primeira.
-  """
-  @spec seal(pos_integer(), Cid.t() | nil, map(), binary()) :: entry()
-  def seal(seq, prev, payload, priv) when is_integer(seq) and seq >= 1 and is_map(payload) do
-    body = %{"seq" => seq, "prev" => prev, "payload" => payload}
-    Map.put(body, "signature", Secp256k1.sign(priv, Cbor.encode(body)))
-  end
-
-  @doc "Seals an entry with an explicitly identified signing key."
-  @spec seal(pos_integer(), Cid.t() | nil, map(), binary(), binary()) :: entry()
-  def seal(seq, prev, payload, priv, signing_key)
-      when is_integer(seq) and seq >= 1 and is_map(payload) and is_binary(signing_key) do
-    body = %{"seq" => seq, "prev" => prev, "payload" => payload, "signing_key" => signing_key}
-    {:ok, bytes} = signing_bytes(body)
-    Map.put(body, "signature", Secp256k1.sign(priv, bytes))
-  end
+  @type params :: map()
+  @type status :: atom()
 
   @doc "Os bytes DAG-CBOR canonicos da entrada completa, com a assinatura como byte string."
-  @spec encode_entry(entry()) :: binary()
-  def encode_entry(%{"seq" => _, "prev" => _, "payload" => payload, "signature" => signature} = entry)
-      when is_map(payload) and is_binary(signature) do
-    entry = Map.put(entry, "signature", %Bytes{data: signature})
+  @spec encode_entry(entry()) :: binary_data()
+  def encode_entry(%{"seq" => _, "prev" => _, "payload" => _, @signature_field => signature} = entry)
+      when is_binary(signature) do
+    entry = Map.put(entry, @signature_field, %Bytes{data: signature})
 
     entry =
-      case Map.get(entry, "signing_key") do
-        key when is_binary(key) -> Map.put(entry, "signing_key", %Bytes{data: key})
+      case Map.get(entry, @signing_key_field) do
+        key when is_binary(key) -> Map.put(entry, @signing_key_field, %Bytes{data: key})
         _ -> entry
       end
 
@@ -65,30 +53,40 @@ defmodule Ypy.Mural do
   end
 
   @doc "O CIDv1 da entrada completa: o endereco pelo qual ela e alcancavel."
-  @spec entry_cid(entry()) :: Cid.t()
+  @spec entry_cid(entry()) :: cid()
   def entry_cid(entry), do: Cid.from_data(encode_entry(entry))
 
-  @doc "Verifica a assinatura de uma entrada contra a chave publica da Tekoa."
-  @spec verify_entry(binary(), entry()) :: :ok | {:error, :bad_entry | :bad_signature}
-  def verify_entry(pub, entry) do
-    case signing_bytes(entry) do
-      {:ok, bytes} -> check_signature(pub, bytes, entry)
-      :error -> {:error, :bad_entry}
-    end
+  @doc """
+  Sela a entrada `seq`: os bytes canonicos do corpo mais a assinatura da
+  chave da Tekoa. `prev` e o CID da entrada anterior, ou nil na primeira.
+  """
+  @spec seal(pos_integer(), cid() | nil, params(), binary_data()) :: entry()
+  def seal(seq, prev, %{} = payload, priv) when is_integer(seq) and seq >= 1 do
+    body = %{"seq" => seq, "prev" => prev, "payload" => payload}
+    Map.put(body, @signature_field, Secp256k1.sign(priv, Cbor.encode(body)))
+  end
+
+  @doc "Seals an entry with an explicitly identified signing key."
+  @spec seal(pos_integer(), cid() | nil, params(), binary_data(), binary_data()) :: entry()
+  def seal(seq, prev, %{} = payload, priv, signing_key) when is_integer(seq) and seq >= 1 and is_binary(signing_key) do
+    body = %{"seq" => seq, "prev" => prev, "payload" => payload, @signing_key_field => signing_key}
+    # The function head guarantees the exact body shape accepted by signing_bytes/1.
+    # credo:disable-for-next-line OeditusCredo.Check.Warning.MissingErrorHandling
+    {:ok, bytes} = signing_bytes(body)
+    Map.put(body, @signature_field, Secp256k1.sign(priv, bytes))
   end
 
   @doc "Returns the canonical bytes signed for an entry body."
-  @spec signing_bytes(entry()) :: {:ok, binary()} | :error
-  def signing_bytes(%{"seq" => seq, "prev" => prev, "payload" => payload} = entry)
-      when is_integer(seq) and is_map(payload) do
+  @spec signing_bytes(entry()) :: {:ok, binary_data()} | :error
+  def signing_bytes(%{"seq" => seq, "prev" => prev, "payload" => %{} = payload} = entry) when is_integer(seq) do
     body = %{"seq" => seq, "prev" => prev, "payload" => payload}
 
-    case Map.get(entry, "signing_key") do
+    case Map.get(entry, @signing_key_field) do
       nil ->
         {:ok, Cbor.encode(body)}
 
       pub when is_binary(pub) ->
-        {:ok, Cbor.encode(Map.put(body, "signing_key", %Bytes{data: pub}))}
+        {:ok, Cbor.encode(Map.put(body, @signing_key_field, %Bytes{data: pub}))}
 
       _ ->
         :error
@@ -109,12 +107,39 @@ defmodule Ypy.Mural do
   cadeia quebra, e motivo em :bad_seq, :bad_link, :bad_entry ou
   :bad_signature.
   """
-  @spec verify_chain(binary() | [binary()], [entry()]) :: :ok | {:error, {non_neg_integer(), atom()}}
+  @spec verify_chain(binary_data() | [binary_data()], [entry()]) :: :ok | {:error, {non_neg_integer(), status()}}
   def verify_chain(pub, entries) when is_binary(pub), do: verify_chain([pub], entries)
 
   def verify_chain(public_keys, entries) when is_list(public_keys) and is_list(entries) do
     verify_chain_entries(public_keys, entries, 0, 1, nil)
   end
+
+  @doc "Verifica a assinatura de uma entrada contra a chave publica da Tekoa."
+  @spec verify_entry(binary_data(), entry()) :: :ok | {:error, :bad_entry | :bad_signature}
+  def verify_entry(pub, entry) do
+    case signing_bytes(entry) do
+      {:ok, bytes} -> check_signature(pub, bytes, entry)
+      :error -> {:error, :bad_entry}
+    end
+  end
+
+  defp check_link(%{"seq" => seq, "prev" => prev}, expected_seq, expected_prev) do
+    cond do
+      seq != expected_seq -> {:error, :bad_seq}
+      prev != expected_prev -> {:error, :bad_link}
+      true -> :ok
+    end
+  end
+
+  defp check_link(_entry, _expected_seq, _expected_prev), do: {:error, :bad_entry}
+
+  defp check_signature(pub, bytes, %{@signature_field => sig}) when is_binary(sig) and byte_size(sig) == 64 do
+    if :crypto.verify(:ecdsa, :sha256, bytes, Secp256k1.raw_to_der(sig), [pub, :secp256k1]),
+      do: :ok,
+      else: {:error, :bad_signature}
+  end
+
+  defp check_signature(_pub, _bytes, _entry), do: {:error, :bad_entry}
 
   defp verify_chain_entries(_public_keys, [], _index, _expected_seq, _expected_prev), do: :ok
 
@@ -128,7 +153,7 @@ defmodule Ypy.Mural do
   end
 
   defp verify_entry_with_keys(public_keys, entry) do
-    case Map.get(entry, "signing_key") do
+    case Map.get(entry, @signing_key_field) do
       nil ->
         verify_legacy_entry(public_keys, entry)
 
@@ -149,22 +174,4 @@ defmodule Ypy.Mural do
       end
     end)
   end
-
-  defp check_signature(pub, bytes, %{"signature" => sig}) when is_binary(sig) and byte_size(sig) == 64 do
-    if :crypto.verify(:ecdsa, :sha256, bytes, Secp256k1.raw_to_der(sig), [pub, :secp256k1]),
-      do: :ok,
-      else: {:error, :bad_signature}
-  end
-
-  defp check_signature(_pub, _bytes, _entry), do: {:error, :bad_entry}
-
-  defp check_link(%{"seq" => seq, "prev" => prev}, expected_seq, expected_prev) do
-    cond do
-      seq != expected_seq -> {:error, :bad_seq}
-      prev != expected_prev -> {:error, :bad_link}
-      true -> :ok
-    end
-  end
-
-  defp check_link(_entry, _expected_seq, _expected_prev), do: {:error, :bad_entry}
 end

@@ -32,7 +32,10 @@ defmodule Ypy.PersistenceCase do
   O registro mora em `:persistent_term`: um teste do kernel que carregue so o
   diretorio do kernel apagaria os lexicons do produto para os testes seguintes.
   """
-  @spec load_lexicons() :: {map(), [{Path.t(), term()}]}
+  @type params :: map()
+  @type path :: Path.t()
+
+  @spec load_lexicons() :: {params(), [{path(), term()}]}
   def load_lexicons do
     Ypy.Lexicon.Registry.load([
       Path.join(File.cwd!(), "priv/ypy/lexicons"),

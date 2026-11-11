@@ -25,8 +25,8 @@ defmodule Ypy.Maraca.Tekoa do
         }
 
   schema "maraca_tekoas" do
-    field(:name, :string)
     field(:domain, :string)
+    field(:name, :string)
     field(:public_id, PublicId, autogenerate: true)
     field(:settings, :map, default: %{})
     field(:storage_quota_bytes, :integer)
@@ -38,16 +38,16 @@ defmodule Ypy.Maraca.Tekoa do
   @doc "Cria ou atualiza uma Tekoa. Cota nil e ilimitada."
   def changeset(tekoa, attrs) do
     tekoa
-    |> cast(attrs, [:name, :domain, :settings, :storage_quota_bytes])
+    |> cast(attrs, [:domain, :name, :settings, :storage_quota_bytes])
     |> validate_required([:name, :domain])
     |> validate_length(:name, min: 3, max: 100)
     |> validate_number(:storage_quota_bytes, greater_than: 0)
-    |> validate_domain()
+    |> maybe_validate_domain()
     |> unique_constraint(:domain)
     |> unique_constraint(:public_id)
   end
 
-  defp validate_domain(changeset) do
+  defp maybe_validate_domain(changeset) do
     if domain = get_field(changeset, :domain) do
       if Handle.valid_domain?(domain),
         do: changeset,

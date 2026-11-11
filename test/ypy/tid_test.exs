@@ -5,7 +5,7 @@ defmodule Ypy.TidTest do
 
   alias Ypy.Tid
 
-  @alphabet ~c"234567abcdefghijklmnopqrstuvwxyz"
+  @alphabet ~C"234567abcdefghijklmnopqrstuvwxyz"
 
   test "encodes exactly 13 characters from the base32-sortable alphabet" do
     tid = Tid.encode(1)
@@ -21,9 +21,10 @@ defmodule Ypy.TidTest do
   end
 
   test "encoded strings sort in the same order as the integers" do
-    ints = Enum.sort([9, 100, 3, 77_777, 1, 5_000_000, 42])
-
-    encoded = Enum.map(ints, &Tid.encode/1)
+    encoded =
+      [9, 100, 3, 77_777, 1, 5_000_000, 42]
+      |> Enum.sort()
+      |> Enum.map(&Tid.encode/1)
 
     assert encoded == Enum.sort(encoded)
   end

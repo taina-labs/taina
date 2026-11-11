@@ -1,4 +1,5 @@
 defmodule Ypy.Lexicon.RegistryTest do
+  # Registry state lives in :persistent_term and setup/teardown replace it.
   use ExUnit.Case, async: false
 
   alias Ypy.Lexicon.Registry
@@ -41,7 +42,7 @@ defmodule Ypy.Lexicon.RegistryTest do
 
     File.mkdir_p!(produto)
 
-    assert Registry.record("ypy.file.v0") == nil
+    assert is_nil(Registry.record("ypy.file.v0"))
     assert Registry.knows?("ypy.file.v0") == false
     assert Registry.all() == %{}
 
@@ -52,9 +53,9 @@ defmodule Ypy.Lexicon.RegistryTest do
 
     assert Registry.all() == %{"ypy.file.v0" => @file_lexicon}
     assert Registry.get("ypy.file.v0") == @file_lexicon
-    assert Registry.get("falta.v0") == nil
+    assert is_nil(Registry.get("falta.v0"))
     assert Registry.record("ypy.file.v0")["properties"]["name"] == %{"type" => "string"}
-    assert Registry.record("falta.v0") == nil
+    assert is_nil(Registry.record("falta.v0"))
     assert Registry.knows?("ypy.file.v0") == true
     assert Registry.knows?("falta.v0") == false
   end

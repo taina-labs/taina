@@ -14,7 +14,7 @@ defmodule Ypy.Maraca.Pedido do
   alias Ypy.PublicId
 
   @tipos ["ypy.file.v0", "ypy.folder.v0"]
-  @status [:pendente, :aprovado, :negado]
+  @status [:aprovado, :negado, :pendente]
 
   @type t :: %__MODULE__{
           id: integer() | nil,
@@ -32,16 +32,16 @@ defmodule Ypy.Maraca.Pedido do
         }
 
   schema "maraca_pedidos" do
-    field(:tipo, :string)
-    field(:recurso, :string)
-    field(:motivo, :string)
-    field(:status, Ecto.Enum, values: @status, default: :pendente)
     field(:decidido_em, :utc_datetime)
-    field(:public_id, PublicId, autogenerate: true)
-
-    belongs_to(:tekoa, Tekoa)
-    belongs_to(:pedinte, Ava)
     belongs_to(:dono, Ava)
+    field(:motivo, :string)
+    belongs_to(:pedinte, Ava)
+    field(:public_id, PublicId, autogenerate: true)
+    field(:recurso, :string)
+
+    field(:status, Ecto.Enum, values: @status, default: :pendente)
+    belongs_to(:tekoa, Tekoa)
+    field(:tipo, :string)
 
     timestamps(type: :utc_datetime)
   end
@@ -49,8 +49,8 @@ defmodule Ypy.Maraca.Pedido do
   @doc "Cria o pedido pendente."
   def changeset(pedido, attrs) do
     pedido
-    |> cast(attrs, [:tipo, :recurso, :motivo, :tekoa_id, :pedinte_id, :dono_id])
-    |> validate_required([:tipo, :recurso, :tekoa_id, :pedinte_id, :dono_id])
+    |> cast(attrs, [:dono_id, :motivo, :pedinte_id, :recurso, :tekoa_id, :tipo])
+    |> validate_required([:dono_id, :pedinte_id, :recurso, :tekoa_id, :tipo])
     |> validate_inclusion(:tipo, @tipos)
     |> unique_constraint(:recurso,
       name: :maraca_pedidos_tekoa_id_pedinte_id_tipo_recurso_index,

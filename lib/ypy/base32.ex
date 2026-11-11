@@ -1,7 +1,7 @@
 defmodule Ypy.Base32 do
   @moduledoc "Base32 do RFC 4648, minuscula, sem padding: a codificacao `b` do multibase."
 
-  @alphabet ~c"abcdefghijklmnopqrstuvwxyz234567"
+  @alphabet ~C"abcdefghijklmnopqrstuvwxyz234567"
 
   @decode_map Map.new(Enum.with_index(@alphabet))
 

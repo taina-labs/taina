@@ -13,7 +13,7 @@ defmodule Ypy.PublicId do
 
   use Ecto.Type
 
-  @alphabet ~c"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-"
+  @alphabet ~C"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-"
   @chars MapSet.new(@alphabet)
   @size 12
   @entropy_bytes 9

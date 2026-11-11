@@ -11,8 +11,11 @@ defmodule Ypy.Wire.Mural do
   alias Ypy.Mural.Entry
   alias Ypy.Wire
 
+  @type entry :: Entry.t()
+  @type params :: map()
+
   @doc "O mapa JSON da entrada."
-  @spec json(Entry.t()) :: map()
+  @spec json(entry()) :: params()
   def json(%Entry{} = entry) do
     %{
       "seq" => entry.seq,

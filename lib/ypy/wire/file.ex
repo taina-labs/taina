@@ -16,8 +16,12 @@ defmodule Ypy.Wire.File do
   alias Ypy.Ybira.File
   alias Ypy.Ybira.Folder
 
+  @type file :: File.t()
+  @type file_or_folder :: file() | Folder.t()
+  @type params :: map()
+
   @doc "O mapa JSON do arquivo ou da pasta."
-  @spec json(File.t()) :: map()
+  @spec json(file_or_folder()) :: params()
   def json(%File{} = file) do
     %{
       "rkey" => file.rkey,
@@ -50,12 +54,12 @@ defmodule Ypy.Wire.File do
     }
   end
 
-  defp zona(:casa), do: "casa"
-  defp zona(:praca), do: "praca"
+  defp dono_public_id(%Ava{public_id: public_id}), do: public_id
+  defp dono_public_id(_), do: nil
 
   defp folder_rkey(%Folder{rkey: rkey}), do: rkey
   defp folder_rkey(_), do: nil
 
-  defp dono_public_id(%Ava{public_id: public_id}), do: public_id
-  defp dono_public_id(_), do: nil
+  defp zona(:casa), do: "casa"
+  defp zona(:praca), do: "praca"
 end

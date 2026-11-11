@@ -23,8 +23,8 @@ defmodule Ypy.Ybira.Blob do
 
   schema "ybira_blobs" do
     field(:cid, :string)
-    field(:tamanho, :integer)
     field(:hash, :string)
+    field(:tamanho, :integer)
 
     belongs_to(:tekoa, Tekoa)
 
@@ -33,8 +33,8 @@ defmodule Ypy.Ybira.Blob do
 
   def changeset(blob, attrs) do
     blob
-    |> cast(attrs, [:cid, :tamanho, :hash, :tekoa_id])
-    |> validate_required([:cid, :tamanho, :hash, :tekoa_id])
+    |> cast(attrs, [:cid, :hash, :tamanho, :tekoa_id])
+    |> validate_required([:cid, :hash, :tamanho, :tekoa_id])
     |> unique_constraint(:cid, name: :ybira_blobs_tekoa_id_cid_index)
   end
 end

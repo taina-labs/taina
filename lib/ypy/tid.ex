@@ -13,7 +13,14 @@ defmodule Ypy.Tid do
 
   import Bitwise
 
-  @alphabet ~c"234567abcdefghijklmnopqrstuvwxyz"
+  @alphabet ~C"234567abcdefghijklmnopqrstuvwxyz"
+
+  @doc "Codifica um inteiro como a forma sortable de 13 caracteres. A codificacao so esta definida ate 64 bits."
+  def encode(n) when is_integer(n) and n >= 0 do
+    for i <- 0..12, into: "" do
+      <<Enum.fetch!(@alphabet, n >>> (60 - i * 5) &&& 0x1F)>>
+    end
+  end
 
   @doc """
   Retorna {tid_string, integer_value}, estritamente maior que `last`.
@@ -38,12 +45,5 @@ defmodule Ypy.Tid do
     clock = rem(:erlang.unique_integer([:positive]), 1024)
     {tid, _int} = next(0, micros, clock)
     tid
-  end
-
-  @doc "Codifica um inteiro como a forma sortable de 13 caracteres. A codificacao so esta definida ate 64 bits."
-  def encode(n) when is_integer(n) and n >= 0 do
-    for i <- 0..12, into: "" do
-      <<Enum.fetch!(@alphabet, n >>> (60 - i * 5) &&& 0x1F)>>
-    end
   end
 end

@@ -18,23 +18,24 @@ defmodule Ypy.BlobStore.Disk do
   @enforce_keys [:root]
   defstruct [:root]
 
-  @type t :: %__MODULE__{root: Path.t()}
+  @type path :: Path.t()
+  @type t :: %__MODULE__{root: path()}
 
   @chunk_bytes 65_536
 
   @doc "Um Disk enraizado em `root` (tipicamente `Ypy.Layout.blobs`)."
-  @spec new(Path.t()) :: t()
+  @spec new(path()) :: t()
   def new(root) when is_binary(root), do: %__MODULE__{root: root}
 
   @impl true
   def put(store, data) when is_binary(data) do
     cid = Cid.from_data(data, Cid.raw())
     path = path(store, cid)
-    tmp = tmp_path(store)
+    temporary = temporary_path(store)
 
     with :ok <- File.mkdir_p(store.root),
          :ok <- File.mkdir_p(Path.dirname(path)),
-         :ok <- write_atomic(tmp, path, data) do
+         :ok <- write_atomic(temporary, path, data) do
       {:ok, cid}
     end
   end
@@ -44,40 +45,29 @@ defmodule Ypy.BlobStore.Disk do
   # rename, o rm e :enoent e fica quieto).
   @impl true
   def put_file(%__MODULE__{} = store, source) do
-    tmp = tmp_path(store)
+    temporary = temporary_path(store)
 
     try do
       with :ok <- File.mkdir_p(store.root),
-           {:ok, digest} <- copy_hashed(source, tmp),
+           {:ok, digest} <- copy_hashed(source, temporary),
            cid = Cid.from_digest(digest, Cid.raw()),
            path = path(store, cid),
            :ok <- File.mkdir_p(Path.dirname(path)),
-           :ok <- File.rename(tmp, path) do
+           :ok <- File.rename(temporary, path) do
         {:ok, cid}
       end
     after
-      _ = File.rm(tmp)
+      _ = File.rm(temporary)
       :ok
     end
   end
 
-  defp copy_hashed(source, tmp) do
+  defp copy_hashed(source, temporary) do
     with {:ok, in_dev} <- File.open(source, [:read, :binary]) do
       try do
-        copy_to(in_dev, tmp)
+        copy_to(in_dev, temporary)
       after
         _ = :file.close(in_dev)
-        :ok
-      end
-    end
-  end
-
-  defp copy_to(in_dev, tmp) do
-    with {:ok, out_dev} <- File.open(tmp, [:write, :binary, :exclusive]) do
-      try do
-        copy_loop(in_dev, out_dev, :crypto.hash_init(:sha256))
-      after
-        _ = :file.close(out_dev)
         :ok
       end
     end
@@ -98,16 +88,34 @@ defmodule Ypy.BlobStore.Disk do
     end
   end
 
-  defp tmp_path(%__MODULE__{} = store) do
+  defp copy_to(in_dev, temporary) do
+    with {:ok, out_dev} <- File.open(temporary, [:write, :binary, :exclusive]) do
+      try do
+        copy_loop(in_dev, out_dev, :crypto.hash_init(:sha256))
+      after
+        _ = :file.close(out_dev)
+        :ok
+      end
+    end
+  end
+
+  defp path(%__MODULE__{} = store, %Cid{} = cid) do
+    <<a, b, _rest::binary>> = cid.digest
+    Path.join([store.root, shard(a), shard(b), Cid.to_string(cid)])
+  end
+
+  defp shard(byte), do: byte |> Integer.to_string(16) |> String.pad_leading(2, "0")
+
+  defp temporary_path(%__MODULE__{} = store) do
     Path.join(store.root, "tmp-#{:erlang.unique_integer([:positive])}")
   end
 
-  defp write_atomic(tmp, path, data) do
-    with :ok <- File.write(tmp, data, [:binary, :exclusive]) do
-      File.rename(tmp, path)
+  defp write_atomic(temporary, path, data) do
+    with :ok <- File.write(temporary, data, [:binary, :exclusive]) do
+      File.rename(temporary, path)
     end
   after
-    _ = File.rm(tmp)
+    _ = File.rm(temporary)
     :ok
   end
 
@@ -147,11 +155,4 @@ defmodule Ypy.BlobStore.Disk do
       {:error, reason} -> {:error, reason}
     end
   end
-
-  defp path(%__MODULE__{} = store, %Cid{} = cid) do
-    <<a, b, _rest::binary>> = cid.digest
-    Path.join([store.root, shard(a), shard(b), Cid.to_string(cid)])
-  end
-
-  defp shard(byte), do: byte |> Integer.to_string(16) |> String.pad_leading(2, "0")
 end

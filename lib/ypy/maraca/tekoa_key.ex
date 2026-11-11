@@ -25,9 +25,9 @@ defmodule Ypy.Maraca.TekoaKey do
         }
 
   schema "maraca_tekoa_keys" do
+    field(:aposentada_em, :utc_datetime)
     field(:multibase, :string)
     field(:pub, :binary)
-    field(:aposentada_em, :utc_datetime)
 
     belongs_to(:tekoa, Tekoa)
 
@@ -37,16 +37,16 @@ defmodule Ypy.Maraca.TekoaKey do
   @doc "Registra a chave publica ativa de uma Tekoa."
   def changeset(key, attrs) do
     key
-    |> cast(attrs, [:pub, :multibase, :aposentada_em, :tekoa_id])
-    |> validate_required([:pub, :multibase, :tekoa_id])
+    |> cast(attrs, [:aposentada_em, :multibase, :pub, :tekoa_id])
+    |> validate_required([:multibase, :pub, :tekoa_id])
     |> foreign_key_constraint(:tekoa_id)
   end
+
+  @doc "`publicKeyMultibase` para a chave publica comprimida."
+  def multibase(pub) when is_binary(pub), do: Secp256k1.public_key_multibase(pub)
 
   @doc "Aposenta a chave (a nova assume)."
   def retire_changeset(key, agora) do
     change(key, aposentada_em: agora)
   end
-
-  @doc "`publicKeyMultibase` para a chave publica comprimida."
-  def multibase(pub) when is_binary(pub), do: Secp256k1.public_key_multibase(pub)
 end

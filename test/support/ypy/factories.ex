@@ -82,6 +82,8 @@ defmodule Ypy.Factories do
   @doc "Os bytes de um arquivo temporario; devolve {path, data}."
   def arquivo(dados) when is_binary(dados) do
     path = Path.join(dir_temporario("upload"), "arquivo")
+    # The destination is a fixed name under a unique test-only temporary root.
+    # credo:disable-for-next-line OeditusCredo.Check.Security.PathTraversal
     File.write!(path, dados)
     {path, dados}
   end

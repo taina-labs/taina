@@ -1,4 +1,5 @@
 defmodule Ypy.Maraca.PersistenceTest do
+  # PersistenceCase reloads the shared Lexicon.Registry in :persistent_term.
   use Ypy.PersistenceCase, async: false
 
   import Ypy.Factories
@@ -70,7 +71,7 @@ defmodule Ypy.Maraca.PersistenceTest do
 
     assert concessao.leitor_id == ctx.outro.id
     assert concessao.dono_id == ctx.dono.id
-    assert concessao.revogada_em == nil
+    assert is_nil(concessao.revogada_em)
 
     # Duas concessoes ativas do mesmo recurso para o mesmo leitor: uma so.
     assert Maraca.conceder(
@@ -309,6 +310,8 @@ defmodule Ypy.Maraca.PersistenceTest do
   defp upload_na_casa(ctx, scope) do
     path = Path.join(dir_temporario("upload"), "foto")
 
+    # This fixed fixture path is under a unique test-only temporary directory.
+    # credo:disable-for-next-line OeditusCredo.Check.Security.PathTraversal
     File.write!(path, "conteudo da foto")
 
     {:ok, file} =
@@ -328,9 +331,13 @@ defmodule Ypy.Maraca.PersistenceTest do
     phase_pids = [first_pid | waiting_racy_repo(phase, 1)]
     Enum.each(phase_pids, &send(&1, {:racy_repo_continue, phase}))
 
-    if phase == :count do
-      transaction_pids = waiting_racy_repo(:transaction, 2)
-      Enum.each(transaction_pids, &send(&1, {:racy_repo_continue, :transaction}))
+    case phase do
+      :count ->
+        transaction_pids = waiting_racy_repo(:transaction, 2)
+        Enum.each(transaction_pids, &send(&1, {:racy_repo_continue, :transaction}))
+
+      _ ->
+        nil
     end
   end
 

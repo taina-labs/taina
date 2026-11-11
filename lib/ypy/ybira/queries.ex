@@ -17,15 +17,15 @@ defmodule Ypy.Ybira.Queries do
     query = from(f in File, where: f.tekoa_id == ^tekoa_id)
 
     query =
-      if opts[:lixeira],
+      if Keyword.get(opts, :lixeira),
         do: where(query, [f], not is_nil(f.apagado_em)),
         else: where(query, [f], is_nil(f.apagado_em))
 
-    query = if folder = opts[:folder], do: where(query, [f], f.folder_id == ^folder), else: query
-    query = if zona = opts[:zona], do: where(query, [f], f.zona == ^zona), else: query
-    query = if cursor = opts[:cursor], do: where(query, [f], f.rkey < ^cursor), else: query
+    query = if folder = Keyword.get(opts, :folder), do: where(query, [f], f.folder_id == ^folder), else: query
+    query = if zona = Keyword.get(opts, :zona), do: where(query, [f], f.zona == ^zona), else: query
+    query = if cursor = Keyword.get(opts, :cursor), do: where(query, [f], f.rkey < ^cursor), else: query
 
-    from(f in query, order_by: [desc: f.rkey], limit: ^(opts[:limit] || 50))
+    from(f in query, order_by: [desc: f.rkey], limit: ^(Keyword.get(opts, :limit) || 50))
   end
 
   @doc "Pastas nao apagadas de uma Tekoa, mais recentes primeiro."
@@ -33,15 +33,15 @@ defmodule Ypy.Ybira.Queries do
     query = from(p in Folder, where: p.tekoa_id == ^tekoa_id)
 
     query =
-      if opts[:lixeira],
+      if Keyword.get(opts, :lixeira),
         do: where(query, [p], not is_nil(p.apagado_em)),
         else: where(query, [p], is_nil(p.apagado_em))
 
-    query = if parent = opts[:parent], do: where(query, [p], p.parent_id == ^parent), else: query
-    query = if zona = opts[:zona], do: where(query, [p], p.zona == ^zona), else: query
-    query = if cursor = opts[:cursor], do: where(query, [p], p.rkey < ^cursor), else: query
+    query = if parent = Keyword.get(opts, :parent), do: where(query, [p], p.parent_id == ^parent), else: query
+    query = if zona = Keyword.get(opts, :zona), do: where(query, [p], p.zona == ^zona), else: query
+    query = if cursor = Keyword.get(opts, :cursor), do: where(query, [p], p.rkey < ^cursor), else: query
 
-    from(p in query, order_by: [desc: p.rkey], limit: ^(opts[:limit] || 50))
+    from(p in query, order_by: [desc: p.rkey], limit: ^(Keyword.get(opts, :limit) || 50))
   end
 
   @doc """

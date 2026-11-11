@@ -14,13 +14,29 @@ defmodule Ypy.Lexicon.Registry do
 
   @table __MODULE__
 
+  @type params :: map()
+  @type text :: String.t()
+
+  @doc "Os lexicons carregados, como mapa de NSID a documento."
+  def all, do: cache().entries
+
+  @doc "O documento de um NSID, ou nil."
+  @spec get(text()) :: params() | nil
+  def get(nsid) when is_binary(nsid), do: Map.get(cache().entries, nsid)
+  def get(_nsid), do: nil
+
+  @doc "Se o kernel guarda lexicon para a colecao."
+  @spec knows?(text()) :: boolean()
+  def knows?(collection) when is_binary(collection), do: record(collection) != nil
+  def knows?(_collection), do: false
+
   @doc """
   Carrega e resolve os lexicons dos diretorios e instala o indice.
 
   Devolve {indice, problemas} para o produto logar como quiser: o kernel nao
   loga, nao le config e nao decide o que fazer com um lexicon quebrado.
   """
-  @spec load([String.t()]) :: {%{optional(String.t()) => map()}, [{String.t(), term()}]}
+  @spec load([text()]) :: {%{optional(text()) => params()}, [{text(), term()}]}
   def load(dirs) when is_list(dirs) do
     {entries, problems} = Ypy.Lexicon.load(dirs)
 
@@ -34,23 +50,10 @@ defmodule Ypy.Lexicon.Registry do
     {entries, problems}
   end
 
-  @doc "Os lexicons carregados, como mapa de NSID a documento."
-  def all, do: cache().entries
-
-  @doc "O documento de um NSID, ou nil."
-  @spec get(String.t()) :: map() | nil
-  def get(nsid) when is_binary(nsid), do: Map.get(cache().entries, nsid)
-  def get(_nsid), do: nil
-
   @doc "O schema resolvido dos records de uma colecao, ou nil."
-  @spec record(String.t()) :: map() | nil
+  @spec record(text()) :: params() | nil
   def record(collection) when is_binary(collection), do: Map.get(cache().records, collection)
   def record(_collection), do: nil
-
-  @doc "Se o kernel guarda lexicon para a colecao."
-  @spec knows?(String.t()) :: boolean()
-  def knows?(collection) when is_binary(collection), do: record(collection) != nil
-  def knows?(_collection), do: false
 
   defp cache, do: :persistent_term.get(@table, %{entries: %{}, records: %{}})
 end

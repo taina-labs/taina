@@ -1,4 +1,5 @@
 defmodule Ypy.Mural.PersistenceTest do
+  # PersistenceCase reloads the shared Lexicon.Registry in :persistent_term.
   use Ypy.PersistenceCase, async: false
 
   import Ecto.Query
@@ -24,7 +25,7 @@ defmodule Ypy.Mural.PersistenceTest do
     {:ok, entrada} = Store.append(TestRepo, keys, tekoa.id, "publicar", %{"rkey" => "rk1"})
 
     assert entrada.seq == 1
-    assert entrada.prev == nil
+    assert is_nil(entrada.prev)
     assert entrada.tipo == "publicar"
     assert entrada.payload == %{"tipo" => "publicar", "rkey" => "rk1"}
 
@@ -147,7 +148,7 @@ defmodule Ypy.Mural.PersistenceTest do
     assert Enum.map(do_meio, & &1.seq) == [2, e1.seq]
 
     assert Store.entrada(TestRepo, tekoa.id, 2).tipo == "concessao"
-    assert Store.entrada(TestRepo, tekoa.id, 9) == nil
+    assert is_nil(Store.entrada(TestRepo, tekoa.id, 9))
   end
 
   test "verificar_cadeia sem chave ativa responde :not_found", %{tekoa: tekoa, keys: keys} do

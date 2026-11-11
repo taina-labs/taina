@@ -147,8 +147,7 @@ defmodule Ypy.MuralTest do
   end
 
   test "an entry missing a field is a bad entry, not a crash", %{priv: priv, pub: pub} do
-    chain = seal_chain(priv, [%{"n" => 1}])
-    sem_assinatura = Enum.map(chain, &Map.delete(&1, "signature"))
+    sem_assinatura = priv |> seal_chain([%{"n" => 1}]) |> Enum.map(&Map.delete(&1, "signature"))
 
     assert Mural.verify_chain(pub, sem_assinatura) == {:error, {0, :bad_entry}}
   end

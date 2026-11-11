@@ -1,4 +1,5 @@
 defmodule Ypy.Ybira.PersistenceTest do
+  # PersistenceCase reloads the shared Lexicon.Registry in :persistent_term.
   use Ypy.PersistenceCase, async: false
 
   import Ypy.Factories
@@ -77,7 +78,7 @@ defmodule Ypy.Ybira.PersistenceTest do
              Ybira.upload(TestRepo, ctx.keys, blobs(), ctx.dono_scope, path, mime: @mime)
 
     cid = Cid.from_data(dados, Cid.raw())
-    assert file.blob_cid == Cid.to_string(cid)
+    assert file.blob_cid == "bafkreiapa4wnscielphlyadp5lncroxytat4hgeer2oclkixzsvl2lhkzu"
     assert file.hash == Base.encode16(cid.digest, case: :lower)
   end
 
@@ -89,7 +90,7 @@ defmodule Ypy.Ybira.PersistenceTest do
              Ybira.upload(TestRepo, ctx.keys, armazenamento, ctx.dono_scope, path, mime: @mime)
 
     cid = Cid.from_data(dados, Cid.raw())
-    assert file.blob_cid == Cid.to_string(cid)
+    assert file.blob_cid == "bafkreidpl47mffojkbglpkrumhlwvritqbbuyls2nsiznxhbtlndg7jueu"
     assert file.hash == Base.encode16(cid.digest, case: :lower)
     assert {:ok, ^dados} = fetch_blob(armazenamento, file.blob_cid)
   end
@@ -259,7 +260,7 @@ defmodule Ypy.Ybira.PersistenceTest do
     # Publicado, passa a aparecer para qualquer morador; a ordem e por rkey.
     rkeys = Enum.map(Ybira.list_files(TestRepo, ctx.outro_scope), & &1.rkey)
     assert Enum.sort(rkeys, :desc) == rkeys
-    assert Enum.count(rkeys) == 2
+    assert [_, _] = rkeys
     assert meu.rkey in rkeys and seu.rkey in rkeys
 
     # Cursor: os rkeys menores que o maior.
@@ -375,7 +376,7 @@ defmodule Ypy.Ybira.PersistenceTest do
     {:ok, restaurado} =
       Ybira.restaurar(TestRepo, ctx.keys, ctx.dono_scope, "ypy.file.v0", file.rkey)
 
-    assert restaurado.apagado_em == nil
+    assert is_nil(restaurado.apagado_em)
 
     assert Ybira.restaurar(TestRepo, ctx.keys, ctx.dono_scope, "ypy.file.v0", file.rkey) ==
              {:error, :invalid_status}
@@ -447,7 +448,7 @@ defmodule Ypy.Ybira.PersistenceTest do
     assert {:ok, ^dados} = fetch_blob(armazenamento, movido.blob_cid)
 
     {:ok, solto} = Ybira.mover(TestRepo, ctx.keys, ctx.dono_scope, file.rkey, nil)
-    assert solto.folder_id == nil
+    assert is_nil(solto.folder_id)
 
     # Cada versao do envelope do arquivo fica arquivada (a pasta tem as suas).
     versoes = Enum.count(TestRepo.all(Ypy.Ybira.Record), &(&1.collection == "ypy.file.v0"))
@@ -583,7 +584,7 @@ defmodule Ypy.Ybira.PersistenceTest do
 
     send(ativo_pid, :continue_blob)
     assert {:ok, file} = Task.await(upload_ativo, :infinity)
-    assert file.blob_cid == Cid.to_string(cid)
+    assert file.blob_cid == "bafkreieydodc5alsvu3yyjq6qj6lwdlvrnrdaaso6i7rtav4274pp22hky"
     assert {:ok, ^dados} = BlobStore.Disk.fetch(disk, cid)
   end
 
@@ -659,7 +660,7 @@ defmodule Ypy.Ybira.PersistenceTest do
     {path, _dados} = arquivo("conteudo")
 
     {:ok, file} = Ybira.upload(TestRepo, ctx.keys, blobs(), ctx.dono_scope, path, mime: @mime)
-    assert file.effective_at == nil
+    assert is_nil(file.effective_at)
 
     # O produto preenche com a data de captura; como a zona, e coluna local,
     # fora do record assinado.

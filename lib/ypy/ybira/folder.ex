@@ -29,15 +29,15 @@ defmodule Ypy.Ybira.Folder do
         }
 
   schema "ybira_folders" do
-    field(:rkey, :string)
-    field(:cid, :string)
-    field(:nome, :string)
-    field(:zona, Ecto.Enum, values: [:casa, :praca], default: :casa)
     field(:apagado_em, :utc_datetime)
+    field(:cid, :string)
+    belongs_to(:dono, Ava)
+    field(:nome, :string)
+    belongs_to(:parent, __MODULE__)
+    field(:rkey, :string)
 
     belongs_to(:tekoa, Tekoa)
-    belongs_to(:dono, Ava)
-    belongs_to(:parent, __MODULE__)
+    field(:zona, Ecto.Enum, values: [:casa, :praca], default: :casa)
 
     timestamps(type: :utc_datetime)
   end
@@ -45,8 +45,8 @@ defmodule Ypy.Ybira.Folder do
   @doc "Cria a pasta. `rkey` e `cid` (do envelope) sao programaticos."
   def changeset(folder, attrs) do
     folder
-    |> cast(attrs, [:rkey, :cid, :nome, :zona, :tekoa_id, :dono_id, :parent_id])
-    |> validate_required([:rkey, :cid, :nome, :tekoa_id, :dono_id])
+    |> cast(attrs, [:cid, :dono_id, :nome, :parent_id, :rkey, :tekoa_id, :zona])
+    |> validate_required([:cid, :dono_id, :nome, :rkey, :tekoa_id])
     |> validate_inclusion(:zona, [:casa, :praca])
     |> validate_length(:nome, min: 1, max: 255)
     |> foreign_key_constraint(:tekoa_id)

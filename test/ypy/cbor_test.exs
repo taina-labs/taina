@@ -110,7 +110,7 @@ defmodule Ypy.CborTest do
     assert_raise ArgumentError, fn -> Cbor.encode(1 <<< 64) end
   end
 
-  describe "decode strictness" do
+  describe "decode!/1" do
     test "rejects indefinite-length items" do
       assert_raise ArgumentError,
                    "indefinite-length items are not valid DAG-CBOR",

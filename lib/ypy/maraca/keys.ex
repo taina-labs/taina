@@ -19,7 +19,19 @@ defmodule Ypy.Maraca.Keys do
   @fingerprint_bytes 10
 
   @typedoc "Chave publica comprimida e chave privada, cada uma com 32/33 bytes."
+  # The public Ypy.KeyStore behaviour consumes this type.
+  # credo:disable-for-next-line OptimumCredo.Check.Readability.UnusedTypes
   @type keypair :: {pub :: binary(), priv :: binary()}
+
+  @doc """
+  Impressao digital deterministica da chave publica: 16 caracteres base32 dos
+  primeiros 80 bits do SHA-256 da chave comprimida. Para conferencia humana
+  (rotacao de chave, logs), nao como identificador.
+  """
+  def fingerprint(pub) when byte_size(pub) == @pub_size do
+    <<fingerprint::binary-size(@fingerprint_bytes), _rest::binary>> = :crypto.hash(:sha256, pub)
+    Base32.encode(fingerprint)
+  end
 
   @doc """
   Gera o par a partir da entropia privada: 32 bytes com valor entre 1 e a
@@ -50,15 +62,5 @@ defmodule Ypy.Maraca.Keys do
     :crypto.verify(:ecdsa, :sha256, payload, der, [pub, :secp256k1])
   rescue
     ErlangError -> false
-  end
-
-  @doc """
-  Impressao digital deterministica da chave publica: 16 caracteres base32 dos
-  primeiros 80 bits do SHA-256 da chave comprimida. Para conferencia humana
-  (rotacao de chave, logs), nao como identificador.
-  """
-  def fingerprint(pub) when byte_size(pub) == @pub_size do
-    <<fingerprint::binary-size(@fingerprint_bytes), _rest::binary>> = :crypto.hash(:sha256, pub)
-    Base32.encode(fingerprint)
   end
 end

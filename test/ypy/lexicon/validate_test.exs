@@ -3,6 +3,8 @@ defmodule Ypy.Lexicon.ValidateTest do
 
   alias Ypy.Lexicon.Validate
 
+  doctest Validate
+
   defp errors(schema, value) do
     case Validate.validate(schema, value) do
       :ok -> []

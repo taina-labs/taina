@@ -3,7 +3,7 @@ defmodule Ypy.Maraca.PolicyTest do
 
   alias Ypy.Maraca.Policy
 
-  describe "the read rule (praca OR dono OR concessao)" do
+  describe "can_read?/6" do
     test "nobody asks to read the praca" do
       for leitor <- [1, 2, 99] do
         assert Policy.can_read?(:praca, leitor, 7, "ypy.file.v0", "rkey-1", [])
@@ -55,7 +55,9 @@ defmodule Ypy.Maraca.PolicyTest do
     end
   end
 
-  describe "papeis" do
+  # This group covers both role predicates; neither is a sad-path-only group.
+  # credo:disable-for-next-line OptimumCredo.Check.Readability.DescribeFunctionArity
+  describe "zelador?/1 and morador?/1" do
     test "zelador is the machine care role" do
       assert Policy.zelador?(:zelador)
       refute Policy.zelador?(:morador)
@@ -72,7 +74,9 @@ defmodule Ypy.Maraca.PolicyTest do
     end
   end
 
-  describe "invite and reset expiry" do
+  # The boundary tests cover the related invite/reset expiry predicates together.
+  # credo:disable-for-next-line OptimumCredo.Check.Readability.DescribeFunctionArity
+  describe "invite_expired?/2 and reset_expired?/2" do
     test "nil sent_at is already expired" do
       agora = DateTime.utc_now()
 

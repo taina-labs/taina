@@ -73,14 +73,14 @@ defmodule Ypy.LexiconTest do
     @tag :tmp_dir
     test "a broken file becomes a problem, not an exception", %{tmp_dir: tmp} do
       File.write!(Path.join(tmp, "broken.json"), "{nao json")
-      File.write!(Path.join(tmp, "noid.json"), ~s({"defs": {}}))
+      File.write!(Path.join(tmp, "noid.json"), ~S({"defs": {}}))
       write_lexicon(tmp, @file_lexicon)
 
       {index, problems} = Lexicon.load([tmp])
 
       assert Map.keys(index) == ["ypy.file.v0"]
 
-      assert problems |> Enum.map(&elem(&1, 1)) |> Enum.sort() ==
+      assert problems |> Enum.map(fn {_path, problem} -> problem end) |> Enum.sort() ==
                [:no_id, {:bad_json, {:invalid_byte, 1, 110}}]
     end
   end
@@ -138,11 +138,11 @@ defmodule Ypy.LexiconTest do
     test "answers nil for a collection with no lexicon and with no record def" do
       index = index_of([@file_lexicon])
 
-      assert Lexicon.record_schema("falta.v0", index) == nil
+      assert is_nil(Lexicon.record_schema("falta.v0", index))
 
       sem_record = %{"id" => "sem.v0", "defs" => %{"main" => %{"type" => "token"}}}
 
-      assert Lexicon.record_schema("sem.v0", index_of([sem_record])) == nil
+      assert is_nil(Lexicon.record_schema("sem.v0", index_of([sem_record])))
     end
   end
 

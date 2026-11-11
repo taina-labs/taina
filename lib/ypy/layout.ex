@@ -14,7 +14,7 @@ defmodule Ypy.Layout do
   e trabalho do produto (`Ypy.BlobStore.Disk`, `Ypy.KeyStore.Files`).
   """
 
-  @enforce_keys [:dir, :db, :blobs, :keys]
+  @enforce_keys [:blobs, :db, :dir, :keys]
   defstruct [:dir, :db, :blobs, :keys]
 
   @type t :: %__MODULE__{dir: Path.t(), db: Path.t(), blobs: Path.t(), keys: Path.t()}

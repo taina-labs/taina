@@ -9,8 +9,11 @@ defmodule Ypy.Wire.Ava do
   alias Ypy.Maraca.Ava
   alias Ypy.Wire
 
+  @type ava :: Ava.t()
+  @type params :: map()
+
   @doc "O mapa JSON do ava: a palavra do dominio no `papel`, momentos em ISO-8601 UTC."
-  @spec json(Ava.t()) :: map()
+  @spec json(ava()) :: params()
   def json(%Ava{} = ava) do
     %{
       "public_id" => ava.public_id,

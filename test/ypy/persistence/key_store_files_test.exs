@@ -29,11 +29,15 @@ defmodule Ypy.KeyStore.FilesTest do
     assert Files.initialize(keys, 1, {pub, priv}) == :ok
 
     path = Path.join(dir, "tekoa-1.key")
+    # The key path uses a fixed test id under the isolated temporary root.
+    # credo:disable-for-next-line OeditusCredo.Check.Security.PathTraversal
     assert File.read!(path) == priv
     assert Bitwise.band(File.stat!(path).mode, 0o777) == 0o600
 
     {:ok, {_other_pub, other_priv}} = Files.generate(keys)
     assert Files.initialize(keys, 1, {pub, other_priv}) == {:error, :eexist}
+    # Same fixed test id and isolated temporary root as the preceding read.
+    # credo:disable-for-next-line OeditusCredo.Check.Security.PathTraversal
     assert File.read!(path) == priv
 
     assert {:ok, signature} = Files.sign(keys, 1, "corpo")
@@ -61,6 +65,8 @@ defmodule Ypy.KeyStore.FilesTest do
     :ok = Files.rotate(keys, 3, {pub2, priv2})
 
     path = Path.join(dir, "tekoa-3.key")
+    # The key path uses a fixed test id under the isolated temporary root.
+    # credo:disable-for-next-line OeditusCredo.Check.Security.PathTraversal
     assert File.read!(path) == priv2
     assert Bitwise.band(File.stat!(path).mode, 0o777) == 0o600
     assert {:ok, ^pub2} = Files.fetch_public(keys, 3)
@@ -78,7 +84,7 @@ defmodule Ypy.KeyStore.FilesTest do
     :ok = Files.rotate(keys, 4, {pub_nova, priv_nova})
 
     assert File.read!(Path.join(dir, "tekoa-4.key")) == priv_nova
-    assert dir |> Path.join("tekoa-4.key.tmp-123") |> File.exists?() == false
+    refute File.exists?(Path.join(dir, "tekoa-4.key.tmp-123"))
     assert Enum.empty?(Path.wildcard(Path.join(dir, "*.tmp-*")))
   end
 end

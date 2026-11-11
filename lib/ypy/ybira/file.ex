@@ -41,20 +41,19 @@ defmodule Ypy.Ybira.File do
         }
 
   schema "ybira_files" do
-    field(:rkey, :string)
-    field(:cid, :string)
-    field(:blob_cid, :string)
-    field(:nome, :string)
-    field(:mime, :string)
-    field(:tamanho, :integer)
-    field(:hash, :string)
-    field(:zona, Ecto.Enum, values: [:casa, :praca], default: :casa)
     field(:apagado_em, :utc_datetime)
-    field(:effective_at, :utc_datetime)
-
-    belongs_to(:tekoa, Tekoa)
+    field(:blob_cid, :string)
+    field(:cid, :string)
     belongs_to(:dono, Ava)
+    field(:effective_at, :utc_datetime)
     belongs_to(:folder, Folder)
+    field(:hash, :string)
+    field(:mime, :string)
+    field(:nome, :string)
+    field(:rkey, :string)
+    field(:tamanho, :integer)
+    belongs_to(:tekoa, Tekoa)
+    field(:zona, Ecto.Enum, values: [:casa, :praca], default: :casa)
 
     timestamps(type: :utc_datetime)
   end
@@ -63,29 +62,29 @@ defmodule Ypy.Ybira.File do
   def changeset(file, attrs) do
     file
     |> cast(attrs, [
-      :rkey,
-      :cid,
       :blob_cid,
-      :nome,
-      :mime,
-      :tamanho,
-      :hash,
-      :zona,
-      :tekoa_id,
+      :cid,
       :dono_id,
+      :effective_at,
       :folder_id,
-      :effective_at
+      :hash,
+      :mime,
+      :nome,
+      :rkey,
+      :tamanho,
+      :tekoa_id,
+      :zona
     ])
     |> validate_required([
-      :rkey,
-      :cid,
       :blob_cid,
-      :nome,
-      :mime,
-      :tamanho,
+      :cid,
+      :dono_id,
       :hash,
-      :tekoa_id,
-      :dono_id
+      :mime,
+      :nome,
+      :rkey,
+      :tamanho,
+      :tekoa_id
     ])
     |> validate_number(:tamanho, greater_than: 0)
     |> validate_inclusion(:zona, [:casa, :praca])
@@ -99,7 +98,7 @@ defmodule Ypy.Ybira.File do
   @doc "Troca o envelope (versao nova do record) e o dado que ele descreve."
   def record_changeset(file, attrs) do
     file
-    |> cast(attrs, [:cid, :nome, :folder_id])
+    |> cast(attrs, [:cid, :folder_id, :nome])
     |> validate_required([:cid, :nome])
     |> validate_length(:nome, min: 1, max: 255)
   end

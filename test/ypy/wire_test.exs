@@ -105,8 +105,8 @@ defmodule Ypy.WireTest do
 
   test "o dono com preload sai pelo public_id, e sem preload sai null" do
     assert File.json(file())["dono"] == "Ab3_xYz9_-Q1"
-    assert File.json(%{file() | dono: nil})["dono"] == nil
-    assert File.json(%{file() | dono: %Ecto.Association.NotLoaded{}})["dono"] == nil
+    assert is_nil(File.json(%{file() | dono: nil})["dono"])
+    assert is_nil(File.json(%{file() | dono: %Ecto.Association.NotLoaded{}})["dono"])
   end
 
   test "a pasta pai sem preload sai null, e a lixeira sai como deleted_at" do
@@ -114,7 +114,7 @@ defmodule Ypy.WireTest do
 
     map = File.json(trashed)
 
-    assert map["folder"] == nil
+    assert is_nil(map["folder"])
     assert map["deleted_at"] == "2026-10-12T13:00:00Z"
   end
 
@@ -142,7 +142,7 @@ defmodule Ypy.WireTest do
              "updated_at" => "2026-10-12T12:00:00Z"
            }
 
-    assert File.json(%{folder | dono: nil})["dono"] == nil
+    assert is_nil(File.json(%{folder | dono: nil})["dono"])
   end
 
   test "o mapa da entrada do mural leva as coordenadas da cadeia e o payload" do
@@ -179,7 +179,7 @@ defmodule Ypy.WireTest do
     assert Errors.resolve(%Ecto.Changeset{}) == {422, "validation_failed"}
     assert Errors.resolve(:motivo_nenhum) == {500, "internal_error"}
     assert Errors.resolve("lixo") == {500, "internal_error"}
-    assert Errors.status(:motivo_nenhum) == nil
+    assert is_nil(Errors.status(:motivo_nenhum))
   end
 
   defp ava do

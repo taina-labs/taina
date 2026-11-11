@@ -1,7 +1,7 @@
 defmodule Ypy.Base58 do
   @moduledoc "Codificacao base58btc (alfabeto Bitcoin), como usada pelo multibase `z`."
 
-  @alphabet ~c"123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+  @alphabet ~C"123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
   @decode_map Map.new(Enum.with_index(@alphabet))
 
   @doc "Codifica um binario como base58btc."
@@ -10,9 +10,6 @@ defmodule Ypy.Base58 do
     chars = encode_int(:binary.decode_unsigned(bin), [])
     IO.iodata_to_binary([List.duplicate(?1, zeros), chars])
   end
-
-  defp leading_zeros(<<0, rest::binary>>, acc), do: leading_zeros(rest, acc + 1)
-  defp leading_zeros(_rest, acc), do: acc
 
   defp encode_int(0, acc), do: acc
 
@@ -37,4 +34,7 @@ defmodule Ypy.Base58 do
       _ -> raise ArgumentError, "invalid base58 character: #{<<c>>}"
     end
   end
+
+  defp leading_zeros(<<0, rest::binary>>, acc), do: leading_zeros(rest, acc + 1)
+  defp leading_zeros(_rest, acc), do: acc
 end

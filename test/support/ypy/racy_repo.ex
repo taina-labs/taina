@@ -44,7 +44,11 @@ defmodule Ypy.RacyRepo do
         TestRepo.insert(changeset, opts)
 
       {mode, keys, tekoa_id, tipo, payload} ->
-        if mode == :once, do: disarm()
+        case mode do
+          :once -> disarm()
+          :always -> nil
+        end
+
         _ = Store.append(TestRepo, keys, tekoa_id, tipo, payload)
         TestRepo.insert(changeset, opts)
     end

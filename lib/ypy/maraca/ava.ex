@@ -38,38 +38,61 @@ defmodule Ypy.Maraca.Ava do
         }
 
   schema "maraca_avas" do
-    field(:username, :string)
-    field(:display_name, :string)
-    field(:papel, Ecto.Enum, values: [:zelador, :morador], default: :morador)
-    field(:public_id, PublicId, autogenerate: true)
-    field(:password_hash, :string)
     field(:activated_at, :utc_datetime)
-    field(:invite_token_hash, :string)
-    field(:invite_sent_at, :utc_datetime)
-    field(:reset_token_hash, :string)
-    field(:reset_sent_at, :utc_datetime)
-    field(:invited_at, :utc_datetime)
     field(:deactivated_at, :utc_datetime)
+    field(:display_name, :string)
+    field(:invite_sent_at, :utc_datetime)
+    field(:invite_token_hash, :string)
+    field(:invited_at, :utc_datetime)
+    belongs_to(:invited_by, __MODULE__)
+    field(:papel, Ecto.Enum, values: [:zelador, :morador], default: :morador)
 
     # A senha crua nunca toca o banco: virtual, so para o changeset hashear.
     field(:password, :string, virtual: true)
+    field(:password_hash, :string)
+    field(:public_id, PublicId, autogenerate: true)
+    field(:reset_sent_at, :utc_datetime)
+    field(:reset_token_hash, :string)
 
     belongs_to(:tekoa, Tekoa)
-    belongs_to(:invited_by, __MODULE__)
+    field(:username, :string)
 
     timestamps(type: :utc_datetime)
   end
 
+  @doc "O aceite do convite: nome de usuario, senha e a conta ativa."
+  def accept_changeset(ava, attrs) do
+    ava
+    |> cast(attrs, [:display_name, :password, :username])
+    |> validate_required([:password, :username])
+    |> validate_username()
+    |> validate_length(:password, min: 8)
+    |> maybe_hash_password()
+    |> put_change(:activated_at, DateTime.truncate(DateTime.utc_now(), :second))
+    |> put_change(:invite_token_hash, nil)
+    |> put_change(:invite_sent_at, nil)
+    |> unique_constraint(:username, name: :maraca_avas_tekoa_id_username_index)
+  end
+
+  @doc "Conta ativa? Desativada nao autentica e nao aparece como moradora."
+  def active?(%__MODULE__{activated_at: at, deactivated_at: nil}), do: at != nil
+  def active?(%__MODULE__{}), do: false
+
   @doc "Cria ou atualiza um Ava."
   def changeset(ava, attrs) do
     ava
-    |> cast(attrs, [:username, :display_name, :papel])
+    |> cast(attrs, [:display_name, :papel, :username])
     |> validate_required([:username, :tekoa_id])
     |> validate_username()
     |> validate_length(:display_name, max: 80)
     |> foreign_key_constraint(:tekoa_id)
     |> unique_constraint(:username, name: :maraca_avas_tekoa_id_username_index)
     |> unique_constraint(:public_id)
+  end
+
+  @doc "Desativa (DateTime) ou reativa (nil). Programatico, nunca de input."
+  def deactivation_changeset(ava, deactivated_at) do
+    change(ava, deactivated_at: deactivated_at)
   end
 
   @doc """
@@ -79,30 +102,34 @@ defmodule Ypy.Maraca.Ava do
   def invitation_changeset(ava, attrs) do
     ava
     |> cast(attrs, [
-      :tekoa_id,
+      :invite_sent_at,
+      :invite_token_hash,
+      :invited_at,
       :invited_by_id,
       :papel,
-      :invite_token_hash,
-      :invite_sent_at,
-      :invited_at
+      :tekoa_id
     ])
-    |> validate_required([:tekoa_id, :invited_by_id, :invite_token_hash])
+    |> validate_required([:invite_token_hash, :invited_by_id, :tekoa_id])
     |> validate_inclusion(:papel, [:zelador, :morador])
     |> unique_constraint(:invite_token_hash)
   end
 
-  @doc "O aceite do convite: nome de usuario, senha e a conta ativa."
-  def accept_changeset(ava, attrs) do
+  @doc "Troca de papel. Quem pode e a protecao do ultimo zelador sao do contexto."
+  def papel_changeset(ava, papel) do
     ava
-    |> cast(attrs, [:username, :display_name, :password])
-    |> validate_required([:username, :password])
-    |> validate_username()
+    |> cast(%{papel: papel}, [:papel])
+    |> validate_inclusion(:papel, [:zelador, :morador])
+  end
+
+  @doc "A redefinicao completa: nova senha e token queimado."
+  def reset_changeset(ava, attrs) do
+    ava
+    |> cast(attrs, [:password])
+    |> validate_required([:password])
     |> validate_length(:password, min: 8)
-    |> hash_password()
-    |> put_change(:activated_at, DateTime.truncate(DateTime.utc_now(), :second))
-    |> put_change(:invite_token_hash, nil)
-    |> put_change(:invite_sent_at, nil)
-    |> unique_constraint(:username, name: :maraca_avas_tekoa_id_username_index)
+    |> maybe_hash_password()
+    |> put_change(:reset_token_hash, nil)
+    |> put_change(:reset_sent_at, nil)
   end
 
   @doc "O pedido de redefinicao que o zelador gera (entrega e token no produto)."
@@ -113,40 +140,13 @@ defmodule Ypy.Maraca.Ava do
     |> unique_constraint(:reset_token_hash)
   end
 
-  @doc "A redefinicao completa: nova senha e token queimado."
-  def reset_changeset(ava, attrs) do
-    ava
-    |> cast(attrs, [:password])
-    |> validate_required([:password])
-    |> validate_length(:password, min: 8)
-    |> hash_password()
-    |> put_change(:reset_token_hash, nil)
-    |> put_change(:reset_sent_at, nil)
-  end
-
-  @doc "Troca de papel. Quem pode e a protecao do ultimo zelador sao do contexto."
-  def papel_changeset(ava, papel) do
-    ava
-    |> cast(%{papel: papel}, [:papel])
-    |> validate_inclusion(:papel, [:zelador, :morador])
-  end
-
-  @doc "Desativa (DateTime) ou reativa (nil). Programatico, nunca de input."
-  def deactivation_changeset(ava, deactivated_at) do
-    change(ava, deactivated_at: deactivated_at)
-  end
-
-  @doc "Conta ativa? Desativada nao autentica e nao aparece como moradora."
-  def active?(%__MODULE__{activated_at: at, deactivated_at: nil}), do: at != nil
-  def active?(%__MODULE__{}), do: false
-
-  defp hash_password(%Ecto.Changeset{valid?: true, changes: %{password: password}} = changeset) do
+  defp maybe_hash_password(%Ecto.Changeset{valid?: true, changes: %{password: password}} = changeset) do
     changeset
     |> put_change(:password_hash, Bcrypt.hash_pwd_salt(password))
     |> delete_change(:password)
   end
 
-  defp hash_password(changeset), do: changeset
+  defp maybe_hash_password(changeset), do: changeset
 
   defp validate_username(changeset) do
     changeset
