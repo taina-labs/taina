@@ -1,5 +1,81 @@
 # Changelog
 
+## [0.8.0](https://github.com/taina-labs/taina/compare/v0.7.1...v0.8.0) (2026-11-11)
+
+
+### Features
+
+* **files:** add multi-select actions ([d5e73fb](https://github.com/taina-labs/taina/commit/d5e73fbeb86b50670af59e1a8afaf7b282c6d088))
+* **files:** show move destinations as a tree ([4b2fcdf](https://github.com/taina-labs/taina/commit/4b2fcdfa6d297a765d93f8e403ef64e21056bcf2))
+* **files:** show move destinations as a tree ([90341de](https://github.com/taina-labs/taina/commit/90341deb7612b974b82fcf3dccf0307e12f83ccb))
+* **okena:** import Flutter app ([8a6d2b9](https://github.com/taina-labs/taina/commit/8a6d2b9065e6a37ea5c010e1dea791e70ea65cc4))
+* **site:** import public website ([93fddaf](https://github.com/taina-labs/taina/commit/93fddaf83b9cf1855a6cbdd5bf7e021456387023))
+* **trash:** add explicit permanent deletion ([5e695f4](https://github.com/taina-labs/taina/commit/5e695f4df59340a641a3937bd6f7ed373d116311))
+
+
+### Bug Fixes
+
+* **access:** handle revoked grants without crashing ([cc87018](https://github.com/taina-labs/taina/commit/cc87018b56a54828bd2ce14d1a40ac0726a0dab1))
+* **account:** handle reset lookup and persistence failures ([8b38ee7](https://github.com/taina-labs/taina/commit/8b38ee792c663607ef98ab8c3e7f0afbb7dbc4c3))
+* **backup:** require secrets when packaging ([0f43e32](https://github.com/taina-labs/taina/commit/0f43e3221daa4806bdbf2b4d2747f586dd52dac6))
+* **blobs:** make disk writes atomic ([463fd4a](https://github.com/taina-labs/taina/commit/463fd4a6ac595cd6aa70f7b8b8039b57001c6d21))
+* **config:** restrict WebSocket origins ([67e41b7](https://github.com/taina-labs/taina/commit/67e41b7199510dbb8f983984bf85d5f22fae93d5))
+* **files:** serve SVG as attachments ([437e325](https://github.com/taina-labs/taina/commit/437e325eabd12de3bb561722c9a0fd341e9b435b))
+* **health:** ignore unrelated PubSub messages ([cfb4abc](https://github.com/taina-labs/taina/commit/cfb4abc1c4dfc8cc2a7eabdf9eb5158129066cd0))
+* **home:** use community clock for greetings ([5a74d03](https://github.com/taina-labs/taina/commit/5a74d030bc08c2f8b6dc2bd6b519ab127a45d1bf))
+* **invites:** unify application deep links ([17dee9e](https://github.com/taina-labs/taina/commit/17dee9ed52c5974dba61f76e3efb0a9c58b8c29e))
+* **keys:** separate initialization from rotation ([297d249](https://github.com/taina-labs/taina/commit/297d249cf29cf147a317293d053768b2efc1de28))
+* **layouts:** centralize browser theme color ([f4e4336](https://github.com/taina-labs/taina/commit/f4e4336a8700e9a4a6665adb7ec52a7a7bdb9c50))
+* **lexicon:** reject non-string union types ([663e1ab](https://github.com/taina-labs/taina/commit/663e1ab3886d17f083d684a17bbfa665ceb64e1b))
+* **maraca:** protect last zelador in transaction ([163b6fe](https://github.com/taina-labs/taina/commit/163b6fe664debce6e914522e6b9129ac18782f24))
+* **mural:** describe unlimited quota correctly ([ba55b9f](https://github.com/taina-labs/taina/commit/ba55b9fff54f45f354fbae53fc64060f6820e86f))
+* **mural:** verify chains across key rotations ([524b6d0](https://github.com/taina-labs/taina/commit/524b6d0875a712bf3f61e6dde3a274d391401a84))
+* **okena:** resolve monorepo contract links ([cd29e4a](https://github.com/taina-labs/taina/commit/cd29e4a2538237c37167ace5a733e89184f38fea))
+* **preview:** normalize text encoding ([6219fcb](https://github.com/taina-labs/taina/commit/6219fcb2b35bb2d46acbe5aa00ce2d6bebc99d78))
+* **storage:** keep progress values in percent ([a3efbfa](https://github.com/taina-labs/taina/commit/a3efbfaf47faaef426e1ae701f3df6159d76eddd))
+* **thumbnails:** reject unknown tekoa ids ([a615464](https://github.com/taina-labs/taina/commit/a615464fc09652fa60e872e65532eda7d150a16b))
+* **trash:** remove photo renditions on purge ([f7df19a](https://github.com/taina-labs/taina/commit/f7df19a06fa50f261d1f5f3d3c6902276f333fc7))
+* **update:** contain HTTP client failures ([c20c11c](https://github.com/taina-labs/taina/commit/c20c11cdb71d414d5c25bac1750484b95475609e))
+* **uploads:** read multipart limits at runtime ([532c152](https://github.com/taina-labs/taina/commit/532c152de37c97d210d98a27cf49a886dbb7695b))
+* **ybira:** enforce read access and preserve blobs ([b4d2dde](https://github.com/taina-labs/taina/commit/b4d2dde5e7a86709ae92d7b283aae4cf5eb156d5))
+
+
+### Documentation
+
+* add privacidade lgpd disclaimer ([7fa7ed2](https://github.com/taina-labs/taina/commit/7fa7ed2109cb62b2c813449eaa43eb1420387c73))
+* align repository guidance with the 1.0.0 scope ([360fa31](https://github.com/taina-labs/taina/commit/360fa316468b366313fd653240c2fc2ae080640e))
+* **maraca:** correct storage and policy claims ([69f378c](https://github.com/taina-labs/taina/commit/69f378c30ff3d736e446af68973bf391b578ff72))
+* **ybira:** remove unsupported feature claims ([fc242af](https://github.com/taina-labs/taina/commit/fc242af1612318ca591de8ea466b0918a92f0416))
+
+
+### Miscellaneous Chores
+
+* add coderabbit file ([1682c5f](https://github.com/taina-labs/taina/commit/1682c5f26f7823e23597132a42add641a164747f))
+* coderabbit logo ([7e6d92a](https://github.com/taina-labs/taina/commit/7e6d92acfaebe88c9c59706ce0c286c1476368cd))
+* **credo:** configure expanded checks ([76d31cd](https://github.com/taina-labs/taina/commit/76d31cd0e15488757bc8dd9073e2b247ecddcabd))
+
+
+### Code Refactoring
+
+* **backup:** simplify secret validation ([732269f](https://github.com/taina-labs/taina/commit/732269f09b255964a9c16238e7d2ce2d6b59da51))
+* bound collection length checks ([03bb97f](https://github.com/taina-labs/taina/commit/03bb97f1ce6130b2dc803a42ec709b0775008372))
+* **nix:** share OCI container runtime ([83243b9](https://github.com/taina-labs/taina/commit/83243b94d6088d40ed54fc545c0a455d794f5b0a))
+* **taina:** apply expanded credo cleanup ([97a75d8](https://github.com/taina-labs/taina/commit/97a75d88df7bd5c9206aa17ce03003103398e8cf))
+* **thumbnails:** simplify tekoa lookup ([1d66806](https://github.com/taina-labs/taina/commit/1d66806f792009d254ac0a0721eb1760f1eae64c))
+* **trash:** flatten selection filtering ([c995d4e](https://github.com/taina-labs/taina/commit/c995d4e244b4add7cfdd78cb7c9a14493920aa9e))
+* **web:** apply expanded credo cleanup ([6a833a2](https://github.com/taina-labs/taina/commit/6a833a274a8ea9f3c54be6cc41a31095bdf11739))
+* **ypy:** apply expanded credo cleanup ([81224f7](https://github.com/taina-labs/taina/commit/81224f77dff019da3e85c45f2919ffdd6b9989ee))
+
+
+### Tests
+
+* **ybira:** alias blocking blob store ([3bdc863](https://github.com/taina-labs/taina/commit/3bdc86332f47c01c16a3b728f819c5e750cc7eea))
+
+
+### Continuous Integration
+
+* prepare independent monorepo releases ([fe99c8b](https://github.com/taina-labs/taina/commit/fe99c8bf4a1f5373ccfc0c4d88a9012976fdf2c3))
+
 ## [0.7.1](https://github.com/taina-labs/taina/compare/v0.7.0...v0.7.1) (2026-11-03)
 
 
