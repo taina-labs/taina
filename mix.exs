@@ -69,7 +69,12 @@ defmodule Taina.MixProject do
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:styler, "~> 1.12", only: [:dev, :test], runtime: false},
-      {:stream_data, "~> 1.4", only: [:dev, :test]}
+      {:stream_data, "~> 1.4", only: [:dev, :test]},
+      # credo plugins
+      {:ex_slop, "~> 0.1", only: [:dev, :test], runtime: false},
+      {:oeditus_credo, "~> 0.1", only: [:dev, :test], runtime: false},
+      {:jump_credo_checks, "~> 0.1", only: [:dev, :test], runtime: false},
+      {:optimum_credo, "~> 0.1", only: [:dev, :test], runtime: false}
     ]
   end
 
