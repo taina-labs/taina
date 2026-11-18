@@ -84,9 +84,63 @@
     });
   };
 
+  const wrapCodeBlock = (pre) => {
+    if (pre.closest(".code") || !pre.querySelector("code")) return;
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "code";
+
+    const head = document.createElement("div");
+    head.className = "code__head";
+
+    const label = document.createElement("span");
+    label.className = "code__label";
+    label.textContent = "Código";
+
+    const button = document.createElement("button");
+    button.className = "copy-btn";
+    button.type = "button";
+    button.setAttribute("aria-label", "Copiar bloco de código");
+    button.dataset.copy = "";
+
+    const buttonLabel = document.createElement("span");
+    buttonLabel.dataset.copyLabel = "";
+    buttonLabel.textContent = COPY_LABEL;
+    button.appendChild(buttonLabel);
+
+    head.append(label, button);
+    pre.parentNode.insertBefore(wrapper, pre);
+    wrapper.append(head, pre);
+  };
+
+  const initCodeBlocks = (root) => {
+    root.querySelectorAll(".prose pre").forEach(wrapCodeBlock);
+  };
+
+  const initTables = (root) => {
+    root.querySelectorAll(".prose table").forEach((table) => {
+      if (table.parentElement.classList.contains("prose__table-wrap")) return;
+
+      const wrapper = document.createElement("div");
+      wrapper.className = "prose__table-wrap";
+      wrapper.tabIndex = 0;
+      wrapper.setAttribute("role", "region");
+      wrapper.setAttribute(
+        "aria-label",
+        table.caption?.textContent.trim() ||
+          "Tabela ampla. Role horizontalmente para ver mais colunas.",
+      );
+
+      table.parentNode.insertBefore(wrapper, table);
+      wrapper.appendChild(table);
+    });
+  };
+
   // ---------- shell ----------
 
   const start = () => {
+    initCodeBlocks(document);
+    initTables(document);
     document.querySelectorAll("[data-tabs]").forEach(initTabs);
     document.querySelectorAll("[data-copy]").forEach(initCopy);
   };

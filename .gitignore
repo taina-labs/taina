@@ -54,5 +54,8 @@ result
 /deploy/compose/storage/
 /deploy/compose/backups/
 
+# Static site build
+/site/_build/
+
 # macOS
 .DS_Store

@@ -22,6 +22,8 @@ The 1.0.0 goal is to capture, store and recover files and photos: Flutter app on
 - `mix test` or `mix test test/path_test.exs`.
 - `mix precommit`: required final gate. Fix every finding.
 - `cd okena && just check`: analyzer and tests for the Flutter core and app.
+- `elixir site/build.exs --tekoa ../tekoa --output site/_build`: build the public portal from editorial pages and canonical Tekoá documents.
+- `elixir site/build_test.exs`: test the public portal builder with isolated fixtures.
 
 ## Project guidelines
 
