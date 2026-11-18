@@ -580,8 +580,40 @@ void main() {
         afterTrash.items.any((file) => file.rkey == estatutoRkey),
         isFalse,
       );
+
+      final mirror = (await api.manifest(mode: ManifestMode.mirror)).value!;
+      expect(mirror.items.any((file) => file.rkey == estatutoRkey), isTrue);
     },
   );
+
+  test('hash lookup distinguishes live, trashed and unknown files', () async {
+    final api = fake();
+    const sha256 =
+        'aa11bb22cc33dd44ee55ff66aa77bb88cc99dd00ee11ff22aa33bb44cc55dd66';
+
+    final live = (await api.hashLookup(sha256: sha256)).value!;
+    switch (live) {
+      case MirrorHashPresent(:final file):
+        expect(file.rkey, estatutoRkey);
+      case MirrorHashSuppressed():
+        fail('expected a live file');
+    }
+
+    expect((await api.deleteFile(rkey: estatutoRkey)).isSuccess, isTrue);
+    final trashed = (await api.hashLookup(sha256: sha256)).value!;
+    switch (trashed) {
+      case MirrorHashPresent():
+        fail('expected a suppressed hash');
+      case MirrorHashSuppressed():
+        expect(trashed, const MirrorHashSuppressed());
+    }
+
+    final unknown = apiErrorOf(
+      await api.hashLookup(sha256: List.filled(32, '00').join()),
+    );
+    expect(unknown.status, 404);
+    expect(unknown.code, 'not_found');
+  });
 
   test('the batch applies every item and says what became of each', () async {
     final api = fake();

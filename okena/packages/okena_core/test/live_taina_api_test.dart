@@ -503,6 +503,93 @@ void main() {
       expect(request.url.query, 'after=3m2a8twqpv5z2&limit=200');
     });
 
+    test('mirror manifest sends only the mirror mode', () async {
+      final (api, stub) = await signedInApi(
+        (_) async => Ok(
+          httpResponse(
+            status: 200,
+            body: '{"items":[$fileJson],"next_cursor":null}',
+          ),
+        ),
+      );
+      final page = (await api.manifest(mode: ManifestMode.mirror)).value!;
+      expect(page.items.single.name, 'ata.pdf');
+      expect(stub.requests.single.url.query, 'mode=mirror');
+    });
+
+    test('hash lookup encodes the path segment and decodes a present file', () async {
+      final (api, stub) = await signedInApi(
+        (_) async => Ok(
+          httpResponse(
+            status: 200,
+            body: '{"status":"present","file":$fileJson}',
+          ),
+        ),
+      );
+      final result = (await api.hashLookup(
+        sha256:
+            'aa11bb22cc33dd44ee55ff66aa77bb88cc99dd00ee11ff22aa33bb44cc55dd66',
+      )).value!;
+      switch (result) {
+        case MirrorHashPresent(:final file):
+          expect(file.name, 'ata.pdf');
+        case MirrorHashSuppressed():
+          fail('expected a present file');
+      }
+      final request = stub.requests.single;
+      expect(
+        request.url.toString(),
+        'https://box/api/v1/files/by-hash/'
+        'aa11bb22cc33dd44ee55ff66aa77bb88cc99dd00ee11ff22aa33bb44cc55dd66',
+      );
+      expect(
+        request.headers['Authorization'],
+        'Bearer tnd_abcdef0123456789abcdef0123456789',
+      );
+    });
+
+    test('hash lookup unknown remains the API 404 error', () async {
+      final (api, stub) = await signedInApi(
+        (_) async => Ok(
+          httpResponse(
+            status: 404,
+            body:
+                '{"error":{"code":"not_found",'
+                '"message":"Não encontramos este arquivo."}}',
+          ),
+        ),
+      );
+      final error = apiErrorOf(
+        await api.hashLookup(sha256: List.filled(32, '00').join()),
+      );
+      expect(error.status, 404);
+      expect(error.code, 'not_found');
+      expect(
+        stub.requests.single.url.path,
+        '/api/v1/files/by-hash/${List.filled(32, '00').join()}',
+      );
+    });
+
+    test('hash lookup encodes its value as one path segment', () async {
+      final (api, stub) = await signedInApi(
+        (_) async => Ok(
+          httpResponse(
+            status: 422,
+            body:
+                '{"error":{"code":"validation_failed",'
+                '"message":"The hash is invalid."}}',
+          ),
+        ),
+      );
+      final error = apiErrorOf(await api.hashLookup(sha256: 'not/a hash'));
+      expect(error.status, 422);
+      expect(error.code, 'validation_failed');
+      expect(
+        stub.requests.single.url.toString(),
+        'https://box/api/v1/files/by-hash/not%2Fa%20hash',
+      );
+    });
+
     test('members decode the page and the pending invite label', () async {
       const pending =
           '{"public_id":"avatk9x2m5qp7w","username":null,"display_name":null,'
@@ -1237,6 +1324,43 @@ void main() {
       expect(stub.requests.length, 2);
       expect(stub.requests[0].headers['If-None-Match'], isNull);
       expect(stub.requests[1].headers['If-None-Match'], 'W/"5-1760000000"');
+    });
+
+    test('mirror manifest retains conditional GET behavior', () async {
+      final (api, stub) = await signedInApi((call) async {
+        if (call.request.headers['If-None-Match'] != null) {
+          return Ok(httpResponse(status: 304));
+        }
+        return Ok(
+          httpResponse(
+            status: 200,
+            body: filePageJson,
+            headers: const {'ETag': 'W/"mirror-1"'},
+          ),
+        );
+      });
+
+      expect(
+        (await api.manifest(mode: ManifestMode.mirror))
+            .value!
+            .items
+            .single
+            .name,
+        'ata.pdf',
+      );
+      expect(
+        (await api.manifest(mode: ManifestMode.mirror))
+            .value!
+            .items
+            .single
+            .name,
+        'ata.pdf',
+      );
+
+      expect(stub.requests[0].url.query, 'mode=mirror');
+      expect(stub.requests[1].url.query, 'mode=mirror');
+      expect(stub.requests[0].headers['If-None-Match'], isNull);
+      expect(stub.requests[1].headers['If-None-Match'], 'W/"mirror-1"');
     });
 
     test('a 304 answers the page it kept', () async {

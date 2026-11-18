@@ -1,12 +1,12 @@
 defmodule Taina.Ybira.Manifest do
   @moduledoc """
-  O manifesto de backup (contrato review 0.1.0, C1): todo arquivo legivel,
-  do mais antigo para o mais novo (o rkey e um TID, ordenavel por tempo), um
-  `sha256` por linha. O cliente de backup lista o manifesto, compara com o
-  que ja tem localmente e baixa so o que falta.
+  O manifesto de arquivos, do mais antigo para o mais novo (o rkey e um TID,
+  ordenavel por tempo), um `sha256` por linha. O modo padrao lista arquivos
+  legiveis e ativos. O modo `:mirror` lista somente os arquivos do dono,
+  incluindo a lixeira.
 
-  O conjunto e o legivel pela regra do kernel (praca OU dono OU concessao),
-  fora da lixeira: o que esta apagado nao volta no backup.
+  O cliente de backup lista o manifesto, compara com o que ja tem localmente e
+  baixa so o que falta.
   """
 
   import Ecto.Query
@@ -18,6 +18,7 @@ defmodule Taina.Ybira.Manifest do
 
   @default_limit 200
   @type file :: File.t()
+  @type mode :: :readable | :mirror
   @type opts :: keyword()
   @type query :: Ecto.Query.t()
   @type scope :: Scope.t()
@@ -26,7 +27,9 @@ defmodule Taina.Ybira.Manifest do
   @doc """
   A pagina do manifesto: `{:ok, %{items: [File], next_cursor: rkey | nil}}`.
   O `:after` e o rkey do ultimo item da pagina anterior; o `:limit` chega da
-  borda ja parseado (padrao 200, teto 1000, em `TainaWeb.API.Query`).
+  borda ja parseado (padrao 200, teto 1000, em `TainaWeb.API.Query`). O modo
+  padrao e `:readable`; `:mirror` seleciona os arquivos do dono, inclusive a
+  lixeira.
   """
   @spec page(scope(), opts()) ::
           {:ok, %{items: [file()], next_cursor: text() | nil}}
@@ -36,7 +39,7 @@ defmodule Taina.Ybira.Manifest do
 
       rows =
         scope
-        |> readable_query()
+        |> collection_query(Keyword.get(opts, :mode, :readable))
         |> order_by([f], asc: f.rkey)
         |> maybe_apply_cursor(Keyword.get(opts, :after))
         |> limit(^(limit + 1))
@@ -58,13 +61,21 @@ defmodule Taina.Ybira.Manifest do
   agregados do ETag da colecao (`TainaWeb.API.Etag`), que conta e mede o
   `updated_at` maximo sobre ele.
   """
-  @spec readable_query(scope()) :: query()
-  def readable_query(%Scope{} = scope) do
+  @spec collection_query(scope(), mode()) :: query()
+  def collection_query(%Scope{} = scope, :readable) do
     KernelQueries.readable(
       from(f in File, where: f.tekoa_id == ^scope.tekoa.id and is_nil(f.apagado_em)),
       scope
     )
   end
+
+  def collection_query(%Scope{} = scope, :mirror) do
+    from(f in File, where: f.tekoa_id == ^scope.tekoa.id and f.dono_id == ^scope.ava.id)
+  end
+
+  @doc "The default readable, live-file collection."
+  @spec readable_query(scope()) :: query()
+  def readable_query(%Scope{} = scope), do: collection_query(scope, :readable)
 
   # O cursor e o rkey do ultimo item da pagina anterior; a pagina seguinte e
   # o que vem depois dele (rkey asc).

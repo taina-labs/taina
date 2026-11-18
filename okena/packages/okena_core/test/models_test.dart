@@ -94,6 +94,39 @@ void main() {
       expect(result.error, isA<InvalidResponseError>());
     });
 
+    test('decodes present and suppressed mirror hash responses', () {
+      final present = decode(
+        '{"status":"present","file":$fileJson}',
+        MirrorHashLookup.fromJson,
+      ).value!;
+      switch (present) {
+        case MirrorHashPresent(:final file):
+          expect(file.name, 'ata.pdf');
+          expect(file.sha256, contains('aa11'));
+        case MirrorHashSuppressed():
+          fail('expected a present file');
+      }
+
+      final suppressed = decode(
+        '{"status":"suppressed","file":null}',
+        MirrorHashLookup.fromJson,
+      ).value!;
+      switch (suppressed) {
+        case MirrorHashPresent():
+          fail('expected a suppressed hash');
+        case MirrorHashSuppressed():
+          expect(suppressed, const MirrorHashSuppressed());
+      }
+    });
+
+    test('an unknown mirror hash status is an invalid response', () {
+      final result = decode(
+        '{"status":"unknown","file":null}',
+        MirrorHashLookup.fromJson,
+      );
+      expect(result.error, isA<InvalidResponseError>());
+    });
+
     test('a wrong type is an invalid response', () {
       final result = decode(
         '{"bootstrapped":"yes","tekoa":null,"version":null}',

@@ -88,6 +88,7 @@ defmodule TainaWeb.Router do
 
     post "/files", FileController, :create
     get "/files/manifest", FileController, :manifest
+    get "/files/by-hash/:sha256", FileController, :by_hash
     post "/files/batch", FileController, :batch
     get @file_id_path, FileController, :show
     patch @file_id_path, FileController, :update

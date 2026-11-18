@@ -95,6 +95,28 @@ defmodule TainaWeb.API.Etag do
     end)
   end
 
+  @doc """
+  The owner's mirror collection, including trashed files. Its fingerprint
+  includes each file's trash state so trash and restore invalidate the tag.
+  """
+  @spec mirror_files(scope()) :: {:ok, etag()} | {:error, term()}
+  def mirror_files(%Scope{} = scope) do
+    Repo.with_tekoa(scope.tekoa.public_id, fn ->
+      rows =
+        scope
+        |> Manifest.collection_query(:mirror)
+        |> mirror_rows()
+
+      digest =
+        rows
+        |> :erlang.term_to_binary()
+        |> then(&:crypto.hash(:sha256, &1))
+        |> Base.url_encode64(padding: false)
+
+      {:ok, "W/\"mirror-#{digest}\""}
+    end)
+  end
+
   @doc "O token do ETag: a contagem e o maior `updated_at` em unix (0 quando o conjunto e vazio)."
   @spec token(count(), nil | timestamp()) :: etag()
   def token(count, nil) when is_integer(count), do: "W/\"#{count}-0\""
@@ -179,6 +201,17 @@ defmodule TainaWeb.API.Etag do
       )
 
     token(count, latest([file_last, photo_last]))
+  end
+
+  defp mirror_rows(query) do
+    Repo.all(
+      from(f in query,
+        left_join: p in Photo,
+        on: p.file_id == f.id,
+        order_by: [asc: f.id],
+        select: {f.id, f.updated_at, f.apagado_em, p.updated_at}
+      )
+    )
   end
 
   defp trash_query(%Scope{} = scope) do

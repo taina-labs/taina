@@ -16,6 +16,7 @@ export 'src/json/api_coding.dart';
 export 'src/json/json_value.dart';
 export 'src/media/thumbnail_store.dart';
 export 'src/models/access.dart';
+export 'src/models/mirror_hash_lookup.dart';
 export 'src/models/mural.dart';
 export 'src/models/page.dart';
 export 'src/models/storage.dart';

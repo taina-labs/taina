@@ -9,6 +9,7 @@ import 'package:okena_core/src/api/sort.dart';
 import 'package:okena_core/src/api/taina_api.dart';
 import 'package:okena_core/src/json/api_coding.dart';
 import 'package:okena_core/src/models/access.dart';
+import 'package:okena_core/src/models/mirror_hash_lookup.dart';
 import 'package:okena_core/src/models/mural.dart';
 import 'package:okena_core/src/models/page.dart';
 import 'package:okena_core/src/models/storage.dart';
@@ -481,12 +482,31 @@ final class LiveTainaApi implements TainaApi {
   }
 
   @override
-  Future<TainaResult<Page<FileRecord>>> manifest({String? after, int? limit}) {
+  Future<TainaResult<Page<FileRecord>>> manifest({
+    String? after,
+    int? limit,
+    ManifestMode mode = ManifestMode.readable,
+  }) {
     return _conditionalGet(
       path: 'files/manifest',
-      query: {'after': after, 'limit': limit?.toString()},
+      query: {
+        'after': after,
+        'limit': limit?.toString(),
+        'mode': mode == ManifestMode.mirror ? mode.wire : null,
+      },
       label: 'manifest',
       decode: (reader) => Page.fromJson(reader, FileRecord.fromJson),
+    );
+  }
+
+  @override
+  Future<TainaResult<MirrorHashLookup>> hashLookup({required String sha256}) {
+    return _sendJson(
+      path: 'files/by-hash',
+      pathSegments: [sha256],
+      authenticated: true,
+      label: 'hash lookup',
+      decode: MirrorHashLookup.fromJson,
     );
   }
 
@@ -758,6 +778,7 @@ final class LiveTainaApi implements TainaApi {
   /// Without a saved address the caller is sent back to Setup.
   Future<TainaResult<HttpRequest>> _prepared({
     required String path,
+    List<String> pathSegments = const [],
     String method = 'GET',
     Map<String, String?> query = const {},
     List<int>? body,
@@ -779,6 +800,7 @@ final class LiveTainaApi implements TainaApi {
     return build(
       base: address.url,
       path: path,
+      pathSegments: pathSegments,
       method: method,
       query: query,
       body: body,
@@ -795,6 +817,7 @@ final class LiveTainaApi implements TainaApi {
   static TainaResult<HttpRequest> build({
     required Uri base,
     required String path,
+    List<String> pathSegments = const [],
     String method = 'GET',
     Map<String, String?> query = const {},
     List<int>? body,
@@ -806,15 +829,21 @@ final class LiveTainaApi implements TainaApi {
     if (base.scheme.isEmpty || base.host.isEmpty) {
       return Err(InvalidUrlError());
     }
-    var prefix = base.path;
-    if (prefix.endsWith('/')) {
-      prefix = prefix.substring(0, prefix.length - 1);
+    final prefixSegments = [...base.pathSegments];
+    if (prefixSegments.isNotEmpty && prefixSegments.last.isEmpty) {
+      prefixSegments.removeLast();
     }
     var uri = Uri(
       scheme: base.scheme,
       host: base.host,
       port: base.hasPort ? base.port : null,
-      path: '$prefix/api/v1/$path',
+      pathSegments: [
+        ...prefixSegments,
+        'api',
+        'v1',
+        ...path.split('/'),
+        ...pathSegments,
+      ],
     );
 
     final given =
@@ -849,6 +878,7 @@ final class LiveTainaApi implements TainaApi {
 
   Future<TainaResult<T>> _sendJson<T>({
     required String path,
+    List<String> pathSegments = const [],
     String method = 'GET',
     Map<String, String?> query = const {},
     List<int>? body,
@@ -860,6 +890,7 @@ final class LiveTainaApi implements TainaApi {
   }) async {
     final request = await _prepared(
       path: path,
+      pathSegments: pathSegments,
       method: method,
       query: query,
       body: body,

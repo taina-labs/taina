@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:okena_core/src/api/sort.dart';
 import 'package:okena_core/src/models/access.dart';
+import 'package:okena_core/src/models/mirror_hash_lookup.dart';
 import 'package:okena_core/src/models/mural.dart';
 import 'package:okena_core/src/models/page.dart';
 import 'package:okena_core/src/models/storage.dart';
@@ -15,6 +16,14 @@ import 'package:okena_core/src/session/session.dart';
 enum ThumbnailSize {
   sm,
   md;
+
+  String get wire => name;
+}
+
+/// Which file set the manifest reads.
+enum ManifestMode {
+  readable,
+  mirror;
 
   String get wire => name;
 }
@@ -107,9 +116,16 @@ abstract class TainaApi {
     String? cursor,
   });
 
-  /// The backup manifest: every readable file's hash, oldest first, so a
-  /// client holding hashes can tell what is missing without a listing.
-  Future<TainaResult<Page<FileRecord>>> manifest({String? after, int? limit});
+  /// The readable backup manifest, or this person's live and trashed files
+  /// in mirror mode, oldest first.
+  Future<TainaResult<Page<FileRecord>>> manifest({
+    String? after,
+    int? limit,
+    ManifestMode mode = ManifestMode.readable,
+  });
+
+  /// Looks up this person's file by its SHA-256, including trash suppression.
+  Future<TainaResult<MirrorHashLookup>> hashLookup({required String sha256});
 
   /// One act over many files. The batch answers 200 even on partial failure;
   /// the outcome list carries what each item became.

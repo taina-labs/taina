@@ -22,6 +22,8 @@ defmodule TainaWeb.API.FileController do
   alias Ypy.Wire
 
   @batch_max_ids 200
+  @sha256_pattern ~r/\A[0-9a-f]{64}\z/
+  @validation_failed_code "validation_failed"
 
   # O lote corre item a item pelo mesmo contexto do endpoint unitario; a
   # falha de um nao para os outros (200 com o resultado de cada um). Os
@@ -38,7 +40,7 @@ defmodule TainaWeb.API.FileController do
       # O vocabulario do fio nao tem o atomo (changeset e que vira
       # validation_failed); a borda do lote responde ele direto, 422.
       {:error, :validation_failed} ->
-        Error.reply(conn, 422, "validation_failed")
+        Error.reply(conn, 422, @validation_failed_code)
 
       {:error, reason} ->
         Error.reply(conn, reason)
@@ -81,15 +83,40 @@ defmodule TainaWeb.API.FileController do
   # sai quando ele nao bate com o If-None-Match.
   def manifest(conn, params) do
     scope = conn.assigns[:current_scope]
-    opts = [limit: Query.limit(params, default: 200, max: 1000), after: Query.after_cursor(params)]
+    mode = if params["mode"] == "mirror", do: :mirror, else: :readable
 
-    with {:ok, etag} <- Etag.readable_files(scope),
+    opts = [
+      limit: Query.limit(params, default: 200, max: 1000),
+      after: Query.after_cursor(params),
+      mode: mode
+    ]
+
+    with {:ok, etag} <- manifest_etag(scope, mode),
          {:fresh, conn} <- Etag.handle(conn, etag),
          {:ok, %{items: files, next_cursor: next}} <- Manifest.page(scope, opts) do
       json(conn, Wire.page(Serializer.files(scope, files), next))
     else
       {:not_modified, conn} -> conn
       {:error, reason} -> Error.reply(conn, reason)
+    end
+  end
+
+  def by_hash(conn, %{"sha256" => hash}) do
+    if Regex.match?(@sha256_pattern, hash) do
+      scope = conn.assigns[:current_scope]
+
+      case Ybira.file_by_hash(scope, hash) do
+        {:ok, {:present, file}} ->
+          json(conn, %{"status" => "present", "file" => Serializer.file(scope, file)})
+
+        {:ok, :suppressed} ->
+          json(conn, %{"status" => "suppressed", "file" => nil})
+
+        {:error, reason} ->
+          Error.reply(conn, reason)
+      end
+    else
+      Error.reply(conn, 422, @validation_failed_code)
     end
   end
 
@@ -172,7 +199,7 @@ defmodule TainaWeb.API.FileController do
   end
 
   defp code(reason) when is_atom(reason), do: Atom.to_string(reason)
-  defp code(%Ecto.Changeset{}), do: "validation_failed"
+  defp code(%Ecto.Changeset{}), do: @validation_failed_code
   defp code(_reason), do: "internal_error"
 
   defp parse_ids(ids) when is_list(ids) do
@@ -182,6 +209,9 @@ defmodule TainaWeb.API.FileController do
   end
 
   defp parse_ids(_ids), do: {:error, :validation_failed}
+
+  defp manifest_etag(scope, :mirror), do: Etag.mirror_files(scope)
+  defp manifest_etag(scope, :readable), do: Etag.readable_files(scope)
 
   defp parse_op("trash"), do: {:ok, :trash}
   defp parse_op("restore"), do: {:ok, :restore}

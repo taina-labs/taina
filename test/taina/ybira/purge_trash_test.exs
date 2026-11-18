@@ -7,12 +7,14 @@ defmodule Taina.Ybira.Workers.PurgeTrashTest do
   alias Taina.Scope
   alias Taina.Ybira
   alias Taina.Ybira.BlobGc
+  alias Taina.Ybira.HashTombstone
   alias Taina.Ybira.Workers.PurgeTrash
   alias Ypy.Maraca.Tekoa
   alias Ypy.Ybira.File, as: YbiraFile
   alias Ypy.Ybira.Folder
 
   @seconds_per_day 86_400
+  @large_purge_count 1_001
 
   test "purges files trashed before the 30-day cutoff and reclaims their quota" do
     scope = scope_fixture()
@@ -69,6 +71,10 @@ defmodule Taina.Ybira.Workers.PurgeTrashTest do
     assert Repo.get(YbiraFile, keep.id, skip_tekoa_id: true)
     assert gc_row?(a.blob_cid) and gc_row?(b.blob_cid) and gc_row?(c.blob_cid)
     refute gc_row?(keep.blob_cid)
+    assert hash_tombstone?(a)
+    assert hash_tombstone?(b)
+    assert hash_tombstone?(c)
+    refute hash_tombstone?(keep)
 
     tekoa = Repo.get!(Tekoa, scope.tekoa.id, skip_tekoa_id: true)
     assert tekoa.storage_used_bytes == keep.tamanho
@@ -147,6 +153,66 @@ defmodule Taina.Ybira.Workers.PurgeTrashTest do
     assert gc_row?(a.blob_cid)
   end
 
+  test "manual and system purges batch more than one thousand files" do
+    scope = scope_fixture()
+    {:ok, folder} = Ybira.create_folder(scope, %{name: "lote"})
+    inserted_at = DateTime.truncate(DateTime.utc_now(), :second)
+    deleted_at = DateTime.shift(inserted_at, second: -2 * @seconds_per_day)
+    cutoff = DateTime.shift(inserted_at, second: -@seconds_per_day)
+
+    files =
+      Enum.map(1..(2 * @large_purge_count), fn index ->
+        %{
+          rkey: String.pad_leading(Integer.to_string(index), 13, "0"),
+          cid: "record-#{index}",
+          blob_cid: "blob-#{index}",
+          nome: "purged-#{index}.txt",
+          mime: "text/plain",
+          tamanho: 1,
+          hash: "hash-#{index}",
+          zona: :casa,
+          apagado_em: deleted_at,
+          tekoa_id: scope.tekoa.id,
+          dono_id: scope.ava.id,
+          folder_id: if(index <= @large_purge_count, do: folder.id),
+          effective_at: nil,
+          inserted_at: inserted_at,
+          updated_at: inserted_at
+        }
+      end)
+
+    assert {:ok, inserted_count} =
+             Repo.with_tekoa(scope.tekoa.public_id, fn ->
+               {:ok, insert_file_batches(files)}
+             end)
+
+    assert inserted_count == 2 * @large_purge_count
+
+    Repo.update_all(
+      from(t in Tekoa, where: t.id == ^scope.tekoa.id),
+      [set: [storage_used_bytes: 2 * @large_purge_count]],
+      skip_tekoa_id: true
+    )
+
+    {:ok, :deleted} = Ybira.delete_folder(scope, folder.rkey)
+
+    assert {:ok, %{folders: 1, files: @large_purge_count}} =
+             Ybira.purge_trash_folder(scope, folder.rkey)
+
+    assert {:ok, @large_purge_count} = Ybira.purge_deleted_files(cutoff)
+
+    assert Repo.aggregate(
+             from(t in HashTombstone, where: t.tekoa_id == ^scope.tekoa.id),
+             :count,
+             skip_tekoa_id: true
+           ) == 2 * @large_purge_count
+
+    assert Repo.aggregate(from(g in BlobGc), :count, skip_tekoa_id: true) == 2 * @large_purge_count
+
+    tekoa = Repo.get!(Tekoa, scope.tekoa.id, skip_tekoa_id: true)
+    assert tekoa.storage_used_bytes == 0
+  end
+
   test "purges folders trashed before the cutoff, keeps the recent ones" do
     scope = scope_fixture()
     {:ok, old} = Ybira.create_folder(scope, %{name: "antiga"})
@@ -172,11 +238,14 @@ defmodule Taina.Ybira.Workers.PurgeTrashTest do
     {:ok, file} = Ybira.upload(scope, tmp_upload_fixture("apagar", "arquivo.txt"))
     {:ok, _} = Ybira.delete_file(scope, file.rkey)
 
+    refute hash_tombstone?(file)
     assert {:ok, purged} = Ybira.purge_trash_file(scope, file.rkey)
     assert purged.id == file.id
     refute Repo.get(YbiraFile, file.id, skip_tekoa_id: true)
     assert blob_on_disk?(file)
     assert gc_row?(file.blob_cid)
+    assert hash_tombstone?(file)
+    assert {:ok, :suppressed} = Ybira.file_by_hash(scope, file.hash)
 
     tekoa = Repo.get!(Tekoa, scope.tekoa.id, skip_tekoa_id: true)
     assert tekoa.storage_used_bytes == 0
@@ -223,6 +292,8 @@ defmodule Taina.Ybira.Workers.PurgeTrashTest do
 
     refute Repo.get(YbiraFile, photo.id, skip_tekoa_id: true)
     refute Repo.get(YbiraFile, document.id, skip_tekoa_id: true)
+    assert hash_tombstone?(photo)
+    assert hash_tombstone?(document)
     refute photo_metadata_exists?(photo.id)
     assert Repo.get(YbiraFile, live_photo.id, skip_tekoa_id: true)
     assert photo_metadata_exists?(live_photo.id)
@@ -243,6 +314,19 @@ defmodule Taina.Ybira.Workers.PurgeTrashTest do
     assert {:ok, _} = Ybira.get_trashed_file(scope, file.rkey)
   end
 
+  defp insert_file_batches(files) do
+    files
+    |> Enum.chunk_every(50)
+    |> insert_file_batches(0)
+  end
+
+  defp insert_file_batches([], count), do: count
+
+  defp insert_file_batches([batch | batches], count) do
+    {inserted, _} = Repo.insert_all(YbiraFile, batch)
+    insert_file_batches(batches, count + inserted)
+  end
+
   defp days_ago(n), do: DateTime.shift(DateTime.utc_now(), second: -n * @seconds_per_day)
 
   defp backdate(schema, id, apagado_em) do
@@ -255,6 +339,15 @@ defmodule Taina.Ybira.Workers.PurgeTrashTest do
 
   defp gc_row?(blob_cid) do
     Repo.exists?(from(g in BlobGc, where: g.blob_cid == ^blob_cid), skip_tekoa_id: true)
+  end
+
+  defp hash_tombstone?(file) do
+    Repo.exists?(
+      from(t in HashTombstone,
+        where: t.tekoa_id == ^file.tekoa_id and t.dono_id == ^file.dono_id and t.hash == ^file.hash
+      ),
+      skip_tekoa_id: true
+    )
   end
 
   defp photo_thumbnails(scope, file) do

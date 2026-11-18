@@ -42,6 +42,7 @@ defmodule Taina.Ybira do
   alias Taina.Repo
   alias Taina.Ybira.BlobGc
   alias Taina.Ybira.BlobLock
+  alias Taina.Ybira.HashTombstone
   alias Taina.Ybira.MimeDetector
   alias Taina.Ybira.Workers.Rendition
   alias Ypy.BlobStore.Disk
@@ -63,6 +64,8 @@ defmodule Taina.Ybira do
   @tipo_folder "ypy.folder.v0"
   @chunk_bytes 65_536
   @folder_path_max_depth 32
+  @purge_insert_batch_size 200
+  @purge_delete_batch_size 500
 
   @type datetime :: DateTime.t()
   @type file :: File.t()
@@ -162,16 +165,28 @@ defmodule Taina.Ybira do
   def enqueue_blob_gc(blob_cids) when is_list(blob_cids) do
     agora = DateTime.truncate(DateTime.utc_now(), :second)
 
-    {count, _} =
-      Repo.insert_all(
-        BlobGc,
-        blob_cids |> Enum.uniq() |> Enum.map(&%{blob_cid: &1, enqueued_at: agora}),
-        on_conflict: :nothing,
-        conflict_target: :blob_cid,
-        skip_tekoa_id: true
-      )
+    entries = blob_cids |> Enum.uniq() |> Enum.map(&%{blob_cid: &1, enqueued_at: agora})
 
-    {:ok, count}
+    opts = [
+      on_conflict: :nothing,
+      conflict_target: :blob_cid,
+      skip_tekoa_id: true
+    ]
+
+    {:ok, insert_all_in_batches(entries, BlobGc, opts)}
+  end
+
+  defp insert_all_in_batches(entries, schema, opts) do
+    entries
+    |> Enum.chunk_every(@purge_insert_batch_size)
+    |> insert_batches(schema, opts, 0)
+  end
+
+  defp insert_batches([], _schema, _opts, count), do: count
+
+  defp insert_batches([batch | batches], schema, opts, count) do
+    {inserted, _} = Repo.insert_all(schema, batch, opts)
+    insert_batches(batches, schema, opts, count + inserted)
   end
 
   @doc """
@@ -278,6 +293,24 @@ defmodule Taina.Ybira do
   """
   def get_file(%Scope{} = scope, rkey) when is_binary(rkey) do
     within_tekoa(scope, fn -> Kernel.get_file(Repo, scope, rkey) end)
+  end
+
+  @doc """
+  Looks up a hash only among the current owner's files. Live files take
+  precedence over trash and permanent purge tombstones.
+  """
+  @spec file_by_hash(scope(), text()) ::
+          {:ok, {:present, file()} | :suppressed} | {:error, :not_found}
+  def file_by_hash(%Scope{} = scope, hash) when is_binary(hash) do
+    within_tekoa(scope, fn ->
+      case live_file_by_hash(scope, hash) do
+        %File{} = file ->
+          {:ok, {:present, file}}
+
+        nil ->
+          owner_hash_lookup_fallback(scope, hash)
+      end
+    end)
   end
 
   def get_folder(%Scope{} = scope, rkey) when is_binary(rkey) do
@@ -575,6 +608,44 @@ defmodule Taina.Ybira do
     case KernelStore.get_file(Repo, scope.tekoa.id, rkey) do
       nil -> {:error, :not_found}
       file -> access_target_readable(scope, rkey, file)
+    end
+  end
+
+  defp owner_hash_suppressed?(%Scope{} = scope, hash) do
+    trashed_file? =
+      Repo.exists?(
+        from(f in File,
+          where:
+            f.tekoa_id == ^scope.tekoa.id and f.dono_id == ^scope.ava.id and f.hash == ^hash and
+              not is_nil(f.apagado_em)
+        )
+      )
+
+    trashed_file? or
+      Repo.exists?(
+        from(t in HashTombstone,
+          where: t.tekoa_id == ^scope.tekoa.id and t.dono_id == ^scope.ava.id and t.hash == ^hash
+        )
+      )
+  end
+
+  defp live_file_by_hash(%Scope{} = scope, hash) do
+    Repo.one(
+      from(f in File,
+        where:
+          f.tekoa_id == ^scope.tekoa.id and f.dono_id == ^scope.ava.id and f.hash == ^hash and
+            is_nil(f.apagado_em),
+        order_by: [desc: f.rkey],
+        limit: 1
+      )
+    )
+  end
+
+  defp owner_hash_lookup_fallback(%Scope{} = scope, hash) do
+    if owner_hash_suppressed?(scope, hash) do
+      {:ok, :suppressed}
+    else
+      {:error, :not_found}
     end
   end
 
@@ -964,19 +1035,15 @@ defmodule Taina.Ybira do
   # pasta atual. O CTE devolve folha->raiz, então o `reverse` no fim entrega a
   # ordem que o breadcrumb espera (raiz->atual).
   defp purge_deleted_files_in_system(cutoff) do
-    # Registros saem num só `delete_all` (com `select: f`, devolve as linhas
-    # apagadas na mesma viagem). Arquivos saem ANTES das pastas: o FK de
-    # `folder_id` (nilify) não dispara em lote vazio.
-    {_count, files} =
-      Repo.delete_all(
-        from(f in File,
-          where: not is_nil(f.apagado_em) and f.apagado_em < ^cutoff,
-          select: f
-        ),
+    files =
+      Repo.all(
+        from(f in File, where: not is_nil(f.apagado_em) and f.apagado_em < ^cutoff),
         skip_tekoa_id: true
       )
 
-    with :ok <- delete_thumbnails(files, tekoa_public_ids(files, skip_tekoa_id: true)) do
+    with :ok <- insert_hash_tombstones(files, skip_tekoa_id: true),
+         :ok <- delete_purged_files(files, cutoff, skip_tekoa_id: true),
+         :ok <- delete_thumbnails(files, tekoa_public_ids(files, skip_tekoa_id: true)) do
       # Pastas na lixeira só guardam metadados (sem bytes nem cota), apaga em
       # lote. `delete_folder/2` faz soft delete em cascata; sem isto, os
       # registros de pasta ficariam para sempre com `apagado_em` preenchido.
@@ -1010,22 +1077,100 @@ defmodule Taina.Ybira do
     ids = Enum.map(files, & &1.id)
     bytes = Enum.reduce(files, 0, &(&1.tamanho + &2))
 
-    {count, _deleted} =
-      Repo.delete_all(from(f in File, where: f.tekoa_id == ^tekoa_id and f.id in ^ids))
-
-    if count == length(files) do
-      tekoa = Repo.get!(Tekoa, tekoa_id)
-
-      with :ok <- delete_thumbnails(files, %{tekoa_id => tekoa.public_id}) do
-        adjust_storage_used(tekoa_id, -bytes)
-        # enqueue_blob_gc/1 returns only {:ok, count}; Repo.insert_all raises on failure.
-        # credo:disable-for-next-line OeditusCredo.Check.Warning.MissingErrorHandling
-        {:ok, _queued} = enqueue_blob_gc(Enum.map(files, & &1.blob_cid))
-        {:ok, count}
-      end
-    else
-      {:error, :not_found}
+    with :ok <- insert_hash_tombstones(files),
+         {:ok, count} <- delete_owned_purge_files(tekoa_id, ids, length(files)),
+         :ok <- purge_file_side_effects(tekoa_id, files, bytes) do
+      {:ok, count}
     end
+  end
+
+  defp delete_owned_purge_files(tekoa_id, ids, expected_count) do
+    count =
+      ids
+      |> Enum.chunk_every(@purge_delete_batch_size)
+      |> delete_owned_purge_batches(tekoa_id, 0)
+
+    if count == expected_count, do: {:ok, count}, else: {:error, :not_found}
+  end
+
+  defp delete_owned_purge_batches([], _tekoa_id, count), do: count
+
+  defp delete_owned_purge_batches([ids | batches], tekoa_id, count) do
+    {deleted, _} =
+      Repo.delete_all(
+        from(f in File,
+          where: f.tekoa_id == ^tekoa_id and f.id in ^ids and not is_nil(f.apagado_em)
+        )
+      )
+
+    delete_owned_purge_batches(batches, tekoa_id, count + deleted)
+  end
+
+  defp purge_file_side_effects(tekoa_id, files, bytes) do
+    tekoa = Repo.get!(Tekoa, tekoa_id)
+
+    with :ok <- delete_thumbnails(files, %{tekoa_id => tekoa.public_id}) do
+      adjust_storage_used(tekoa_id, -bytes)
+      # enqueue_blob_gc/1 returns only {:ok, count}; Repo.insert_all raises on failure.
+      # credo:disable-for-next-line OeditusCredo.Check.Warning.MissingErrorHandling
+      {:ok, _queued} = enqueue_blob_gc(Enum.map(files, & &1.blob_cid))
+      :ok
+    end
+  end
+
+  defp delete_purged_files([], _cutoff, _opts), do: :ok
+
+  defp delete_purged_files(files, cutoff, opts) do
+    count =
+      files
+      |> Enum.map(& &1.id)
+      |> Enum.chunk_every(@purge_delete_batch_size)
+      |> delete_purged_batches(cutoff, opts, 0)
+
+    if count == length(files), do: :ok, else: {:error, :not_found}
+  end
+
+  defp delete_purged_batches([], _cutoff, _opts, count), do: count
+
+  defp delete_purged_batches([ids | batches], cutoff, opts, count) do
+    {deleted, _} =
+      Repo.delete_all(
+        from(f in File,
+          where: f.id in ^ids and not is_nil(f.apagado_em) and f.apagado_em < ^cutoff
+        ),
+        opts
+      )
+
+    delete_purged_batches(batches, cutoff, opts, count + deleted)
+  end
+
+  defp insert_hash_tombstones(files, opts \\ [])
+  defp insert_hash_tombstones([], _opts), do: :ok
+
+  defp insert_hash_tombstones(files, opts) do
+    inserted_at = DateTime.truncate(DateTime.utc_now(), :second)
+
+    entries =
+      Enum.map(files, fn %File{} = file ->
+        %{
+          tekoa_id: file.tekoa_id,
+          dono_id: file.dono_id,
+          hash: file.hash,
+          inserted_at: inserted_at
+        }
+      end)
+
+    insert_opts =
+      Keyword.merge(
+        [
+          on_conflict: :nothing,
+          conflict_target: [:tekoa_id, :dono_id, :hash]
+        ],
+        opts
+      )
+
+    _inserted = insert_all_in_batches(entries, HashTombstone, insert_opts)
+    :ok
   end
 
   defp purge_folders(tekoa_id, folder_ids) do

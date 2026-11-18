@@ -7,6 +7,7 @@ import 'package:okena_core/src/api/sort.dart';
 import 'package:okena_core/src/api/taina_api.dart';
 import 'package:okena_core/src/json/json_value.dart';
 import 'package:okena_core/src/models/access.dart';
+import 'package:okena_core/src/models/mirror_hash_lookup.dart';
 import 'package:okena_core/src/models/mural.dart';
 import 'package:okena_core/src/models/page.dart';
 import 'package:okena_core/src/models/storage.dart';
@@ -911,10 +912,16 @@ final class FakeTainaApi implements TainaApi {
   Future<TainaResult<Page<FileRecord>>> manifest({
     String? after,
     int? limit,
+    ManifestMode mode = ManifestMode.readable,
   }) async {
     await _pause();
-    final readable = _files.where((file) => file.deletedAt == null).toList()
-      ..sort((a, b) => a.rkey.compareTo(b.rkey));
+    final readable =
+        _files
+            .where(
+              (file) => mode == ManifestMode.mirror || file.deletedAt == null,
+            )
+            .toList()
+          ..sort((a, b) => a.rkey.compareTo(b.rkey));
     final rest = after == null
         ? readable
         : readable.where((file) => file.rkey.compareTo(after) > 0).toList();
@@ -924,6 +931,24 @@ final class FakeTainaApi implements TainaApi {
     final page = rest.take(size).toList();
     final next = page.length < rest.length ? page.last.rkey : null;
     return Ok(Page(items: page, nextCursor: next));
+  }
+
+  @override
+  Future<TainaResult<MirrorHashLookup>> hashLookup({
+    required String sha256,
+  }) async {
+    await _pause();
+    final live = _files
+        .where((file) => file.sha256 == sha256 && file.deletedAt == null)
+        .firstOrNull;
+    if (live != null) return Ok(MirrorHashPresent(file: live));
+
+    final discarded = _files
+        .where((file) => file.sha256 == sha256 && file.deletedAt != null)
+        .firstOrNull;
+    if (discarded != null) return const Ok(MirrorHashSuppressed());
+
+    return const Err(_notFoundFile);
   }
 
   /// The batch answers 200 even when items fail: each id runs through the

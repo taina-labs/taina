@@ -871,12 +871,21 @@ paths:
       tags: [Pastas e arquivos]
       summary: Manifesto de backup
       description: |
-        O manifesto: cada arquivo legível da pessoa com o hash, do mais
-        antigo para o mais novo (ordem de `rkey` ascendente). É o que um
-        cliente de backup consulta para saber o que já subiu sem listar
-        tudo. Página por `after` (o rkey da última) e `limit` (200 por
-        padrão, 1000 no máximo). A resposta traz `ETag` fraco.
+        Sem `mode` (ou com `mode=readable`), lista cada arquivo legível e ativo,
+        inclusive arquivos públicos de outras pessoas. Com `mode=mirror`, lista
+        somente arquivos da própria pessoa, na casa ou na praça, incluindo a
+        lixeira. Em ambos os modos, os itens vêm do mais antigo para o mais
+        novo (`rkey` ascendente), com hash e dados completos. Página por `after`
+        (o rkey da última) e `limit` (200 por padrão, 1000 no máximo). A resposta
+        traz `ETag` fraco para a coleção do modo escolhido.
       parameters:
+        - name: mode
+          in: query
+          description: "`readable` mantém o comportamento padrão; `mirror` lista os arquivos próprios, inclusive os da lixeira."
+          schema:
+            type: string
+            enum: [readable, mirror]
+            default: readable
         - name: after
           in: query
           description: O rkey do último arquivo da página anterior.
@@ -900,6 +909,35 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+
+  /api/v1/files/by-hash/{sha256}:
+    get:
+      tags: [Pastas e arquivos]
+      summary: Consultar arquivo próprio por hash
+      description: |
+        Consulta somente arquivos da própria pessoa. Um arquivo ativo retorna
+        `present` e o JSON completo. Se o hash só estiver na lixeira ou tiver
+        sido expurgado permanentemente, retorna `suppressed` sem arquivo.
+      parameters:
+        - name: sha256
+          in: path
+          required: true
+          description: Hash SHA-256 em 64 caracteres hexadecimais minúsculos.
+          schema:
+            $ref: "#/components/schemas/Sha256"
+      responses:
+        "200":
+          description: O hash está ativo ou foi suprimido pela lixeira/expurgo.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileHashLookup"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
 
   /api/v1/files/batch:
     post:
@@ -1620,6 +1658,23 @@ components:
         current:
           type: boolean
           description: True when this device made the current API request.
+
+    Sha256:
+      type: string
+      description: Hash SHA-256 em hexadecimal minúsculo.
+      pattern: "^[0-9a-f]{64}$"
+
+    FileHashLookup:
+      type: object
+      required: [status, file]
+      properties:
+        status:
+          type: string
+          enum: [present, suppressed]
+        file:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/File"
 
     File:
       type: object
