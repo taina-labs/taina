@@ -14,6 +14,9 @@ Widget _app(SessionGateway session) {
   );
 }
 
+SaudeBackup _backup(SaudeBackupStatus status) =>
+    SaudeBackup(status: status, at: null, bytes: null);
+
 void main() {
   testWidgets('the panel reads the box facts and offers the backup to the '
       'zeladora', (tester) async {
@@ -45,5 +48,64 @@ void main() {
     expect(find.text('Disco'), findsOneWidget);
     expect(find.text('Último backup'), findsOneWidget);
     expect(find.text('Fazer backup agora'), findsNothing);
+  });
+
+  testWidgets('a disabled backup shows guidance without an action', (
+    tester,
+  ) async {
+    final FakeTainaApi api = FakeTainaApi(
+      delay: Duration.zero,
+      backup: _backup(SaudeBackupStatus.disabled),
+    );
+    await tester.pumpWidget(_app(FakeSession(api, me: identity(ana))));
+    await tester.pumpAndSettle();
+
+    expect(find.text('O backup está desativado.'), findsOneWidget);
+    expect(
+      find.text('Quem cuida da máquina precisa ativar o backup.'),
+      findsOneWidget,
+    );
+    expect(find.text('Fazer backup agora'), findsNothing);
+  });
+
+  testWidgets('an unconfigured backup shows guidance without an action', (
+    tester,
+  ) async {
+    final FakeTainaApi api = FakeTainaApi(
+      delay: Duration.zero,
+      backup: _backup(SaudeBackupStatus.notConfigured),
+    );
+    await tester.pumpWidget(_app(FakeSession(api, me: identity(ana))));
+    await tester.pumpAndSettle();
+
+    expect(find.text('O backup está sem destino.'), findsOneWidget);
+    expect(
+      find.text(
+        'Quem cuida da máquina precisa escolher onde guardar o backup.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Fazer backup agora'), findsNothing);
+  });
+
+  testWidgets('an unreadable backup warns and keeps the zeladora action', (
+    tester,
+  ) async {
+    final FakeTainaApi api = FakeTainaApi(
+      delay: Duration.zero,
+      backup: _backup(SaudeBackupStatus.unreadable),
+    );
+    await tester.pumpWidget(_app(FakeSession(api, me: identity(ana))));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Não foi possível ler o destino do backup.'),
+      findsOneWidget,
+    );
+    expect(
+      find.text('Quem cuida da máquina precisa verificar o destino.'),
+      findsOneWidget,
+    );
+    expect(find.text('Fazer backup agora'), findsOneWidget);
   });
 }

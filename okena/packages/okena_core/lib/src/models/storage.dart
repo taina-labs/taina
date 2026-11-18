@@ -151,24 +151,50 @@ final class Saude {
   );
 }
 
-/// When the last backup ran and how much it carried; never, so far.
+/// The backup state the box reports in the community health panel.
+enum SaudeBackupStatus {
+  ok,
+  none,
+  disabled,
+  notConfigured,
+  unreadable;
+
+  static const Map<String, SaudeBackupStatus> byWire = {
+    'ok': ok,
+    'none': none,
+    'disabled': disabled,
+    'not_configured': notConfigured,
+    'unreadable': unreadable,
+  };
+}
+
+/// The backup state, when the last one ran and how much it carried.
 final class SaudeBackup {
-  const SaudeBackup({required this.at, required this.bytes});
+  const SaudeBackup({
+    required this.status,
+    required this.at,
+    required this.bytes,
+  });
 
   factory SaudeBackup.fromJson(JsonReader reader) {
     return SaudeBackup(
+      status: reader.enumValue('status', SaudeBackupStatus.byWire),
       at: reader.stringOrNull('at'),
       bytes: reader.integerOrNull('bytes'),
     );
   }
 
+  final SaudeBackupStatus status;
   final String? at;
   final int? bytes;
 
   @override
   bool operator ==(Object other) =>
-      other is SaudeBackup && other.at == at && other.bytes == bytes;
+      other is SaudeBackup &&
+      other.status == status &&
+      other.at == at &&
+      other.bytes == bytes;
 
   @override
-  int get hashCode => Object.hash(SaudeBackup, at, bytes);
+  int get hashCode => Object.hash(SaudeBackup, status, at, bytes);
 }

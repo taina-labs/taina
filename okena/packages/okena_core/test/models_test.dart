@@ -45,6 +45,44 @@ void main() {
   });
 
   group('boundary decoding', () {
+    test(
+      'decodes each backup status and rejects an unknown or missing one',
+      () {
+        const statuses = {
+          'ok': SaudeBackupStatus.ok,
+          'none': SaudeBackupStatus.none,
+          'disabled': SaudeBackupStatus.disabled,
+          'not_configured': SaudeBackupStatus.notConfigured,
+          'unreadable': SaudeBackupStatus.unreadable,
+        };
+        for (final MapEntry<String, SaudeBackupStatus> entry
+            in statuses.entries) {
+          final json = saudeJson.replaceFirst(
+            '"status":"ok"',
+            '"status":"${entry.key}"',
+          );
+          final saude = decode(json, Saude.fromJson).value!;
+          expect(saude.backup.status, entry.value);
+          expect(saude.backup.at, '2026-10-14T03:00:00Z');
+          expect(saude.backup.bytes, 1829000000);
+        }
+
+        final unknown = saudeJson.replaceFirst(
+          '"status":"ok"',
+          '"status":"old"',
+        );
+        expect(
+          decode(unknown, Saude.fromJson).error,
+          isA<InvalidResponseError>(),
+        );
+        final missing = saudeJson.replaceFirst('"status":"ok",', '');
+        expect(
+          decode(missing, Saude.fromJson).error,
+          isA<InvalidResponseError>(),
+        );
+      },
+    );
+
     test('decodes an instance', () {
       final instance = decode(instanceJson, Instance.fromJson).value!;
       expect(instance.bootstrapped, isTrue);
@@ -145,6 +183,24 @@ void main() {
       ).value!;
       expect(envelope, isEmpty);
     });
+  });
+
+  test('backup equality includes the status', () {
+    const ok = SaudeBackup(status: SaudeBackupStatus.ok, at: null, bytes: null);
+    const none = SaudeBackup(
+      status: SaudeBackupStatus.none,
+      at: null,
+      bytes: null,
+    );
+    expect(ok, isNot(none));
+    expect(
+      ok.hashCode,
+      Object.hash(SaudeBackup, SaudeBackupStatus.ok, null, null),
+    );
+    expect(
+      none.hashCode,
+      Object.hash(SaudeBackup, SaudeBackupStatus.none, null, null),
+    );
   });
 
   group('session encoding', () {

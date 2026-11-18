@@ -50,6 +50,30 @@ void main() {
     expect(find.text('Excluir'), findsOneWidget);
   });
 
+  testWidgets('uploads in a praca folder still start in casa', (tester) async {
+    _tall(tester);
+    final api = FakeTainaApi(delay: Duration.zero);
+    final folder = (await api.listFolders()).value!.firstWhere(
+      (folder) => folder.zona == Zona.praca,
+    );
+
+    await tester.pumpWidget(
+      _app(
+        FolderScreen(
+          session: FakeSessionGateway(api: api),
+          actions: FakeFileActions(),
+          folder: folder,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining('Todo envio começa na sua casa, onde só você vê.'),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('deleting the folder confirms and reports the deletion', (
     tester,
   ) async {

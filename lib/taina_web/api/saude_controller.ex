@@ -21,16 +21,25 @@ defmodule TainaWeb.API.SaudeController do
          {:ok, photos} <- Ybira.count_photos(scope),
          {:ok, trash} <- Ybira.trash_stats(scope) do
       storage = Serializer.storage(stats, by_kind, files, photos, trash)
-      json(conn, Serializer.saude(storage, Ybira.pending_job_counts(), Backup.last_backup()))
+      json(conn, Serializer.saude(storage, Ybira.pending_job_counts(), Backup.status()))
     else
       {:error, reason} -> Error.reply(conn, reason)
     end
   end
 
   def backup(conn, _params) do
-    case Oban.insert(Workers.Backup.new(%{})) do
-      {:ok, _job} -> conn |> put_status(202) |> json(%{"scheduled" => true})
-      {:error, reason} -> Error.reply(conn, reason)
+    case Backup.status() do
+      %{state: :disabled} ->
+        Error.reply(conn, :backup_disabled)
+
+      %{state: :not_configured} ->
+        Error.reply(conn, :backup_not_configured)
+
+      %{state: state} when state in [:ok, :none, :unreadable] ->
+        case Oban.insert(Workers.Backup.new(%{})) do
+          {:ok, _job} -> conn |> put_status(202) |> json(%{"scheduled" => true})
+          {:error, reason} -> Error.reply(conn, reason)
+        end
     end
   end
 end

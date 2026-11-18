@@ -210,16 +210,16 @@ void main() {
       );
     });
 
-    test('upload destination names the zone and the way back', () {
-      expect(
-        FilesLogic.uploadDestinationMessage(Zona.casa),
-        contains('só você vê'),
-      );
-      expect(
-        FilesLogic.uploadDestinationMessage(Zona.praca),
-        contains('todos os moradores vão ver'),
-      );
-    });
+    test(
+      'upload destination starts in casa and says publishing is separate',
+      () {
+        expect(
+          FilesLogic.uploadDestinationMessage(),
+          'Todo envio começa na sua casa, onde só você vê. Publicar na praça é '
+          'uma ação separada.',
+        );
+      },
+    );
 
     test('delete titles quote the name', () {
       expect(

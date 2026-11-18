@@ -71,6 +71,6 @@ void main() {
     await tester.tap(find.text('Salvar'));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('500,0 GB por mês'), findsOneWidget);
+    expect(find.textContaining('500,0 GB de espaço'), findsOneWidget);
   });
 }

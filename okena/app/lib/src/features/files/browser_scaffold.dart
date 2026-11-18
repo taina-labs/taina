@@ -18,7 +18,6 @@ import 'move_sheet.dart';
 final class BrowserScaffold extends StatefulWidget {
   const BrowserScaffold({
     required this.title,
-    required this.destinationZona,
     this.folder,
     this.onOpenFolder,
     this.onOpenFile,
@@ -29,7 +28,6 @@ final class BrowserScaffold extends StatefulWidget {
   });
 
   final String title;
-  final Zona destinationZona;
 
   /// The folder being browsed, null at the root. Its presence adds the menu
   /// with the folder's own acts.
@@ -207,7 +205,6 @@ final class _BrowserScaffoldState extends State<BrowserScaffold> {
         ],
       ),
       body: BrowserList(
-        destinationZona: widget.destinationZona,
         onNewFolder: _newFolder,
         onOpenFolder: (value) => widget.onOpenFolder?.call(value),
         onOpenFile: (value) => widget.onOpenFile?.call(value),

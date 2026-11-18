@@ -37,6 +37,7 @@ final class GalleryModel extends ChangeNotifier {
   int _timelineGeneration = 0;
   int _videoGeneration = 0;
   int _reloadToken = 0;
+  int _loadedPageCount = 0;
 
   GalleryTab get tab => _tab;
   GalleryFilter get filter => _filter;
@@ -59,13 +60,9 @@ final class GalleryModel extends ChangeNotifier {
     GalleryTab.timeline => _timelineCursor != null,
   };
 
-  /// The footer sentinel's re-arm key: it changes when a page lands, so a
-  /// footer still on screen keeps filling the list, and when the filter
-  /// narrows it, so a short filtered list keeps loading too.
-  int get loadedCount => switch (_tab) {
-    GalleryTab.grid => filteredPhotos.length,
-    GalleryTab.timeline => photosOf(timelineDays).length,
-  };
+  /// The footer's re-arm key. It advances for every successful page, including
+  /// pages that add no photos or add only photos outside the active filter.
+  int get loadedPageCount => _loadedPageCount;
 
   /// The timeline as days, narrowed by the filter.
   List<GalleryDay> get timelineDays => filteringDays(_days, _filter);
@@ -91,6 +88,9 @@ final class GalleryModel extends ChangeNotifier {
     GalleryTab.grid => filteredPhotos.isEmpty,
     GalleryTab.timeline => timelineDays.isEmpty,
   };
+
+  /// An empty filtered view is definitive only after its cursor is exhausted.
+  bool get showEmpty => empty && !canLoadMore;
 
   // MARK: transitions
 
@@ -159,6 +159,7 @@ final class GalleryModel extends ChangeNotifier {
             case Ok(:final value):
               _photos = [..._photos, ...value.items];
               _nextCursor = value.nextCursor;
+              _loadedPageCount += 1;
             case Err():
               _alertMessage = loadMoreMessage;
           }
@@ -183,6 +184,7 @@ final class GalleryModel extends ChangeNotifier {
             case Ok(:final value):
               _days = fusing(_days, value.items);
               _timelineCursor = value.nextCursor;
+              _loadedPageCount += 1;
             case Err():
               _alertMessage = loadMoreMessage;
           }
@@ -660,6 +662,7 @@ final class GalleryModel extends ChangeNotifier {
             case Ok(:final value):
               _photos = value.items;
               _nextCursor = value.nextCursor;
+              _loadedPageCount += 1;
             case Err(:final error):
               _error = error;
           }
@@ -680,6 +683,7 @@ final class GalleryModel extends ChangeNotifier {
             case Ok(:final value):
               _days = fusing(const [], value.items);
               _timelineCursor = value.nextCursor;
+              _loadedPageCount += 1;
             case Err(:final error):
               _error = error;
           }

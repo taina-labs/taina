@@ -1346,6 +1346,14 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "409":
+          description: |
+            O backup está desativado (`backup_disabled`) ou não tem destino
+            configurado (`backup_not_configured`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
 components:
   securitySchemes:
@@ -1887,7 +1895,11 @@ components:
             format: int64
         backup:
           type: object
+          required: [status]
           properties:
+            status:
+              type: string
+              enum: [ok, none, disabled, not_configured, unreadable]
             at:
               type: string
               format: date-time

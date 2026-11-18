@@ -213,7 +213,7 @@ final class _StorageView extends StatelessWidget {
           const SizedBox(height: TainaSpacing.space2),
           TainaText(
             quota != null
-                ? '${TainaFormat.bytes(quota)} por mês de espaço para os '
+                ? '${TainaFormat.bytes(quota)} de espaço para os '
                       'arquivos de todo mundo.'
                 : 'Nenhum limite definido. A caixa usa o espaço que o disco '
                       'tem.',

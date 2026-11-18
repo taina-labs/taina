@@ -262,12 +262,98 @@ void main() {
       await model.ensureLoaded();
       expect(model.photos, [first]);
       expect(model.canLoadMore, isTrue);
-      expect(model.loadedCount, 1);
+      expect(model.loadedPageCount, 1);
 
       await model.loadMore();
       expect(model.photos, [first, second]);
       expect(model.canLoadMore, isFalse);
+      expect(model.loadedPageCount, 2);
     });
+
+    test(
+      'grid keeps loading while the selected zone is not on this page',
+      () async {
+        final FileRecord otherZone = sampleFile(
+          rkey: 'praca',
+          zona: Zona.praca,
+        );
+        final FileRecord selectedZone = sampleFile(
+          rkey: 'casa',
+          zona: Zona.casa,
+        );
+        final _PagingApi api = _PagingApi(
+          photoPages: [
+            Page(items: [otherZone], nextCursor: '1'),
+            Page(items: [selectedZone], nextCursor: null),
+          ],
+        );
+        final GalleryModel model = GalleryModel(GalleryTestGateway(api: api));
+        addTearDown(model.dispose);
+
+        model.selectFilter(GalleryFilter.casa);
+        await model.ensureLoaded();
+
+        expect(model.filteredPhotos, isEmpty);
+        expect(model.empty, isTrue);
+        expect(model.canLoadMore, isTrue);
+        expect(model.showEmpty, isFalse);
+
+        await model.loadMore();
+
+        expect(model.filteredPhotos, [selectedZone]);
+        expect(model.showEmpty, isFalse);
+        expect(model.canLoadMore, isFalse);
+        expect(model.loadedPageCount, 2);
+      },
+    );
+
+    test(
+      'timeline keeps loading while the selected zone is not on this page',
+      () async {
+        final FileRecord otherZone = sampleFile(
+          rkey: 'praca',
+          zona: Zona.praca,
+        );
+        final FileRecord selectedZone = sampleFile(
+          rkey: 'casa',
+          zona: Zona.casa,
+        );
+        final _PagingApi api = _PagingApi(
+          timelinePages: [
+            Page(
+              items: [
+                TimelineGroup(date: '2026-06-21', photos: [otherZone]),
+              ],
+              nextCursor: '1',
+            ),
+            Page(
+              items: [
+                TimelineGroup(date: '2026-06-20', photos: [selectedZone]),
+              ],
+              nextCursor: null,
+            ),
+          ],
+        );
+        final GalleryModel model = GalleryModel(GalleryTestGateway(api: api));
+        addTearDown(model.dispose);
+
+        model.selectTab(GalleryTab.timeline);
+        model.selectFilter(GalleryFilter.casa);
+        await model.ensureLoaded();
+
+        expect(model.timelineDays, isEmpty);
+        expect(model.empty, isTrue);
+        expect(model.canLoadMore, isTrue);
+        expect(model.showEmpty, isFalse);
+
+        await model.loadMore();
+
+        expect(model.timelineDays.single.photos, [selectedZone]);
+        expect(model.showEmpty, isFalse);
+        expect(model.canLoadMore, isFalse);
+        expect(model.loadedPageCount, 2);
+      },
+    );
 
     test('a page failure keeps the cursor and the list, and says so', () async {
       final FileRecord first = sampleFile(rkey: 'a');
@@ -289,6 +375,7 @@ void main() {
       expect(model.nextCursor, '1');
       expect(model.alertMessage, GalleryModel.loadMoreMessage);
       expect(model.loadingMore, isFalse);
+      expect(model.loadedPageCount, 1);
 
       model.dismissAlert();
       await model.loadMore();

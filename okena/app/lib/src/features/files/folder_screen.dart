@@ -97,7 +97,6 @@ final class _FolderScreenState extends State<FolderScreen> {
       ],
       child: BrowserScaffold(
         title: _folder.name,
-        destinationZona: _folder.zona,
         folder: _folder,
         onOpenFolder: widget.onOpenFolder,
         onOpenFile: widget.onOpenFile,

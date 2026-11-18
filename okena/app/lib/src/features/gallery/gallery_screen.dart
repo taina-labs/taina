@@ -284,7 +284,7 @@ final class _GalleryContent extends StatelessWidget {
           child: TainaErrorState(error: error, onRetry: model.refresh),
         );
       }
-      if (model.loaded) {
+      if (model.loaded && model.showEmpty) {
         final GalleryEmptyCopy copy = GalleryModel.emptyCopy(
           rawEmpty: model.rawEmpty,
           filter: model.filter,
@@ -297,7 +297,7 @@ final class _GalleryContent extends StatelessWidget {
           ),
         );
       }
-      return const SizedBox.shrink();
+      if (!model.canLoadMore) return const SizedBox.shrink();
     }
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -393,7 +393,7 @@ final class _GalleryContent extends StatelessWidget {
     if (!model.canLoadMore) return const SliverToBoxAdapter(child: SizedBox());
     return SliverToBoxAdapter(
       child: _GalleryFooter(
-        rearmKey: model.loadedCount,
+        rearmKey: model.loadedPageCount,
         onLoadMore: model.loadMore,
       ),
     );

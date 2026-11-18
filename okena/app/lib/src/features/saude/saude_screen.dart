@@ -83,7 +83,7 @@ final class _SaudeView extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     _SaudeRowView(row: row),
-                    if (model.isZelador &&
+                    if (model.canTriggerBackup &&
                         row.label == SaudeModel.backupLabel) ...[
                       const SizedBox(height: TainaSpacing.space3),
                       _backupButton(context, model),

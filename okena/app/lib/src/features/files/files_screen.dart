@@ -37,7 +37,6 @@ final class FilesScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final scaffold = BrowserScaffold(
       title: title,
-      destinationZona: Zona.casa,
       onOpenFolder: onOpenFolder,
       onOpenFile: onOpenFile,
       onOpenTrash: onOpenTrash,

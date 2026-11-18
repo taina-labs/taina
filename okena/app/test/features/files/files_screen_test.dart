@@ -81,7 +81,10 @@ void main() {
     expect(find.text('Fotos da festa'), findsOneWidget);
     expect(find.text('Lista de presenca.pdf'), findsOneWidget);
     expect(find.text('Foto da quadra.jpg'), findsOneWidget);
-    expect(find.textContaining('Vai para a sua casa'), findsOneWidget);
+    expect(
+      find.textContaining('Todo envio começa na sua casa'),
+      findsOneWidget,
+    );
     expect(find.text('2 ARQUIVOS'), findsOneWidget);
 
     await tester.tap(find.text('Documentos da assembleia'));
@@ -131,7 +134,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Esta pasta está vazia'), findsOneWidget);
-    expect(find.textContaining('Vai para a sua casa'), findsOneWidget);
+    expect(
+      find.textContaining('Todo envio começa na sua casa'),
+      findsOneWidget,
+    );
 
     await tester.tap(find.widgetWithText(TainaSecondaryButton, 'Nova pasta'));
     await tester.pumpAndSettle();

@@ -226,6 +226,55 @@ defmodule Taina.Nhaman.BackupTest do
     end
   end
 
+  describe "status/0" do
+    setup do
+      original = Application.fetch_env!(:taina, :backup)
+      on_exit(fn -> Application.put_env(:taina, :backup, original) end)
+      :ok
+    end
+
+    test "disabled takes precedence and preserves an existing backup" do
+      dir = temporary_directory()
+      {:ok, at, 0} = DateTime.from_iso8601("2026-10-04T04:00:00Z")
+      archive = Path.join(dir, Backup.archive_filename(at))
+      File.write!(archive, "archive")
+      Application.put_env(:taina, :backup, enabled: false, dir: dir)
+
+      assert Backup.status() == %{state: :disabled, at: at, bytes: byte_size("archive")}
+    end
+
+    test "enabled with no destination is not configured" do
+      Application.put_env(:taina, :backup, enabled: true, dir: nil)
+
+      assert Backup.status() == %{state: :not_configured, at: nil, bytes: nil}
+    end
+
+    test "enabled with an empty destination has no backup" do
+      Application.put_env(:taina, :backup, enabled: true, dir: temporary_directory())
+
+      assert Backup.status() == %{state: :none, at: nil, bytes: nil}
+    end
+
+    test "enabled with an unreadable destination reports unreadable" do
+      file = Path.join(temporary_directory(), "not-a-directory")
+      # The path is inside a test-owned temporary directory with a fixed filename.
+      # credo:disable-for-next-line OeditusCredo.Check.Security.PathTraversal
+      File.write!(file, "x")
+      Application.put_env(:taina, :backup, enabled: true, dir: file)
+
+      assert Backup.status() == %{state: :unreadable, at: nil, bytes: nil}
+    end
+
+    test "enabled with an archive reports its date and size" do
+      dir = temporary_directory()
+      {:ok, at, 0} = DateTime.from_iso8601("2026-10-04T04:00:00Z")
+      File.write!(Path.join(dir, Backup.archive_filename(at)), "archive")
+      Application.put_env(:taina, :backup, enabled: true, dir: dir)
+
+      assert Backup.status() == %{state: :ok, at: at, bytes: byte_size("archive")}
+    end
+  end
+
   describe "scheduled worker" do
     test "is a no-op while backup is disabled (the default)" do
       refute Backup.enabled?()

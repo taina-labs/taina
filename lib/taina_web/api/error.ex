@@ -44,6 +44,8 @@ defmodule TainaWeb.API.Error do
     "circular_reference" => "Não dá para mover uma pasta para dentro dela mesma.",
     "storage_quota_exceeded" => "O espaço da comunidade acabou. Libere arquivos ou peça mais espaço.",
     "blob_too_large" => "Este arquivo passa do limite por arquivo da comunidade.",
+    "backup_disabled" => "O backup está desativado.",
+    "backup_not_configured" => "Configure um destino para o backup antes de iniciar.",
     "cannot_request_own" => "Este arquivo já é seu.",
     "cross_tekoa_owner" => "Este conteúdo é de outra comunidade.",
     "invalid_action" => "Essa ação não vale aqui.",
@@ -61,7 +63,13 @@ defmodule TainaWeb.API.Error do
   # Codigos do produto que o kernel nao conhece (Ypy.Wire.Errors e congelado,
   # contrato review 0.1.0, B): a tabela local manda o status, o code segue
   # sendo o proprio atomo em string.
-  @local_statuses %{blob_too_large: 413, rendition_pending: 404, rendition_unavailable: 404}
+  @local_statuses %{
+    backup_disabled: 409,
+    backup_not_configured: 409,
+    blob_too_large: 413,
+    rendition_pending: 404,
+    rendition_unavailable: 404
+  }
 
   @doc """
   Responde o motivo no envelope, com o status da tabela do fio. Um

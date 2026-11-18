@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart' hide Page;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:okena_app/src/design_system/design_system.dart';
@@ -63,6 +66,66 @@ void main() {
     await tester.tap(find.text('Tudo'));
     await tester.pumpAndSettle();
     expect(find.byType(TainaZonaBadge), findsNWidgets(3));
+  });
+
+  testWidgets('an empty filtered first page loads the next page', (
+    tester,
+  ) async {
+    final _FilteredPaginationApi api = _FilteredPaginationApi();
+    await _pumpGallery(tester, gateway: GalleryTestGateway(api: api));
+    await tester.pump();
+
+    await tester.tap(find.text('Casa').first);
+    await tester.pump();
+
+    api.firstPage.complete(
+      Ok(
+        Page(
+          items: [sampleFile(rkey: 'praca', zona: Zona.praca)],
+          nextCursor: 'next',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(api.photoCalls, 2);
+    expect(
+      find.byKey(const ValueKey<String>('gallery-tile-casa.jpg')),
+      findsOneWidget,
+    );
+    expect(find.text('Nada na sua casa ainda'), findsNothing);
+  });
+
+  testWidgets('a failed empty-filter page does not retry by itself', (
+    tester,
+  ) async {
+    final _FilteredPaginationApi api = _FilteredPaginationApi(
+      failNextPage: true,
+    );
+    await _pumpGallery(tester, gateway: GalleryTestGateway(api: api));
+    await tester.pump();
+
+    await tester.tap(find.text('Casa').first);
+    await tester.pump();
+
+    api.firstPage.complete(
+      Ok(
+        Page(
+          items: [sampleFile(rkey: 'praca', zona: Zona.praca)],
+          nextCursor: 'next',
+        ),
+      ),
+    );
+    for (int frame = 0; frame < 5; frame++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    expect(api.photoCalls, 2);
+    expect(find.text('Nada na sua casa ainda'), findsNothing);
+    for (int frame = 0; frame < 5; frame++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(api.photoCalls, 2);
   });
 
   testWidgets('the timeline groups the photos in days', (tester) async {
@@ -303,4 +366,49 @@ void main() {
     await tester.pumpAndSettle();
     expect(players.made, hasLength(2));
   });
+}
+
+final class _FilteredPaginationApi implements TainaApi {
+  _FilteredPaginationApi({this.failNextPage = false});
+
+  final Completer<TainaResult<Page<FileRecord>>> firstPage = Completer();
+  final FakeTainaApi _assets = FakeTainaApi(delay: Duration.zero);
+  final bool failNextPage;
+  int photoCalls = 0;
+
+  @override
+  Future<TainaResult<Page<FileRecord>>> photos({int? limit, String? cursor}) {
+    photoCalls += 1;
+    if (cursor == null) return firstPage.future;
+    if (failNextPage) return Future.value(const Err(NetworkError()));
+    return Future.value(
+      Ok(
+        Page(
+          items: [sampleFile(rkey: 'casa', name: 'casa.jpg')],
+          nextCursor: null,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Future<TainaResult<Page<TimelineGroup>>> photoTimeline({
+    int? limit,
+    String? cursor,
+  }) async {
+    return Ok(Page(items: const [], nextCursor: null));
+  }
+
+  @override
+  Future<TainaResult<Uint8List>> thumbnail({
+    required String rkey,
+    required ThumbnailSize size,
+  }) {
+    return _assets.thumbnail(rkey: rkey, size: size);
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) {
+    throw UnimplementedError('${invocation.memberName} is not used here');
+  }
 }

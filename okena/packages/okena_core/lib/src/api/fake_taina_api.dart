@@ -24,11 +24,21 @@ import 'package:okena_core/src/taina_error.dart';
 /// 300ms by default so previews show their loading states; tests pass
 /// [Duration.zero].
 final class FakeTainaApi implements TainaApi {
-  FakeTainaApi({this.delay = const Duration(milliseconds: 300)}) {
+  FakeTainaApi({
+    this.delay = const Duration(milliseconds: 300),
+    SaudeBackup? backup,
+  }) : _backup =
+           backup ??
+           const SaudeBackup(
+             status: SaudeBackupStatus.ok,
+             at: '2026-10-14T03:00:00Z',
+             bytes: 1829000000,
+           ) {
     _seed();
   }
 
   final Duration delay;
+  final SaudeBackup _backup;
   var _counter = 0;
 
   late Tekoa _tekoa;
@@ -714,7 +724,6 @@ final class FakeTainaApi implements TainaApi {
     String? folderRkey,
   }) async {
     await _pause();
-    var zona = Zona.casa;
     if (folderRkey != null) {
       final folder = _folders
           .where((folder) => folder.rkey == folderRkey)
@@ -728,7 +737,6 @@ final class FakeTainaApi implements TainaApi {
           ),
         );
       }
-      zona = folder.zona;
     }
 
     final file = io.File(filePath);
@@ -742,7 +750,7 @@ final class FakeTainaApi implements TainaApi {
       name: name,
       mime: mime,
       size: size,
-      zona: zona,
+      zona: Zona.casa,
       folder: folderRkey,
       takenAt: null,
       width: null,
@@ -1079,10 +1087,7 @@ final class FakeTainaApi implements TainaApi {
       Saude(
         storage: stats(_files, quotaBytes: _tekoa.storageQuotaBytes),
         jobs: const {'renditions': 0, 'backups': 0},
-        backup: const SaudeBackup(
-          at: '2026-10-14T03:00:00Z',
-          bytes: 1829000000,
-        ),
+        backup: _backup,
       ),
     );
   }
@@ -1319,7 +1324,25 @@ final class FakeTainaApi implements TainaApi {
   @override
   Future<TainaResult<void>> triggerBackup() async {
     await _pause();
-    return const Ok<void>(null);
+    return switch (_backup.status) {
+      SaudeBackupStatus.ok ||
+      SaudeBackupStatus.none ||
+      SaudeBackupStatus.unreadable => const Ok<void>(null),
+      SaudeBackupStatus.disabled => const Err(
+        ApiError(
+          code: 'backup_disabled',
+          status: 409,
+          serverMessage: 'O backup está desativado.',
+        ),
+      ),
+      SaudeBackupStatus.notConfigured => const Err(
+        ApiError(
+          code: 'backup_not_configured',
+          status: 409,
+          serverMessage: 'Configure um destino para o backup antes de iniciar.',
+        ),
+      ),
+    };
   }
 
   /// The fake keeps no passwords, so the current one is never checked except

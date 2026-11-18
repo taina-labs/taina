@@ -1169,6 +1169,7 @@ void main() {
 
       final saude = (await api.saude()).value!;
       expect(saude.jobs['backups'], 1);
+      expect(saude.backup.status, SaudeBackupStatus.ok);
       expect(saude.backup.at, '2026-10-14T03:00:00Z');
       expect(saude.storage.files, 42);
       expect(stub.requests[1].url.toString(), 'https://box/api/v1/saude');

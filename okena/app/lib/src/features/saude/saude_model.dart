@@ -59,6 +59,18 @@ final class SaudeModel extends ChangeNotifier {
   /// again anyway.
   bool get isZelador => _me?.papel == Papel.zelador;
 
+  /// Whether this zelador can request a backup in the reported state.
+  bool get canTriggerBackup =>
+      isZelador &&
+      switch (_saude?.backup.status) {
+        SaudeBackupStatus.ok ||
+        SaudeBackupStatus.none ||
+        SaudeBackupStatus.unreadable => true,
+        SaudeBackupStatus.disabled ||
+        SaudeBackupStatus.notConfigured ||
+        null => false,
+      };
+
   Future<void> load() async {
     _loading = true;
     _notify();
@@ -152,24 +164,46 @@ final class SaudeModel extends ChangeNotifier {
 
   static SaudeRow backupRow(SaudeBackup backup) {
     final List<String> lines;
-    if (backup.at case final String at) {
-      final int? bytes = backup.bytes;
-      lines = [
-        bytes != null
-            ? 'Terminou bem ${TainaFormat.date(at)} '
-                  '(${TainaFormat.bytes(bytes)} guardados).'
-            : 'Terminou bem ${TainaFormat.date(at)}.',
-      ];
-    } else {
-      lines = [
-        'Nunca foi feito um backup.',
-        'Quem cuida da máquina cuida do backup.',
-      ];
+    final String? warning;
+    switch (backup.status) {
+      case SaudeBackupStatus.ok:
+        final String? at = backup.at;
+        final int? bytes = backup.bytes;
+        lines = [
+          if (at case final String finishedAt)
+            bytes != null
+                ? 'Terminou bem ${TainaFormat.date(finishedAt)} '
+                      '(${TainaFormat.bytes(bytes)} guardados).'
+                : 'Terminou bem ${TainaFormat.date(finishedAt)}.'
+          else
+            bytes != null
+                ? 'O backup terminou bem '
+                      '(${TainaFormat.bytes(bytes)} guardados).'
+                : 'O backup terminou bem.',
+        ];
+        warning = null;
+      case SaudeBackupStatus.none:
+        lines = [
+          'Nunca foi feito um backup.',
+          'Quem cuida da máquina cuida do backup.',
+        ];
+        warning = null;
+      case SaudeBackupStatus.disabled:
+        lines = ['O backup está desativado.'];
+        warning = 'Quem cuida da máquina precisa ativar o backup.';
+      case SaudeBackupStatus.notConfigured:
+        lines = ['O backup está sem destino.'];
+        warning =
+            'Quem cuida da máquina precisa escolher onde guardar o backup.';
+      case SaudeBackupStatus.unreadable:
+        lines = ['Não foi possível ler o destino do backup.'];
+        warning = 'Quem cuida da máquina precisa verificar o destino.';
     }
     return SaudeRow(
       icon: SaudeRowIcon.backup,
       label: backupLabel,
       lines: List<String>.unmodifiable(lines),
+      warning: warning,
     );
   }
 

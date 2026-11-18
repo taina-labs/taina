@@ -23,7 +23,11 @@ defmodule TainaWeb.API.Serializer do
   alias Ypy.Ybira.Folder
 
   @type access_target_input :: %{owner: Ava.t(), rkey: String.t(), nome: String.t()}
-  @type backup_result :: {:ok, %{at: DateTime.t(), bytes: non_neg_integer()}} | {:error, term()}
+  @type backup_result :: %{
+          state: Taina.Nhaman.Backup.status_state(),
+          at: DateTime.t() | nil,
+          bytes: non_neg_integer() | nil
+        }
   @type concessao :: Concessao.t()
   @type counts_by_kind :: %{
           photos: non_neg_integer(),
@@ -262,8 +266,9 @@ defmodule TainaWeb.API.Serializer do
   defp ava_json(%Ava{} = ava), do: Wire.Ava.json(ava)
   defp ava_json(_not_loaded), do: nil
 
-  defp backup_json({:ok, %{at: at, bytes: bytes}}), do: %{"at" => Wire.at(at), "bytes" => bytes}
-  defp backup_json(_error), do: %{"at" => nil, "bytes" => nil}
+  defp backup_json(%{state: state, at: at, bytes: bytes}) do
+    %{"status" => Atom.to_string(state), "at" => Wire.at(at), "bytes" => bytes}
+  end
 
   defp by_kind_json(%{photos: photos, videos: videos, documents: documents, others: others}) do
     %{"photos" => photos, "videos" => videos, "documents" => documents, "others" => others}

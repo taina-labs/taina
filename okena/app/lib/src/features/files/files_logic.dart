@@ -130,14 +130,10 @@ abstract final class FilesLogic {
     return zona == Zona.casa ? 'Publicar na praça' : 'Tirar da praça';
   }
 
-  /// Where an upload on this screen lands: the folder's zona, casa at the
-  /// root. The destination is never silent, and in the casa the sentence
-  /// names the way back to the praca.
-  static String uploadDestinationMessage(Zona zona) {
-    return zona == Zona.casa
-        ? 'Vai para a sua casa: só você vê, até publicar na praça.'
-        : 'Vai para a praça: todos os moradores vão ver.';
-  }
+  /// New uploads start in the person's casa, regardless of the folder's zona.
+  static String uploadDestinationMessage() =>
+      'Todo envio começa na sua casa, onde só você vê. Publicar na praça é '
+      'uma ação separada.';
 
   /// The kind a person reads for the raw mime, the web's `file_kind/1`.
   static String fileKind(String mime) {

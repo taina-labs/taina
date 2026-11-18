@@ -1,5 +1,6 @@
 defmodule TainaWeb.API.FatiaUsTest do
-  use TainaWeb.ConnCase, async: true
+  # The backup API tests change global application configuration.
+  use TainaWeb.ConnCase, async: false
 
   import Taina.Fixtures
 
@@ -372,19 +373,80 @@ defmodule TainaWeb.API.FatiaUsTest do
 
       assert %{"used_bytes" => _} = body["storage"]
       assert %{"renditions" => _, "trash_purge" => _} = body["jobs"]
-      assert %{"at" => _, "bytes" => _} = body["backup"]
+      assert %{"status" => "disabled", "at" => nil, "bytes" => nil} = body["backup"]
     end
 
-    test "so a zeladora dispara o backup", %{conn: conn, zelador: zelador, morador: morador} do
-      conn |> authorize_device(morador) |> post(~p"/api/v1/saude/backup") |> json_response(403)
+    test "um destino vazio aparece como nenhum backup", %{conn: conn, morador: morador} do
+      dir = temporary_backup_directory()
+      configure_backup(enabled: true, dir: dir)
+
+      body = conn |> authorize_device(morador) |> get(~p"/api/v1/saude") |> json_response(200)
+
+      assert body["backup"] == %{"status" => "none", "at" => nil, "bytes" => nil}
+    end
+
+    test "morador nao pode disparar backup e zeladora recebe conflito quando desativado", %{
+      conn: conn,
+      zelador: zelador,
+      morador: morador
+    } do
+      configure_backup(enabled: false)
+
+      body =
+        conn
+        |> authorize_device(morador)
+        |> post(~p"/api/v1/saude/backup")
+        |> json_response(403)
+
+      assert body["error"]["code"] == "not_zelador"
 
       body =
         conn
         |> authorize_device(zelador)
         |> post(~p"/api/v1/saude/backup")
-        |> json_response(202)
+        |> json_response(409)
 
-      assert body["scheduled"] == true
+      assert body["error"]["code"] == "backup_disabled"
     end
+
+    test "nao agenda backup sem destino configurado", %{conn: conn, zelador: zelador} do
+      configure_backup(enabled: true, dir: nil)
+
+      body =
+        conn
+        |> authorize_device(zelador)
+        |> post(~p"/api/v1/saude/backup")
+        |> json_response(409)
+
+      assert body["error"]["code"] == "backup_not_configured"
+    end
+
+    test "agenda backup com destino configurado sem executar o worker", %{conn: conn, zelador: zelador} do
+      dir = temporary_backup_directory()
+      configure_backup(enabled: true, dir: dir)
+
+      Oban.Testing.with_testing_mode(:manual, fn ->
+        body =
+          conn
+          |> authorize_device(zelador)
+          |> post(~p"/api/v1/saude/backup")
+          |> json_response(202)
+
+        assert body["scheduled"] == true
+      end)
+    end
+  end
+
+  defp configure_backup(config) do
+    original = Application.fetch_env!(:taina, :backup)
+    Application.put_env(:taina, :backup, config)
+    on_exit(fn -> Application.put_env(:taina, :backup, original) end)
+  end
+
+  defp temporary_backup_directory do
+    dir = Path.join(System.tmp_dir!(), "taina_api_backup_#{System.unique_integer([:positive])}")
+    File.mkdir_p!(dir)
+    on_exit(fn -> File.rm_rf(dir) end)
+    dir
   end
 end

@@ -31,6 +31,7 @@ void main() {
 
     expect(model.saude, isNotNull);
     expect(model.isZelador, isTrue);
+    expect(model.canTriggerBackup, isTrue);
     expect(model.error, isNull);
     expect(SaudeModel.rows(model.saude!), hasLength(2));
   });
@@ -44,6 +45,7 @@ void main() {
     await model.load();
 
     expect(model.isZelador, isFalse);
+    expect(model.canTriggerBackup, isFalse);
   });
 
   test('backupNow queues the backup and answers', () async {
@@ -94,24 +96,77 @@ void main() {
       ]);
     });
 
-    test('backupRow reads finished, finished with size, and never', () {
+    test('backupRow reads a successful backup with and without its size', () {
       expect(
         SaudeModel.backupRow(
-          const SaudeBackup(at: '2026-10-14T03:00:00Z', bytes: 2048),
+          const SaudeBackup(
+            status: SaudeBackupStatus.ok,
+            at: '2026-10-14T03:00:00Z',
+            bytes: 2048,
+          ),
         ).lines.first,
         contains('guardados'),
       );
       expect(
         SaudeModel.backupRow(
-          const SaudeBackup(at: '2026-10-14T03:00:00Z', bytes: null),
+          const SaudeBackup(
+            status: SaudeBackupStatus.ok,
+            at: '2026-10-14T03:00:00Z',
+            bytes: null,
+          ),
         ).lines.first,
         isNot(contains('guardados')),
       );
       expect(
-        SaudeModel.backupRow(const SaudeBackup(at: null, bytes: null))
-            .lines
-            .first,
+        SaudeModel.backupRow(
+          const SaudeBackup(
+            status: SaudeBackupStatus.none,
+            at: null,
+            bytes: null,
+          ),
+        ).lines.first,
         'Nunca foi feito um backup.',
+      );
+    });
+
+    test('backupRow reports disabled, unconfigured and unreadable states', () {
+      final SaudeRow disabled = SaudeModel.backupRow(
+        const SaudeBackup(
+          status: SaudeBackupStatus.disabled,
+          at: null,
+          bytes: null,
+        ),
+      );
+      expect(disabled.lines, ['O backup está desativado.']);
+      expect(
+        disabled.warning,
+        'Quem cuida da máquina precisa ativar o backup.',
+      );
+
+      final SaudeRow notConfigured = SaudeModel.backupRow(
+        const SaudeBackup(
+          status: SaudeBackupStatus.notConfigured,
+          at: null,
+          bytes: null,
+        ),
+      );
+      expect(notConfigured.lines, ['O backup está sem destino.']);
+      expect(
+        notConfigured.warning,
+        'Quem cuida da máquina precisa escolher onde guardar o backup.',
+      );
+
+      final SaudeRow unreadable = SaudeModel.backupRow(
+        const SaudeBackup(
+          status: SaudeBackupStatus.unreadable,
+          at: null,
+          bytes: null,
+        ),
+      );
+      expect(unreadable.lines, ['Não foi possível ler o destino do backup.']);
+      expect(
+        unreadable.warning,
+        'Quem cuida da máquina precisa verificar o destino.',
       );
     });
 
@@ -144,4 +199,26 @@ void main() {
       );
     });
   });
+
+  for (final SaudeBackupStatus status in SaudeBackupStatus.values) {
+    test('canTriggerBackup for ${status.name}', () async {
+      final FakeTainaApi api = FakeTainaApi(
+        delay: Duration.zero,
+        backup: SaudeBackup(status: status, at: null, bytes: null),
+      );
+      final SaudeModel model = SaudeModel(
+        gateway: FakeSession(api, me: identity(ana)),
+      );
+
+      await model.load();
+
+      expect(
+        model.canTriggerBackup,
+        status == SaudeBackupStatus.ok ||
+            status == SaudeBackupStatus.none ||
+            status == SaudeBackupStatus.unreadable,
+      );
+      model.dispose();
+    });
+  }
 }

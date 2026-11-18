@@ -15,7 +15,6 @@ import 'files_view_model.dart';
 /// to the praca.
 final class BrowserList extends StatelessWidget {
   const BrowserList({
-    required this.destinationZona,
     required this.onNewFolder,
     required this.onOpenFolder,
     required this.onOpenFile,
@@ -23,7 +22,6 @@ final class BrowserList extends StatelessWidget {
     super.key,
   });
 
-  final Zona destinationZona;
   final VoidCallback onNewFolder;
   final ValueChanged<Folder> onOpenFolder;
   final ValueChanged<FileRecord> onOpenFile;
@@ -70,7 +68,7 @@ final class BrowserList extends StatelessWidget {
       message:
           'Guarde um arquivo com o botão de enviar, no topo da tela, ou crie '
           'uma pasta para organizar. '
-          '${FilesLogic.uploadDestinationMessage(destinationZona)}',
+          '${FilesLogic.uploadDestinationMessage()}',
       actionLabel: 'Nova pasta',
       onAction: onNewFolder,
     );
@@ -82,7 +80,7 @@ final class BrowserList extends StatelessWidget {
       Padding(
         padding: const EdgeInsets.only(bottom: TainaSpacing.space2),
         child: TainaText(
-          FilesLogic.uploadDestinationMessage(destinationZona),
+          FilesLogic.uploadDestinationMessage(),
           style: TainaTypography.bodySm,
           color: TainaPalette.textMuted,
         ),

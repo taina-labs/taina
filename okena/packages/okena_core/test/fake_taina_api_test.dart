@@ -6,6 +6,7 @@ import 'package:test/test.dart';
 FakeTainaApi fake() => FakeTainaApi(delay: Duration.zero);
 
 const assembleiaRkey = '3kx2n8pqrv5w2';
+const festaRkey = '3kz9t4mqc1h7d';
 const estatutoRkey = '3m2a8twqpv5z2';
 
 Future<File> tempUpload(String contents) async {
@@ -104,6 +105,35 @@ void main() {
     final after = (await api.folderContents(folderRkey: assembleiaRkey)).value!;
     expect(after.items.length, 2);
     expect(after.items.last.name, 'regimento.pdf');
+  });
+
+  test('upload into a praca folder starts in casa', () async {
+    final api = fake();
+    await api.createSession(
+      username: 'ana',
+      password: 'segredo',
+      deviceName: 'Teste',
+    );
+
+    final folder = (await api.listFolders()).value!.firstWhere(
+      (folder) => folder.rkey == festaRkey,
+    );
+    expect(folder.zona, Zona.praca);
+
+    final source = await tempUpload('cartaz');
+    addTearDown(() async {
+      if (await source.exists()) await source.delete();
+    });
+
+    final uploaded = (await api.upload(
+      filePath: source.path,
+      name: 'cartaz.txt',
+      mime: 'text/plain',
+      folderRkey: festaRkey,
+    )).value!;
+
+    expect(uploaded.folder, festaRkey);
+    expect(uploaded.zona, Zona.casa);
   });
 
   test('uploading to an unknown folder answers not found', () async {
@@ -398,9 +428,48 @@ void main() {
   test('saude carries the last backup', () async {
     final api = fake();
     final saude = (await api.saude()).value!;
+    expect(saude.backup.status, SaudeBackupStatus.ok);
     expect(saude.backup.at, isNotNull);
     expect(saude.jobs['backups'], 0);
     expect(saude.storage.files, 5);
+  });
+
+  test('saude returns the injected backup status', () async {
+    const backup = SaudeBackup(
+      status: SaudeBackupStatus.unreadable,
+      at: null,
+      bytes: null,
+    );
+    final api = FakeTainaApi(delay: Duration.zero, backup: backup);
+
+    expect((await api.saude()).value!.backup, backup);
+  });
+
+  test('triggerBackup rejects disabled and unconfigured backups', () async {
+    const cases = [
+      (
+        SaudeBackupStatus.disabled,
+        'backup_disabled',
+        'O backup está desativado.',
+      ),
+      (
+        SaudeBackupStatus.notConfigured,
+        'backup_not_configured',
+        'Configure um destino para o backup antes de iniciar.',
+      ),
+    ];
+
+    for (final (status, code, message) in cases) {
+      final error = apiErrorOf(
+        await FakeTainaApi(
+          delay: Duration.zero,
+          backup: SaudeBackup(status: status, at: null, bytes: null),
+        ).triggerBackup(),
+      );
+      expect(error.code, code);
+      expect(error.status, 409);
+      expect(error.serverMessage, message);
+    }
   });
 
   test('the invite flow runs from probe to account', () async {

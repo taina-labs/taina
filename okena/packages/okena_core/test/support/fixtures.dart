@@ -127,7 +127,8 @@ const storageJson =
 
 const saudeJson =
     '{"storage":$storageJson,"jobs":{"renditions":0,"backups":1},'
-    '"backup":{"at":"2026-10-14T03:00:00Z","bytes":1829000000}}';
+    '"backup":{"status":"ok","at":"2026-10-14T03:00:00Z",'
+    '"bytes":1829000000}}';
 
 const muralPageJson =
     '{"items":[{"seq":2,"tipo":"arquivo.publicado","payload":'

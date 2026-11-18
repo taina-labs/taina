@@ -32,6 +32,13 @@ defmodule Taina.Nhaman.Backup do
   # credo:disable-for-next-line OeditusCredo.Check.Security.HardcodedCredentials
   @secret_file "secret_key_base"
 
+  @type status :: %{
+          state: status_state(),
+          at: DateTime.t() | nil,
+          bytes: non_neg_integer() | nil
+        }
+  @type status_state :: :ok | :none | :disabled | :not_configured | :unreadable
+
   @doc "Nome do arquivo de backup para um instante (UTC): `taina-backup-<stamp>.tar.gz`."
   def archive_filename(%DateTime{} = now) do
     stamp = now |> DateTime.truncate(:second) |> Calendar.strftime("%Y%m%dT%H%M%SZ")
@@ -40,6 +47,26 @@ defmodule Taina.Nhaman.Backup do
 
   @doc "O backup agendado está habilitado? (`config :taina, :backup, enabled:`)."
   def enabled?, do: Keyword.get(config(), :enabled, false)
+
+  @doc "O estado atual do backup e os dados do último arquivo, quando existem."
+  @spec status() :: status()
+  def status do
+    backup = last_backup()
+
+    state =
+      case {enabled?(), backup} do
+        {false, _backup} -> :disabled
+        {true, {:error, :no_dir}} -> :not_configured
+        {true, {:error, :none}} -> :none
+        {true, {:error, :unreadable}} -> :unreadable
+        {true, {:ok, _backup}} -> :ok
+      end
+
+    case backup do
+      {:ok, %{at: at, bytes: bytes}} -> %{state: state, at: at, bytes: bytes}
+      _error -> %{state: state, at: nil, bytes: nil}
+    end
+  end
 
   @doc "Extrai um `.tar.gz` em `dest` (criado se necessário)."
   def extract_archive(archive_path, dest) do
