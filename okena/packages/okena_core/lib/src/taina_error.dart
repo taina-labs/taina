@@ -28,6 +28,35 @@ final class NetworkError extends TainaError {
   int get hashCode => Object.hash(NetworkError, cause);
 }
 
+/// A failed background transfer start, classified by scheduling certainty.
+sealed class MirrorTransferStartError extends TainaError {
+  const MirrorTransferStartError(this.cause);
+
+  final TainaError cause;
+
+  @override
+  String get message => cause.message;
+
+  @override
+  bool operator ==(Object other) =>
+      other is MirrorTransferStartError &&
+      other.runtimeType == runtimeType &&
+      other.cause == cause;
+
+  @override
+  int get hashCode => Object.hash(runtimeType, cause);
+}
+
+/// The adapter knows that the native task was not scheduled.
+final class MirrorTransferRejected extends MirrorTransferStartError {
+  const MirrorTransferRejected(super.cause);
+}
+
+/// The adapter cannot tell whether the native task was scheduled.
+final class MirrorTransferUncertain extends MirrorTransferStartError {
+  const MirrorTransferUncertain(super.cause);
+}
+
 final class InvalidUrlError extends TainaError {
   const InvalidUrlError();
 

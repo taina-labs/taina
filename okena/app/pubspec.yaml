@@ -15,6 +15,7 @@ dependencies:
   okena_core:
     path: ../packages/okena_core
   open_filex: ^5.0.0
+  path_provider: ^2.1.6
   permission_handler: ^13.0.2
   provider: ^6.1.5+1
   share_plus: ^13.3.1
