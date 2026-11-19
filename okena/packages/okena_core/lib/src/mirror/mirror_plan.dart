@@ -55,6 +55,12 @@ final class MirrorPlan {
         continue;
       }
 
+      if (current.state == MirrorState.uploading &&
+          current.backgroundTaskId != null) {
+        unchanged.add(current);
+        continue;
+      }
+
       final hash = current.sha256;
       if (hash != null && knownHashes.contains(hash)) {
         final skipped = current.copyWith(
@@ -67,12 +73,6 @@ final class MirrorPlan {
         );
         entries[current.assetId] = skipped;
         toSkip.add(skipped);
-        continue;
-      }
-
-      if (current.state == MirrorState.uploading &&
-          current.backgroundTaskId != null) {
-        unchanged.add(current);
         continue;
       }
 

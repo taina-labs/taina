@@ -139,6 +139,7 @@ final class BackgroundMirrorTransfer implements MirrorTransfer {
   final StreamController<MirrorTransferEvent> _events =
       StreamController<MirrorTransferEvent>.broadcast(sync: true);
   final Set<String> _emittedFailureTaskIds = {};
+  final Set<(String, String, int, String)> _completedTaskIdentities = {};
 
   late final StreamSubscription<TaskUpdate> _subscription;
   Future<void> _operationTail = Future<void>.value();
@@ -238,6 +239,14 @@ final class BackgroundMirrorTransfer implements MirrorTransfer {
     if (record != null && record.status.isFinalState) {
       switch (record.status) {
         case TaskStatus.complete:
+          final metadata = _metadataFor(record.task)!;
+          final identity = _taskIdentity(record.task, metadata);
+          if (!_completedTaskIdentities.contains(identity)) {
+            _emitInvalidResponse(
+              TaskStatusUpdate(record.task, record.status, record.exception),
+              'mirror upload completed response is missing',
+            );
+          }
           return const Ok<void>(null);
         case TaskStatus.failed || TaskStatus.notFound || TaskStatus.canceled:
           _emitFailed(
@@ -473,6 +482,7 @@ final class BackgroundMirrorTransfer implements MirrorTransfer {
       return;
     }
 
+    _completedTaskIdentities.add(_taskIdentity(update.task, metadata));
     _events.add(
       MirrorTransferCompleted(
         assetId: metadata.assetId,
@@ -539,6 +549,16 @@ final class BackgroundMirrorTransfer implements MirrorTransfer {
             entry.modificationDate.toUtc().microsecondsSinceEpoch &&
         metadata.expectedSha256 == entry.sha256;
   }
+
+  (String, String, int, String) _taskIdentity(
+    Task task,
+    _MirrorTaskMetadata metadata,
+  ) => (
+    task.taskId,
+    metadata.assetId,
+    metadata.modificationDate.microsecondsSinceEpoch,
+    metadata.expectedSha256,
+  );
 
   _MirrorTaskMetadata? _metadataFor(Task task) {
     if (ownerId.trim().isEmpty ||

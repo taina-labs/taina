@@ -37,6 +37,16 @@ final class _PendingCancellationResolution {
   final Set<String> deferredUploadAssetIds;
 }
 
+final class _DedupCancellationResult {
+  const _DedupCancellationResult({
+    required this.ledger,
+    required this.localFailure,
+  });
+
+  final MirrorLedger ledger;
+  final TainaError? localFailure;
+}
+
 /// Coordinates the persisted camera-roll mirror state and its external edges.
 final class MirrorEngine {
   MirrorEngine({
@@ -270,13 +280,24 @@ final class MirrorEngine {
     if (cancellations is Err<_PendingCancellationResolution>) {
       return Err(cancellations.error);
     }
-    final cancellationResolution =
+    var cancellationResolution =
         (cancellations as Ok<_PendingCancellationResolution>).value;
     ledger = cancellationResolution.ledger;
 
     final manifest = await _manifestHashes();
     if (manifest is Err<Set<String>>) return Err(manifest.error);
     final knownHashes = (manifest as Ok<Set<String>>).value;
+
+    final dedupCancellations = await _resolveActiveDedupCancellations(
+      cancellationResolution,
+      knownHashes,
+    );
+    if (dedupCancellations is Err<_PendingCancellationResolution>) {
+      return Err(dedupCancellations.error);
+    }
+    cancellationResolution =
+        (dedupCancellations as Ok<_PendingCancellationResolution>).value;
+    ledger = cancellationResolution.ledger;
 
     final planAssets = assets
         .where(
@@ -344,10 +365,14 @@ final class MirrorEngine {
     final lookedUp = await _resolveKnownHashes(
       ledger,
       knownHashes,
-      excludedAssetIds: cancellationResolution.excludedAssetIds,
+      cancellationResolution: cancellationResolution,
     );
-    if (lookedUp is Err<MirrorLedger>) return Err(lookedUp.error);
-    ledger = (lookedUp as Ok<MirrorLedger>).value;
+    if (lookedUp is Err<_PendingCancellationResolution>) {
+      return Err(lookedUp.error);
+    }
+    cancellationResolution =
+        (lookedUp as Ok<_PendingCancellationResolution>).value;
+    ledger = cancellationResolution.ledger;
 
     final now = _now();
     final active = _activeEntries(ledger)
@@ -500,7 +525,11 @@ final class MirrorEngine {
         return Err(error);
       }
       final page = (response as Ok<Page<FileRecord>>).value;
-      hashes.addAll(page.items.map((file) => file.sha256));
+      hashes.addAll(
+        page.items
+            .where((file) => file.deletedAt == null)
+            .map((file) => file.sha256),
+      );
       final next = page.nextCursor;
       if (next == null) return Ok(hashes);
       if (!cursors.add(next)) {
@@ -510,12 +539,16 @@ final class MirrorEngine {
     }
   }
 
-  Future<TainaResult<MirrorLedger>> _resolveKnownHashes(
+  Future<TainaResult<_PendingCancellationResolution>> _resolveKnownHashes(
     MirrorLedger initial,
     Set<String> knownHashes, {
-    Set<String> excludedAssetIds = const {},
+    required _PendingCancellationResolution cancellationResolution,
   }) async {
     var ledger = initial;
+    var firstLocalFailure = cancellationResolution.firstLocalFailure;
+    final excludedAssetIds = Set<String>.of(
+      cancellationResolution.excludedAssetIds,
+    );
     final ordered = ledger.entries.values.toList()
       ..sort((a, b) => a.assetId.compareTo(b.assetId));
     final assetIdsByHash = <String, List<String>>{};
@@ -569,11 +602,34 @@ final class MirrorEngine {
       switch (lookup) {
         case MirrorHashPresent(:final file):
           for (final assetId in hashEntry.value) {
-            final item = ledger.entries[assetId];
+            var item = ledger.entries[assetId];
             if (item == null ||
                 item.sha256 != hash ||
-                !_needsLookup(item.state)) {
+                !_needsLookup(item.state) ||
+                excludedAssetIds.contains(assetId)) {
               continue;
+            }
+            if (item.state == MirrorState.uploading &&
+                item.backgroundTaskId != null) {
+              final cancelled = await _cancelActiveDedupTask(ledger, item);
+              if (cancelled case Err<_DedupCancellationResult>(:final error)) {
+                return Err(error);
+              }
+              final cancellation =
+                  (cancelled as Ok<_DedupCancellationResult>).value;
+              ledger = cancellation.ledger;
+              final localFailure = cancellation.localFailure;
+              if (localFailure != null) {
+                excludedAssetIds.add(assetId);
+                firstLocalFailure ??= localFailure;
+                continue;
+              }
+              item = ledger.entries[assetId];
+              if (item == null) {
+                return const Err(
+                  InvalidResponseError('deduplicated entry is missing'),
+                );
+              }
             }
             ledger = ledger.markUploaded(
               assetId: item.assetId,
@@ -590,13 +646,36 @@ final class MirrorEngine {
           }
         case MirrorHashSuppressed():
           for (final assetId in hashEntry.value) {
-            final item = ledger.entries[assetId];
+            var item = ledger.entries[assetId];
             if (item == null ||
                 item.sha256 != hash ||
-                !_needsLookup(item.state)) {
+                !_needsLookup(item.state) ||
+                excludedAssetIds.contains(assetId)) {
               continue;
             }
-            ledger = ledger.markSkipped(
+            if (item.state == MirrorState.uploading &&
+                item.backgroundTaskId != null) {
+              final cancelled = await _cancelActiveDedupTask(ledger, item);
+              if (cancelled case Err<_DedupCancellationResult>(:final error)) {
+                return Err(error);
+              }
+              final cancellation =
+                  (cancelled as Ok<_DedupCancellationResult>).value;
+              ledger = cancellation.ledger;
+              final localFailure = cancellation.localFailure;
+              if (localFailure != null) {
+                excludedAssetIds.add(assetId);
+                firstLocalFailure ??= localFailure;
+                continue;
+              }
+              item = ledger.entries[assetId];
+              if (item == null) {
+                return const Err(
+                  InvalidResponseError('deduplicated entry is missing'),
+                );
+              }
+            }
+            ledger = ledger.markSuppressed(
               assetId: item.assetId,
               updatedAt: _now(),
             );
@@ -610,7 +689,113 @@ final class MirrorEngine {
       }
     }
 
-    return Ok(ledger);
+    return Ok(
+      _PendingCancellationResolution(
+        ledger: ledger,
+        firstLocalFailure: firstLocalFailure,
+        excludedAssetIds: excludedAssetIds,
+        deferredUploadAssetIds: cancellationResolution.deferredUploadAssetIds,
+      ),
+    );
+  }
+
+  Future<TainaResult<_PendingCancellationResolution>>
+  _resolveActiveDedupCancellations(
+    _PendingCancellationResolution initial,
+    Set<String> knownHashes,
+  ) async {
+    var ledger = initial.ledger;
+    var firstLocalFailure = initial.firstLocalFailure;
+    final excludedAssetIds = Set<String>.of(initial.excludedAssetIds);
+    final activeDuplicates =
+        ledger.entries.values
+            .where(
+              (entry) =>
+                  entry.state == MirrorState.uploading &&
+                  entry.backgroundTaskId != null &&
+                  entry.sha256 != null &&
+                  knownHashes.contains(entry.sha256) &&
+                  !excludedAssetIds.contains(entry.assetId),
+            )
+            .toList()
+          ..sort((a, b) => a.assetId.compareTo(b.assetId));
+
+    for (final entry in activeDuplicates) {
+      final cancelled = await _cancelActiveDedupTask(ledger, entry);
+      if (cancelled case Err<_DedupCancellationResult>(:final error)) {
+        return Err(error);
+      }
+      final cancellation = (cancelled as Ok<_DedupCancellationResult>).value;
+      ledger = cancellation.ledger;
+      final localFailure = cancellation.localFailure;
+      if (localFailure != null) {
+        excludedAssetIds.add(entry.assetId);
+        firstLocalFailure ??= localFailure;
+        continue;
+      }
+    }
+
+    return Ok(
+      _PendingCancellationResolution(
+        ledger: ledger,
+        firstLocalFailure: firstLocalFailure,
+        excludedAssetIds: excludedAssetIds,
+        deferredUploadAssetIds: initial.deferredUploadAssetIds,
+      ),
+    );
+  }
+
+  Future<TainaResult<_DedupCancellationResult>> _cancelActiveDedupTask(
+    MirrorLedger initial,
+    MirrorEntry entry,
+  ) async {
+    final taskId = entry.backgroundTaskId;
+    if (entry.state != MirrorState.uploading || taskId == null) {
+      return Ok(_DedupCancellationResult(ledger: initial, localFailure: null));
+    }
+
+    final intent = entry.copyWith(
+      state: MirrorState.queued,
+      progress: 0,
+      clearLastError: true,
+      updatedAt: _now(),
+    );
+    var ledger = initial.upsert(intent);
+    final intentSaved = await _saveLedger(
+      ledger,
+      changedAssetIds: {entry.assetId},
+      removedAssetIds: const {},
+    );
+    if (intentSaved is Err<void>) return Err(intentSaved.error);
+
+    final cancelled = await _transfer.cancel(taskId);
+    if (cancelled case Err<void>(:final error)) {
+      if (_isGlobalTransferFailure(error)) return Err(error);
+      return Ok(_DedupCancellationResult(ledger: ledger, localFailure: error));
+    }
+
+    final current = ledger.entries[entry.assetId];
+    if (current == null) {
+      return const Err(
+        InvalidResponseError('deduplicated cancellation entry is missing'),
+      );
+    }
+    final cleared = current.copyWith(
+      state: MirrorState.queued,
+      clearBackgroundTaskId: true,
+      progress: 0,
+      clearLastError: true,
+      updatedAt: _now(),
+    );
+    ledger = ledger.upsert(cleared);
+    final saved = await _saveLedger(
+      ledger,
+      changedAssetIds: {entry.assetId},
+      removedAssetIds: const {},
+    );
+    if (saved is Err<void>) return Err(saved.error);
+
+    return Ok(_DedupCancellationResult(ledger: ledger, localFailure: null));
   }
 
   Future<TainaResult<MirrorLedger>> _ensureDestination(
@@ -900,7 +1085,8 @@ final class MirrorEngine {
     MirrorState.uploading => true,
     MirrorState.newAsset ||
     MirrorState.uploaded ||
-    MirrorState.skipped => false,
+    MirrorState.skipped ||
+    MirrorState.suppressed => false,
   };
 
   static bool _isCurrentTask(MirrorEntry? entry, String backgroundTaskId) =>

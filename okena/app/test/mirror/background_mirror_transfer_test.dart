@@ -154,25 +154,82 @@ void main() {
       },
     );
 
-    test('complete records converge without another upload', () async {
-      final fixture = await _fixture();
-      final task = _task(taskId: 'mirror-task', ownerId: 'owner-1');
-      fixture.gateway.records['mirror-task'] = _record(
-        task,
-        TaskStatus.complete,
-      );
+    test(
+      'complete records without a replayed response emit one failure',
+      () async {
+        final fixture = await _fixture();
+        final task = _task(taskId: 'mirror-task', ownerId: 'owner-1');
+        fixture.gateway.records['mirror-task'] = _record(
+          task,
+          TaskStatus.complete,
+        );
+        final events = <MirrorTransferEvent>[];
+        final subscription = fixture.transfer.events.listen(events.add);
 
-      final result = await fixture.transfer.ensureStarted(
-        entry: fixture.entry,
-        folderRkey: 'folder-rkey',
-      );
+        final first = await fixture.transfer.ensureStarted(
+          entry: fixture.entry,
+          folderRkey: 'folder-rkey',
+        );
+        final second = await fixture.transfer.ensureStarted(
+          entry: fixture.entry,
+          folderRkey: 'folder-rkey',
+        );
 
-      expect(result, isA<Ok<void>>());
-      expect(fixture.gateway.taskLookupCalls, 1);
-      expect(fixture.gateway.recordLookupCalls, 1);
-      expect(fixture.requestCalls, 0);
-      expect(fixture.gateway.enqueueCalls, isEmpty);
-    });
+        expect(first, isA<Ok<void>>());
+        expect(second, isA<Ok<void>>());
+        expect(fixture.gateway.taskLookupCalls, 2);
+        expect(fixture.gateway.recordLookupCalls, 2);
+        expect(fixture.requestCalls, 0);
+        expect(fixture.gateway.enqueueCalls, isEmpty);
+        expect(events, hasLength(1));
+        expect(events.single, isA<MirrorTransferFailed>());
+        final failure = events.single as MirrorTransferFailed;
+        expect(failure.assetId, fixture.entry.assetId);
+        expect(failure.taskId, 'mirror-task');
+        expect(failure.error, isA<InvalidResponseError>());
+        expect(
+          (failure.error as InvalidResponseError).cause,
+          'mirror upload completed response is missing',
+        );
+        await subscription.cancel();
+      },
+    );
+
+    test(
+      'a replayed valid completion response resolves a complete record',
+      () async {
+        final fixture = await _fixture();
+        final task = _task(taskId: 'mirror-task', ownerId: 'owner-1');
+        fixture.gateway.records['mirror-task'] = _record(
+          task,
+          TaskStatus.complete,
+        );
+        final events = <MirrorTransferEvent>[];
+        final subscription = fixture.transfer.events.listen(events.add);
+
+        fixture.gateway.addUpdate(
+          TaskStatusUpdate(
+            task,
+            TaskStatus.complete,
+            null,
+            _fileJson(_sha256),
+            null,
+            201,
+          ),
+        );
+        final result = await fixture.transfer.ensureStarted(
+          entry: fixture.entry,
+          folderRkey: 'folder-rkey',
+        );
+
+        expect(result, isA<Ok<void>>());
+        expect(events, hasLength(1));
+        expect(events.single, isA<MirrorTransferCompleted>());
+        expect(fixture.requestCalls, 0);
+        expect(fixture.gateway.enqueueCalls, isEmpty);
+        await subscription.cancel();
+      },
+    );
 
     test(
       'rejects a database record belonging to a different revision',

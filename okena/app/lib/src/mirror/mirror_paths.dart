@@ -17,7 +17,9 @@ Future<TainaResult<String>> resolveMirrorStoredPath({
     );
     if (pathType != FileSystemEntityType.notFound) return Ok(storedPath);
 
-    final segments = Uri.file(storedPath).pathSegments;
+    // Uri.file normalizes `..` before exposing pathSegments. Validate the
+    // persisted suffix before any normalization can hide traversal.
+    final segments = storedPath.split(RegExp(r'[/\\]'));
     final markerIndex = segments.indexOf('taina_mirror');
     if (markerIndex < 0) {
       return const Err(

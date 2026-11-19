@@ -20,6 +20,7 @@ export 'src/mirror/mirror_entry.dart';
 export 'src/mirror/mirror_ledger.dart';
 export 'src/mirror/mirror_plan.dart';
 export 'src/mirror/mirror_store.dart';
+export 'src/mirror/mirror_summary.dart';
 export 'src/models/access.dart';
 export 'src/models/mirror_hash_lookup.dart';
 export 'src/models/mural.dart';

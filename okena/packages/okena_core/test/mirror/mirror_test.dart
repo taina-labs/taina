@@ -154,9 +154,14 @@ void main() {
           state: MirrorState.skipped,
           sha256: 'also-no-longer-known',
         ),
+        entry(
+          assetId: 'asset-c',
+          state: MirrorState.suppressed,
+          sha256: 'suppressed-hash',
+        ),
       ];
       final result = MirrorPlan.plan(
-        [asset(), asset(assetId: 'asset-b')],
+        [asset(), asset(assetId: 'asset-b'), asset(assetId: 'asset-c')],
         ledger(terminal),
         {},
       );
@@ -164,42 +169,50 @@ void main() {
       expect(result.toHash, isEmpty);
       expect(result.toUpload, isEmpty);
       expect(result.toSkip, isEmpty);
-      expect(result.unchanged, hasLength(2));
+      expect(result.unchanged, hasLength(3));
     });
 
-    test('known hashes skip queued and uploading lost-response records', () {
-      final queued = entry(
-        assetId: 'asset-a',
-        sha256: 'known-live',
-        localPath: '/cache/a.jpg',
-        state: MirrorState.queued,
-      );
-      final uploading = entry(
-        assetId: 'asset-b',
-        sha256: 'known-trash',
-        localPath: '/cache/b.jpg',
-        state: MirrorState.uploading,
-        backgroundTaskId: 'task-b',
-      );
+    test(
+      'known hashes skip queued records without clearing active task IDs',
+      () {
+        final queued = entry(
+          assetId: 'asset-a',
+          sha256: 'known-live',
+          localPath: '/cache/a.jpg',
+          state: MirrorState.queued,
+        );
+        final uploading = entry(
+          assetId: 'asset-b',
+          sha256: 'known-trash',
+          localPath: '/cache/b.jpg',
+          state: MirrorState.uploading,
+          backgroundTaskId: 'task-b',
+        );
 
-      final result = MirrorPlan.plan(
-        [asset(), asset(assetId: 'asset-b')],
-        ledger([queued, uploading]),
-        {'known-live', 'known-trash'},
-      );
+        final result = MirrorPlan.plan(
+          [asset(), asset(assetId: 'asset-b')],
+          ledger([queued, uploading]),
+          {'known-live', 'known-trash'},
+        );
 
-      expect(result.toSkip.map((item) => item.assetId), ['asset-a', 'asset-b']);
-      expect(result.toHash, isEmpty);
-      expect(result.toUpload, isEmpty);
-      expect(
-        result.updatedLedger.entries['asset-a']!.state,
-        MirrorState.skipped,
-      );
-      expect(
-        result.updatedLedger.entries['asset-b']!.state,
-        MirrorState.skipped,
-      );
-    });
+        expect(result.toSkip.map((item) => item.assetId), ['asset-a']);
+        expect(result.toHash, isEmpty);
+        expect(result.toUpload, isEmpty);
+        expect(result.unchanged.map((item) => item.assetId), ['asset-b']);
+        expect(
+          result.updatedLedger.entries['asset-a']!.state,
+          MirrorState.skipped,
+        );
+        expect(
+          result.updatedLedger.entries['asset-b']!.state,
+          MirrorState.uploading,
+        );
+        expect(
+          result.updatedLedger.entries['asset-b']!.backgroundTaskId,
+          'task-b',
+        );
+      },
+    );
 
     test('an active background task waits, an orphaned task is requeued', () {
       final active = entry(
@@ -342,6 +355,30 @@ void main() {
       expect(value.nextUploads(), hasLength(1));
     });
 
+    test('suppression is terminal and clears transfer state', () {
+      final value = ledger([
+        entry(
+          sha256: 'suppressed-hash',
+          state: MirrorState.uploading,
+          rkey: 'stale-rkey',
+          backgroundTaskId: 'native-task',
+          progress: 0.7,
+        ),
+      ]);
+
+      final suppressed = value.markSuppressed(
+        assetId: 'asset-a',
+        updatedAt: operationAt,
+      );
+
+      final suppressedEntry = suppressed.entries['asset-a']!;
+      expect(suppressedEntry.state, MirrorState.suppressed);
+      expect(suppressedEntry.isTerminal, isTrue);
+      expect(suppressedEntry.rkey, isNull);
+      expect(suppressedEntry.backgroundTaskId, isNull);
+      expect(suppressedEntry.progress, 0);
+    });
+
     test('nextUploads chooses one copy per hash in stable order', () {
       final value = ledger([
         entry(assetId: 'asset-z', sha256: 'shared', state: MirrorState.queued),
@@ -401,6 +438,16 @@ void main() {
             progress: 0.45,
             updatedAt: operationAt,
           ),
+          'asset-c': entry(
+            assetId: 'asset-c',
+            state: MirrorState.skipped,
+            sha256: 'live-duplicate',
+          ),
+          'asset-d': entry(
+            assetId: 'asset-d',
+            state: MirrorState.suppressed,
+            sha256: 'suppressed-hash',
+          ),
         },
       );
 
@@ -409,7 +456,18 @@ void main() {
       expect(decoded.value, value);
       expect(value.toJson()['schema_version'], 1);
       expect((value.toJson()['entries']! as List).first['state'], 'new');
+      final states = {
+        for (final item in value.toJson()['entries']! as List)
+          (item as Map<String, Object?>)['asset_id'] as String:
+              item['state'] as String,
+      };
+      expect(states['asset-c'], 'skipped');
+      expect(states['asset-d'], 'suppressed');
       expect(MirrorState.byWire['new'], MirrorState.newAsset);
+      expect(MirrorState.byWire['skipped'], MirrorState.skipped);
+      expect(MirrorState.byWire['suppressed'], MirrorState.suppressed);
+      expect(decoded.value!.entries['asset-c']!.state, MirrorState.skipped);
+      expect(decoded.value!.entries['asset-d']!.state, MirrorState.suppressed);
     });
 
     test(

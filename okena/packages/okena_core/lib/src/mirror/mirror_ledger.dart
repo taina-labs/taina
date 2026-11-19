@@ -190,6 +190,24 @@ final class MirrorLedger {
     );
   }
 
+  MirrorLedger markSuppressed({
+    required String assetId,
+    required DateTime updatedAt,
+  }) {
+    final entry = entries[assetId];
+    if (entry == null) return this;
+    return _replace(
+      entry.copyWith(
+        state: MirrorState.suppressed,
+        clearRkey: true,
+        clearBackgroundTaskId: true,
+        clearLastError: true,
+        progress: 0,
+        updatedAt: updatedAt,
+      ),
+    );
+  }
+
   /// Records a failed attempt and leaves it eligible for a later retry.
   MirrorLedger markFailed({
     required String assetId,

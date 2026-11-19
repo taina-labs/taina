@@ -468,10 +468,18 @@ void main() {
       final fixture = _Fixture(
         stored: _ledger([
           _entry(state: MirrorState.uploaded, hash: 'hash-asset-a'),
+          _entry(
+            id: 'asset-b',
+            state: MirrorState.suppressed,
+            hash: 'suppressed-hash',
+          ),
         ]),
       );
 
-      final result = await fixture.engine.reconcile([_asset()]);
+      final result = await fixture.engine.reconcile([
+        _asset(),
+        _asset(id: 'asset-b'),
+      ]);
 
       expect(result, isA<Ok<void>>());
       expect(fixture.hasher.calls, isEmpty);
@@ -555,19 +563,251 @@ void main() {
       expect(fixture.transfer.ensureCalls, isEmpty);
     });
 
-    test('suppressed hash lookup skips the asset', () async {
-      final fixture = _Fixture();
-      fixture.api.lookupResults['hash-asset-a'] = const Ok<MirrorHashLookup>(
-        MirrorHashSuppressed(),
+    test(
+      'a tombstone-only manifest suppresses without resurrecting an upload',
+      () async {
+        final api = _TestApi()
+          ..manifestPages[0] = Page(
+            items: [
+              _file(hash: 'hash-asset-a', deletedAt: '2026-11-18T00:00:00Z'),
+            ],
+            nextCursor: null,
+          )
+          ..lookupResults['hash-asset-a'] = const Ok<MirrorHashLookup>(
+            MirrorHashSuppressed(),
+          );
+        final fixture = _Fixture(
+          api: api,
+          stored: _ledger([
+            _entry(
+              hash: 'hash-asset-a',
+              localPath: '/persisted/asset-a.jpg',
+              state: MirrorState.uploading,
+              taskId: 'active-tombstoned-task',
+            ),
+          ], destinationFolderRkey: 'saved-folder'),
+        )..transfer.nativeTaskIds.add('active-tombstoned-task');
+        MirrorEntry? intentAtCancel;
+        fixture.transfer.onCancel = (_) async {
+          intentAtCancel = (await fixture.store.read())!.entries['asset-a'];
+        };
+
+        final result = await fixture.engine.reconcile([_asset()]);
+
+        expect(result.isSuccess, isTrue);
+        expect(api.lookupHashes, ['hash-asset-a']);
+        expect(fixture.transfer.cancelCalls, ['active-tombstoned-task']);
+        expect(intentAtCancel?.state, MirrorState.queued);
+        expect(intentAtCancel?.backgroundTaskId, 'active-tombstoned-task');
+        expect(intentAtCancel?.localPath, '/persisted/asset-a.jpg');
+        expect(fixture.transfer.ensureCalls, isEmpty);
+        final entry = (await fixture.store.read())!.entries['asset-a']!;
+        expect(entry.state, MirrorState.suppressed);
+        expect(entry.isTerminal, isTrue);
+        expect(entry.localPath, '/persisted/asset-a.jpg');
+        expect(entry.backgroundTaskId, isNull);
+      },
+    );
+
+    test(
+      'a live manifest hash cancels its active task before deduplication',
+      () async {
+        final api = _TestApi()
+          ..manifestPages[0] = Page(
+            items: [_file(hash: 'hash-asset-a')],
+            nextCursor: null,
+          );
+        final fixture = _Fixture(
+          api: api,
+          stored: _ledger([
+            _entry(
+              hash: 'hash-asset-a',
+              localPath: '/persisted/asset-a.jpg',
+              state: MirrorState.uploading,
+              taskId: 'active-duplicate-task',
+              progress: 0.6,
+            ),
+          ], destinationFolderRkey: 'saved-folder'),
+        )..transfer.nativeTaskIds.add('active-duplicate-task');
+        MirrorEntry? intentAtCancel;
+        fixture.transfer.onCancel = (_) async {
+          intentAtCancel = (await fixture.store.read())!.entries['asset-a'];
+        };
+
+        final result = await fixture.engine.reconcile([_asset()]);
+
+        expect(result.isSuccess, isTrue);
+        expect(fixture.transfer.cancelCalls, ['active-duplicate-task']);
+        expect(intentAtCancel?.state, MirrorState.queued);
+        expect(intentAtCancel?.backgroundTaskId, 'active-duplicate-task');
+        expect(intentAtCancel?.localPath, '/persisted/asset-a.jpg');
+        expect(intentAtCancel?.progress, 0);
+        expect(fixture.transfer.ensureCalls, isEmpty);
+        expect(fixture.api.lookupHashes, isEmpty);
+        final entry = (await fixture.store.read())!.entries['asset-a']!;
+        expect(entry.state, MirrorState.skipped);
+        expect(entry.backgroundTaskId, isNull);
+        expect(entry.localPath, '/persisted/asset-a.jpg');
+      },
+    );
+
+    test('active dedup cancellation failure keeps task and path while independent work continues', () async {
+      final api = _TestApi()
+        ..manifestPages[0] = Page(
+          items: [_file(hash: 'hash-asset-a')],
+          nextCursor: null,
+        );
+      final fixture = _Fixture(
+        api: api,
+        stored: _ledger([
+          _entry(
+            id: 'asset-a',
+            hash: 'hash-asset-a',
+            localPath: '/persisted/asset-a.jpg',
+            state: MirrorState.uploading,
+            taskId: 'active-duplicate-task',
+            progress: 0.6,
+          ),
+          _entry(
+            id: 'asset-b',
+            hash: 'independent-hash',
+            state: MirrorState.queued,
+          ),
+        ], destinationFolderRkey: 'saved-folder'),
+      )..transfer.cancelAnswer = const Err(_taskFailure);
+
+      final result = await fixture.engine.reconcile([
+        _asset(id: 'asset-a'),
+        _asset(id: 'asset-b'),
+      ]);
+
+      expect(result.error, _taskFailure);
+      expect(fixture.transfer.cancelCalls, ['active-duplicate-task']);
+      expect(fixture.api.lookupHashes, ['independent-hash']);
+      expect(fixture.transfer.ensureCalls.map((entry) => entry.assetId), [
+        'asset-b',
+      ]);
+      final ledger = (await fixture.store.read())!;
+      final pending = ledger.entries['asset-a']!;
+      expect(pending.state, MirrorState.queued);
+      expect(pending.backgroundTaskId, 'active-duplicate-task');
+      expect(pending.localPath, '/persisted/asset-a.jpg');
+      expect(ledger.entries['asset-b']!.state, MirrorState.uploading);
+    });
+
+    test('present lookup cancellation failure keeps task and path without re-enqueue', () async {
+      final api = _TestApi()
+        ..lookupResults['hash-asset-a'] = Ok(
+          MirrorHashPresent(file: _file(hash: 'hash-asset-a')),
+        );
+      final fixture = _Fixture(
+        api: api,
+        stored: _ledger([
+          _entry(
+            id: 'asset-a',
+            hash: 'hash-asset-a',
+            localPath: '/persisted/asset-a.jpg',
+            state: MirrorState.uploading,
+            taskId: 'active-present-task',
+            progress: 0.6,
+          ),
+          _entry(
+            id: 'asset-b',
+            hash: 'independent-hash',
+            state: MirrorState.queued,
+          ),
+        ], destinationFolderRkey: 'saved-folder'),
+      )..transfer.cancelAnswer = const Err(_taskFailure);
+      fixture.transfer.nativeTaskIds.add('active-present-task');
+
+      final result = await fixture.engine.reconcile([
+        _asset(id: 'asset-a'),
+        _asset(id: 'asset-b'),
+      ]);
+
+      expect(result.error, _taskFailure);
+      expect(fixture.transfer.cancelCalls, ['active-present-task']);
+      expect(api.lookupHashes, ['hash-asset-a', 'independent-hash']);
+      expect(fixture.transfer.ensureCalls.map((entry) => entry.assetId), [
+        'asset-b',
+      ]);
+      final ledger = (await fixture.store.read())!;
+      final pending = ledger.entries['asset-a']!;
+      expect(pending.state, MirrorState.queued);
+      expect(pending.backgroundTaskId, 'active-present-task');
+      expect(pending.localPath, '/persisted/asset-a.jpg');
+      expect(pending.rkey, isNull);
+      expect(ledger.entries['asset-b']!.state, MirrorState.uploading);
+      expect(fixture.transfer.nativeTaskIds, contains('active-present-task'));
+    });
+
+    test(
+      'global present-lookup cancellation failure stops independent work',
+      () async {
+        final api = _TestApi()
+          ..lookupResults['hash-asset-a'] = Ok(
+            MirrorHashPresent(file: _file(hash: 'hash-asset-a')),
+          );
+        final fixture = _Fixture(
+          api: api,
+          stored: _ledger([
+            _entry(
+              id: 'asset-a',
+              hash: 'hash-asset-a',
+              localPath: '/persisted/asset-a.jpg',
+              state: MirrorState.uploading,
+              taskId: 'active-present-task',
+            ),
+            _entry(
+              id: 'asset-b',
+              hash: 'independent-hash',
+              state: MirrorState.queued,
+            ),
+          ], destinationFolderRkey: 'saved-folder'),
+        )..transfer.cancelAnswer = const Err(_offline);
+
+        final result = await fixture.engine.reconcile([
+          _asset(id: 'asset-a'),
+          _asset(id: 'asset-b'),
+        ]);
+
+        expect(result.error, _offline);
+        expect(api.lookupHashes, ['hash-asset-a']);
+        expect(fixture.transfer.ensureCalls, isEmpty);
+        final ledger = (await fixture.store.read())!;
+        expect(ledger.entries['asset-a']!.state, MirrorState.queued);
+        expect(
+          ledger.entries['asset-a']!.backgroundTaskId,
+          'active-present-task',
+        );
+        expect(ledger.entries['asset-a']!.localPath, '/persisted/asset-a.jpg');
+        expect(ledger.entries['asset-b']!.state, MirrorState.queued);
+      },
+    );
+
+    test('an active task with an unknown hash is not cancelled', () async {
+      final fixture = _Fixture(
+        stored: _ledger([
+          _entry(
+            hash: 'not-in-manifest',
+            state: MirrorState.uploading,
+            taskId: 'active-native-task',
+          ),
+        ], destinationFolderRkey: 'saved-folder'),
+      )..transfer.nativeTaskIds.add('active-native-task');
+
+      final result = await fixture.engine.reconcile([_asset()]);
+
+      expect(result.isSuccess, isTrue);
+      expect(fixture.transfer.cancelCalls, isEmpty);
+      expect(
+        fixture.transfer.ensureCalls.single.backgroundTaskId,
+        'active-native-task',
       );
-
-      await fixture.engine.reconcile([_asset()]);
-
       expect(
         (await fixture.store.read())!.entries['asset-a']!.state,
-        MirrorState.skipped,
+        MirrorState.uploading,
       );
-      expect(fixture.transfer.ensureCalls, isEmpty);
     });
 
     test(
@@ -642,11 +882,29 @@ void main() {
             ),
           ], destinationFolderRkey: 'saved-folder'),
         )..transfer.nativeTaskIds.add('committed-native-task');
+        MirrorEntry? intentAtCancel;
+        fixture.transfer.onCancel = (_) async {
+          intentAtCancel = (await fixture.store.read())!.entries['asset-a'];
+        };
 
         await fixture.engine.reconcile([_asset()]);
 
+        expect(fixture.transfer.cancelCalls, ['committed-native-task']);
+        expect(intentAtCancel?.state, MirrorState.queued);
+        expect(intentAtCancel?.backgroundTaskId, 'committed-native-task');
+        expect(intentAtCancel?.localPath, '/stable/asset-a.jpg');
         expect(fixture.transfer.ensureCalls, isEmpty);
         expect(fixture.transfer.enqueuedTaskIds, isEmpty);
+        await fixture.engine.fail(
+          assetId: 'asset-a',
+          backgroundTaskId: 'committed-native-task',
+          error: _offline,
+        );
+        await fixture.engine.updateProgress(
+          assetId: 'asset-a',
+          backgroundTaskId: 'committed-native-task',
+          progress: 0.9,
+        );
         final entry = (await fixture.store.read())!.entries['asset-a']!;
         expect(entry.state, MirrorState.uploaded);
         expect(entry.rkey, 'committed-file');

@@ -9,6 +9,7 @@ enum MirrorState {
   uploading,
   uploaded,
   skipped,
+  suppressed,
   failed;
 
   String get wireValue => switch (this) {
@@ -18,6 +19,7 @@ enum MirrorState {
     uploading => 'uploading',
     uploaded => 'uploaded',
     skipped => 'skipped',
+    suppressed => 'suppressed',
     failed => 'failed',
   };
 
@@ -28,6 +30,7 @@ enum MirrorState {
     'uploading': uploading,
     'uploaded': uploaded,
     'skipped': skipped,
+    'suppressed': suppressed,
     'failed': failed,
   };
 }
@@ -136,7 +139,9 @@ final class MirrorEntry {
   final DateTime updatedAt;
 
   bool get isTerminal =>
-      state == MirrorState.uploaded || state == MirrorState.skipped;
+      state == MirrorState.uploaded ||
+      state == MirrorState.skipped ||
+      state == MirrorState.suppressed;
 
   MirrorEntry copyWith({
     String? assetId,
