@@ -41,6 +41,8 @@
 	<string>Para conectar à comunidade Tainá na sua rede local.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Para enviar suas fotos e vídeos à sua comunidade Tainá.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Para fotografar e enviar imagens à sua comunidade Tainá.</string>
 	<key>PHPhotoLibraryPreventAutomaticLimitedAccessAlert</key>
 	<true/>
 	<key>NSAppTransportSecurity</key>

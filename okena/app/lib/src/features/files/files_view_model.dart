@@ -4,6 +4,7 @@ import 'package:okena_core/okena_core.dart';
 import '../../session/session_gateway.dart';
 import 'file_actions.dart';
 import 'files_logic.dart';
+import 'upload_runner.dart';
 
 /// The browser's state, for the root and for any folder alike. The loading
 /// logic lives here once; the transitions are pure functions of
@@ -23,6 +24,7 @@ final class FilesViewModel extends ChangeNotifier {
   /// The page size the box is asked for. Null means the server's default,
   /// exactly like the Swift app; tests pass a small one to walk pages.
   final int? pageSize;
+  late final UploadRunner _uploadRunner = UploadRunner(session: session);
 
   FilesEntries _entries = const FilesEntries();
   bool _loading = false;
@@ -120,14 +122,7 @@ final class FilesViewModel extends ChangeNotifier {
   Future<TainaResult<void>> upload(PickedFile picked) async {
     _uploading = true;
     notifyListeners();
-    final result = await session.screen(
-      await session.api.upload(
-        filePath: picked.path,
-        name: picked.name,
-        mime: picked.mime,
-        folderRkey: folderRkey,
-      ),
-    );
+    final result = await _uploadRunner.upload(picked, folderRkey: folderRkey);
     switch (result) {
       case Ok(:final value):
         _entries = FilesLogic.insertingFile(_entries, value);

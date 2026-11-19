@@ -4,6 +4,7 @@ import 'package:okena_app/src/features/files/file_detail_screen.dart';
 import 'package:okena_app/src/features/files/files_screen.dart';
 import 'package:okena_app/src/features/files/folder_screen.dart';
 import 'package:okena_app/src/features/files/platform_file_actions.dart';
+import 'package:okena_app/src/features/camera_roll/platform_media_picker.dart';
 import 'package:okena_app/src/features/gallery/gallery_screen.dart';
 import 'package:okena_app/src/features/home/home_screen.dart';
 import 'package:okena_app/src/features/members/members_screen.dart';
@@ -22,6 +23,7 @@ import 'package:provider/provider.dart';
 /// Wires every feature into the authenticated shell at the composition root.
 ShellScreens buildShellScreens(SessionModel session) {
   const actions = PlatformFileActions();
+  final mediaPicker = PlatformMediaPicker();
 
   return ShellScreens(
     home: (context) => HomeScreen(
@@ -31,7 +33,7 @@ ShellScreens buildShellScreens(SessionModel session) {
       onOpenRequests: () =>
           context.read<ShellModel>().openMore(MoreRoute.pedidos),
     ),
-    files: (context) => _filesScreen(context, session, actions),
+    files: (context) => _filesScreen(context, session, actions, mediaPicker),
     gallery: (context) => GalleryScreen(
       gateway: context.read<SessionGateway>(),
       onShareFile: actions.share,
@@ -58,11 +60,13 @@ Widget _filesScreen(
   BuildContext context,
   SessionModel session,
   PlatformFileActions actions,
+  PlatformMediaPicker mediaPicker,
 ) {
   final gateway = context.read<SessionGateway>();
   return FilesScreen(
     session: gateway,
     actions: actions,
+    mediaPicker: mediaPicker,
     onOpenFolder: (folder) => _openFolder(context, session, actions, folder),
     onOpenFile: (file) => _openFile(context, session, actions, file),
     onOpenTrash: () => _openTrash(context, session),

@@ -5,6 +5,7 @@ import 'package:okena_core/okena_core.dart';
 import 'package:provider/provider.dart';
 
 import '../../session/session_gateway.dart';
+import '../camera_roll/media_picker.dart';
 import 'browser_scaffold.dart';
 import 'file_actions.dart';
 import 'files_view_model.dart';
@@ -15,6 +16,7 @@ final class FilesScreen extends StatelessWidget {
     required this.session,
     required this.actions,
     this.model,
+    this.mediaPicker,
     this.title = 'Arquivos',
     this.onOpenFolder,
     this.onOpenFile,
@@ -28,6 +30,7 @@ final class FilesScreen extends StatelessWidget {
   /// An already built model, for tests and previews. When null the screen
   /// builds its own and starts the load.
   final FilesViewModel? model;
+  final MediaPicker? mediaPicker;
   final String title;
   final ValueChanged<Folder>? onOpenFolder;
   final ValueChanged<FileRecord>? onOpenFile;
@@ -40,6 +43,7 @@ final class FilesScreen extends StatelessWidget {
       onOpenFolder: onOpenFolder,
       onOpenFile: onOpenFile,
       onOpenTrash: onOpenTrash,
+      mediaPicker: mediaPicker,
     );
     final injected = model;
     if (injected != null) {

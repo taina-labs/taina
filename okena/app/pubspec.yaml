@@ -14,6 +14,7 @@ dependencies:
     sdk: flutter
   flutter_secure_storage: ^11.2.0
   go_router: ^18.1.3
+  image_picker: ^1.2.4
   okena_core:
     path: ../packages/okena_core
   open_filex: ^5.0.0

@@ -5,6 +5,9 @@ import 'package:okena_core/okena_core.dart';
 import 'package:provider/provider.dart';
 
 import '../../design_system/design_system.dart';
+import '../camera_roll/camera_roll_upload_model.dart';
+import '../camera_roll/camera_roll_upload_sheet.dart';
+import '../camera_roll/media_picker.dart';
 import 'browser_list.dart';
 import 'dialogs.dart';
 import 'files_logic.dart';
@@ -24,6 +27,7 @@ final class BrowserScaffold extends StatefulWidget {
     this.onOpenTrash,
     this.onFolderChanged,
     this.onFolderDeleted,
+    this.mediaPicker,
     super.key,
   });
 
@@ -37,6 +41,7 @@ final class BrowserScaffold extends StatefulWidget {
   final VoidCallback? onOpenTrash;
   final ValueChanged<Folder>? onFolderChanged;
   final VoidCallback? onFolderDeleted;
+  final MediaPicker? mediaPicker;
 
   @override
   State<BrowserScaffold> createState() => _BrowserScaffoldState();
@@ -64,6 +69,17 @@ final class _BrowserScaffoldState extends State<BrowserScaffold> {
     final message = await model.pickAndUpload();
     if (!mounted || message == null) return;
     await showFailure(context, message);
+  }
+
+  Future<void> _addMedia() async {
+    final picker = widget.mediaPicker;
+    if (picker == null || widget.folder != null) return;
+    final files = context.read<FilesViewModel>();
+    final model = CameraRollUploadModel(picker: picker, session: files.session);
+    final anySuccess = await showCameraRollUploadSheet(context, model: model);
+    model.dispose();
+    if (!mounted || anySuccess != true) return;
+    await files.load();
   }
 
   Future<void> _publish(FileRecord file) async {
@@ -200,6 +216,12 @@ final class _BrowserScaffoldState extends State<BrowserScaffold> {
               icon: const Icon(Icons.upload_file),
               tooltip: 'Enviar arquivo',
               onPressed: _upload,
+            ),
+          if (folder == null && widget.mediaPicker != null)
+            IconButton(
+              icon: const Icon(Icons.add_a_photo_outlined),
+              tooltip: 'Adicionar fotos e vídeos',
+              onPressed: _addMedia,
             ),
           if (folder != null) _FolderMenu(folder: folder, host: this),
         ],
