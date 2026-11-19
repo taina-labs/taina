@@ -7,6 +7,7 @@ import 'package:okena_core/okena_core.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'mirror_asset_materializer.dart';
+import 'mirror_paths.dart';
 
 String mirrorObjectPath({
   required String supportDirectoryPath,
@@ -97,6 +98,22 @@ final class PhotoManagerAssetMaterializer implements MirrorAssetMaterializer {
     }
     try {
       final appRoot = rootDirectory ?? await getApplicationSupportDirectory();
+      final resolvedRetainedPaths = <String>{};
+      TainaError? resolutionError;
+      for (final retainedPath in retainedPaths) {
+        final resolved = await resolveMirrorStoredPath(
+          storedPath: retainedPath,
+          supportDirectoryProvider: () async => appRoot,
+        );
+        switch (resolved) {
+          case Ok<String>(:final value):
+            resolvedRetainedPaths.add(File(value).absolute.path);
+          case Err<String>(:final error):
+            resolutionError ??= error;
+        }
+      }
+      if (resolutionError != null) return Err(resolutionError);
+
       final mirrorDirectory = Directory(
         _joinPath([appRoot.path, 'taina_mirror']),
       );
@@ -128,7 +145,9 @@ final class PhotoManagerAssetMaterializer implements MirrorAssetMaterializer {
         followLinks: false,
       )) {
         if (entity is! File) continue;
-        if (!retainedPaths.contains(entity.path)) await entity.delete();
+        if (!resolvedRetainedPaths.contains(File(entity.path).absolute.path)) {
+          await entity.delete();
+        }
       }
       return const Ok<void>(null);
     } on Exception catch (error) {

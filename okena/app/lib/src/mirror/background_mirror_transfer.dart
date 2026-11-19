@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:background_downloader/background_downloader.dart';
+import 'package:okena_app/src/mirror/mirror_paths.dart';
 import 'package:okena_app/src/mirror/mirror_transfer.dart';
 import 'package:okena_core/okena_core.dart';
 import 'package:path_provider/path_provider.dart';
@@ -264,7 +265,10 @@ final class BackgroundMirrorTransfer implements MirrorTransfer {
     if (sha256 == null || !_isSha256(sha256)) {
       return _rejected(const MirrorAssetReadError('mirror sha256 is invalid'));
     }
-    final resolvedPath = await _resolveLocalPath(storedPath);
+    final resolvedPath = await resolveMirrorStoredPath(
+      storedPath: storedPath ?? '',
+      supportDirectoryProvider: _supportDirectoryProvider,
+    );
     if (resolvedPath case Err<String>(:final error)) return _rejected(error);
     final localPath = (resolvedPath as Ok<String>).value;
 
@@ -532,65 +536,6 @@ final class BackgroundMirrorTransfer implements MirrorTransfer {
         metadata.modificationDate.microsecondsSinceEpoch ==
             entry.modificationDate.toUtc().microsecondsSinceEpoch &&
         metadata.expectedSha256 == entry.sha256;
-  }
-
-  Future<TainaResult<String>> _resolveLocalPath(String? storedPath) async {
-    if (storedPath == null || storedPath.trim().isEmpty) {
-      return const Err(MirrorAssetReadError('mirror local path is missing'));
-    }
-    try {
-      final pathType = await FileSystemEntity.type(
-        storedPath,
-        followLinks: false,
-      );
-      if (pathType != FileSystemEntityType.notFound) return Ok(storedPath);
-
-      final segments = Uri.file(storedPath).pathSegments;
-      final markerIndex = segments.indexOf('taina_mirror');
-      if (markerIndex < 0) {
-        return const Err(
-          MirrorAssetReadError('stale mirror path has no taina_mirror segment'),
-        );
-      }
-      final suffix = segments.skip(markerIndex).toList(growable: false);
-      if (suffix.any(
-        (segment) => segment.isEmpty || segment == '.' || segment == '..',
-      )) {
-        return const Err(
-          MirrorAssetReadError('stale mirror path suffix is invalid'),
-        );
-      }
-
-      final supportDirectory = await _supportDirectoryProvider();
-      final supportPath = Directory(supportDirectory.path).absolute.path;
-      final resolved = File(
-        '$supportPath${Platform.pathSeparator}'
-        '${suffix.join(Platform.pathSeparator)}',
-      ).absolute.path;
-      if (!_isWithinDirectory(resolved, supportPath)) {
-        return const Err(
-          MirrorAssetReadError('stale mirror path escapes application support'),
-        );
-      }
-
-      final canonicalRoot = await supportDirectory.resolveSymbolicLinks();
-      final canonicalPath = await File(resolved).resolveSymbolicLinks();
-      if (!_isWithinDirectory(canonicalPath, canonicalRoot)) {
-        return const Err(
-          MirrorAssetReadError('stale mirror path escapes application support'),
-        );
-      }
-      return Ok(resolved);
-    } on Exception catch (error) {
-      return Err(MirrorAssetReadError(error.toString()));
-    }
-  }
-
-  static bool _isWithinDirectory(String path, String directory) {
-    final separator = Platform.pathSeparator;
-    final root = Directory(directory).absolute.path;
-    final prefix = root.endsWith(separator) ? root : '$root$separator';
-    return path == root || path.startsWith(prefix);
   }
 
   _MirrorTaskMetadata? _metadataFor(Task task) {

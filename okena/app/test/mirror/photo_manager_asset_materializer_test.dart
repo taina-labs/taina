@@ -305,6 +305,103 @@ void main() {
       expect(await outside.readAsString(), 'outside');
       expect(await link.exists(), isTrue);
     });
+
+    test(
+      'prune resolves stale retained paths under the current support root',
+      () async {
+        final root = await Directory.systemTemp.createTemp(
+          'mirror-materializer-',
+        );
+        addTearDown(() => root.delete(recursive: true));
+        final support = Directory('${root.path}/current-support');
+        final oldSupport = Directory('${root.path}/old-support');
+        final entry = _entry();
+        final retained = File(
+          mirrorObjectPath(
+            supportDirectoryPath: support.path,
+            ownerId: 'owner',
+            assetId: 'retained',
+            modificationDate: entry.modificationDate,
+            filename: 'retained.jpg',
+          ),
+        );
+        final stale = File(
+          mirrorObjectPath(
+            supportDirectoryPath: support.path,
+            ownerId: 'owner',
+            assetId: 'stale',
+            modificationDate: entry.modificationDate,
+            filename: 'stale.jpg',
+          ),
+        );
+        await retained.parent.create(recursive: true);
+        await retained.writeAsString('keep');
+        await stale.parent.create(recursive: true);
+        await stale.writeAsString('remove');
+
+        final materializer = PhotoManagerAssetMaterializer(
+          ownerId: 'owner',
+          originalFileProvider: _FakeOriginalFileProvider(
+            const Err<File>(MirrorAssetReadError('unused')),
+          ),
+          rootDirectory: support,
+        );
+
+        final result = await materializer.prune(
+          retainedPaths: {
+            mirrorObjectPath(
+              supportDirectoryPath: oldSupport.path,
+              ownerId: 'owner',
+              assetId: 'retained',
+              modificationDate: entry.modificationDate,
+              filename: 'retained.jpg',
+            ),
+          },
+        );
+
+        expect(result.isSuccess, isTrue);
+        expect(await retained.exists(), isTrue);
+        expect(await stale.exists(), isFalse);
+      },
+    );
+
+    test(
+      'prune aborts before deleting when a retained path cannot be resolved',
+      () async {
+        final root = await Directory.systemTemp.createTemp(
+          'mirror-materializer-',
+        );
+        addTearDown(() => root.delete(recursive: true));
+        final support = Directory('${root.path}/support');
+        final entry = _entry();
+        final stale = File(
+          mirrorObjectPath(
+            supportDirectoryPath: support.path,
+            ownerId: 'owner',
+            assetId: 'stale',
+            modificationDate: entry.modificationDate,
+            filename: 'stale.jpg',
+          ),
+        );
+        await stale.parent.create(recursive: true);
+        await stale.writeAsString('keep until resolution succeeds');
+
+        final materializer = PhotoManagerAssetMaterializer(
+          ownerId: 'owner',
+          originalFileProvider: _FakeOriginalFileProvider(
+            const Err<File>(MirrorAssetReadError('unused')),
+          ),
+          rootDirectory: support,
+        );
+
+        final result = await materializer.prune(
+          retainedPaths: {'/old/container/without-a-mirror-segment/file.jpg'},
+        );
+
+        expect(result.error, isA<MirrorAssetReadError>());
+        expect(await stale.readAsString(), 'keep until resolution succeeds');
+      },
+    );
   });
 }
 

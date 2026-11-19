@@ -685,6 +685,173 @@ void main() {
       expect(fixture.transfer.enqueuedTaskIds, isEmpty);
     });
 
+    test('a superseded active task is cancelled before the newest revision is planned', () async {
+      final oldEntry = _entry(
+        state: MirrorState.uploading,
+        taskId: 'old-native-task',
+        hash: 'old-hash',
+        localPath: '/persisted/old.jpg',
+        progress: 0.7,
+      ).copyWith(lastError: 'old error');
+      final fixture = _Fixture(
+        stored: _ledger([oldEntry], destinationFolderRkey: 'saved-folder'),
+      )..transfer.nativeTaskIds.add('old-native-task');
+      MirrorEntry? intentAtCancel;
+      fixture.transfer.onCancel = (_) async {
+        intentAtCancel = (await fixture.store.read())!.entries['asset-a'];
+      };
+
+      final result = await fixture.engine.reconcile([
+        _asset(modified: _changed),
+        _asset(modified: _modified),
+      ]);
+
+      expect(result.isSuccess, isTrue);
+      expect(fixture.transfer.cancelCalls, ['old-native-task']);
+      expect(intentAtCancel?.state, MirrorState.queued);
+      expect(intentAtCancel?.backgroundTaskId, 'old-native-task');
+      expect(intentAtCancel?.modificationDate, _modified);
+      expect(intentAtCancel?.sha256, 'old-hash');
+      expect(intentAtCancel?.localPath, '/persisted/old.jpg');
+      expect(intentAtCancel?.progress, 0);
+      expect(intentAtCancel?.lastError, isNull);
+      expect(fixture.hasher.calls, hasLength(1));
+      expect(fixture.hasher.calls.single.modificationDate, _changed);
+      expect(fixture.transfer.ensureCalls, hasLength(1));
+      expect(fixture.transfer.ensureCalls.single.modificationDate, _changed);
+      expect(
+        fixture.transfer.events.indexOf('cancel:old-native-task'),
+        lessThan(
+          fixture.transfer.events.indexOf(
+            'ensure:${fixture.transfer.ensureCalls.single.backgroundTaskId}',
+          ),
+        ),
+      );
+      final current = (await fixture.store.read())!.entries['asset-a']!;
+      expect(current.modificationDate, _changed);
+      expect(current.sha256, 'hash-asset-a');
+      expect(current.localPath, '/stable/asset-a.jpg');
+      expect(current.state, MirrorState.uploading);
+      expect(current.backgroundTaskId, isNot('old-native-task'));
+    });
+
+    test('a local superseded-task cancel failure excludes it but continues independent work', () async {
+      final fixture = _Fixture(
+        stored: _ledger([
+          _entry(
+            id: 'asset-a',
+            modified: _modified,
+            state: MirrorState.uploading,
+            taskId: 'old-native-task',
+            hash: 'old-hash',
+            localPath: '/persisted/old-a.jpg',
+            progress: 0.7,
+          ),
+          _entry(id: 'asset-b', hash: 'independent-hash'),
+        ], destinationFolderRkey: 'saved-folder'),
+      )..transfer.cancelAnswer = const Err(_taskFailure);
+
+      final result = await fixture.engine.reconcile([
+        _asset(id: 'asset-a', modified: _changed),
+        _asset(id: 'asset-b'),
+      ]);
+
+      expect(result.error, _taskFailure);
+      expect(fixture.transfer.cancelCalls, ['old-native-task']);
+      expect(fixture.api.manifestRequests, hasLength(1));
+      expect(fixture.hasher.calls, isEmpty);
+      expect(fixture.api.lookupHashes, ['independent-hash']);
+      expect(fixture.transfer.ensureCalls.map((entry) => entry.assetId), [
+        'asset-b',
+      ]);
+      final ledger = (await fixture.store.read())!;
+      final pending = ledger.entries['asset-a']!;
+      expect(pending.state, MirrorState.queued);
+      expect(pending.modificationDate, _modified);
+      expect(pending.backgroundTaskId, 'old-native-task');
+      expect(pending.sha256, 'old-hash');
+      expect(pending.localPath, '/persisted/old-a.jpg');
+      expect(pending.progress, 0);
+      expect(pending.lastError, isNull);
+      expect(ledger.entries['asset-b']!.state, MirrorState.uploading);
+    });
+
+    test(
+      'global superseded-task cancel failures stop before manifest and work',
+      () async {
+        final failures = <TainaError>[
+          const NetworkError('offline'),
+          const NotSignedInError(),
+          const ApiError(
+            code: 'unauthorized',
+            status: 401,
+            serverMessage: 'expired',
+          ),
+          const ApiError(
+            code: 'forbidden',
+            status: 403,
+            serverMessage: 'forbidden',
+          ),
+          const ApiError(
+            code: 'internal_error',
+            status: 503,
+            serverMessage: 'busy',
+          ),
+        ];
+
+        for (final error in failures) {
+          final fixture = _Fixture(
+            stored: _ledger([
+              _entry(state: MirrorState.uploading, taskId: 'old-native-task'),
+              _entry(id: 'asset-b', hash: 'independent-hash'),
+            ], destinationFolderRkey: 'saved-folder'),
+          )..transfer.cancelAnswer = Err(error);
+
+          final result = await fixture.engine.reconcile([
+            _asset(modified: _changed),
+            _asset(id: 'asset-b'),
+          ]);
+
+          expect(result.error, error);
+          expect(fixture.api.manifestRequests, isEmpty);
+          expect(fixture.hasher.calls, isEmpty);
+          expect(fixture.transfer.ensureCalls, isEmpty);
+          final ledger = (await fixture.store.read())!;
+          expect(ledger.entries['asset-a']!.state, MirrorState.queued);
+          expect(
+            ledger.entries['asset-a']!.backgroundTaskId,
+            'old-native-task',
+          );
+          expect(ledger.entries['asset-b']!.state, MirrorState.queued);
+        }
+      },
+    );
+
+    test(
+      'failure to persist superseded cancellation intent stops before cancel',
+      () async {
+        final store = _RecordingStore(
+          _ledger([
+            _entry(state: MirrorState.uploading, taskId: 'old-native-task'),
+          ], destinationFolderRkey: 'saved-folder'),
+        )..failSaveAt = 1;
+        final fixture = _Fixture(store: store);
+
+        final result = await fixture.engine.reconcile([
+          _asset(modified: _changed),
+        ]);
+
+        expect(result.error, _offline);
+        expect(fixture.transfer.cancelCalls, isEmpty);
+        expect(fixture.api.manifestRequests, isEmpty);
+        expect(fixture.hasher.calls, isEmpty);
+        expect(fixture.transfer.ensureCalls, isEmpty);
+        final entry = (await store.read())!.entries['asset-a']!;
+        expect(entry.state, MirrorState.uploading);
+        expect(entry.backgroundTaskId, 'old-native-task');
+      },
+    );
+
     test(
       'failed uploads respect retry delay while queued uploads are immediate',
       () async {
@@ -1608,6 +1775,55 @@ void main() {
       expect(entry.attempts, 2);
       expect(fixture.store.saveCalls, 0);
     });
+
+    test(
+      'late events from a superseded revision cannot mutate its replacement',
+      () async {
+        final fixture = _Fixture(
+          stored: _ledger([
+            _entry(
+              state: MirrorState.uploading,
+              taskId: 'old-native-task',
+              hash: 'old-hash',
+              progress: 0.6,
+            ),
+          ], destinationFolderRkey: 'saved-folder'),
+        );
+
+        final reconciled = await fixture.engine.reconcile([
+          _asset(modified: _changed),
+        ]);
+        expect(reconciled.isSuccess, isTrue);
+        final newTaskId =
+            fixture.transfer.ensureCalls.single.backgroundTaskId ?? 'missing';
+        expect(newTaskId, isNot('old-native-task'));
+
+        await fixture.engine.complete(
+          assetId: 'asset-a',
+          modificationDate: _modified,
+          file: _file(rkey: 'late-old-file', hash: 'old-hash'),
+        );
+        await fixture.engine.fail(
+          assetId: 'asset-a',
+          backgroundTaskId: 'old-native-task',
+          error: _offline,
+        );
+        await fixture.engine.updateProgress(
+          assetId: 'asset-a',
+          backgroundTaskId: 'old-native-task',
+          progress: 0.9,
+        );
+
+        final entry = (await fixture.store.read())!.entries['asset-a']!;
+        expect(entry.modificationDate, _changed);
+        expect(entry.state, MirrorState.uploading);
+        expect(entry.backgroundTaskId, newTaskId);
+        expect(entry.sha256, 'hash-asset-a');
+        expect(entry.rkey, isNull);
+        expect(entry.progress, 0);
+        expect(entry.attempts, 0);
+      },
+    );
 
     test(
       'progress bursts coalesce to one load and save per asset task',

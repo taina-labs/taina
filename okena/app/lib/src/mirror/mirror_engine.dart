@@ -26,12 +26,15 @@ final class _PendingCancellationResolution {
   _PendingCancellationResolution({
     required this.ledger,
     required this.firstLocalFailure,
-    required Iterable<String> failedPendingAssetIds,
-  }) : failedPendingAssetIds = Set.unmodifiable(failedPendingAssetIds);
+    required Iterable<String> excludedAssetIds,
+    required Iterable<String> deferredUploadAssetIds,
+  }) : excludedAssetIds = Set.unmodifiable(excludedAssetIds),
+       deferredUploadAssetIds = Set.unmodifiable(deferredUploadAssetIds);
 
   final MirrorLedger ledger;
   final TainaError? firstLocalFailure;
-  final Set<String> failedPendingAssetIds;
+  final Set<String> excludedAssetIds;
+  final Set<String> deferredUploadAssetIds;
 }
 
 /// Coordinates the persisted camera-roll mirror state and its external edges.
@@ -263,8 +266,7 @@ final class MirrorEngine {
     if (loaded is Err<MirrorLedger>) return Err(loaded.error);
     var ledger = (loaded as Ok<MirrorLedger>).value;
 
-    final pendingCancellationIds = _pendingCancellationIds(ledger);
-    final cancellations = await _resolvePendingCancellations(ledger);
+    final cancellations = await _resolvePendingCancellations(ledger, assets);
     if (cancellations is Err<_PendingCancellationResolution>) {
       return Err(cancellations.error);
     }
@@ -278,9 +280,8 @@ final class MirrorEngine {
 
     final planAssets = assets
         .where(
-          (asset) => !cancellationResolution.failedPendingAssetIds.contains(
-            asset.assetId,
-          ),
+          (asset) =>
+              !cancellationResolution.excludedAssetIds.contains(asset.assetId),
         )
         .toList(growable: false);
     final previousLedger = ledger;
@@ -343,20 +344,28 @@ final class MirrorEngine {
     final lookedUp = await _resolveKnownHashes(
       ledger,
       knownHashes,
-      excludedAssetIds: cancellationResolution.failedPendingAssetIds,
+      excludedAssetIds: cancellationResolution.excludedAssetIds,
     );
     if (lookedUp is Err<MirrorLedger>) return Err(lookedUp.error);
     ledger = (lookedUp as Ok<MirrorLedger>).value;
 
     final now = _now();
-    final active = _activeEntries(ledger);
+    final active = _activeEntries(ledger)
+        .where(
+          (entry) =>
+              !cancellationResolution.excludedAssetIds.contains(entry.assetId),
+        )
+        .toList(growable: false);
     final candidates = ledger
         .nextUploads()
-        .where((entry) => !pendingCancellationIds.contains(entry.assetId))
         .where(
-          (entry) => !cancellationResolution.failedPendingAssetIds.contains(
+          (entry) => !cancellationResolution.deferredUploadAssetIds.contains(
             entry.assetId,
           ),
+        )
+        .where(
+          (entry) =>
+              !cancellationResolution.excludedAssetIds.contains(entry.assetId),
         )
         .where((entry) => _retryIsReady(entry, now))
         .toList(growable: false);
@@ -642,10 +651,14 @@ final class MirrorEngine {
   }
 
   Future<TainaResult<_PendingCancellationResolution>>
-  _resolvePendingCancellations(MirrorLedger initial) async {
+  _resolvePendingCancellations(
+    MirrorLedger initial,
+    List<MirrorAsset> assets,
+  ) async {
     var ledger = initial;
     TainaError? firstLocalFailure;
-    final failedPendingAssetIds = <String>{};
+    final excludedAssetIds = <String>{};
+    final deferredUploadAssetIds = _pendingCancellationIds(ledger);
     final pending =
         ledger.entries.values
             .where(
@@ -663,7 +676,7 @@ final class MirrorEngine {
       final cancelled = await _transfer.cancel(taskId);
       if (cancelled case Err<void>(:final error)) {
         if (_isGlobalTransferFailure(error)) return Err(error);
-        failedPendingAssetIds.add(entry.assetId);
+        excludedAssetIds.add(entry.assetId);
         firstLocalFailure ??= error;
         continue;
       }
@@ -690,11 +703,70 @@ final class MirrorEngine {
       if (saved is Err<void>) return Err(saved.error);
     }
 
+    final latestAssets = _latestAssetsById(assets);
+    final superseded = ledger.entries.values.where((entry) {
+      final asset = latestAssets[entry.assetId];
+      return asset != null &&
+          !entry.isTerminal &&
+          entry.state != MirrorState.queued &&
+          entry.backgroundTaskId != null &&
+          entry.modificationDate != asset.modificationDate;
+    }).toList()..sort((a, b) => a.assetId.compareTo(b.assetId));
+
+    for (final entry in superseded) {
+      final taskId = entry.backgroundTaskId;
+      if (taskId == null) continue;
+
+      final pendingEntry = entry.copyWith(
+        state: MirrorState.queued,
+        progress: 0,
+        clearLastError: true,
+        updatedAt: _now(),
+      );
+      ledger = ledger.upsert(pendingEntry);
+      final intentSaved = await _saveLedger(
+        ledger,
+        changedAssetIds: {entry.assetId},
+        removedAssetIds: const {},
+      );
+      if (intentSaved is Err<void>) return Err(intentSaved.error);
+
+      final cancelled = await _transfer.cancel(taskId);
+      if (cancelled case Err<void>(:final error)) {
+        if (_isGlobalTransferFailure(error)) return Err(error);
+        excludedAssetIds.add(entry.assetId);
+        firstLocalFailure ??= error;
+        continue;
+      }
+
+      final current = ledger.entries[entry.assetId];
+      if (current == null) {
+        return const Err(
+          InvalidResponseError('superseded cancellation entry is missing'),
+        );
+      }
+      final cleared = current.copyWith(
+        state: MirrorState.queued,
+        clearBackgroundTaskId: true,
+        progress: 0,
+        clearLastError: true,
+        updatedAt: _now(),
+      );
+      ledger = ledger.upsert(cleared);
+      final saved = await _saveLedger(
+        ledger,
+        changedAssetIds: {entry.assetId},
+        removedAssetIds: const {},
+      );
+      if (saved is Err<void>) return Err(saved.error);
+    }
+
     return Ok(
       _PendingCancellationResolution(
         ledger: ledger,
         firstLocalFailure: firstLocalFailure,
-        failedPendingAssetIds: failedPendingAssetIds,
+        excludedAssetIds: excludedAssetIds,
+        deferredUploadAssetIds: deferredUploadAssetIds,
       ),
     );
   }
@@ -806,6 +878,20 @@ final class MirrorEngine {
       if (entry.state == MirrorState.queued && entry.backgroundTaskId != null)
         entry.assetId,
   };
+
+  static Map<String, MirrorAsset> _latestAssetsById(
+    Iterable<MirrorAsset> assets,
+  ) {
+    final latest = <String, MirrorAsset>{};
+    for (final asset in assets) {
+      final current = latest[asset.assetId];
+      if (current == null ||
+          asset.modificationDate.isAfter(current.modificationDate)) {
+        latest[asset.assetId] = asset;
+      }
+    }
+    return latest;
+  }
 
   static bool _needsLookup(MirrorState state) => switch (state) {
     MirrorState.hashed ||
