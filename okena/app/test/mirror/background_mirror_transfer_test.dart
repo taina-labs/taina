@@ -73,6 +73,36 @@ void main() {
     });
 
     test(
+      'Wi-Fi provider applies changes only to subsequently enqueued tasks',
+      () async {
+        var requiresWiFi = true;
+        final fixture = await _fixture(
+          requiresWiFiProvider: () => requiresWiFi,
+        );
+
+        final first = await fixture.transfer.ensureStarted(
+          entry: fixture.entry,
+          folderRkey: 'folder-rkey',
+        );
+        requiresWiFi = false;
+        final second = await fixture.transfer.ensureStarted(
+          entry: fixture.entry.copyWith(
+            assetId: 'asset-2',
+            backgroundTaskId: 'next-task',
+          ),
+          folderRkey: 'folder-rkey',
+        );
+
+        expect(first, isA<Ok<void>>());
+        expect(second, isA<Ok<void>>());
+        expect(fixture.gateway.enqueueCalls.map((task) => task.requiresWiFi), [
+          true,
+          false,
+        ]);
+      },
+    );
+
+    test(
       'reattaches to a matching task without requesting credentials',
       () async {
         final fixture = await _fixture();
@@ -884,6 +914,7 @@ void main() {
 
 Future<_Fixture> _fixture({
   bool requiresWiFi = true,
+  bool Function()? requiresWiFiProvider,
   String ownerId = 'owner-1',
   MirrorUploadRequestProvider? requestProvider,
   MirrorSupportDirectoryProvider? supportDirectoryProvider,
@@ -897,6 +928,7 @@ Future<_Fixture> _fixture({
     ownerId: ownerId,
     gateway: gateway,
     requiresWiFi: requiresWiFi,
+    requiresWiFiProvider: requiresWiFiProvider,
     supportDirectoryProvider: supportDirectoryProvider,
     requestProvider:
         requestProvider ??

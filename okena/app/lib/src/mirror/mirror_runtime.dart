@@ -8,6 +8,7 @@ import 'package:okena_app/src/mirror/mirror_asset_materializer.dart';
 import 'package:okena_app/src/mirror/mirror_engine.dart';
 import 'package:okena_app/src/mirror/mirror_library.dart';
 import 'package:okena_app/src/mirror/background_mirror_transfer.dart';
+import 'package:okena_app/src/mirror/mirror_settings.dart';
 import 'package:okena_core/okena_core.dart';
 
 import 'mirror_foreground.dart';
@@ -61,6 +62,9 @@ final class MirrorRuntime {
   TainaError? _lastError;
 
   TainaError? get lastError => _lastError;
+
+  /// The owner currently attached to this runtime, if one has been created.
+  MirrorOwnerMirror? get currentOwner => _owner;
 
   /// Connects session and foreground changes. The caller owns this boundary.
   void attach() {
@@ -174,7 +178,7 @@ final class MirrorRuntime {
     _lastError = null;
     owner.setForeground(_foreground.isForeground);
     owner.activate();
-    if (_foreground.isForeground) {
+    if (_foreground.isForeground || !owner.enabled) {
       _reconcileAutomatically(owner, refreshLibrary: true);
     }
   }
@@ -183,7 +187,9 @@ final class MirrorRuntime {
     MirrorOwnerMirror owner, {
     required bool refreshLibrary,
   }) {
-    final reconciliation = owner.reconcile(refreshLibrary: refreshLibrary);
+    final reconciliation = owner.enabled
+        ? owner.reconcile(refreshLibrary: refreshLibrary)
+        : owner.pause();
     unawaited(
       reconciliation.then<void>(
         (_) {},
@@ -273,7 +279,14 @@ final class MirrorOwnerMirror {
     required Stream<MirrorTransferEvent> transferEvents,
     required this.startTransfer,
     required this.disposeTransfer,
+    bool enabled = true,
+    bool wifiOnly = true,
+    Future<TainaResult<void>> Function(MirrorPreferences preferences)?
+    persistPreferences,
   }) {
+    _enabled = enabled;
+    _wifiOnly = wifiOnly;
+    _persistPreferences = persistPreferences;
     _events = transferEvents.listen(
       _onTransferEvent,
       onError: (Object error, StackTrace _) {
@@ -290,6 +303,10 @@ final class MirrorOwnerMirror {
   final MirrorAssetMaterializer materializer;
   final MirrorTransferStarter startTransfer;
   final MirrorTransferDisposer disposeTransfer;
+  late bool _enabled;
+  late bool _wifiOnly;
+  late final Future<TainaResult<void>> Function(MirrorPreferences preferences)?
+  _persistPreferences;
 
   late final StreamSubscription<MirrorTransferEvent> _events;
   Future<void> _operationTail = Future<void>.value();
@@ -305,10 +322,15 @@ final class MirrorOwnerMirror {
   TainaError? _lastError;
   int _errorRevision = 0;
   Completer<TainaResult<void>>? _reconcileCompleter;
+  int _enabledRevision = 0;
 
   bool get isActive => _active;
 
   bool get isForeground => _foreground;
+
+  bool get enabled => _enabled;
+
+  bool get wifiOnly => _wifiOnly;
 
   TainaError? get lastError => _lastError;
 
@@ -325,6 +347,7 @@ final class MirrorOwnerMirror {
   /// Foreground work shares one queued pass and at most one pending refresh
   /// bit, regardless of how many lifecycle notifications arrive during it.
   Future<TainaResult<void>> reconcile({bool refreshLibrary = true}) {
+    if (!_enabled) return Future.value(const Ok<void>(null));
     if (!_active) return Future.value(_inactiveResult());
 
     final running = _reconcileCompleter;
@@ -359,7 +382,7 @@ final class MirrorOwnerMirror {
   }
 
   void _scheduleReconcile() {
-    if (_reconcileScheduled || !_active) return;
+    if (_reconcileScheduled || !_active || !_enabled) return;
     _reconcileScheduled = true;
     unawaited(_enqueue(_drainReconciles));
   }
@@ -369,7 +392,7 @@ final class MirrorOwnerMirror {
     Object? failure;
     StackTrace? failureStackTrace;
     try {
-      while (_active && _reconcileRequested) {
+      while (_active && _enabled && _reconcileRequested) {
         _reconcileRequested = false;
         final refreshLibrary = _refreshRequested;
         _refreshRequested = false;
@@ -404,6 +427,7 @@ final class MirrorOwnerMirror {
     required bool refreshLibrary,
   }) async {
     if (!_active) return _inactiveResult();
+    if (!_enabled) return const Ok<void>(null);
     final initialErrorRevision = _errorRevision;
 
     final started = await _startTransfer();
@@ -527,7 +551,7 @@ final class MirrorOwnerMirror {
               file: file,
             );
             _recordResult(result);
-            if (result.isSuccess && _active && _foreground) {
+            if (result.isSuccess && _active && _foreground && _enabled) {
               _reconcileAutomatically(refreshLibrary: false);
             }
           }),
@@ -554,6 +578,103 @@ final class MirrorOwnerMirror {
     final result = _operationTail.then((_) async {
       if (_active) await operation();
     });
+    _operationTail = result.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace _) {},
+    );
+    return result;
+  }
+
+  Future<TainaResult<void>> setEnabled(bool enabled) async {
+    final revision = ++_enabledRevision;
+    if (!enabled) _enabled = false;
+
+    final result = await _enqueueControl(() async {
+      final persisted = await _persist(
+        MirrorPreferences(enabled: enabled, wifiOnly: _wifiOnly),
+      );
+
+      if (!enabled) {
+        final paused = await _cancelPendingTasks();
+        if (persisted case Err<void>(:final error)) {
+          _recordError(error);
+          return Err(error);
+        }
+        if (paused case Err<void>(:final error)) return Err(error);
+        return const Ok<void>(null);
+      }
+
+      if (persisted case Err<void>(:final error)) {
+        _recordError(error);
+        return Err(error);
+      }
+      if (revision == _enabledRevision) _enabled = true;
+      return const Ok<void>(null);
+    });
+
+    if (enabled && result.isSuccess && _enabled && _active && _foreground) {
+      _reconcileAutomatically(refreshLibrary: true);
+    }
+    return result;
+  }
+
+  Future<TainaResult<void>> setWifiOnly(bool wifiOnly) =>
+      _enqueueControl(() async {
+        final persisted = await _persist(
+          MirrorPreferences(enabled: _enabled, wifiOnly: wifiOnly),
+        );
+        if (persisted case Err<void>(:final error)) {
+          _recordError(error);
+          return Err(error);
+        }
+        _wifiOnly = wifiOnly;
+        return const Ok<void>(null);
+      });
+
+  /// Retries cancellation for every ledger entry that still has a native task.
+  ///
+  /// This does not change the saved preference or remove local data.
+  Future<TainaResult<void>> pause() => _enqueueControl(_cancelPendingTasks);
+
+  Future<TainaResult<void>> _persist(MirrorPreferences preferences) async {
+    final persist = _persistPreferences;
+    if (persist == null) return const Ok<void>(null);
+    return persist(preferences);
+  }
+
+  Future<TainaResult<void>> _cancelPendingTasks() async {
+    final loaded = await store.load();
+    if (loaded case Err<MirrorLedger?>(:final error)) {
+      _recordError(error);
+      return Err(error);
+    }
+
+    final ledger = (loaded as Ok<MirrorLedger?>).value;
+    if (ledger == null) return const Ok<void>(null);
+    if (ledger.ownerId != engine.ownerId) {
+      const error = InvalidResponseError('mirror ledger owner mismatch');
+      _recordError(error);
+      return const Err(error);
+    }
+
+    TainaError? firstError;
+    final entries = ledger.entries.values.toList()
+      ..sort((a, b) => a.assetId.compareTo(b.assetId));
+    for (final entry in entries) {
+      if (entry.backgroundTaskId == null) continue;
+      final cancelled = await engine.cancel(assetId: entry.assetId);
+      if (cancelled case Err<void>(:final error)) {
+        firstError ??= error;
+        _recordError(error);
+      }
+    }
+    return firstError == null ? const Ok<void>(null) : Err(firstError);
+  }
+
+  Future<TainaResult<void>> _enqueueControl(
+    Future<TainaResult<void>> Function() operation,
+  ) {
+    final result = _operationTail.then((_) => operation());
     _operationTail = result.then<void>(
       (_) {},
       onError: (Object _, StackTrace _) {},

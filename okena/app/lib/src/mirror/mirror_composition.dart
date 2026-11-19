@@ -3,6 +3,7 @@ import 'package:okena_app/src/mirror/file_mirror_store.dart';
 import 'package:okena_app/src/mirror/mirror_engine.dart';
 import 'package:okena_app/src/mirror/mirror_foreground.dart';
 import 'package:okena_app/src/mirror/mirror_runtime.dart';
+import 'package:okena_app/src/mirror/mirror_settings.dart';
 import 'package:okena_app/src/mirror/photo_manager_asset_materializer.dart';
 import 'package:okena_app/src/mirror/photo_manager_mirror_library.dart';
 import 'package:okena_app/src/mirror/streaming_mirror_hasher.dart';
@@ -17,20 +18,26 @@ abstract final class MirrorComposition {
     SessionModel session, {
     MirrorOwnerFactory? ownerFactory,
     MirrorForeground? foreground,
+    MirrorSettings? settings,
   }) => MirrorRuntime(
     changes: session,
     identity: () => session.identity,
     foreground: foreground ?? FlutterMirrorForeground(),
     ownerFactory:
         ownerFactory ??
-        ({required ownerId, required identity}) =>
-            _createProductionOwner(session, ownerId, identity),
+        ({required ownerId, required identity}) => _createProductionOwner(
+          session,
+          ownerId,
+          identity,
+          settings ?? PreferencesMirrorSettings(),
+        ),
   );
 
   static Future<TainaResult<MirrorOwnerMirror>> _createProductionOwner(
     SessionModel session,
     String ownerId,
     Me identity,
+    MirrorSettings settings,
   ) async {
     final baseApi = session.api;
     if (baseApi is! LiveTainaApi) {
@@ -53,6 +60,12 @@ abstract final class MirrorComposition {
     if ((restored as Ok<Session?>).value == null) {
       return const Err(NotSignedInError());
     }
+
+    final loadedSettings = await settings.load(ownerId);
+    if (loadedSettings case Err<MirrorPreferences>(:final error)) {
+      return Err(error);
+    }
+    final preferences = (loadedSettings as Ok<MirrorPreferences>).value;
 
     final scopedApi = LiveTainaApi(
       transport: baseApi.transport,
@@ -83,6 +96,7 @@ abstract final class MirrorComposition {
         authenticated: true,
         token: current.token,
       ),
+      requiresWiFiProvider: () => owner?.wifiOnly ?? preferences.wifiOnly,
     );
     final engine = MirrorEngine(
       session: gateway,
@@ -100,6 +114,9 @@ abstract final class MirrorComposition {
       transferEvents: transfer.events,
       startTransfer: transfer.start,
       disposeTransfer: transfer.dispose,
+      enabled: preferences.enabled,
+      wifiOnly: preferences.wifiOnly,
+      persistPreferences: (next) => settings.save(ownerId, next),
     );
     return Ok(owner);
   }

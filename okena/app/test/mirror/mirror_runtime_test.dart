@@ -9,6 +9,7 @@ import 'package:okena_app/src/mirror/mirror_engine.dart';
 import 'package:okena_app/src/mirror/mirror_foreground.dart';
 import 'package:okena_app/src/mirror/mirror_library.dart';
 import 'package:okena_app/src/mirror/mirror_runtime.dart';
+import 'package:okena_app/src/mirror/mirror_settings.dart';
 import 'package:okena_app/src/mirror/mirror_transfer.dart';
 import 'package:okena_app/src/session/session_gateway.dart';
 import 'package:okena_core/okena_core.dart';
@@ -175,6 +176,8 @@ class _FakeApi implements TainaApi {
 
 class _FakeTransfer implements MirrorTransfer {
   final List<String> startedTaskIds = [];
+  final List<String> cancelledTaskIds = [];
+  Future<TainaResult<void>> Function(String backgroundTaskId)? cancelHandler;
 
   @override
   Future<TainaResult<void>> ensureStarted({
@@ -187,8 +190,12 @@ class _FakeTransfer implements MirrorTransfer {
   }
 
   @override
-  Future<TainaResult<void>> cancel(String backgroundTaskId) async =>
-      const Ok<void>(null);
+  Future<TainaResult<void>> cancel(String backgroundTaskId) async {
+    cancelledTaskIds.add(backgroundTaskId);
+    return cancelHandler == null
+        ? const Ok<void>(null)
+        : cancelHandler!(backgroundTaskId);
+  }
 }
 
 class _FakeHasher implements MirrorAssetHasher {
@@ -324,6 +331,7 @@ class _MadeOwner {
     required this.materializer,
     required this.events,
     required this.disposeTransfer,
+    required this.transfer,
   });
 
   final MirrorOwnerMirror owner;
@@ -332,6 +340,7 @@ class _MadeOwner {
   final _RecordingMaterializer materializer;
   final StreamController<MirrorTransferEvent> events;
   final Future<void> Function() disposeTransfer;
+  final _FakeTransfer transfer;
 }
 
 _MadeOwner _makeOwner({
@@ -343,6 +352,10 @@ _MadeOwner _makeOwner({
   Future<void> Function()? onDispose,
   StreamController<MirrorTransferEvent>? events,
   _FakeApi? api,
+  bool enabled = true,
+  bool wifiOnly = true,
+  Future<TainaResult<void>> Function(MirrorPreferences preferences)?
+  persistPreferences,
 }) {
   final selectedStore = store ?? InMemoryMirrorStore();
   final selectedLibrary = library ?? _FakeLibrary();
@@ -372,6 +385,9 @@ _MadeOwner _makeOwner({
     transferEvents: selectedEvents.stream,
     startTransfer: startTransfer ?? () async => const Ok<void>(null),
     disposeTransfer: disposeTransfer,
+    enabled: enabled,
+    wifiOnly: wifiOnly,
+    persistPreferences: persistPreferences,
   );
   return _MadeOwner(
     owner: owner,
@@ -380,6 +396,7 @@ _MadeOwner _makeOwner({
     materializer: selectedMaterializer,
     events: selectedEvents,
     disposeTransfer: disposeTransfer,
+    transfer: transfer,
   );
 }
 
@@ -677,9 +694,349 @@ void main() {
         await owner.dispose();
       },
     );
+
+    test('disabled reconcile is a quiet no-op', () async {
+      var startCalls = 0;
+      final api = _FakeApi();
+      final made = _makeOwner(
+        ownerId: 'tekoa-a:ava-a',
+        enabled: false,
+        api: api,
+        startTransfer: () async {
+          startCalls++;
+          return const Ok<void>(null);
+        },
+      );
+      made.owner.activate();
+
+      expect((await made.owner.reconcile()).isSuccess, isTrue);
+      expect(startCalls, 0);
+      expect(made.library.pageCalls, 0);
+      expect(api.manifestCalls, 0);
+      expect(made.materializer.retainedOnPrune, isEmpty);
+
+      await made.owner.dispose();
+    });
+
+    test(
+      'disabled completion updates the ledger without follow-up work',
+      () async {
+        final store = _WatchingStore(
+          _ledger([
+            _entry(
+              id: 'asset-a',
+              state: MirrorState.uploading,
+              path: '/support/retained.jpg',
+              taskId: 'task-a',
+            ),
+          ], ownerId: 'tekoa-a:ava-a'),
+        );
+        final api = _FakeApi();
+        var startCalls = 0;
+        final made = _makeOwner(
+          ownerId: 'tekoa-a:ava-a',
+          enabled: false,
+          store: store,
+          api: api,
+          startTransfer: () async {
+            startCalls++;
+            return const Ok<void>(null);
+          },
+        );
+        made.owner.activate();
+
+        made.events.add(
+          MirrorTransferCompleted(
+            assetId: 'asset-a',
+            taskId: 'task-a',
+            modificationDate: _modified,
+            file: _file(),
+          ),
+        );
+        await store.uploaded.future;
+
+        expect(
+          (await store.load()).value!.entries['asset-a']!.state,
+          MirrorState.uploaded,
+        );
+        expect(startCalls, 0);
+        expect(made.library.pageCalls, 0);
+        expect(api.manifestCalls, 0);
+        expect(made.materializer.retainedOnPrune, isEmpty);
+
+        await made.owner.dispose();
+      },
+    );
+
+    test('pause waits for reconcile and cancels tasks it created', () async {
+      final library = _FakeLibrary(assets: [_asset()])
+        ..pageEntered = Completer<void>()
+        ..pageGate = Completer<void>();
+      final made = _makeOwner(ownerId: 'tekoa-a:ava-a', library: library);
+      made.owner.activate();
+
+      final reconciliation = made.owner.reconcile();
+      await library.pageEntered!.future;
+      final pausing = made.owner.setEnabled(false);
+      expect(made.owner.enabled, isFalse);
+      expect((await made.owner.reconcile()).isSuccess, isTrue);
+
+      library.pageGate!.complete();
+      expect((await reconciliation).isSuccess, isTrue);
+      expect((await pausing).isSuccess, isTrue);
+
+      expect(made.transfer.startedTaskIds, hasLength(1));
+      expect(made.transfer.cancelledTaskIds, made.transfer.startedTaskIds);
+      final persisted = (await made.store.load()).value!;
+      final entry = persisted.entries.values.single;
+      expect(entry.state, MirrorState.queued);
+      expect(entry.backgroundTaskId, isNull);
+      expect(entry.localPath, isNotNull);
+
+      await made.owner.dispose();
+    });
+
+    test(
+      'failed cancellation retains task and path and pause retries all',
+      () async {
+        final initial = _ledger([
+          _entry(
+            id: 'asset-a',
+            state: MirrorState.uploading,
+            path: '/support/a.jpg',
+            taskId: 'task-a',
+          ),
+          _entry(
+            id: 'asset-b',
+            state: MirrorState.uploading,
+            path: '/support/b.jpg',
+            taskId: 'task-b',
+          ),
+        ], ownerId: 'tekoa-a:ava-a');
+        final made = _makeOwner(
+          ownerId: 'tekoa-a:ava-a',
+          store: InMemoryMirrorStore(initial),
+        );
+        var failFirst = true;
+        made.transfer.cancelHandler = (taskId) async {
+          if (taskId == 'task-a' && failFirst) {
+            failFirst = false;
+            return const Err(_offline);
+          }
+          return const Ok<void>(null);
+        };
+        made.owner.activate();
+
+        final disabled = await made.owner.setEnabled(false);
+        expect(disabled.error, _offline);
+        expect(made.transfer.cancelledTaskIds, ['task-a', 'task-b']);
+
+        final afterFailure = (await made.store.load()).value!;
+        expect(afterFailure.entries['asset-a']!.state, MirrorState.queued);
+        expect(afterFailure.entries['asset-a']!.backgroundTaskId, 'task-a');
+        expect(afterFailure.entries['asset-a']!.localPath, '/support/a.jpg');
+        expect(afterFailure.entries['asset-b']!.backgroundTaskId, isNull);
+
+        expect((await made.owner.pause()).isSuccess, isTrue);
+        expect(made.transfer.cancelledTaskIds, ['task-a', 'task-b', 'task-a']);
+        final afterRetry = (await made.store.load()).value!;
+        expect(afterRetry.entries['asset-a']!.backgroundTaskId, isNull);
+        expect(afterRetry.entries['asset-a']!.localPath, '/support/a.jpg');
+
+        await made.owner.dispose();
+      },
+    );
+
+    test('disable still cancels when saving the preference fails', () async {
+      const saveFailure = InvalidResponseError('settings unavailable');
+      final initial = _ledger([
+        _entry(
+          id: 'asset-a',
+          state: MirrorState.uploading,
+          path: '/support/a.jpg',
+          taskId: 'task-a',
+        ),
+      ], ownerId: 'tekoa-a:ava-a');
+      final made = _makeOwner(
+        ownerId: 'tekoa-a:ava-a',
+        store: InMemoryMirrorStore(initial),
+        persistPreferences: (_) async => const Err(saveFailure),
+      );
+      made.transfer.cancelHandler = (_) async => const Err(_offline);
+      made.owner.activate();
+
+      final result = await made.owner.setEnabled(false);
+
+      expect(result.error, saveFailure);
+      expect(made.owner.enabled, isFalse);
+      expect(made.transfer.cancelledTaskIds, ['task-a']);
+      final retained = (await made.store.load()).value!.entries['asset-a']!;
+      expect(retained.backgroundTaskId, 'task-a');
+      expect(retained.localPath, '/support/a.jpg');
+
+      await made.owner.dispose();
+    });
+
+    test(
+      'enable persists first and only activates after a successful save',
+      () async {
+        var failSave = true;
+        final saved = <MirrorPreferences>[];
+        var startCalls = 0;
+        final made = _makeOwner(
+          ownerId: 'tekoa-a:ava-a',
+          enabled: false,
+          wifiOnly: false,
+          persistPreferences: (preferences) async {
+            saved.add(preferences);
+            if (failSave) return const Err(_offline);
+            return const Ok<void>(null);
+          },
+          startTransfer: () async {
+            startCalls++;
+            return const Ok<void>(null);
+          },
+        );
+        made.owner.activate();
+
+        expect((await made.owner.setEnabled(true)).error, _offline);
+        expect(made.owner.enabled, isFalse);
+        expect(startCalls, 0);
+        expect(made.library.pageCalls, 0);
+
+        failSave = false;
+        expect((await made.owner.setEnabled(true)).isSuccess, isTrue);
+        await _waitFor(() => made.library.pageCalls == 1);
+        expect(made.owner.enabled, isTrue);
+        expect(saved, const [
+          MirrorPreferences(enabled: true, wifiOnly: false),
+          MirrorPreferences(enabled: true, wifiOnly: false),
+        ]);
+        expect(startCalls, 1);
+
+        await made.owner.dispose();
+      },
+    );
+
+    test('Wi-Fi preference persistence preserves enabled state', () async {
+      final saved = <MirrorPreferences>[];
+      final made = _makeOwner(
+        ownerId: 'tekoa-a:ava-a',
+        enabled: false,
+        persistPreferences: (preferences) async {
+          saved.add(preferences);
+          return const Ok<void>(null);
+        },
+      );
+      made.owner.activate();
+
+      expect((await made.owner.setWifiOnly(false)).isSuccess, isTrue);
+      expect(made.owner.wifiOnly, isFalse);
+      expect(saved, const [MirrorPreferences(enabled: false, wifiOnly: false)]);
+
+      await made.owner.dispose();
+    });
   });
 
   group('MirrorRuntime', () {
+    test(
+      'disabled owner activation stays quiet with an empty ledger',
+      () async {
+        final changes = _IdentityChanges(_identity());
+        final foreground = _ManualForeground();
+        var startCalls = 0;
+        _MadeOwner? made;
+        final runtime = MirrorRuntime(
+          changes: changes,
+          identity: () => changes.value,
+          foreground: foreground,
+          ownerFactory: ({required ownerId, required identity}) async {
+            made = _makeOwner(
+              ownerId: ownerId,
+              enabled: false,
+              startTransfer: () async {
+                startCalls++;
+                return const Ok<void>(null);
+              },
+            );
+            return Ok(made!.owner);
+          },
+        );
+
+        runtime.attach();
+        await _waitFor(() => runtime.currentOwner != null);
+        expect(identical(runtime.currentOwner, made!.owner), isTrue);
+        expect(startCalls, 0);
+        expect(made!.library.pageCalls, 0);
+        expect(made!.materializer.retainedOnPrune, isEmpty);
+
+        foreground.set(false);
+        foreground.set(true);
+        await Future<void>.delayed(Duration.zero);
+        expect(startCalls, 0);
+        expect(made!.library.pageCalls, 0);
+
+        await runtime.dispose();
+        await made!.owner.dispose();
+      },
+    );
+
+    test(
+      'disabled activation cancels persisted task without reading library',
+      () async {
+        final changes = _IdentityChanges(_identity());
+        final foreground = _ManualForeground(isForeground: false);
+        final store = InMemoryMirrorStore(
+          _ledger([
+            _entry(
+              id: 'asset-a',
+              state: MirrorState.uploading,
+              path: '/support/retained.jpg',
+              taskId: 'task-a',
+            ),
+          ], ownerId: 'tekoa-a:ava-a'),
+        );
+        final api = _FakeApi();
+        var startCalls = 0;
+        _MadeOwner? made;
+        final runtime = MirrorRuntime(
+          changes: changes,
+          identity: () => changes.value,
+          foreground: foreground,
+          ownerFactory: ({required ownerId, required identity}) async {
+            made = _makeOwner(
+              ownerId: ownerId,
+              enabled: false,
+              store: store,
+              api: api,
+              startTransfer: () async {
+                startCalls++;
+                return const Ok<void>(null);
+              },
+            );
+            return Ok(made!.owner);
+          },
+        );
+
+        runtime.attach();
+        await _waitFor(
+          () => made?.transfer.cancelledTaskIds.isNotEmpty == true,
+        );
+
+        expect(made!.transfer.cancelledTaskIds, ['task-a']);
+        final entry = (await store.load()).value!.entries['asset-a']!;
+        expect(entry.backgroundTaskId, isNull);
+        expect(entry.localPath, '/support/retained.jpg');
+        expect(startCalls, 0);
+        expect(made!.library.pageCalls, 0);
+        expect(api.manifestCalls, 0);
+        expect(made!.materializer.retainedOnPrune, isEmpty);
+
+        await runtime.dispose();
+        await made!.owner.dispose();
+      },
+    );
+
     test('uses the composite community and Ava owner key', () async {
       final changes = _IdentityChanges(_identity());
       final foreground = _ManualForeground();

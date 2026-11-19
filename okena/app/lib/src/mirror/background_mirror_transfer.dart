@@ -113,6 +113,7 @@ final class BackgroundMirrorTransfer implements MirrorTransfer {
     BackgroundDownloaderGateway? gateway,
     MirrorSupportDirectoryProvider? supportDirectoryProvider,
     this.requiresWiFi = true,
+    this.requiresWiFiProvider,
   }) : _gateway = gateway ?? _FileDownloaderGateway(),
        _supportDirectoryProvider =
            supportDirectoryProvider ?? getApplicationSupportDirectory {
@@ -132,6 +133,7 @@ final class BackgroundMirrorTransfer implements MirrorTransfer {
   final String ownerId;
   final MirrorUploadRequestProvider requestProvider;
   final bool requiresWiFi;
+  final bool Function()? requiresWiFiProvider;
   final BackgroundDownloaderGateway _gateway;
   final MirrorSupportDirectoryProvider _supportDirectoryProvider;
   final StreamController<MirrorTransferEvent> _events =
@@ -323,7 +325,7 @@ final class BackgroundMirrorTransfer implements MirrorTransfer {
         fields: {'folder': folderRkey},
         mimeType: entry.mime,
         updates: Updates.statusAndProgress,
-        requiresWiFi: requiresWiFi,
+        requiresWiFi: requiresWiFiProvider?.call() ?? requiresWiFi,
         retries: 0,
         group: mirrorGroup,
         metaData: _metadata(ownerId: ownerId, entry: entry, sha256: sha256),
