@@ -38,6 +38,14 @@ void main() {
     expect(const NetworkError('offline'), const NetworkError('offline'));
     expect(const NetworkError('offline'), isNot(const NetworkError('timeout')));
     expect(
+      const MirrorAssetReadError('missing'),
+      const MirrorAssetReadError('missing'),
+    );
+    expect(
+      const MirrorAssetReadError('missing'),
+      isNot(const MirrorAssetReadError('unreadable')),
+    );
+    expect(
       const InvalidAddressError(AddressProblem.empty),
       const InvalidAddressError(AddressProblem.empty),
     );

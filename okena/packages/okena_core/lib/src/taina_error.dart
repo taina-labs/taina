@@ -88,6 +88,24 @@ final class InvalidResponseError extends TainaError {
   int get hashCode => Object.hash(InvalidResponseError, cause);
 }
 
+/// A photo or video could not be read from the device library.
+final class MirrorAssetReadError extends TainaError {
+  const MirrorAssetReadError([this.cause = '']);
+
+  final String cause;
+
+  @override
+  String get message =>
+      'Não foi possível ler esta foto ou vídeo no aparelho. Tente de novo.';
+
+  @override
+  bool operator ==(Object other) =>
+      other is MirrorAssetReadError && other.cause == cause;
+
+  @override
+  int get hashCode => Object.hash(MirrorAssetReadError, cause);
+}
+
 /// The decoded error envelope, and the client's contract with it.
 ///
 /// `code` stays a [String] on purpose: it is the wire vocabulary and the
