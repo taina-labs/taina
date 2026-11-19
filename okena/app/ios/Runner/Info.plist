@@ -39,6 +39,10 @@
 	<true/>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Para conectar à comunidade Tainá na sua rede local.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Para enviar suas fotos e vídeos à sua comunidade Tainá.</string>
+	<key>PHPhotoLibraryPreventAutomaticLimitedAccessAlert</key>
+	<true/>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<!-- Boxes are addressed at runtime and may only offer HTTP on a tailnet. -->

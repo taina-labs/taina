@@ -13,7 +13,7 @@ String mirrorObjectPath({
   required String ownerId,
   required String assetId,
   required DateTime modificationDate,
-  String? originalPath,
+  required String filename,
 }) {
   if (ownerId.isEmpty) {
     throw ArgumentError.value(ownerId, 'ownerId', 'must not be empty');
@@ -24,15 +24,14 @@ String mirrorObjectPath({
 
   final ownerSegment = _encodedSegment(ownerId);
   final assetSegment = _encodedSegment(assetId);
-  final revision =
-      '${modificationDate.toUtc().microsecondsSinceEpoch}${_safeExtension(originalPath)}';
   return _joinPath([
     supportDirectoryPath,
     'taina_mirror',
     ownerSegment,
     'objects',
     assetSegment,
-    revision,
+    modificationDate.toUtc().microsecondsSinceEpoch.toString(),
+    _safeFilename(filename),
   ]);
 }
 
@@ -75,7 +74,7 @@ final class PhotoManagerAssetMaterializer implements MirrorAssetMaterializer {
         ownerId: ownerId,
         assetId: entry.assetId,
         modificationDate: entry.modificationDate,
-        originalPath: original.path,
+        filename: entry.filename,
       );
 
       return await _withPathLock(
@@ -320,15 +319,17 @@ final class PhotoManagerAssetMaterializer implements MirrorAssetMaterializer {
 String _encodedSegment(String value) =>
     base64Url.encode(utf8.encode(value)).replaceAll('=', '');
 
-String _safeExtension(String? originalPath) {
-  if (originalPath == null || originalPath.isEmpty) return '';
-  final filename = _basename(originalPath);
-  final dot = filename.lastIndexOf('.');
-  if (dot <= 0 || dot == filename.length - 1) return '';
-  final extension = filename.substring(dot + 1);
-  final safe = extension.replaceAll(RegExp('[^A-Za-z0-9]'), '').toLowerCase();
-  if (safe.isEmpty) return '';
-  return '.${safe.length <= 12 ? safe : safe.substring(0, 12)}';
+String _safeFilename(String filename) {
+  final basename = _basename(filename);
+  final withoutControls = basename.replaceAll(
+    RegExp(r'[\x00-\x1F\x7F-\x9F]'),
+    '',
+  );
+  final safe = withoutControls.trim();
+  if (safe.isEmpty || safe == '.' || safe == '..') return 'asset';
+  return safe.runes.length <= 255
+      ? safe
+      : String.fromCharCodes(safe.runes.take(255));
 }
 
 String _basename(String path) => path.split(RegExp(r'[/\\]')).last;

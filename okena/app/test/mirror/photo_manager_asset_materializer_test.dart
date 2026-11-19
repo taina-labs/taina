@@ -9,7 +9,7 @@ import 'package:okena_core/okena_core.dart';
 void main() {
   group('mirrorObjectPath', () {
     test(
-      'encodes identifiers, includes revisions, and sanitizes extensions',
+      'encodes identifiers and puts the timestamp above the human basename',
       () {
         final modified = DateTime.utc(2026, 11, 19, 9, 30);
         final path = mirrorObjectPath(
@@ -17,7 +17,7 @@ void main() {
           ownerId: '../owner/one',
           assetId: 'album/photo:1',
           modificationDate: modified,
-          originalPath: '/photos/photo.h!e_i-c-with-a-long-extension',
+          filename: 'Foto da praça.HEIC',
         );
         final segments = path.split(Platform.pathSeparator);
 
@@ -33,37 +33,50 @@ void main() {
         );
         expect(segments, contains('objects'));
         expect(
-          segments.last,
-          '${modified.microsecondsSinceEpoch}.heicwithalon',
+          segments[segments.length - 2],
+          '${modified.microsecondsSinceEpoch}',
         );
+        expect(segments.last, 'Foto da praça.HEIC');
+        expect(segments.last, isNot(matches(RegExp(r'^\d+'))));
         expect(segments, isNot(contains('../owner/one')));
         expect(segments, isNot(contains('album/photo:1')));
       },
     );
 
-    test('omits an absent or unsafe extension', () {
-      final path = mirrorObjectPath(
-        supportDirectoryPath: '/support',
-        ownerId: 'owner',
-        assetId: 'asset',
-        modificationDate: DateTime.utc(2026),
-        originalPath: '/photos/photo.bad-ext!',
-      );
-
-      expect(
-        path.split(Platform.pathSeparator).last,
-        '1767225600000000.badext',
-      );
-      expect(
-        mirrorObjectPath(
+    test(
+      'uses a safe basename, a nonempty fallback, and a 255-character limit',
+      () {
+        final path = mirrorObjectPath(
           supportDirectoryPath: '/support',
           ownerId: 'owner',
           assetId: 'asset',
           modificationDate: DateTime.utc(2026),
-        ).split(Platform.pathSeparator).last,
-        '1767225600000000',
-      );
-    });
+          filename: '../../folder/un\u009fsafe\u0000.jpg',
+        );
+
+        expect(path.split(Platform.pathSeparator).last, 'unsafe.jpg');
+        expect(
+          mirrorObjectPath(
+            supportDirectoryPath: '/support',
+            ownerId: 'owner',
+            assetId: 'asset',
+            modificationDate: DateTime.utc(2026),
+            filename: '..',
+          ).split(Platform.pathSeparator).last,
+          'asset',
+        );
+        expect(
+          mirrorObjectPath(
+            supportDirectoryPath: '/support',
+            ownerId: 'owner',
+            assetId: 'asset',
+            modificationDate: DateTime.utc(2026),
+            filename: List<String>.filled(300, 'a').join(),
+          ).split(Platform.pathSeparator).last,
+          hasLength(255),
+        );
+      },
+    );
   });
 
   group('PhotoManagerAssetMaterializer', () {
@@ -87,12 +100,19 @@ void main() {
         rootDirectory: Directory('${root.path}/support'),
       );
 
-      final first = await materializer.materialize(_entry(size: 1));
+      const filename = 'Foto da praça.HEIC';
+      final entry = _entry(size: 1, filename: filename);
+      final first = await materializer.materialize(entry);
       expect(first, isA<Ok<MaterializedAsset>>());
       final firstAsset = (first as Ok<MaterializedAsset>).value;
       expect(firstAsset.size, content.length);
       expect(firstAsset.path, contains('/objects/'));
-      expect(firstAsset.path, endsWith('.heic'));
+      final pathSegments = firstAsset.path.split(Platform.pathSeparator);
+      expect(pathSegments.last, filename);
+      expect(
+        pathSegments[pathSegments.length - 2],
+        '${entry.modificationDate.microsecondsSinceEpoch}',
+      );
       expect(await File(firstAsset.path).readAsBytes(), content);
 
       final temporaryFiles = await _filesEndingWith(
@@ -150,7 +170,7 @@ void main() {
           ownerId: 'owner',
           assetId: entry.assetId,
           modificationDate: entry.modificationDate,
-          originalPath: source.path,
+          filename: entry.filename,
         );
         final target = File(targetPath);
         await target.parent.create(recursive: true);
@@ -245,7 +265,7 @@ void main() {
           ownerId: 'owner',
           assetId: 'retained',
           modificationDate: entry.modificationDate,
-          originalPath: '/source/retained.jpg',
+          filename: 'retained.jpg',
         ),
       );
       final stale = File(
@@ -254,7 +274,7 @@ void main() {
           ownerId: 'owner',
           assetId: 'stale',
           modificationDate: entry.modificationDate,
-          originalPath: '/source/stale.jpg',
+          filename: 'stale.jpg',
         ),
       );
       final part = File('${stale.path}.interrupted.part');
@@ -288,10 +308,14 @@ void main() {
   });
 }
 
-MirrorEntry _entry({String id = 'asset/one', int? size = 128}) => MirrorEntry(
+MirrorEntry _entry({
+  String id = 'asset/one',
+  String filename = 'photo.jpg',
+  int? size = 128,
+}) => MirrorEntry(
   assetId: id,
   modificationDate: DateTime.utc(2026, 11, 18, 10),
-  filename: 'photo.jpg',
+  filename: filename,
   mime: 'image/jpeg',
   size: size,
   takenAt: null,
