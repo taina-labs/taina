@@ -18,6 +18,7 @@ ShellScreens _screens() {
     mural: (context) => const Scaffold(body: Text('mural custom')),
     members: (context) => const Scaffold(body: Text('moradores custom')),
     storage: (context) => const Scaffold(body: Text('armazenamento custom')),
+    mirror: (context) => const Scaffold(body: Text('espelho custom')),
     saude: (context) => const Scaffold(body: Text('saúde custom')),
     requests: (context) => const Scaffold(body: Text('pedidos custom')),
     account: (context) => const Scaffold(body: Text('conta custom')),
@@ -94,6 +95,21 @@ void main() {
     await tester.tap(find.text('Mais'));
     await tester.pumpAndSettle();
     expect(find.text('moradores custom'), findsOneWidget);
+  });
+
+  testWidgets('the Espelho row opens its route in the Mais stack', (
+    tester,
+  ) async {
+    final model = await _readyModel();
+
+    await tester.pumpWidget(_app(model));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Mais'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Espelho do rolo de câmera'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('espelho custom'), findsOneWidget);
   });
 
   testWidgets('checking shows the loading skeleton', (tester) async {
@@ -213,5 +229,6 @@ void main() {
     expect(sessionRedirect(SessionReady(testMe()), '/login'), '/inicio');
     expect(sessionRedirect(SessionReady(testMe()), '/inicio'), isNull);
     expect(sessionRedirect(SessionReady(testMe()), '/mais/moradores'), isNull);
+    expect(sessionRedirect(SessionReady(testMe()), '/mais/espelho'), isNull);
   });
 }

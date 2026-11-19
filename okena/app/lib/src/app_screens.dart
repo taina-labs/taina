@@ -8,6 +8,7 @@ import 'package:okena_app/src/features/camera_roll/platform_media_picker.dart';
 import 'package:okena_app/src/features/gallery/gallery_screen.dart';
 import 'package:okena_app/src/features/home/home_screen.dart';
 import 'package:okena_app/src/features/members/members_screen.dart';
+import 'package:okena_app/src/features/mirror/mirror_screen.dart';
 import 'package:okena_app/src/features/mural/mural_screen.dart';
 import 'package:okena_app/src/features/requests/requests_screen.dart';
 import 'package:okena_app/src/features/saude/saude_screen.dart';
@@ -16,12 +17,16 @@ import 'package:okena_app/src/features/trash/trash_screen.dart';
 import 'package:okena_app/src/routing/shell_screens.dart';
 import 'package:okena_app/src/session/session_gateway.dart';
 import 'package:okena_app/src/session/session_model.dart';
+import 'package:okena_app/src/mirror/mirror_runtime.dart';
 import 'package:okena_app/src/shell/shell_model.dart';
 import 'package:okena_core/okena_core.dart';
 import 'package:provider/provider.dart';
 
 /// Wires every feature into the authenticated shell at the composition root.
-ShellScreens buildShellScreens(SessionModel session) {
+ShellScreens buildShellScreens(
+  SessionModel session, {
+  MirrorRuntime? mirrorRuntime,
+}) {
   const actions = PlatformFileActions();
   final mediaPicker = PlatformMediaPicker();
 
@@ -44,6 +49,13 @@ ShellScreens buildShellScreens(SessionModel session) {
         MembersScreen(session: context.read<SessionGateway>()),
     storage: (context) =>
         StorageScreen(session: context.read<SessionGateway>()),
+    mirror: mirrorRuntime == null
+        ? null
+        : (context) => MirrorScreen(
+            runtime: mirrorRuntime,
+            onOpenStorage: () =>
+                context.read<ShellModel>().openMore(MoreRoute.armazenamento),
+          ),
     saude: (context) => SaudeScreen(session: context.read<SessionGateway>()),
     requests: (context) =>
         RequestsScreen(session: context.read<SessionGateway>()),

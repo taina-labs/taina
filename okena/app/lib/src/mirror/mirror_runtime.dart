@@ -121,6 +121,37 @@ final class MirrorRuntime {
     }
   }
 
+  /// Retries owner creation when the current identity has no attached owner.
+  ///
+  /// The same generation checks as session-driven creation apply, so a retry
+  /// cannot attach an owner after the identity changes.
+  Future<void> refresh() async {
+    if (_disposed || !_attached) return;
+
+    final identity = _identity();
+    final ownerId = identity == null ? null : _ownerKey(identity);
+    if (ownerId != _requestedOwnerId) {
+      _synchronize();
+    }
+    if (ownerId == null) return;
+
+    final owner = _owner;
+    if (owner != null) return;
+
+    final pending = _ownerCreations[ownerId];
+    if (pending != null) {
+      await pending;
+      return;
+    }
+
+    final currentIdentity = _identity();
+    if (!_isCurrentIdentity(_generation, ownerId, currentIdentity)) return;
+
+    _setLastError(null);
+    _queueOwnerCreation(_generation, ownerId, currentIdentity!);
+    await _ownerCreations[ownerId];
+  }
+
   void _queueOwnerCreation(int generation, String ownerId, Me identity) {
     final previousCreation = _ownerCreations[ownerId];
     late final Future<void> creation;
@@ -488,6 +519,26 @@ final class MirrorOwnerMirror {
     if (!_enabled) return const Ok<void>(null);
     final initialErrorRevision = _errorRevision;
 
+    final refreshAssets = refreshLibrary || _cachedAssets == null;
+    if (refreshAssets) {
+      final access = await library.currentAccess();
+      if (!_active) return _inactiveResult();
+      if (_quotaPaused) return const Ok<void>(null);
+      if (access case Err<MirrorLibraryAccess>(:final error)) {
+        _recordError(error);
+        return Err(error);
+      }
+      final currentAccess = (access as Ok<MirrorLibraryAccess>).value;
+      if (currentAccess != MirrorLibraryAccess.full &&
+          currentAccess != MirrorLibraryAccess.limited) {
+        const error = MirrorAssetReadError(
+          'photo library access is unavailable',
+        );
+        _recordError(error);
+        return const Err(error);
+      }
+    }
+
     final started = await _startTransfer();
     if (!_active) return _inactiveResult();
     if (_quotaPaused) return const Ok<void>(null);
@@ -496,7 +547,7 @@ final class MirrorOwnerMirror {
       return Err(error);
     }
 
-    if (refreshLibrary || _cachedAssets == null) {
+    if (refreshAssets) {
       final collected = await _collectAssets();
       if (!_active) return _inactiveResult();
       if (_quotaPaused) return const Ok<void>(null);

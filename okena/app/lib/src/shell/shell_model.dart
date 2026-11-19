@@ -45,6 +45,11 @@ enum MoreRoute {
     label: 'Armazenamento',
     icon: Icons.storage_outlined,
   ),
+  espelho(
+    segment: 'espelho',
+    label: 'Espelho do rolo de câmera',
+    icon: Icons.photo_library_outlined,
+  ),
   saude(segment: 'saude', label: 'Saúde', icon: Icons.monitor_heart_outlined),
   pedidos(
     segment: 'pedidos',

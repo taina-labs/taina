@@ -16,6 +16,7 @@ final class ShellScreens {
     this.mural,
     this.members,
     this.storage,
+    this.mirror,
     this.saude,
     this.requests,
     this.account,
@@ -27,6 +28,7 @@ final class ShellScreens {
   final WidgetBuilder? mural;
   final WidgetBuilder? members;
   final WidgetBuilder? storage;
+  final WidgetBuilder? mirror;
   final WidgetBuilder? saude;
   final WidgetBuilder? requests;
   final WidgetBuilder? account;

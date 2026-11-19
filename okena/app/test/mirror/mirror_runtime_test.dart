@@ -214,9 +214,15 @@ class _FakeHasher implements MirrorAssetHasher {
 }
 
 class _FakeLibrary implements MirrorLibrary {
-  _FakeLibrary({this.assets = const []});
+  _FakeLibrary({
+    this.assets = const [],
+    this.access = MirrorLibraryAccess.full,
+  });
 
   final List<MirrorAsset> assets;
+  MirrorLibraryAccess access;
+  TainaResult<MirrorLibraryAccess>? accessFailure;
+  int currentAccessCalls = 0;
   int pageCalls = 0;
   TainaResult<MirrorAssetPage>? pageFailure;
   Object? pageThrow;
@@ -225,7 +231,8 @@ class _FakeLibrary implements MirrorLibrary {
 
   @override
   Future<TainaResult<MirrorLibraryAccess>> currentAccess() async {
-    return const Ok(MirrorLibraryAccess.full);
+    currentAccessCalls++;
+    return accessFailure ?? Ok(access);
   }
 
   @override
@@ -642,6 +649,92 @@ void main() {
         await reconcileOwner.dispose();
       },
     );
+
+    test('checks access before starting a refreshed library pass', () async {
+      const accessFailure = MirrorAssetReadError('access state unavailable');
+      final library = _FakeLibrary()..accessFailure = const Err(accessFailure);
+      final api = _FakeApi();
+      final materializer = _RecordingMaterializer();
+      var startCalls = 0;
+      final made = _makeOwner(
+        ownerId: 'tekoa-a:ava-a',
+        library: library,
+        api: api,
+        materializer: materializer,
+        startTransfer: () async {
+          startCalls++;
+          return const Ok<void>(null);
+        },
+      );
+      made.owner.activate();
+
+      final result = await made.owner.reconcile(refreshLibrary: true);
+
+      expect(result.error, accessFailure);
+      expect(made.owner.lastError, accessFailure);
+      expect(library.currentAccessCalls, 1);
+      expect(library.pageCalls, 0);
+      expect(startCalls, 0);
+      expect(api.manifestCalls, 0);
+      expect(materializer.retainedOnPrune, isEmpty);
+
+      await made.owner.dispose();
+    });
+
+    test('does not enumerate when photo access is not determined', () async {
+      final library = _FakeLibrary(
+        access: MirrorLibraryAccess.notDetermined,
+      );
+      final api = _FakeApi();
+      final materializer = _RecordingMaterializer();
+      var startCalls = 0;
+      final made = _makeOwner(
+        ownerId: 'tekoa-a:ava-a',
+        library: library,
+        api: api,
+        materializer: materializer,
+        startTransfer: () async {
+          startCalls++;
+          return const Ok<void>(null);
+        },
+      );
+      made.owner.activate();
+
+      final result = await made.owner.reconcile(refreshLibrary: true);
+
+      expect(result.error, isA<MirrorAssetReadError>());
+      expect(made.owner.lastError, isA<MirrorAssetReadError>());
+      expect(library.currentAccessCalls, 1);
+      expect(library.pageCalls, 0);
+      expect(startCalls, 0);
+      expect(api.manifestCalls, 0);
+      expect(materializer.retainedOnPrune, isEmpty);
+
+      await made.owner.dispose();
+    });
+
+    test('cached-assets reconciliation does not reread photo access', () async {
+      final library = _FakeLibrary(assets: [_asset()]);
+      final made = _makeOwner(
+        ownerId: 'tekoa-a:ava-a',
+        library: library,
+      );
+      made.owner.activate();
+
+      expect(
+        (await made.owner.reconcile(refreshLibrary: true)).isSuccess,
+        isTrue,
+      );
+      expect(library.currentAccessCalls, 1);
+
+      expect(
+        (await made.owner.reconcile(refreshLibrary: false)).isSuccess,
+        isTrue,
+      );
+
+      expect(library.currentAccessCalls, 1);
+      await made.owner.dispose();
+    });
 
     test(
       'records prune errors as housekeeping without failing reconciliation',
@@ -1469,6 +1562,38 @@ void main() {
         expect(successfulOwner!.owner.isActive, isTrue);
         await runtime.dispose();
         await successfulOwner!.owner.dispose();
+      },
+    );
+
+    test(
+      'refresh retries a failed owner factory for the current identity',
+      () async {
+        final changes = _IdentityChanges(_identity());
+        final foreground = _ManualForeground(isForeground: false);
+        var factoryCalls = 0;
+        _MadeOwner? made;
+        final runtime = MirrorRuntime(
+          changes: changes,
+          identity: () => changes.value,
+          foreground: foreground,
+          ownerFactory: ({required ownerId, required identity}) async {
+            factoryCalls++;
+            if (factoryCalls == 1) return const Err(_offline);
+            made = _makeOwner(ownerId: ownerId, enabled: false);
+            return Ok(made!.owner);
+          },
+        );
+
+        runtime.attach();
+        await _waitFor(() => runtime.lastError == _offline);
+
+        await runtime.refresh();
+
+        expect(factoryCalls, 2);
+        expect(runtime.currentOwner, same(made!.owner));
+        expect(runtime.lastError, isNull);
+        await runtime.dispose();
+        await made!.owner.dispose();
       },
     );
 

@@ -126,6 +126,14 @@ GoRouter createSessionRouter({
                         _destination(context, screens.storage, 'Armazenamento'),
                   ),
                   GoRoute(
+                    path: 'espelho',
+                    builder: (context, state) => _destination(
+                      context,
+                      screens.mirror,
+                      'Espelho do rolo de câmera',
+                    ),
+                  ),
+                  GoRoute(
                     path: 'saude',
                     builder: (context, state) =>
                         _destination(context, screens.saude, 'Saúde'),
