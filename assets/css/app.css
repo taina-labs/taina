@@ -41,6 +41,7 @@
 @import "./components/dropzone.css";
 @import "./components/qr-card.css";
 @import "./components/steps.css";
+@import "./components/setup-wizard.css";
 @import "./components/photo-grid.css";
 @import "./components/media-frame.css";
 @import "./components/text-preview.css";

@@ -10,7 +10,8 @@ defmodule TainaWeb.SetupLive do
   POST que derruba o wizard inteiro; o submit final valida todos os passos
   (somente leitura) e só então solta o POST tradicional para
   `SetupController` (`phx-trigger-action`), que faz `Maraca.bootstrap/2` e
-  abre a sessão na mesma requisição.
+  abre a sessão na mesma requisição. No desktop, apresentação e formulário
+  ficam lado a lado; no mobile e no tablet, seguem na coluna única dos boards.
 
   O disco é escolhido na instalação da caixa e não pode ser trocado por aqui
   (spec 10): o passo 3 mostra o disco como fato de leitura e decide só o
@@ -298,9 +299,10 @@ defmodule TainaWeb.SetupLive do
     assigns = assign(assigns, :quota_form, quota_form(assigns.data))
 
     ~H"""
-    <Layouts.auth flash={@flash}>
-      <div :if={@step == 1} class="col flex-1">
-        <div class="col gap-3 mt-4 mb-6">
+    <Layouts.auth flash={@flash} size="wide">
+      <div :if={@step == 1} class="setup-wizard">
+        <div class="setup-wizard__header">
+          <p class="setup-wizard__brand type-overline text-brand">Tainá</p>
           <.steps current={1} label={gettext("Boas-vindas")} />
           <h1 id="step-heading-1" tabindex="-1" phx-mounted={JS.focus()} class="type-h1">
             {gettext("Boas-vindas à Tainá")}
@@ -312,7 +314,7 @@ defmodule TainaWeb.SetupLive do
 
         <.connection_notice :if={@secure_connection? == false} />
 
-        <form id="setup-step-1" phx-change="validate" phx-submit="next" class="col gap-6 flex-1">
+        <form id="setup-step-1" phx-change="validate" phx-submit="next" class="setup-wizard__form col gap-6 flex-1">
           <.field
             label={gettext("Nome da comunidade")}
             name="setup[community_name]"
@@ -330,8 +332,9 @@ defmodule TainaWeb.SetupLive do
         </form>
       </div>
 
-      <div :if={@step == 2} class="col flex-1">
-        <div class="col gap-3 mt-4 mb-6">
+      <div :if={@step == 2} class="setup-wizard">
+        <div class="setup-wizard__header">
+          <p class="setup-wizard__brand type-overline text-brand">Tainá</p>
           <.steps current={2} label={gettext("Quem cuida")} />
           <h1 id="step-heading-2" tabindex="-1" phx-mounted={JS.focus()} class="type-h1">
             {gettext("Quem cuida da comunidade")}
@@ -343,7 +346,7 @@ defmodule TainaWeb.SetupLive do
 
         <.connection_notice :if={@secure_connection? == false} />
 
-        <form id="setup-step-2" phx-change="validate" phx-submit="next" class="col gap-5 flex-1">
+        <form id="setup-step-2" phx-change="validate" phx-submit="next" class="setup-wizard__form col gap-5 flex-1">
           <.field
             label={gettext("Seu nome de usuário")}
             name="setup[username]"
@@ -385,8 +388,9 @@ defmodule TainaWeb.SetupLive do
         </form>
       </div>
 
-      <div :if={@step == 3} class="col flex-1">
-        <div class="col gap-3 mt-4 mb-6">
+      <div :if={@step == 3} class="setup-wizard">
+        <div class="setup-wizard__header">
+          <p class="setup-wizard__brand type-overline text-brand">Tainá</p>
           <.steps current={3} label={gettext("Armazenamento")} />
           <h1 id="step-heading-3" tabindex="-1" phx-mounted={JS.focus()} class="type-h1">
             {gettext("O disco da comunidade")}
@@ -405,7 +409,7 @@ defmodule TainaWeb.SetupLive do
           phx-trigger-action={@trigger_submit}
           action={~p"/setup"}
           method="post"
-          class="col gap-4 flex-1"
+          class="setup-wizard__form col gap-4 flex-1"
         >
           <input type="hidden" name="_csrf_token" value={get_csrf_token()} />
           <input type="hidden" name="setup[community_name]" value={@data["community_name"]} />

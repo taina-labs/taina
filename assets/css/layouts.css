@@ -141,6 +141,25 @@
   }
 }
 
+/* O setup usa a largura do desktop para separar apresentacao e formulario.
+   O cartao passa a pertencer ao formulario; as demais telas de auth mantem a
+   composicao centrada em --measure-card. */
+@media (min-width: 1024px) {
+  .shell--auth--wide {
+    padding: var(--space-8);
+  }
+
+  .shell--auth--wide .shell__content {
+    display: flex;
+    align-items: flex-start;
+    max-width: var(--measure-shell);
+    padding: 0;
+    background: none;
+    border: 0;
+    border-radius: 0;
+  }
+}
+
 /* Título do Entrar: 44 no celular, 36 do tablet para cima (boards) */
 .auth-title {
   font-family: var(--font-family-display);

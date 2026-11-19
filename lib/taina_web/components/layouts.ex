@@ -29,25 +29,31 @@ defmodule TainaWeb.Layouts do
   Shell de auth (setup, login, convite, redefinir): fundo sólido `--bg-deep`
   (sem céu, sem estrelas, sem horizonte - spec 6.5), conteúdo limitado a
   `--measure-card` e, do tablet para cima, o cartão do board (superfície
-  elevada, hairline, `--radius-lg`). O ConnectionNotice não mora aqui: cada
-  tela o coloca abaixo do próprio cabeçalho, como nos boards ("sem https" em
-  `02 - Mobile`), e o `secure_connection?` vem de `Hooks.on_mount(:connection)`.
+  elevada, hairline, `--radius-lg`). `size="wide"` libera a largura no desktop
+  para o wizard dividir apresentação e formulário, sem afetar as demais telas.
+  O ConnectionNotice não mora aqui: cada tela o coloca abaixo do próprio
+  cabeçalho, como nos boards ("sem https" em `02 - Mobile`), e o
+  `secure_connection?` vem de `Hooks.on_mount(:connection)`.
 
       <Layouts.auth flash={@flash}>
         ...
       </Layouts.auth>
   """
   attr :flash, :map, required: true
+  attr :size, :string, default: "card", values: ~W(card wide)
   slot :inner_block, required: true
 
   def auth(assigns) do
     ~H"""
     <.flash_group flash={@flash} />
-    <main class="shell shell--auth">
+    <main class={auth_classes(@size)}>
       <div class="shell__content">{render_slot(@inner_block)}</div>
     </main>
     """
   end
+
+  defp auth_classes("wide"), do: "shell shell--auth shell--auth--wide"
+  defp auth_classes("card"), do: "shell shell--auth"
 
   @doc """
   Shell do hub (`/`): flash, pular-para-conteúdo e `main` com conteúdo limitado

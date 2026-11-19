@@ -51,6 +51,23 @@ defmodule TainaWeb.SetupLiveTest do
     refute has_element?(lv, ~S(input[name="setup[quota_gb]"]))
   end
 
+  test "os três passos usam a composição responsiva do wizard", %{conn: conn} do
+    {:ok, lv, _html} = live(conn, ~p"/setup")
+
+    assert has_element?(lv, ".shell--auth--wide .setup-wizard")
+    assert has_element?(lv, ".setup-wizard__header .steps")
+    assert has_element?(lv, "form#setup-step-1.setup-wizard__form")
+
+    lv |> element("form") |> render_submit(%{"setup" => %{"community_name" => "Quilombo do Café"}})
+    assert has_element?(lv, "form#setup-step-2.setup-wizard__form")
+
+    lv
+    |> element("form")
+    |> render_submit(%{"setup" => %{"username" => "ana", "password" => "frase-longa-segura"}})
+
+    assert has_element?(lv, ~S(form#setup-step-3.setup-wizard__form[action="/setup"]))
+  end
+
   test "escolhendo Um limite aparece o campo de GB e o resumo mostra o número", %{conn: conn} do
     {:ok, lv, _html} = live(conn, ~p"/setup")
 
