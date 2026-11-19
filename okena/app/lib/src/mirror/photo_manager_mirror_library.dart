@@ -16,6 +16,13 @@ enum PhotoManagerPermission {
 
 enum PhotoManagerAssetType { image, video, unsupported }
 
+const _permissionRequestOption = PermissionRequestOption(
+  androidPermission: AndroidPermission(
+    type: RequestType.common,
+    mediaLocation: false,
+  ),
+);
+
 final class PhotoManagerAssetRecord {
   const PhotoManagerAssetRecord({
     required this.id,
@@ -51,7 +58,11 @@ final class PhotoManagerAssetPage {
 }
 
 abstract class PhotoManagerGateway {
+  Future<PhotoManagerPermission> currentAccess();
+
   Future<PhotoManagerPermission> requestAccess();
+
+  Future<void> openSettings();
 
   Future<PhotoManagerAssetPage> page({required int page, required int size});
 
@@ -68,17 +79,30 @@ final class PhotoManagerMirrorLibrary
   final PhotoManagerGateway _gateway;
 
   @override
+  Future<TainaResult<MirrorLibraryAccess>> currentAccess() async {
+    try {
+      final permission = await _gateway.currentAccess();
+      return Ok(_mirrorLibraryAccess(permission));
+    } on Exception catch (error) {
+      return Err(MirrorAssetReadError(error.toString()));
+    }
+  }
+
+  @override
   Future<TainaResult<MirrorLibraryAccess>> requestAccess() async {
     try {
       final permission = await _gateway.requestAccess();
-      return Ok(switch (permission) {
-        PhotoManagerPermission.authorized => MirrorLibraryAccess.full,
-        PhotoManagerPermission.limited => MirrorLibraryAccess.limited,
-        PhotoManagerPermission.denied => MirrorLibraryAccess.denied,
-        PhotoManagerPermission.restricted => MirrorLibraryAccess.restricted,
-        PhotoManagerPermission.notDetermined =>
-          MirrorLibraryAccess.notDetermined,
-      });
+      return Ok(_mirrorLibraryAccess(permission));
+    } on Exception catch (error) {
+      return Err(MirrorAssetReadError(error.toString()));
+    }
+  }
+
+  @override
+  Future<TainaResult<void>> openSettings() async {
+    try {
+      await _gateway.openSettings();
+      return const Ok<void>(null);
     } on Exception catch (error) {
       return Err(MirrorAssetReadError(error.toString()));
     }
@@ -154,22 +178,19 @@ final class _PhotoManagerGateway implements PhotoManagerGateway {
   const _PhotoManagerGateway();
 
   @override
+  Future<PhotoManagerPermission> currentAccess() async {
+    final state = await PhotoManager.getPermissionState(
+      requestOption: _permissionRequestOption,
+    );
+    return _photoManagerPermission(state);
+  }
+
+  @override
   Future<PhotoManagerPermission> requestAccess() async {
     final state = await PhotoManager.requestPermissionExtend(
-      requestOption: const PermissionRequestOption(
-        androidPermission: AndroidPermission(
-          type: RequestType.common,
-          mediaLocation: false,
-        ),
-      ),
+      requestOption: _permissionRequestOption,
     );
-    return switch (state) {
-      PermissionState.authorized => PhotoManagerPermission.authorized,
-      PermissionState.limited => PhotoManagerPermission.limited,
-      PermissionState.denied => PhotoManagerPermission.denied,
-      PermissionState.restricted => PhotoManagerPermission.restricted,
-      PermissionState.notDetermined => PhotoManagerPermission.notDetermined,
-    };
+    return _photoManagerPermission(state);
   }
 
   @override
@@ -236,12 +257,33 @@ final class _PhotoManagerGateway implements PhotoManagerGateway {
       PhotoManager.presentLimited(type: RequestType.common);
 
   @override
+  Future<void> openSettings() => PhotoManager.openSetting();
+
+  @override
   Future<File?> originalFile(String assetId) async {
     final asset = await AssetEntity.fromId(assetId);
     if (asset == null) return null;
     return asset.originFile;
   }
 }
+
+PhotoManagerPermission _photoManagerPermission(PermissionState state) =>
+    switch (state) {
+      PermissionState.authorized => PhotoManagerPermission.authorized,
+      PermissionState.limited => PhotoManagerPermission.limited,
+      PermissionState.denied => PhotoManagerPermission.denied,
+      PermissionState.restricted => PhotoManagerPermission.restricted,
+      PermissionState.notDetermined => PhotoManagerPermission.notDetermined,
+    };
+
+MirrorLibraryAccess _mirrorLibraryAccess(PhotoManagerPermission permission) =>
+    switch (permission) {
+      PhotoManagerPermission.authorized => MirrorLibraryAccess.full,
+      PhotoManagerPermission.limited => MirrorLibraryAccess.limited,
+      PhotoManagerPermission.denied => MirrorLibraryAccess.denied,
+      PhotoManagerPermission.restricted => MirrorLibraryAccess.restricted,
+      PhotoManagerPermission.notDetermined => MirrorLibraryAccess.notDetermined,
+    };
 
 String _safeFilename(String? title) {
   final normalized = (title ?? '').trim().replaceAll('\\', '/');

@@ -76,8 +76,16 @@ final class _FakeMirrorLibrary implements MirrorLibrary {
   final List<(int, int)> pageCalls = [];
 
   @override
+  Future<TainaResult<MirrorLibraryAccess>> currentAccess() async {
+    return const Ok(MirrorLibraryAccess.full);
+  }
+
+  @override
   Future<TainaResult<MirrorLibraryAccess>> requestAccess() async =>
       const Ok(MirrorLibraryAccess.full);
+
+  @override
+  Future<TainaResult<void>> openSettings() async => const Ok<void>(null);
 
   @override
   Future<TainaResult<MirrorAssetPage>> page({

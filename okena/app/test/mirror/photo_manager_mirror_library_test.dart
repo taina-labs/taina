@@ -17,12 +17,75 @@ void main() {
       };
 
       for (final mapping in mappings.entries) {
-        final library = PhotoManagerMirrorLibrary(
-          gateway: _FakePhotoManagerGateway()..permission = mapping.key,
-        );
+        final gateway = _FakePhotoManagerGateway()..permission = mapping.key;
+        final library = PhotoManagerMirrorLibrary(gateway: gateway);
         expect((await library.requestAccess()).value, mapping.value);
+        expect(gateway.requestAccessCalls, 1);
+        expect(gateway.currentAccessCalls, 0);
       }
     });
+
+    test('reads every permission state without requesting access', () async {
+      final mappings = {
+        PhotoManagerPermission.authorized: MirrorLibraryAccess.full,
+        PhotoManagerPermission.limited: MirrorLibraryAccess.limited,
+        PhotoManagerPermission.denied: MirrorLibraryAccess.denied,
+        PhotoManagerPermission.restricted: MirrorLibraryAccess.restricted,
+        PhotoManagerPermission.notDetermined: MirrorLibraryAccess.notDetermined,
+      };
+
+      for (final mapping in mappings.entries) {
+        final gateway = _FakePhotoManagerGateway()
+          ..currentPermission = mapping.key;
+        final library = PhotoManagerMirrorLibrary(gateway: gateway);
+
+        expect((await library.currentAccess()).value, mapping.value);
+        expect(gateway.currentAccessCalls, 1);
+        expect(gateway.requestAccessCalls, 0);
+      }
+    });
+
+    test('delegates opening the app settings', () async {
+      final gateway = _FakePhotoManagerGateway();
+      final library = PhotoManagerMirrorLibrary(gateway: gateway);
+
+      expect(await library.openSettings(), isA<Ok<void>>());
+      expect(gateway.openSettingsCalls, 1);
+    });
+
+    test(
+      'maps current-access and settings plugin exceptions to read errors',
+      () async {
+        final gateway = _FakePhotoManagerGateway()
+          ..currentAccessFailure = const FileSystemException(
+            'permission failed',
+          )
+          ..openSettingsFailure = const FileSystemException('settings failed');
+        final library = PhotoManagerMirrorLibrary(gateway: gateway);
+
+        expect(
+          (await library.currentAccess()).error,
+          isA<MirrorAssetReadError>(),
+        );
+        expect(
+          (await library.openSettings()).error,
+          isA<MirrorAssetReadError>(),
+        );
+      },
+    );
+
+    test(
+      'propagates programmer errors from current access and settings',
+      () async {
+        final gateway = _FakePhotoManagerGateway()
+          ..currentAccessFailure = StateError('unexpected permission error')
+          ..openSettingsFailure = StateError('unexpected settings error');
+        final library = PhotoManagerMirrorLibrary(gateway: gateway);
+
+        await expectLater(library.currentAccess(), throwsA(isA<StateError>()));
+        await expectLater(library.openSettings(), throwsA(isA<StateError>()));
+      },
+    );
 
     test(
       'maps metadata fallbacks and filters trashed or unsupported assets',
@@ -184,6 +247,7 @@ PhotoManagerAssetRecord _record({
 
 final class _FakePhotoManagerGateway implements PhotoManagerGateway {
   PhotoManagerPermission permission = PhotoManagerPermission.authorized;
+  PhotoManagerPermission currentPermission = PhotoManagerPermission.authorized;
   PhotoManagerAssetPage assetPage = PhotoManagerAssetPage(
     assets: const [],
     hasMore: false,
@@ -193,12 +257,31 @@ final class _FakePhotoManagerGateway implements PhotoManagerGateway {
   Exception? pageFailure;
   Exception? originalFailure;
   Exception? selectionFailure;
+  Object? currentAccessFailure;
+  Object? openSettingsFailure;
+  int requestAccessCalls = 0;
+  int currentAccessCalls = 0;
+  int openSettingsCalls = 0;
   final List<(int, int)> pageCalls = [];
 
   @override
+  Future<PhotoManagerPermission> currentAccess() async {
+    currentAccessCalls++;
+    if (currentAccessFailure case final failure?) throw failure;
+    return currentPermission;
+  }
+
+  @override
   Future<PhotoManagerPermission> requestAccess() async {
+    requestAccessCalls++;
     if (requestFailure case final failure?) throw failure;
     return permission;
+  }
+
+  @override
+  Future<void> openSettings() async {
+    openSettingsCalls++;
+    if (openSettingsFailure case final failure?) throw failure;
   }
 
   @override

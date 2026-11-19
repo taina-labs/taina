@@ -11,7 +11,11 @@ final class MirrorAssetPage {
 }
 
 abstract class MirrorLibrary {
+  Future<TainaResult<MirrorLibraryAccess>> currentAccess();
+
   Future<TainaResult<MirrorLibraryAccess>> requestAccess();
+
+  Future<TainaResult<void>> openSettings();
 
   Future<TainaResult<MirrorAssetPage>> page({
     required int page,

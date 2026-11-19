@@ -22,6 +22,11 @@ const _notFound = ApiError(
   serverMessage: 'not found',
 );
 const _offline = NetworkError('offline');
+const _quotaExceeded = ApiError(
+  code: 'storage_quota_exceeded',
+  status: 422,
+  serverMessage: 'storage quota exceeded',
+);
 
 MirrorAsset _asset({String id = 'asset-a'}) => MirrorAsset(
   assetId: id,
@@ -219,8 +224,16 @@ class _FakeLibrary implements MirrorLibrary {
   Completer<void>? pageGate;
 
   @override
+  Future<TainaResult<MirrorLibraryAccess>> currentAccess() async {
+    return const Ok(MirrorLibraryAccess.full);
+  }
+
+  @override
   Future<TainaResult<MirrorLibraryAccess>> requestAccess() async =>
       const Ok(MirrorLibraryAccess.full);
+
+  @override
+  Future<TainaResult<void>> openSettings() async => const Ok<void>(null);
 
   @override
   Future<TainaResult<MirrorAssetPage>> page({
@@ -936,9 +949,198 @@ void main() {
 
       await made.owner.dispose();
     });
+
+    test('notifies listeners for activation, foreground, preferences, reconcile and progress', () async {
+      final initial = _ledger([
+        _entry(
+          id: 'asset-a',
+          state: MirrorState.uploading,
+          path: '/support/asset-a.jpg',
+          taskId: 'task-a',
+        ),
+      ], ownerId: 'tekoa-a:ava-a');
+      final library = _FakeLibrary(assets: [_asset()]);
+      final made = _makeOwner(
+        ownerId: 'tekoa-a:ava-a',
+        store: InMemoryMirrorStore(initial),
+        library: library,
+      );
+      final enabledStates = <bool>[];
+      final wifiStates = <bool>[];
+      final foregroundStates = <bool>[];
+      final reconcileStates = <bool>[];
+      var notifications = 0;
+      made.owner.changes.addListener(() {
+        notifications++;
+        enabledStates.add(made.owner.enabled);
+        wifiStates.add(made.owner.wifiOnly);
+        foregroundStates.add(made.owner.isForeground);
+        reconcileStates.add(made.owner.reconciling);
+      });
+
+      made.owner.activate();
+      expect(notifications, 1);
+      final reconciliation = made.owner.reconcile();
+      expect((await reconciliation).isSuccess, isTrue);
+      expect(reconcileStates, containsAll([true, false]));
+
+      final beforeProgress = notifications;
+      made.events.add(
+        const MirrorTransferProgress(
+          assetId: 'asset-a',
+          taskId: 'task-a',
+          value: 0.4,
+        ),
+      );
+      await _waitFor(() => notifications > beforeProgress);
+      final progressed = (await made.store.load()).value!;
+      expect(progressed.entries['asset-a']!.progress, 0.4);
+
+      expect((await made.owner.setEnabled(false)).isSuccess, isTrue);
+      expect((await made.owner.setWifiOnly(false)).isSuccess, isTrue);
+      made.owner.setForeground(false);
+      expect(enabledStates, contains(false));
+      expect(wifiStates, contains(false));
+      expect(foregroundStates, contains(false));
+
+      await made.owner.dispose();
+    });
+
+    test('quota transfer failure pauses and cancels other work without reconciling', () async {
+      final initial = _ledger([
+        _entry(
+          id: 'failed',
+          state: MirrorState.uploading,
+          path: '/support/failed.jpg',
+          taskId: 'task-failed',
+        ),
+        _entry(
+          id: 'other',
+          state: MirrorState.uploading,
+          path: '/support/other.jpg',
+          taskId: 'task-other',
+        ),
+      ], ownerId: 'tekoa-a:ava-a');
+      final store = InMemoryMirrorStore(initial);
+      final library = _FakeLibrary(assets: [_asset()]);
+      final api = _FakeApi();
+      final saved = <MirrorPreferences>[];
+      var startCalls = 0;
+      final made = _makeOwner(
+        ownerId: 'tekoa-a:ava-a',
+        store: store,
+        library: library,
+        api: api,
+        persistPreferences: (preferences) async {
+          saved.add(preferences);
+          return const Ok<void>(null);
+        },
+        startTransfer: () async {
+          startCalls++;
+          return const Ok<void>(null);
+        },
+      );
+      made.owner.activate();
+
+      made.events.add(
+        const MirrorTransferFailed(
+          assetId: 'failed',
+          taskId: 'task-failed',
+          error: _quotaExceeded,
+        ),
+      );
+      await _waitFor(
+        () =>
+            made.owner.lastError == _quotaExceeded &&
+            made.transfer.cancelledTaskIds.isNotEmpty,
+      );
+
+      expect(made.owner.enabled, isFalse);
+      expect(saved, const [MirrorPreferences(enabled: false, wifiOnly: true)]);
+      expect(made.transfer.cancelledTaskIds, ['task-other']);
+      final ledger = (await store.load()).value!;
+      expect(ledger.entries.keys, {'failed', 'other'});
+      expect(ledger.entries['failed']!.state, MirrorState.failed);
+      expect(ledger.entries['failed']!.lastError, _quotaExceeded.message);
+      expect(ledger.entries['failed']!.backgroundTaskId, isNull);
+      expect(ledger.entries['failed']!.localPath, '/support/failed.jpg');
+      expect(ledger.entries['other']!.state, MirrorState.queued);
+      expect(ledger.entries['other']!.backgroundTaskId, isNull);
+      expect(ledger.entries['other']!.localPath, '/support/other.jpg');
+      expect(startCalls, 0);
+      expect(library.pageCalls, 0);
+      expect(api.manifestCalls, 0);
+      expect(made.materializer.retainedOnPrune, isEmpty);
+      expect((await made.owner.reconcile()).isSuccess, isTrue);
+      expect(library.pageCalls, 0);
+      expect(api.manifestCalls, 0);
+
+      expect((await made.owner.setEnabled(true)).isSuccess, isTrue);
+      await _waitFor(() => library.pageCalls == 1);
+      expect(made.owner.enabled, isTrue);
+      expect(
+        saved.last,
+        const MirrorPreferences(enabled: true, wifiOnly: true),
+      );
+
+      await made.owner.dispose();
+    });
   });
 
   group('MirrorRuntime', () {
+    test(
+      'notifies for owner creation, foreground changes and retirement only',
+      () async {
+        final changes = _IdentityChanges(_identity());
+        final foreground = _ManualForeground();
+        final runtimeStates = <MirrorOwnerMirror?>[];
+        final ownerActiveStates = <bool>[];
+        final ownerForegroundStates = <bool>[];
+        late final _MadeOwner made;
+        final runtime = MirrorRuntime(
+          changes: changes,
+          identity: () => changes.value,
+          foreground: foreground,
+          ownerFactory: ({required ownerId, required identity}) async {
+            made = _makeOwner(ownerId: ownerId, enabled: false);
+            made.owner.changes.addListener(() {
+              ownerActiveStates.add(made.owner.isActive);
+              ownerForegroundStates.add(made.owner.isForeground);
+            });
+            return Ok(made.owner);
+          },
+        );
+        runtime.changes.addListener(() {
+          runtimeStates.add(runtime.currentOwner);
+        });
+
+        runtime.attach();
+        await _waitFor(() => runtime.currentOwner != null);
+        expect(runtimeStates, contains(same(made.owner)));
+        expect(ownerActiveStates, contains(true));
+
+        foreground.set(false);
+        expect(ownerForegroundStates, contains(false));
+        changes.set(null);
+        expect(runtime.currentOwner, isNull);
+        expect(runtimeStates, contains(isNull));
+        await runtime.dispose();
+
+        final runtimeCountAfterDispose = runtimeStates.length;
+        final ownerActiveCountAfterDispose = ownerActiveStates.length;
+        final ownerForegroundCountAfterDispose = ownerForegroundStates.length;
+        changes.set(_identity(tekoaId: 'tekoa-b'));
+        foreground.set(true);
+        made.owner.setForeground(true);
+        expect(runtimeStates, hasLength(runtimeCountAfterDispose));
+        expect(ownerActiveStates, hasLength(ownerActiveCountAfterDispose));
+        expect(
+          ownerForegroundStates,
+          hasLength(ownerForegroundCountAfterDispose),
+        );
+      },
+    );
+
     test(
       'disabled owner activation stays quiet with an empty ledger',
       () async {

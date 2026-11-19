@@ -33,6 +33,10 @@ void _reportMirrorAsyncError(
   );
 }
 
+final class _MirrorChangeNotifier extends ChangeNotifier {
+  void emit() => notifyListeners();
+}
+
 /// Keeps one owner-scoped mirror attached across app lifecycle changes.
 final class MirrorRuntime {
   MirrorRuntime({
@@ -49,6 +53,7 @@ final class MirrorRuntime {
   final Me? Function() _identity;
   final MirrorForeground _foreground;
   final MirrorOwnerFactory _ownerFactory;
+  final _MirrorChangeNotifier _notifier = _MirrorChangeNotifier();
 
   MirrorOwnerMirror? _owner;
   String? _ownerId;
@@ -60,6 +65,10 @@ final class MirrorRuntime {
   final Map<String, Future<void>> _retirements = {};
   final Map<String, Future<void>> _ownerCreations = {};
   TainaError? _lastError;
+  Future<void>? _disposal;
+  bool _notifierDisposed = false;
+
+  Listenable get changes => _notifier;
 
   TainaError? get lastError => _lastError;
 
@@ -80,7 +89,9 @@ final class MirrorRuntime {
 
   void _onForegroundChanged(bool isForeground) {
     final resumed = isForeground && _lastForeground != true;
+    final changed = _lastForeground != isForeground;
     _lastForeground = isForeground;
+    if (changed) _notifyChanges();
     _owner?.setForeground(isForeground);
     _synchronize(resumed: resumed);
   }
@@ -164,7 +175,7 @@ final class MirrorRuntime {
     final created = await _ownerFactory(ownerId: ownerId, identity: identity);
 
     if (created case Err<MirrorOwnerMirror>(:final error)) {
-      if (_isCurrent(generation, ownerId)) _lastError = error;
+      if (_isCurrent(generation, ownerId)) _setLastError(error);
       return;
     }
     final owner = (created as Ok<MirrorOwnerMirror>).value;
@@ -175,9 +186,10 @@ final class MirrorRuntime {
 
     _owner = owner;
     _ownerId = ownerId;
-    _lastError = null;
+    _setLastError(null);
     owner.setForeground(_foreground.isForeground);
     owner.activate();
+    _notifyChanges();
     if (_foreground.isForeground || !owner.enabled) {
       _reconcileAutomatically(owner, refreshLibrary: true);
     }
@@ -220,6 +232,7 @@ final class MirrorRuntime {
     final ownerId = _ownerId;
     _owner = null;
     _ownerId = null;
+    if (owner != null) _notifyChanges();
     if (owner == null || ownerId == null) return;
 
     final retirement = owner.deactivate();
@@ -252,8 +265,9 @@ final class MirrorRuntime {
   }
 
   /// Stops observing and deactivates the current owner without clearing data.
-  Future<void> dispose() async {
-    if (_disposed) return;
+  Future<void> dispose() {
+    final previous = _disposal;
+    if (previous != null) return previous;
     _disposed = true;
     _attached = false;
     _lastForeground = null;
@@ -262,7 +276,37 @@ final class MirrorRuntime {
     _changes.removeListener(_synchronize);
     _foreground.dispose();
     _retireCurrentOwner();
-    await Future.wait(_retirements.values.toList(growable: false));
+    final pending = <Future<void>>[
+      ..._retirements.values,
+      for (final creation in _ownerCreations.values) _ignoreFailure(creation),
+    ];
+    final disposal = _finishDisposal(pending);
+    _disposal = disposal;
+    return disposal;
+  }
+
+  Future<void> _finishDisposal(List<Future<void>> pending) async {
+    await Future.wait(pending);
+    _notifierDisposed = true;
+    _notifier.dispose();
+  }
+
+  Future<void> _ignoreFailure(Future<void> future) async {
+    try {
+      await future;
+    } catch (_) {
+      // Creation observers report their original error and stack.
+    }
+  }
+
+  void _setLastError(TainaError? error) {
+    if (_lastError == error) return;
+    _lastError = error;
+    _notifyChanges();
+  }
+
+  void _notifyChanges() {
+    if (!_notifierDisposed) _notifier.emit();
   }
 }
 
@@ -308,12 +352,16 @@ final class MirrorOwnerMirror {
   late final Future<TainaResult<void>> Function(MirrorPreferences preferences)?
   _persistPreferences;
 
+  final _MirrorChangeNotifier _notifier = _MirrorChangeNotifier();
   late final StreamSubscription<MirrorTransferEvent> _events;
   Future<void> _operationTail = Future<void>.value();
   Future<void>? _deactivation;
   bool _active = false;
   bool _foreground = true;
   bool _disposedTransfer = false;
+  bool _notifierDisposed = false;
+  bool _reconciling = false;
+  bool _quotaPaused = false;
   bool _reconcileScheduled = false;
   bool _reconcileRequested = false;
   bool _refreshRequested = false;
@@ -324,6 +372,8 @@ final class MirrorOwnerMirror {
   Completer<TainaResult<void>>? _reconcileCompleter;
   int _enabledRevision = 0;
 
+  Listenable get changes => _notifier;
+
   bool get isActive => _active;
 
   bool get isForeground => _foreground;
@@ -332,16 +382,22 @@ final class MirrorOwnerMirror {
 
   bool get wifiOnly => _wifiOnly;
 
+  bool get reconciling => _reconciling;
+
   TainaError? get lastError => _lastError;
 
   void setForeground(bool isForeground) {
+    if (_foreground == isForeground) return;
     _foreground = isForeground;
+    _notifyChanges();
   }
 
   /// Marks this owner active after the runtime's generation check succeeds.
   void activate() {
     if (_deactivation != null || _disposedTransfer) return;
+    if (_active) return;
     _active = true;
+    _notifyChanges();
   }
 
   /// Foreground work shares one queued pass and at most one pending refresh
@@ -391,6 +447,7 @@ final class MirrorOwnerMirror {
     TainaResult<void> result = const Ok<void>(null);
     Object? failure;
     StackTrace? failureStackTrace;
+    _setReconciling(true);
     try {
       while (_active && _enabled && _reconcileRequested) {
         _reconcileRequested = false;
@@ -408,6 +465,7 @@ final class MirrorOwnerMirror {
       rethrow;
     } finally {
       _reconcileScheduled = false;
+      _setReconciling(false);
       final completer = _reconcileCompleter;
       _reconcileCompleter = null;
       if (completer != null && !completer.isCompleted) {
@@ -432,6 +490,7 @@ final class MirrorOwnerMirror {
 
     final started = await _startTransfer();
     if (!_active) return _inactiveResult();
+    if (_quotaPaused) return const Ok<void>(null);
     if (started case Err<void>(:final error)) {
       _recordError(error);
       return Err(error);
@@ -440,6 +499,7 @@ final class MirrorOwnerMirror {
     if (refreshLibrary || _cachedAssets == null) {
       final collected = await _collectAssets();
       if (!_active) return _inactiveResult();
+      if (_quotaPaused) return const Ok<void>(null);
       if (collected case Err<List<MirrorAsset>>(:final error)) {
         _recordError(error);
         return Err(error);
@@ -458,6 +518,7 @@ final class MirrorOwnerMirror {
       return const Err(error);
     }
 
+    if (_quotaPaused) return const Ok<void>(null);
     final reconciled = await engine.reconcile(assets);
     if (!_active) return _inactiveResult();
     if (reconciled case Err<void>(:final error)) {
@@ -495,7 +556,7 @@ final class MirrorOwnerMirror {
       return const Ok<void>(null);
     }
     if (_errorRevision == initialErrorRevision && !_skipNextPrune) {
-      _lastError = null;
+      _clearError();
     }
     return const Ok<void>(null);
   }
@@ -536,6 +597,7 @@ final class MirrorOwnerMirror {
               progress: value,
             );
             _recordResult(result);
+            _notifyChanges();
           }),
         );
       case MirrorTransferCompleted(
@@ -551,26 +613,43 @@ final class MirrorOwnerMirror {
               file: file,
             );
             _recordResult(result);
+            _notifyChanges();
             if (result.isSuccess && _active && _foreground && _enabled) {
               _reconcileAutomatically(refreshLibrary: false);
             }
           }),
         );
       case MirrorTransferFailed(:final assetId, :final taskId, :final error):
-        unawaited(
-          _enqueue(() async {
-            final result = await engine.fail(
-              assetId: assetId,
-              backgroundTaskId: taskId,
-              error: error,
-            );
-            _recordResult(result);
-            if (result.isSuccess) _recordError(error);
-          }),
-        );
+        final quotaExceeded = error is ApiError && error.isQuotaExceeded;
+        var notifyQuotaPause = false;
+        if (quotaExceeded) {
+          _enabledRevision++;
+          _quotaPaused = true;
+          notifyQuotaPause = _enabled;
+          _setEnabled(false, notify: false);
+          _reconcileRequested = false;
+        }
+        final processing = _enqueue(() async {
+          final result = await engine.fail(
+            assetId: assetId,
+            backgroundTaskId: taskId,
+            error: error,
+          );
+          _recordResult(result);
+          if (quotaExceeded) {
+            await _persistDisableAndCancel();
+            _recordError(error);
+          } else if (result.isSuccess) {
+            _recordError(error);
+          }
+          _notifyChanges();
+        });
+        if (notifyQuotaPause) _notifyChanges();
+        unawaited(processing);
       case MirrorTransferStreamFailed(:final error):
         _recordError(error);
         _skipNextPrune = true;
+        _notifyChanges();
     }
   }
 
@@ -587,28 +666,23 @@ final class MirrorOwnerMirror {
 
   Future<TainaResult<void>> setEnabled(bool enabled) async {
     final revision = ++_enabledRevision;
-    if (!enabled) _enabled = false;
+    if (!enabled) _setEnabled(false);
 
     final result = await _enqueueControl(() async {
+      if (!enabled) return _persistDisableAndCancel();
+
       final persisted = await _persist(
         MirrorPreferences(enabled: enabled, wifiOnly: _wifiOnly),
       );
-
-      if (!enabled) {
-        final paused = await _cancelPendingTasks();
-        if (persisted case Err<void>(:final error)) {
-          _recordError(error);
-          return Err(error);
-        }
-        if (paused case Err<void>(:final error)) return Err(error);
-        return const Ok<void>(null);
-      }
 
       if (persisted case Err<void>(:final error)) {
         _recordError(error);
         return Err(error);
       }
-      if (revision == _enabledRevision) _enabled = true;
+      if (revision == _enabledRevision) {
+        _quotaPaused = false;
+        _setEnabled(true);
+      }
       return const Ok<void>(null);
     });
 
@@ -627,7 +701,9 @@ final class MirrorOwnerMirror {
           _recordError(error);
           return Err(error);
         }
+        if (_wifiOnly == wifiOnly) return const Ok<void>(null);
         _wifiOnly = wifiOnly;
+        _notifyChanges();
         return const Ok<void>(null);
       });
 
@@ -640,6 +716,19 @@ final class MirrorOwnerMirror {
     final persist = _persistPreferences;
     if (persist == null) return const Ok<void>(null);
     return persist(preferences);
+  }
+
+  Future<TainaResult<void>> _persistDisableAndCancel() async {
+    final persisted = await _persist(
+      MirrorPreferences(enabled: false, wifiOnly: _wifiOnly),
+    );
+    final paused = await _cancelPendingTasks();
+    if (persisted case Err<void>(:final error)) {
+      _recordError(error);
+      return Err(error);
+    }
+    if (paused case Err<void>(:final error)) return Err(error);
+    return const Ok<void>(null);
   }
 
   Future<TainaResult<void>> _cancelPendingTasks() async {
@@ -687,8 +776,32 @@ final class MirrorOwnerMirror {
   }
 
   void _recordError(TainaError error) {
+    final changed = _lastError != error;
     _lastError = error;
     _errorRevision++;
+    if (changed) _notifyChanges();
+  }
+
+  void _clearError() {
+    if (_lastError == null) return;
+    _lastError = null;
+    _notifyChanges();
+  }
+
+  void _setEnabled(bool enabled, {bool notify = true}) {
+    if (_enabled == enabled) return;
+    _enabled = enabled;
+    if (notify) _notifyChanges();
+  }
+
+  void _setReconciling(bool reconciling) {
+    if (_reconciling == reconciling) return;
+    _reconciling = reconciling;
+    _notifyChanges();
+  }
+
+  void _notifyChanges() {
+    if (!_notifierDisposed) _notifier.emit();
   }
 
   /// Deactivation is synchronous up to the event cancellation. It never
@@ -697,7 +810,10 @@ final class MirrorOwnerMirror {
     final previous = _deactivation;
     if (previous != null) return previous;
 
-    _active = false;
+    if (_active) {
+      _active = false;
+      _notifyChanges();
+    }
     const inactive = Err<void>(
       MirrorAssetReadError('mirror owner is inactive'),
     );
@@ -724,6 +840,9 @@ final class MirrorOwnerMirror {
       await disposeTransfer();
     } on Exception catch (error) {
       _recordError(MirrorAssetReadError(error.toString()));
+    } finally {
+      _notifierDisposed = true;
+      _notifier.dispose();
     }
   }
 
