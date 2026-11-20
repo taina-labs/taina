@@ -25,6 +25,7 @@ defmodule Taina.IsolationSweepTest do
   alias Taina.Maraca
   alias Taina.Scope
   alias Taina.Ybira
+  alias Taina.Ybira.Uploads
 
   @casa_contents "conteudo particular do morador A"
   @casa_filename "estatuto-interno.txt"
@@ -54,6 +55,34 @@ defmodule Taina.IsolationSweepTest do
   end
 
   describe "contexts: o morador B nao le a casa do morador A" do
+    test "upload queue is private to its owner, including state transitions", ctx do
+      path = tmp_upload_fixture("arquivo pendente", "pendente.txt")
+      {:ok, %{size: size}} = File.stat(path)
+
+      assert {:ok, upload} =
+               Uploads.stage_and_enqueue(ctx.owner_scope, path, %{
+                 filename: "pendente.txt",
+                 size: size
+               })
+
+      assert {:ok, [owned]} = Uploads.list(ctx.owner_scope)
+      assert owned.public_id == upload.public_id
+      assert {:ok, []} = Uploads.list(ctx.reader_scope)
+      assert {:ok, []} = Uploads.list(ctx.zelador_scope)
+
+      assert {:error, :not_found} =
+               Uploads.claim_processing(ctx.reader_scope, upload.public_id, upload.oban_job_id)
+
+      assert {:error, :not_found} =
+               Uploads.claim_processing(ctx.zelador_scope, upload.public_id, upload.oban_job_id)
+
+      assert {:ok, processing} =
+               Uploads.claim_processing(ctx.owner_scope, upload.public_id, upload.oban_job_id)
+
+      assert processing.state == :processing
+      :ok = Uploads.delete_staged_file(upload)
+    end
+
     test "get_file/2 recusa, e a praca libera", ctx do
       assert {:error, :forbidden} = Ybira.get_file(ctx.reader_scope, ctx.casa_file.rkey)
 
