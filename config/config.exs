@@ -46,12 +46,15 @@ config :phoenix, :json_library, JSON
 config :taina, Oban,
   engine: Oban.Engines.Lite,
   repo: Taina.Repo,
-  queues: [default: 10],
+  queues: [default: 1, uploads_small: 2, uploads_large: 1, renditions: 1],
+  lifeline: [rescue_after: {1, :hour}],
+  pruner: [max_age: {7, :day}],
   plugins: [
     {Oban.Plugins.Cron,
      crontab: [
        {"0 3 * * *", Taina.Ybira.Workers.PurgeTrash},
        {"0 * * * *", Taina.Ybira.Workers.BlobGc},
+       {"15 * * * *", Taina.Ybira.Workers.UploadMaintenance},
        {"0 4 * * *", Taina.Nhaman.Workers.Backup}
      ]}
   ]

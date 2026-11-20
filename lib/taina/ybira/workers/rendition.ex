@@ -27,7 +27,7 @@ defmodule Taina.Ybira.Workers.Rendition do
   args e faz todo o trabalho dentro de `Repo.with_tekoa/2`.
   """
 
-  use Oban.Worker, queue: :default, max_attempts: 3
+  use Oban.Worker, queue: :renditions, max_attempts: 3
 
   import Ecto.Query
 
