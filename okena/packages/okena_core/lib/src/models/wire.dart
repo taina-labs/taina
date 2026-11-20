@@ -278,6 +278,7 @@ final class FileRecord {
     required this.deletedAt,
     required this.createdAt,
     required this.updatedAt,
+    this.dono,
   });
 
   factory FileRecord.fromJson(JsonReader reader) {
@@ -298,6 +299,7 @@ final class FileRecord {
       deletedAt: reader.stringOrNull('deleted_at'),
       createdAt: reader.string('created_at'),
       updatedAt: reader.string('updated_at'),
+      dono: reader.stringOrNull('dono'),
     );
   }
 
@@ -317,6 +319,7 @@ final class FileRecord {
   final String? deletedAt;
   final String createdAt;
   final String updatedAt;
+  final String? dono;
 
   @override
   bool operator ==(Object other) =>
@@ -336,7 +339,8 @@ final class FileRecord {
       other.rendition == rendition &&
       other.deletedAt == deletedAt &&
       other.createdAt == createdAt &&
-      other.updatedAt == updatedAt;
+      other.updatedAt == updatedAt &&
+      other.dono == dono;
 
   @override
   int get hashCode => Object.hashAll([
@@ -357,6 +361,7 @@ final class FileRecord {
     deletedAt,
     createdAt,
     updatedAt,
+    dono,
   ]);
 }
 
@@ -371,6 +376,7 @@ final class Folder {
     required this.deletedAt,
     required this.createdAt,
     required this.updatedAt,
+    this.dono,
   });
 
   factory Folder.fromJson(JsonReader reader) {
@@ -383,6 +389,7 @@ final class Folder {
       deletedAt: reader.stringOrNull('deleted_at'),
       createdAt: reader.string('created_at'),
       updatedAt: reader.string('updated_at'),
+      dono: reader.stringOrNull('dono'),
     );
   }
 
@@ -394,6 +401,7 @@ final class Folder {
   final String? deletedAt;
   final String createdAt;
   final String updatedAt;
+  final String? dono;
 
   @override
   bool operator ==(Object other) =>
@@ -405,7 +413,8 @@ final class Folder {
       other.folder == folder &&
       other.deletedAt == deletedAt &&
       other.createdAt == createdAt &&
-      other.updatedAt == updatedAt;
+      other.updatedAt == updatedAt &&
+      other.dono == dono;
 
   @override
   int get hashCode => Object.hash(
@@ -418,6 +427,7 @@ final class Folder {
     deletedAt,
     createdAt,
     updatedAt,
+    dono,
   );
 }
 

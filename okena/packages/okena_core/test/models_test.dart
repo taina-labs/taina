@@ -245,6 +245,32 @@ void main() {
       expect(result.error, isA<InvalidResponseError>());
     });
 
+    test('file and folder dono is optional and participates in equality', () {
+      final fileWithoutDono = decode(fileJson, FileRecord.fromJson).value!;
+      final fileWithDono = decode(
+        fileJson.replaceFirst(
+          '"zona":"casa"',
+          '"zona":"casa","dono":"avap2xw5m8q3"',
+        ),
+        FileRecord.fromJson,
+      ).value!;
+      expect(fileWithoutDono.dono, isNull);
+      expect(fileWithDono.dono, 'avap2xw5m8q3');
+      expect(fileWithDono, isNot(fileWithoutDono));
+
+      final folderWithoutDono = decode(folderJson, Folder.fromJson).value!;
+      final folderWithDono = decode(
+        folderJson.replaceFirst(
+          '"zona":"casa"',
+          '"zona":"casa","dono":"avap2xw5m8q3"',
+        ),
+        Folder.fromJson,
+      ).value!;
+      expect(folderWithoutDono.dono, isNull);
+      expect(folderWithDono.dono, 'avap2xw5m8q3');
+      expect(folderWithDono, isNot(folderWithoutDono));
+    });
+
     test('decodes present and suppressed mirror hash responses', () {
       final present = decode(
         '{"status":"present","file":$fileJson}',
