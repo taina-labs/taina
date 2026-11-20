@@ -41,6 +41,12 @@ defmodule TainaWeb.UploadLiveTest do
     assert html =~ ~S(data-upload-max-entries="10")
   end
 
+  test "oferece a escolha de pastas no desktop", %{conn: conn, ava: ava} do
+    {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/enviar")
+
+    assert has_element?(lv, "#folder-input input[name='folders'][webkitdirectory]")
+  end
+
   test "o voltar aponta a pasta de destino, pelo nome", %{conn: conn, scope: scope, ava: ava} do
     {:ok, folder} = Ybira.create_folder(scope, %{name: "Atas"})
 
@@ -81,6 +87,36 @@ defmodule TainaWeb.UploadLiveTest do
 
     assert {:ok, %{files: [file]}} = Ybira.list_folder_contents(scope, folder.rkey)
     assert file.nome == "junho.txt"
+  end
+
+  test "envia pasta preservando a hierarquia e reutilizando pastas do mesmo caminho", %{
+    conn: conn,
+    scope: scope,
+    ava: ava
+  } do
+    {:ok, destination} = Ybira.create_folder(scope, %{name: "Destino"})
+    {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/enviar?#{[pasta: destination.rkey]}")
+
+    input =
+      file_input(lv, "#folder-input", :folders, [
+        %{name: "junho.txt", relative_path: "Atas/2026/junho.txt", content: "ata de junho", type: "text/plain"},
+        %{name: "julho.txt", relative_path: "Atas/2026/julho.txt", content: "ata de julho", type: "text/plain"},
+        %{name: "capa.txt", relative_path: "Atas/capa.txt", content: "capa", type: "text/plain"}
+      ])
+
+    render_upload(input, "junho.txt")
+    render_upload(input, "julho.txt")
+    render_upload(input, "capa.txt")
+
+    assert {:ok, %{folders: [atas], files: []}} = Ybira.list_folder_contents(scope, destination.rkey)
+    assert atas.nome == "Atas"
+
+    assert {:ok, %{folders: [ano], files: [capa]}} = Ybira.list_folder_contents(scope, atas.rkey)
+    assert ano.nome == "2026"
+    assert capa.nome == "capa.txt"
+
+    assert {:ok, %{folders: [], files: files}} = Ybira.list_folder_contents(scope, ano.rkey)
+    assert files |> Enum.map(& &1.nome) |> Enum.sort() == ["julho.txt", "junho.txt"]
   end
 
   test "arquivo rejeitado pelo Ybira aparece como falha", %{conn: conn, scope: scope, ava: ava} do

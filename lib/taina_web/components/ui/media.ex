@@ -196,6 +196,7 @@ defmodule TainaWeb.UI.Media do
 
   attr :error_href, :string, default: nil, doc: "destino do Ver espaço (state error-cota)"
   attr :retry, :any, default: nil, doc: "evento/JS do Tentar de novo (state error-rede)"
+  attr :picker, :boolean, default: true, doc: "mantém o input do envio ativo na caixa"
   attr :rest, :global
 
   def dropzone(%{state: "idle"} = assigns) do
@@ -229,7 +230,7 @@ defmodule TainaWeb.UI.Media do
           total: format_bytes(@entry.client_size)
         )}
       </p>
-      <.live_file_input upload={@upload} class="sr-only" />
+      <.live_file_input :if={@picker} upload={@upload} class="sr-only" />
     </div>
     """
   end

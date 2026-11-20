@@ -1390,21 +1390,111 @@ defmodule Taina.Ybira do
   blob e o arquivo commitaria apontando para bytes que nao existem mais. So
   espera a vez quem sobe os MESMOS bytes (mesmo CID, a corrida da dedup);
   upload de conteudo diferente nunca espera.
+
+  A opcao `:relative_path` preserva a hierarquia escolhida no navegador: as
+  pastas proprias do caminho sao reutilizadas ou criadas antes do upload.
   """
   def upload(%Scope{} = scope, temporary_path, opts \\ []) do
     opts = [
       mime: MimeDetector.detect(temporary_path),
       nome: Keyword.get(opts, :filename, Path.basename(temporary_path)),
-      folder: Keyword.get(opts, :folder_rkey)
+      folder: Keyword.get(opts, :folder_rkey),
+      relative_path: Keyword.get(opts, :relative_path)
     ]
 
     with {:ok, %{size: size}} <- Elixir.File.stat(temporary_path),
          :ok <- blob_size_allowed?(size),
          {:ok, cid} <- blob_cid(temporary_path),
+         {:ok, folder_rkey} <- resolve_upload_folder(scope, Keyword.get(opts, :relative_path), Keyword.get(opts, :folder)),
+         opts = Keyword.put(opts, :folder, folder_rkey),
          {:ok, file} <- locked_upload(scope, temporary_path, opts, cid) do
       maybe_enqueue_rendition(scope, file)
       {:ok, file}
     end
+  end
+
+  # O navegador manda o caminho relativo ao escolher uma pasta. Só os nomes de
+  # pastas entram aqui; o nome do arquivo continua vindo de `filename`.
+  defp resolve_upload_folder(scope, relative_path, destination_rkey) do
+    with {:ok, names} <- relative_folder_names(relative_path),
+         {:ok, folder} <- ensure_folder_path(scope, names, destination_rkey) do
+      {:ok, folder_rkey(folder, destination_rkey)}
+    end
+  end
+
+  defp folder_rkey(nil, destination_rkey), do: destination_rkey
+  defp folder_rkey(%Folder{rkey: rkey}, _destination_rkey), do: rkey
+
+  defp relative_folder_names(path) when path in [nil, ""], do: {:ok, []}
+
+  defp relative_folder_names(path) when is_binary(path) do
+    segments = String.split(path, "/")
+
+    if String.valid?(path) and length(segments) <= @folder_path_max_depth + 1 and
+         Enum.all?(segments, &valid_relative_segment?/1) do
+      {:ok, Enum.drop(segments, -1)}
+    else
+      {:error, :invalid_relative_path}
+    end
+  end
+
+  defp valid_relative_segment?(segment) do
+    segment not in ["", ".", ".."] and String.valid?(segment) and String.length(segment) <= 255 and
+      not String.contains?(segment, <<0>>)
+  end
+
+  defp ensure_folder_path(_scope, [], _destination_rkey), do: {:ok, nil}
+
+  defp ensure_folder_path(scope, names, destination_rkey) do
+    within_tekoa(scope, fn ->
+      with {:ok, parent} <- owned_upload_folder(scope, destination_rkey) do
+        Enum.reduce_while(names, {:ok, parent}, &ensure_upload_folder_step(scope, &1, &2))
+      end
+    end)
+  end
+
+  defp ensure_upload_folder_step(scope, name, {:ok, parent}) do
+    case find_or_create_upload_folder(scope, name, parent) do
+      {:ok, folder} -> {:cont, {:ok, folder}}
+      {:error, _reason} = error -> {:halt, error}
+    end
+  end
+
+  defp owned_upload_folder(_scope, nil), do: {:ok, nil}
+  defp owned_upload_folder(scope, rkey), do: fetch_owned_folder(scope, rkey)
+
+  defp find_or_create_upload_folder(scope, name, parent) do
+    case owned_child_folder(scope, name, parent) do
+      %Folder{} = folder ->
+        {:ok, folder}
+
+      nil ->
+        Kernel.criar_pasta(Repo, Keys.new(), scope, name, parent: parent && parent.rkey)
+    end
+  end
+
+  defp owned_child_folder(scope, name, nil) do
+    Repo.one(
+      from(p in Folder,
+        where:
+          p.tekoa_id == ^scope.tekoa.id and p.dono_id == ^scope.ava.id and is_nil(p.parent_id) and
+            is_nil(p.apagado_em) and p.nome == ^name,
+        order_by: [desc: p.rkey],
+        limit: 1
+      )
+    )
+  end
+
+  defp owned_child_folder(scope, name, %Folder{id: parent_id}) do
+    Repo.one(
+      from(p in Folder,
+        where:
+          p.tekoa_id == ^scope.tekoa.id and p.dono_id == ^scope.ava.id and p.parent_id == ^parent_id and
+            is_nil(p.apagado_em) and p.nome == ^name,
+        order_by: [desc: p.rkey],
+        limit: 1
+      )
+    )
   end
 
   defp within_tekoa(%Scope{} = scope, cb), do: Repo.with_tekoa(scope.tekoa.public_id, cb)

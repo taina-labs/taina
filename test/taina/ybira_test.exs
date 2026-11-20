@@ -382,6 +382,18 @@ defmodule Taina.YbiraTest do
       assert {:ok, file} = Ybira.upload(scope, upload_path)
       assert file.mime == "video/x-matroska"
     end
+
+    test "rejects unsafe relative folder paths" do
+      scope = scope_fixture()
+
+      for relative_path <- ["../fora.txt", "/raiz/arquivo.txt", "pasta//arquivo.txt"] do
+        assert {:error, :invalid_relative_path} =
+                 Ybira.upload(scope, tmp_upload_fixture("texto", "arquivo.txt"), relative_path: relative_path)
+      end
+
+      assert {:ok, %{items: []}} = Ybira.list_files(scope)
+      assert {:ok, []} = Ybira.list_folders(scope)
+    end
   end
 
   describe "folder CRUD" do

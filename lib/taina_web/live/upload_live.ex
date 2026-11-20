@@ -8,8 +8,9 @@ defmodule TainaWeb.UploadLive do
 
   LiveView uploads com `auto_upload`; cada arquivo concluído vai direto para
   `Ybira.upload/3` (validação por magic bytes e cota acontecem lá) e nasce na
-  casa. A câmera do celular é uma segunda entrada (RFC 002, fase 3) para o mesmo
-  destino, para não tirar da pessoa a escolha de arquivos existentes.
+  casa. A escolha de uma pasta preserva sua hierarquia. A câmera do celular é
+  outra entrada (RFC 002, fase 3) para o mesmo destino, para não tirar da
+  pessoa a escolha de arquivos existentes.
 
   `?pasta=<rkey>` define a pasta de destino.
   """
@@ -50,6 +51,13 @@ defmodule TainaWeb.UploadLive do
         auto_upload: true,
         progress: &handle_progress/3
       )
+      |> allow_upload(:folders,
+        accept: :any,
+        max_entries: 10,
+        max_file_size: max_blob_size,
+        auto_upload: true,
+        progress: &handle_progress/3
+      )
 
     {:ok, socket}
   end
@@ -60,15 +68,22 @@ defmodule TainaWeb.UploadLive do
   defp back_path(nil), do: ~p"/documentos"
   defp back_path(folder), do: ~p"/documentos/pasta/#{folder.rkey}"
 
-  # Erros de configuração (tamanho, quantidade) somados dos dois envios.
-  defp config_errors(uploads), do: upload_errors(uploads.files) ++ upload_errors(uploads.camera)
+  # Erros de configuração (tamanho, quantidade) somados dos três envios.
+  defp config_errors(uploads) do
+    Enum.flat_map([uploads.files, uploads.folders, uploads.camera], &upload_errors/1)
+  end
+
+  # A caixa mostra o envio ativo, seja ele de arquivos, pasta ou câmera.
+  defp active_upload(uploads) do
+    Enum.find([uploads.files, uploads.folders, uploads.camera], uploads.files, &(&1.entries != []))
+  end
 
   # State da caixa (board): estourou a cota, o painel explica e aponta o
   # espaço; com envio em voo, o progresso do arquivo corrente; senão, parada.
   defp dropzone_state(_uploads, true), do: "error-cota"
 
   defp dropzone_state(uploads, _quota_error) do
-    if uploads.files.entries == [], do: "idle", else: "uploading"
+    if active_upload(uploads).entries == [], do: "idle", else: "uploading"
   end
 
   defp finish_upload(entry, socket) do
@@ -168,8 +183,13 @@ defmodule TainaWeb.UploadLive do
 
   defp upload_error(_reason), do: gettext("O envio falhou. Toque na caixa acima para tentar de novo.")
 
-  defp upload_opts(entry, nil), do: [filename: entry.client_name]
-  defp upload_opts(entry, folder), do: [filename: entry.client_name, folder_rkey: folder.rkey]
+  defp upload_opts(entry, folder) do
+    [
+      filename: entry.client_name,
+      folder_rkey: folder && folder.rkey,
+      relative_path: entry.client_relative_path
+    ]
+  end
 
   @impl true
   def render(assigns) do
@@ -190,11 +210,21 @@ defmodule TainaWeb.UploadLive do
         >
           <.dropzone
             id="dropzone"
-            upload={@uploads.files}
+            upload={active_upload(@uploads)}
             state={dropzone_state(@uploads, @quota_error?)}
+            picker={active_upload(@uploads).ref == @uploads.files.ref}
             error_href={~p"/armazenamento"}
             class="w-full"
           />
+
+          <label id="folder-input" class="dropzone hide-mobile mt-3" :if={!@quota_error?}>
+            <.icon name="folder" size={28} />
+            <span class="type-label text-primary">{gettext("Enviar uma pasta")}</span>
+            <span class="type-caption text-muted">
+              {gettext("Os arquivos mantêm a organização das pastas do seu aparelho.")}
+            </span>
+            <.live_file_input upload={@uploads.folders} webkitdirectory class="sr-only" />
+          </label>
 
           <label id="camera-input" class="dropzone hide-desktop mt-3" :if={!@quota_error?}>
             <.icon name="image" size={28} />
