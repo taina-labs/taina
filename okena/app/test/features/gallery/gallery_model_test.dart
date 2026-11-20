@@ -6,57 +6,17 @@ import 'support/fake_gateway.dart';
 
 void main() {
   group('pure helpers', () {
-    test('columns step 2, 3 and 4 by width', () {
-      expect(GalleryModel.columnsFor(320), 2);
-      expect(GalleryModel.columnsFor(499), 2);
-      expect(GalleryModel.columnsFor(500), 3);
-      expect(GalleryModel.columnsFor(899), 3);
-      expect(GalleryModel.columnsFor(900), 4);
+    test('columns follow the mobile and wide gallery boards', () {
+      expect(GalleryModel.columnsFor(320), 3);
+      expect(GalleryModel.columnsFor(599), 3);
+      expect(GalleryModel.columnsFor(600), 4);
+      expect(GalleryModel.columnsFor(999), 4);
+      expect(GalleryModel.columnsFor(1000), 5);
     });
 
-    test('labels speak the screen words', () {
+    test('labels speak the gallery destinations', () {
       expect(GalleryModel.labelOfTab(GalleryTab.grid), 'Grade');
       expect(GalleryModel.labelOfTab(GalleryTab.timeline), 'Linha do tempo');
-      expect(GalleryModel.labelOfFilter(GalleryFilter.all), 'Tudo');
-      expect(GalleryModel.labelOfFilter(GalleryFilter.praca), 'Praça');
-      expect(GalleryModel.labelOfFilter(GalleryFilter.casa), 'Casa');
-      expect(GalleryFilter.praca.zona, Zona.praca);
-      expect(GalleryFilter.casa.zona, Zona.casa);
-      expect(GalleryFilter.all.zona, isNull);
-    });
-
-    test('filtering keeps the zone only', () {
-      final FileRecord casa = sampleFile(rkey: 'a', zona: Zona.casa);
-      final FileRecord praca = sampleFile(rkey: 'b', zona: Zona.praca);
-      expect(GalleryModel.filtering([casa, praca], GalleryFilter.all), [
-        casa,
-        praca,
-      ]);
-      expect(GalleryModel.filtering([casa, praca], GalleryFilter.casa), [casa]);
-      expect(GalleryModel.filtering([casa, praca], GalleryFilter.praca), [
-        praca,
-      ]);
-    });
-
-    test('filtering days drops the days that stay empty', () {
-      final GalleryDay mixed = GalleryDay(
-        date: '2026-06-21',
-        photos: [
-          sampleFile(rkey: 'a', zona: Zona.casa),
-          sampleFile(rkey: 'b', zona: Zona.praca),
-        ],
-      );
-      final GalleryDay casaOnly = GalleryDay(
-        date: '2026-06-20',
-        photos: [sampleFile(rkey: 'c', zona: Zona.casa)],
-      );
-      final List<GalleryDay> praca = GalleryModel.filteringDays([
-        mixed,
-        casaOnly,
-      ], GalleryFilter.praca);
-      expect(praca, hasLength(1));
-      expect(praca.single.date, '2026-06-21');
-      expect(praca.single.photos.single.rkey, 'b');
     });
 
     test('fusing joins a day split across pages', () {
@@ -82,7 +42,7 @@ void main() {
       expect(fused.last.date, '2026-06-20');
     });
 
-    test('section title reads Hoje and Ontem from the wire day', () {
+    test('section title preserves the day and month from the wire date', () {
       final GalleryDay today = GalleryDay(
         date: '2026-11-09',
         photos: [sampleFile(rkey: 'a')],
@@ -94,15 +54,13 @@ void main() {
           sampleFile(rkey: 'c'),
         ],
       );
-      final DateTime now = DateTime(2026, 11, 9, 12);
-      expect(GalleryModel.sectionTitle(today, now: now), 'Hoje, 1 foto');
-      expect(GalleryModel.sectionTitle(yesterday, now: now), 'Ontem, 2 fotos');
+      expect(GalleryModel.sectionTitle(today), '9 de novembro');
+      expect(GalleryModel.sectionTitle(yesterday), '8 de novembro');
       expect(
         GalleryModel.sectionTitle(
           GalleryDay(date: '2026-06-21', photos: const []),
-          now: now,
         ),
-        '21/06/2026, 0 fotos',
+        '21 de junho',
       );
     });
 
@@ -132,29 +90,54 @@ void main() {
         GalleryModel.zoneSentence(Zona.casa),
         'Só você, e quem você deixar, vê.',
       );
-      expect(
-        GalleryModel.emptyCopy(
-          rawEmpty: false,
-          filter: GalleryFilter.casa,
-        ).title,
-        'Nada na sua casa ainda',
+      expect(GalleryModel.noPhotos.title, 'Ainda não há fotos');
+    });
+
+    test('count line handles the BE-6 video count and its fallback', () {
+      const StorageStats withVideos = StorageStats(
+        usedBytes: 0,
+        quotaBytes: null,
+        byKind: StorageByKind(photos: 0, videos: 0, documents: 0, others: 0),
+        files: 0,
+        photos: 38,
+        videos: 4,
+        trash: StorageTrash(count: 0, bytes: 0),
+      );
+      const StorageStats withoutVideos = StorageStats(
+        usedBytes: 0,
+        quotaBytes: null,
+        byKind: StorageByKind(photos: 0, videos: 0, documents: 0, others: 0),
+        files: 0,
+        photos: 38,
+        trash: StorageTrash(count: 0, bytes: 0),
       );
       expect(
-        GalleryModel.emptyCopy(
-          rawEmpty: false,
-          filter: GalleryFilter.praca,
-        ).title,
-        'Nada na praça ainda',
+        GalleryModel.countLabelFor(withVideos, fallbackCount: 2),
+        '38 fotos, 4 vídeos',
       );
       expect(
-        GalleryModel.emptyCopy(
-          rawEmpty: true,
-          filter: GalleryFilter.casa,
-        ).title,
-        'Nenhuma foto ainda',
+        GalleryModel.countLabelFor(withoutVideos, fallbackCount: 2),
+        '38 fotos e vídeos',
+      );
+      expect(
+        GalleryModel.countLabelFor(null, fallbackCount: 2),
+        '2 fotos e vídeos',
       );
     });
 
+    test('viewer caption includes the file date and zone', () {
+      expect(
+        GalleryModel.viewerCaption(
+          sampleFile(
+            rkey: 'a',
+            name: 'Foto.jpg',
+            zona: Zona.praca,
+            createdAt: '2026-06-21T12:00:00Z',
+          ),
+        ),
+        'Foto.jpg, 21 de junho, na praça',
+      );
+    });
     test('viewer position is 1-based and 1 when absent', () {
       final FileRecord a = sampleFile(rkey: 'a');
       final FileRecord b = sampleFile(rkey: 'b');
@@ -174,7 +157,7 @@ void main() {
       expect(model.loaded, isTrue);
       expect(model.loading, isFalse);
       expect(model.photos, hasLength(3));
-      expect(model.filteredPhotos, hasLength(3));
+      expect(model.photos, hasLength(3));
       expect(model.nextCursor, isNull);
       expect(model.canLoadMore, isFalse);
       expect(model.error, isNull);
@@ -194,22 +177,6 @@ void main() {
       await model.refresh();
       expect(model.error, isNull);
       expect(model.photos, hasLength(3));
-    });
-
-    test('the filter narrows without refetching', () async {
-      final GalleryTestGateway gateway = GalleryTestGateway();
-      final GalleryModel model = GalleryModel(gateway);
-      addTearDown(model.dispose);
-      await model.ensureLoaded();
-      final int calls = gateway.screenCalls;
-
-      model.selectFilter(GalleryFilter.praca);
-      expect(model.filteredPhotos, hasLength(3));
-      model.selectFilter(GalleryFilter.casa);
-      expect(model.filteredPhotos, isEmpty);
-      expect(model.empty, isTrue);
-      expect(model.rawEmpty, isFalse);
-      expect(gateway.screenCalls, calls);
     });
 
     test(
@@ -269,91 +236,6 @@ void main() {
       expect(model.canLoadMore, isFalse);
       expect(model.loadedPageCount, 2);
     });
-
-    test(
-      'grid keeps loading while the selected zone is not on this page',
-      () async {
-        final FileRecord otherZone = sampleFile(
-          rkey: 'praca',
-          zona: Zona.praca,
-        );
-        final FileRecord selectedZone = sampleFile(
-          rkey: 'casa',
-          zona: Zona.casa,
-        );
-        final _PagingApi api = _PagingApi(
-          photoPages: [
-            Page(items: [otherZone], nextCursor: '1'),
-            Page(items: [selectedZone], nextCursor: null),
-          ],
-        );
-        final GalleryModel model = GalleryModel(GalleryTestGateway(api: api));
-        addTearDown(model.dispose);
-
-        model.selectFilter(GalleryFilter.casa);
-        await model.ensureLoaded();
-
-        expect(model.filteredPhotos, isEmpty);
-        expect(model.empty, isTrue);
-        expect(model.canLoadMore, isTrue);
-        expect(model.showEmpty, isFalse);
-
-        await model.loadMore();
-
-        expect(model.filteredPhotos, [selectedZone]);
-        expect(model.showEmpty, isFalse);
-        expect(model.canLoadMore, isFalse);
-        expect(model.loadedPageCount, 2);
-      },
-    );
-
-    test(
-      'timeline keeps loading while the selected zone is not on this page',
-      () async {
-        final FileRecord otherZone = sampleFile(
-          rkey: 'praca',
-          zona: Zona.praca,
-        );
-        final FileRecord selectedZone = sampleFile(
-          rkey: 'casa',
-          zona: Zona.casa,
-        );
-        final _PagingApi api = _PagingApi(
-          timelinePages: [
-            Page(
-              items: [
-                TimelineGroup(date: '2026-06-21', photos: [otherZone]),
-              ],
-              nextCursor: '1',
-            ),
-            Page(
-              items: [
-                TimelineGroup(date: '2026-06-20', photos: [selectedZone]),
-              ],
-              nextCursor: null,
-            ),
-          ],
-        );
-        final GalleryModel model = GalleryModel(GalleryTestGateway(api: api));
-        addTearDown(model.dispose);
-
-        model.selectTab(GalleryTab.timeline);
-        model.selectFilter(GalleryFilter.casa);
-        await model.ensureLoaded();
-
-        expect(model.timelineDays, isEmpty);
-        expect(model.empty, isTrue);
-        expect(model.canLoadMore, isTrue);
-        expect(model.showEmpty, isFalse);
-
-        await model.loadMore();
-
-        expect(model.timelineDays.single.photos, [selectedZone]);
-        expect(model.showEmpty, isFalse);
-        expect(model.canLoadMore, isFalse);
-        expect(model.loadedPageCount, 2);
-      },
-    );
 
     test('a page failure keeps the cursor and the list, and says so', () async {
       final FileRecord first = sampleFile(rkey: 'a');
@@ -424,7 +306,7 @@ void main() {
       addTearDown(model.dispose);
       await model.ensureLoaded();
 
-      final FileRecord file = model.filteredPhotos[1];
+      final FileRecord file = model.photos[1];
       model.open(file);
       expect(model.viewer, isNotNull);
       expect(model.viewer!.files, hasLength(3));
@@ -450,7 +332,7 @@ void main() {
       addTearDown(model.dispose);
       await model.ensureLoaded();
 
-      final FileRecord praca = model.filteredPhotos.firstWhere(
+      final FileRecord praca = model.photos.firstWhere(
         (FileRecord file) => file.zona == Zona.praca,
       );
       model.open(praca);
@@ -469,7 +351,7 @@ void main() {
       final GalleryModel model = GalleryModel(gateway);
       addTearDown(model.dispose);
       await model.ensureLoaded();
-      final FileRecord file = model.filteredPhotos[1];
+      final FileRecord file = model.photos[1];
       model.open(file);
       final int before = model.photos.length;
 
@@ -488,7 +370,7 @@ void main() {
       final GalleryModel model = GalleryModel(gateway);
       addTearDown(model.dispose);
       await model.ensureLoaded();
-      final FileRecord file = model.filteredPhotos[1];
+      final FileRecord file = model.photos[1];
       model.open(file);
 
       gateway.failNextScreen = true;
@@ -517,9 +399,7 @@ void main() {
       final GalleryModel model = GalleryModel(gateway);
       addTearDown(model.dispose);
       await model.ensureLoaded();
-      final FileRecord video = model.filteredPhotos.firstWhere(
-        GalleryModel.isVideo,
-      );
+      final FileRecord video = model.photos.firstWhere(GalleryModel.isVideo);
 
       final Future<void> playing = model.play(video);
       expect(model.video, isA<GalleryVideoLoading>());
@@ -537,9 +417,7 @@ void main() {
         final GalleryModel model = GalleryModel(gateway);
         addTearDown(model.dispose);
         await model.ensureLoaded();
-        final FileRecord video = model.filteredPhotos.firstWhere(
-          GalleryModel.isVideo,
-        );
+        final FileRecord video = model.photos.firstWhere(GalleryModel.isVideo);
 
         gateway.failNextScreen = true;
         await model.play(video);
@@ -556,9 +434,7 @@ void main() {
       final GalleryModel model = GalleryModel(gateway);
       addTearDown(model.dispose);
       await model.ensureLoaded();
-      final FileRecord video = model.filteredPhotos.firstWhere(
-        GalleryModel.isVideo,
-      );
+      final FileRecord video = model.photos.firstWhere(GalleryModel.isVideo);
       model.open(video);
       await model.play(video);
       expect(model.video, isA<GalleryVideoReady>());
@@ -576,9 +452,7 @@ void main() {
       final GalleryModel model = GalleryModel(gateway);
       addTearDown(model.dispose);
       await model.ensureLoaded();
-      final FileRecord video = model.filteredPhotos.firstWhere(
-        GalleryModel.isVideo,
-      );
+      final FileRecord video = model.photos.firstWhere(GalleryModel.isVideo);
       model.open(video);
 
       final Future<void> playing = model.play(video);

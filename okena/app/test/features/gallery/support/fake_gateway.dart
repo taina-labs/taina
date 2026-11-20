@@ -4,6 +4,7 @@ import 'dart:ui' show Color;
 import 'package:flutter/widgets.dart' show ColoredBox, SizedBox, Widget;
 import 'package:okena_app/src/features/gallery/gallery_video.dart';
 import 'package:okena_app/src/session/session_gateway.dart';
+import 'package:okena_app/src/session/upload_center.dart';
 import 'package:okena_core/okena_core.dart';
 
 /// A [SessionGateway] over [FastGalleryApi] with switches a test can flip:
@@ -49,14 +50,35 @@ final class GalleryTestGateway implements SessionGateway {
 /// real fake writes a file, and disk IO does not complete inside the fake
 /// async of a widget test.
 final class FastGalleryApi implements TainaApi {
-  FastGalleryApi({Duration delay = Duration.zero})
-    : _inner = FakeTainaApi(delay: delay);
+  FastGalleryApi({
+    Duration delay = Duration.zero,
+    this.emptyGallery = false,
+    this.storageStats,
+    this.failStorage = false,
+    this.failThumbnail = false,
+  }) : _inner = FakeTainaApi(delay: delay);
 
   final FakeTainaApi _inner;
+  final bool emptyGallery;
+  final StorageStats? storageStats;
+  final bool failStorage;
+  final bool failThumbnail;
   int thumbnailCalls = 0;
+  UploadRequest? lastUpload;
+
+  @override
+  Future<TainaResult<StorageStats>> storage() {
+    if (failStorage) return Future.value(const Err(NetworkError()));
+    final StorageStats? stats = storageStats;
+    if (stats != null) return Future.value(Ok<StorageStats>(stats));
+    return _inner.storage();
+  }
 
   @override
   Future<TainaResult<Page<FileRecord>>> photos({int? limit, String? cursor}) {
+    if (emptyGallery) {
+      return Future.value(Ok(Page(items: const [], nextCursor: null)));
+    }
     return _inner.photos(limit: limit, cursor: cursor);
   }
 
@@ -65,6 +87,9 @@ final class FastGalleryApi implements TainaApi {
     int? limit,
     String? cursor,
   }) {
+    if (emptyGallery) {
+      return Future.value(Ok(Page(items: const [], nextCursor: null)));
+    }
     return _inner.photoTimeline(limit: limit, cursor: cursor);
   }
 
@@ -74,7 +99,28 @@ final class FastGalleryApi implements TainaApi {
     required ThumbnailSize size,
   }) {
     thumbnailCalls += 1;
+    if (failThumbnail) return Future.value(const Err(NetworkError()));
     return _inner.thumbnail(rkey: rkey, size: size);
+  }
+
+  @override
+  Future<TainaResult<FileRecord>> upload({
+    required String filePath,
+    required String name,
+    required String mime,
+    String? folderRkey,
+    UploadProgress? progress,
+  }) async {
+    lastUpload = UploadRequest(
+      path: filePath,
+      name: name,
+      mime: mime,
+      folderRkey: folderRkey,
+    );
+    progress?.call(1, 1);
+    return Ok(
+      sampleFile(rkey: 'uploaded', name: name, mime: mime, zona: Zona.casa),
+    );
   }
 
   @override

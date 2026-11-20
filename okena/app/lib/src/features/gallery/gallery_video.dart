@@ -269,10 +269,9 @@ final class _GalleryVideoPageState extends State<GalleryVideoPage> {
                 children: [
                   Center(child: player.build()),
                   if (!player.isPlaying)
-                    const Icon(
-                      Icons.play_circle_outline,
-                      color: Colors.white,
-                      size: 56,
+                    const CustomPaint(
+                      size: Size(56, 56),
+                      painter: _PlayGlyphPainter(),
                     ),
                   Positioned(
                     left: 0,
@@ -373,11 +372,7 @@ final class _GalleryVideoPageState extends State<GalleryVideoPage> {
             const Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
-                  Icons.play_arrow_rounded,
-                  size: TainaFontSizes.display,
-                  color: TainaPalette.textSecondary,
-                ),
+                CustomPaint(size: Size(72, 72), painter: _PlayGlyphPainter()),
                 SizedBox(height: TainaSpacing.space3),
                 TainaText(
                   'Toque para assistir',
@@ -411,4 +406,34 @@ final class _GalleryVideoPageState extends State<GalleryVideoPage> {
       ),
     );
   }
+}
+
+final class _PlayGlyphPainter extends CustomPainter {
+  const _PlayGlyphPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Offset center = Offset(size.width / 2, size.height / 2);
+    final double radius = size.shortestSide / 2;
+    canvas.drawCircle(
+      center,
+      radius,
+      Paint()..color = TainaPalette.brandPrimary,
+    );
+
+    final Path triangle = Path()
+      ..moveTo(center.dx - radius * 0.2, center.dy - radius * 0.34)
+      ..lineTo(center.dx + radius * 0.38, center.dy)
+      ..lineTo(center.dx - radius * 0.2, center.dy + radius * 0.34)
+      ..close();
+    canvas.drawPath(
+      triangle,
+      Paint()
+        ..color = TainaPalette.textOnBrand
+        ..style = PaintingStyle.fill,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_PlayGlyphPainter oldDelegate) => false;
 }

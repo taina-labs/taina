@@ -2,7 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:okena_app/src/design_system/design_system.dart';
+import 'package:okena_app/src/features/camera_roll/media_picker.dart';
+import 'package:okena_app/src/features/files/file_actions.dart';
 import 'package:okena_app/src/session/session_gateway.dart';
+import 'package:okena_app/src/session/upload_center.dart';
 import 'package:okena_core/okena_core.dart';
 import 'package:provider/provider.dart';
 
@@ -14,37 +17,57 @@ import 'gallery_viewer.dart';
 /// Reports whether the fullscreen viewer needs the shell chrome hidden.
 typedef GalleryImmersiveChanged = void Function(bool immersive);
 
-/// Jaci, the Fotos screen: grid and timeline on one segmented row, the
-/// casa/praça filter under it, infinite scroll on both, and the fullscreen
-/// viewer over whichever list is showing.
+/// Jaci, the community photo and video gallery.
 ///
-/// The screen owns its [GalleryModel]; the app integration only provides the
-/// [SessionGateway] and the handoffs it cannot own (the share sheet, the
-/// video player plugin in tests).
+/// The app integration supplies the session boundaries and owns route changes,
+/// the system share sheet, and the upload destination.
 final class GalleryScreen extends StatefulWidget {
   const GalleryScreen({
     required this.gateway,
     this.onShareFile,
     this.onImmersiveChanged,
     this.playerFactory = defaultGalleryVideoPlayer,
+    this.initialTab = TainaGalleryTab.grade,
+    this.mediaPicker,
+    this.uploadCenter,
+    this.onNavigateTab,
+    this.onBack,
+    this.onOpenUpload,
     super.key,
   });
 
   final SessionGateway gateway;
 
-  /// Hands a downloaded local file to the system share sheet. The feature
-  /// downloads; opening the sheet belongs to the app integration.
+  /// Hands a downloaded local file to the system share sheet.
   final GalleryShareFile? onShareFile;
   final GalleryImmersiveChanged? onImmersiveChanged;
   final GalleryVideoPlayerFactory playerFactory;
+
+  /// The route represented by this screen when it is mounted.
+  final TainaGalleryTab initialTab;
+
+  /// The system media picker and session-owned upload path.
+  final MediaPicker? mediaPicker;
+  final UploadCenter? uploadCenter;
+
+  /// Replaces the current gallery route when another service tab is selected.
+  final ValueChanged<TainaGalleryTab>? onNavigateTab;
+
+  /// Returns to the hub and opens the existing Enviar route, respectively.
+  final VoidCallback? onBack;
+  final VoidCallback? onOpenUpload;
 
   @override
   State<GalleryScreen> createState() => _GalleryScreenState();
 }
 
 final class _GalleryScreenState extends State<GalleryScreen> {
-  late final GalleryModel _model = GalleryModel(widget.gateway);
+  late final GalleryModel _model = GalleryModel(
+    widget.gateway,
+    initialTab: _modelTab(widget.initialTab),
+  );
   bool _viewerRouteOpen = false;
+  bool _picking = false;
   String? _handledAlert;
 
   @override
@@ -54,7 +77,17 @@ final class _GalleryScreenState extends State<GalleryScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       unawaited(_model.ensureLoaded());
+      unawaited(_model.ensureCountLoaded());
     });
+  }
+
+  @override
+  void didUpdateWidget(GalleryScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.initialTab != widget.initialTab) {
+      _model.selectTab(_modelTab(widget.initialTab));
+      unawaited(_model.ensureLoaded());
+    }
   }
 
   @override
@@ -109,196 +142,241 @@ final class _GalleryScreenState extends State<GalleryScreen> {
     final String? message = _model.alertMessage;
     if (message == null || message == _handledAlert) return;
     _handledAlert = message;
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      await showDialog<void>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text(GalleryModel.alertTitle),
-          content: Text(message),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text(GalleryModel.alertDismiss),
-            ),
-          ],
-        ),
-      );
-      if (!mounted) return;
+      _showToast(message);
       _handledAlert = null;
       _model.dismissAlert();
     });
   }
 
-  void _selectTab(GalleryTab tab) {
-    _model.selectTab(tab);
-    unawaited(_model.ensureLoaded());
+  void _showToast(
+    String message, {
+    TainaToastKind kind = TainaToastKind.error,
+  }) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: TainaToast(kind: kind, text: message),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+        ),
+      );
   }
+
+  void _selectTab(TainaGalleryTab tab) {
+    final GalleryTab next = _modelTab(tab);
+    if (_model.tab == next) return;
+    _model.selectTab(next);
+    unawaited(_model.ensureLoaded());
+    widget.onNavigateTab?.call(tab);
+  }
+
+  Future<void> _pickAndUpload() async {
+    if (_picking) return;
+    final MediaPicker? picker = widget.mediaPicker;
+    if (picker == null) {
+      _showToast('A seleção de fotos e vídeos não está disponível.');
+      return;
+    }
+    final UploadCenter? center = widget.uploadCenter;
+    if (center == null) {
+      _showToast('O envio não está disponível agora.');
+      return;
+    }
+    if (center.isUploading) {
+      widget.onOpenUpload?.call();
+      return;
+    }
+
+    setState(() => _picking = true);
+    try {
+      final MediaPickerOutcome outcome = await picker.pickPhotos();
+      if (!mounted) return;
+      switch (outcome) {
+        case MediaPickerCancelled():
+          return;
+        case MediaPickerFailed(:final message):
+          _showToast(message);
+          return;
+        case MediaPickerSelected(:final files):
+          await _uploadPickedFiles(files, center);
+      }
+    } on Exception {
+      if (mounted) _showToast('Não foi possível selecionar as fotos e vídeos.');
+    } finally {
+      if (mounted) setState(() => _picking = false);
+    }
+  }
+
+  Future<void> _uploadPickedFiles(
+    List<PickedFile> files,
+    UploadCenter center,
+  ) async {
+    bool openedUpload = false;
+    for (final PickedFile file in files) {
+      final Future<UploadStartResult> transfer = center.start(
+        UploadRequest(path: file.path, name: file.name, mime: file.mime),
+      );
+      if (!openedUpload) {
+        openedUpload = true;
+        widget.onOpenUpload?.call();
+      }
+      final UploadStartResult started = await transfer;
+      if (started case UploadRejected(:final reason)) {
+        if (mounted && widget.onOpenUpload == null) {
+          _showToast(
+            reason == UploadRejection.busy
+                ? 'Já existe um envio em andamento.'
+                : 'Não foi possível iniciar o envio.',
+          );
+        }
+        return;
+      }
+      if (started case UploadFinished(result: Err<FileRecord>(:final error))) {
+        if (mounted && widget.onOpenUpload == null) _showToast(error.message);
+        return;
+      }
+    }
+    if (openedUpload && widget.onOpenUpload == null && mounted) {
+      _showToast('Arquivo enviado para a sua casa.', kind: TainaToastKind.info);
+    }
+  }
+
+  UploadCenter? _uploadCenter() => widget.uploadCenter;
 
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider<GalleryModel>.value(
       value: _model,
-      child: Scaffold(
-        backgroundColor: TainaPalette.bgApp,
-        appBar: AppBar(title: const Text('Fotos')),
-        body: SafeArea(
-          top: false,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const SizedBox(height: TainaSpacing.space2),
-              _GallerySegment(model: _model, onSelect: _selectTab),
-              const SizedBox(height: TainaSpacing.space2),
-              _GalleryZoneFilter(model: _model),
-              const SizedBox(height: TainaSpacing.space2),
-              Expanded(
-                child: Consumer<GalleryModel>(
-                  builder: (context, model, child) =>
-                      _GalleryContent(model: model, gateway: widget.gateway),
-                ),
+      child: Builder(
+        builder: (context) {
+          final UploadCenter? center = _uploadCenter();
+          return Scaffold(
+            backgroundColor: TainaPalette.bgApp,
+            body: SafeArea(
+              bottom: false,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  ServiceHeader(
+                    title: 'Galeria',
+                    backLabel: 'Início',
+                    onBack:
+                        widget.onBack ?? () => Navigator.of(context).maybePop(),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      TainaSpacing.space4,
+                      TainaSpacing.space2,
+                      TainaSpacing.space4,
+                      TainaSpacing.space3,
+                    ),
+                    child: Consumer<GalleryModel>(
+                      builder: (context, model, child) => TainaText(
+                        model.countLabel,
+                        style: TainaTypography.caption,
+                        color: TainaPalette.textSecondary,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Consumer<GalleryModel>(
+                      builder: (context, model, child) => _GalleryContent(
+                        model: model,
+                        gateway: widget.gateway,
+                        onUpload: _pickAndUpload,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
-        ),
+            ),
+            floatingActionButton: _fab(center),
+            bottomNavigationBar: AnimatedBuilder(
+              animation: _model,
+              builder: (context, child) => ServiceTabBar.gallery(
+                selected: _tabDestination(_model.tab),
+                onSelected: _selectTab,
+              ),
+            ),
+          );
+        },
       ),
     );
   }
-}
 
-/// The two tabs on one row; the current one in brand.
-final class _GallerySegment extends StatelessWidget {
-  const _GallerySegment({required this.model, required this.onSelect});
-
-  final GalleryModel model;
-  final ValueChanged<GalleryTab> onSelect;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: TainaSpacing.space4),
-      child: Row(
-        children: [
-          for (final GalleryTab tab in GalleryTab.values) ...[
-            _GalleryPill(
-              title: GalleryModel.labelOfTab(tab),
-              current: model.tab == tab,
-              onTap: () => onSelect(tab),
-            ),
-            const SizedBox(width: TainaSpacing.space2),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-/// The casa/praça filter: the readable set already carries both zones, so the
-/// pills only narrow what the screen shows, and everything shows by default.
-final class _GalleryZoneFilter extends StatelessWidget {
-  const _GalleryZoneFilter({required this.model});
-
-  final GalleryModel model;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: TainaSpacing.space4),
-      child: Row(
-        children: [
-          for (final GalleryFilter filter in GalleryFilter.values) ...[
-            _GalleryPill(
-              title: GalleryModel.labelOfFilter(filter),
-              current: model.filter == filter,
-              onTap: () => model.selectFilter(filter),
-            ),
-            const SizedBox(width: TainaSpacing.space2),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-/// One capsule pill of a segmented row.
-final class _GalleryPill extends StatelessWidget {
-  const _GalleryPill({
-    required this.title,
-    required this.current,
-    required this.onTap,
-  });
-
-  final String title;
-  final bool current;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      selected: current,
-      label: title,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: TainaRadii.pillAll,
-        child: Container(
-          constraints: const BoxConstraints(minHeight: TainaSizes.touch),
-          padding: const EdgeInsets.symmetric(horizontal: TainaSpacing.space4),
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: current ? TainaPalette.brandPrimary : Colors.transparent,
-            borderRadius: TainaRadii.pillAll,
-            border: Border.all(
-              color: current
-                  ? TainaPalette.brandPrimary
-                  : TainaPalette.borderDefault,
-              width: TainaSizes.hairline,
-            ),
-          ),
-          child: TainaText(
-            title,
-            style: TainaTypography.label,
-            color: current
-                ? TainaPalette.textOnBrand
-                : TainaPalette.textSecondary,
-          ),
-        ),
+  Widget _fab(UploadCenter? center) {
+    final VoidCallback? action = _picking ? null : _pickAndUpload;
+    if (center == null) {
+      return TainaFAB(label: 'Enviar', action: action);
+    }
+    return AnimatedBuilder(
+      animation: center,
+      builder: (context, child) => TainaFAB(
+        label: 'Enviar',
+        action: center.isUploading ? null : action,
+        uploading: center.isUploading,
       ),
     );
   }
 }
 
 final class _GalleryContent extends StatelessWidget {
-  const _GalleryContent({required this.model, required this.gateway});
+  const _GalleryContent({
+    required this.model,
+    required this.gateway,
+    required this.onUpload,
+  });
 
   final GalleryModel model;
   final SessionGateway gateway;
+  final VoidCallback onUpload;
 
   @override
   Widget build(BuildContext context) {
-    if (model.empty) {
-      if (model.loading) return _GalleryLoadingGrid();
-      final TainaError? error = model.error;
-      if (error != null) {
-        return Center(
-          child: TainaErrorState(error: error, onRetry: model.refresh),
-        );
-      }
-      if (model.loaded && model.showEmpty) {
-        final GalleryEmptyCopy copy = GalleryModel.emptyCopy(
-          rawEmpty: model.rawEmpty,
-          filter: model.filter,
-        );
-        return Center(
-          child: TainaEmptyState(
-            icon: Icons.photo_outlined,
-            title: copy.title,
-            message: copy.message,
+    if (model.loading && model.empty) return _loadingGrid;
+
+    if (model.error != null && model.empty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(TainaSpacing.space4),
+          child: ErrorCard(
+            title: 'Não conseguimos carregar a galeria.',
+            body: model.error!.message,
+            retry: model.refresh,
           ),
-        );
-      }
-      if (!model.canLoadMore) return const SizedBox.shrink();
+        ),
+      );
     }
+
+    if (model.showEmpty) {
+      return Center(
+        child: EmptyStateView(
+          icon: TainaIcon.folder,
+          title: GalleryModel.noPhotos.title,
+          body: GalleryModel.noPhotos.message,
+          actionBuilder: (context) => TainaButton(
+            title: 'Enviar uma foto',
+            icon: TainaIcon.plus,
+            action: onUpload,
+          ),
+        ),
+      );
+    }
+
+    if (model.empty && model.canLoadMore) {
+      return CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [
+          _footer,
+          const SliverToBoxAdapter(child: SizedBox(height: 120)),
+        ],
+      );
+    }
+
     return LayoutBuilder(
       builder: (context, constraints) {
         final int columns = GalleryModel.columnsFor(constraints.maxWidth);
@@ -306,15 +384,20 @@ final class _GalleryContent extends StatelessWidget {
           onRefresh: model.refresh,
           child: switch (model.tab) {
             GalleryTab.grid => _grid(columns),
-            GalleryTab.timeline => _timeline(columns, context),
+            GalleryTab.timeline => _timeline(columns),
           },
         );
       },
     );
   }
 
+  Widget get _loadingGrid => const Padding(
+    padding: EdgeInsets.all(TainaSpacing.space4),
+    child: SkeletonView(kind: TainaSkeletonKind.photoGrid, count: 9),
+  );
+
   Widget _grid(int columns) {
-    final List<FileRecord> files = model.filteredPhotos;
+    final List<FileRecord> files = model.photos;
     return CustomScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
       slivers: [
@@ -339,12 +422,12 @@ final class _GalleryContent extends StatelessWidget {
           ),
         ),
         _footer,
-        const SliverToBoxAdapter(child: SizedBox(height: TainaSpacing.space4)),
+        const SliverToBoxAdapter(child: SizedBox(height: 120)),
       ],
     );
   }
 
-  Widget _timeline(int columns, BuildContext context) {
+  Widget _timeline(int columns) {
     final List<GalleryDay> days = model.timelineDays;
     return CustomScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
@@ -360,8 +443,8 @@ final class _GalleryContent extends StatelessWidget {
               ),
               child: TainaText(
                 GalleryModel.sectionTitle(days[index]),
-                style: TainaTypography.h3,
-                color: TainaPalette.textPrimary,
+                style: TainaTypography.label,
+                color: TainaPalette.textSecondary,
               ),
             ),
           ),
@@ -384,7 +467,7 @@ final class _GalleryContent extends StatelessWidget {
           ),
         ],
         _footer,
-        const SliverToBoxAdapter(child: SizedBox(height: TainaSpacing.space4)),
+        const SliverToBoxAdapter(child: SizedBox(height: 120)),
       ],
     );
   }
@@ -408,8 +491,7 @@ final class _GalleryContent extends StatelessWidget {
   }
 }
 
-/// The infinite-scroll sentinel: it loads the next page when it shows, and
-/// re-arms when a page lands (a new [rearmKey]).
+/// The infinite-scroll sentinel re-arms whenever a page lands.
 final class _GalleryFooter extends StatefulWidget {
   const _GalleryFooter({required this.rearmKey, required this.onLoadMore});
 
@@ -467,8 +549,8 @@ final class _GalleryFooterState extends State<_GalleryFooter> {
   }
 }
 
-/// A grid tile: the square thumbnail, a play tile for videos (Jaci does not
-/// make video thumbnails yet), and the zone on every tile.
+/// A square thumbnail; videos use the gallery image glyph until their
+/// playback page is opened.
 final class _GalleryTile extends StatelessWidget {
   const _GalleryTile({
     required this.gateway,
@@ -490,64 +572,35 @@ final class _GalleryTile extends StatelessWidget {
         key: ValueKey<String>('gallery-tile-${file.name}'),
         onTap: onTap,
         child: ClipRRect(
-          borderRadius: TainaRadii.smAll,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              if (video)
-                const ColoredBox(
+          borderRadius: TainaRadii.mdAll,
+          child: video
+              ? const ColoredBox(
                   color: TainaPalette.surfaceHigh,
                   child: Center(
-                    child: Icon(
-                      Icons.play_arrow_rounded,
-                      size: TainaFontSizes.xxl,
+                    child: TainaIconView(
+                      icon: TainaIcon.image,
+                      size: TainaSizes.iconLg,
                       color: TainaPalette.textSecondary,
                     ),
                   ),
                 )
-              else
-                GalleryThumbnail(
+              : GalleryThumbnail(
                   gateway: gateway,
                   rkey: file.rkey,
                   size: ThumbnailSize.sm,
                 ),
-              Align(
-                alignment: Alignment.bottomRight,
-                child: Padding(
-                  padding: const EdgeInsets.all(TainaSpacing.space2),
-                  child: file.zona == Zona.casa
-                      ? const TainaZonaBadge.casa()
-                      : const TainaZonaBadge.praca(),
-                ),
-              ),
-            ],
-          ),
         ),
       ),
     );
   }
 }
 
-/// The loading state in the shape of the grid it becomes.
-final class _GalleryLoadingGrid extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final int columns = GalleryModel.columnsFor(constraints.maxWidth);
-        return GridView.builder(
-          padding: const EdgeInsets.all(TainaSpacing.space4),
-          physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: columns,
-            mainAxisSpacing: TainaSizes.gapPhoto,
-            crossAxisSpacing: TainaSizes.gapPhoto,
-          ),
-          itemCount: columns * 3,
-          itemBuilder: (context, index) =>
-              const TainaSkeleton(borderRadius: TainaRadii.smAll),
-        );
-      },
-    );
-  }
-}
+GalleryTab _modelTab(TainaGalleryTab tab) => switch (tab) {
+  TainaGalleryTab.grade => GalleryTab.grid,
+  TainaGalleryTab.linha => GalleryTab.timeline,
+};
+
+TainaGalleryTab _tabDestination(GalleryTab tab) => switch (tab) {
+  GalleryTab.grid => TainaGalleryTab.grade,
+  GalleryTab.timeline => TainaGalleryTab.linha,
+};

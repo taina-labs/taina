@@ -13,9 +13,7 @@ import 'gallery_video.dart';
 /// The handoff to the system share sheet, wired by the app integration.
 typedef GalleryShareFile = Future<String?> Function(String path);
 
-/// The fullscreen viewer: a dark frame, one photo at a time, swipe between
-/// the photos of the list it was opened from, close on top, and the acts the
-/// viewer has: share, details, publish or take back, delete.
+/// The fullscreen viewer for photos and videos in the visible gallery order.
 final class GalleryViewerScreen extends StatefulWidget {
   const GalleryViewerScreen({
     required this.model,
@@ -39,8 +37,8 @@ final class _GalleryViewerScreenState extends State<GalleryViewerScreen> {
     initialPage: widget.model.viewer?.index ?? 0,
   );
   bool _sharing = false;
-  String? _handledAlert;
   bool _popping = false;
+  String? _handledAlert;
 
   @override
   void initState() {
@@ -78,35 +76,35 @@ final class _GalleryViewerScreenState extends State<GalleryViewerScreen> {
     final String? message = widget.model.alertMessage;
     if (message == null || message == _handledAlert) return;
     _handledAlert = message;
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      await showDialog<void>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text(GalleryModel.alertTitle),
-          content: Text(message),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text(GalleryModel.alertDismiss),
-            ),
-          ],
-        ),
-      );
-      if (!mounted) return;
-      widget.model.dismissAlert();
+      _showToast(message);
       _handledAlert = null;
+      widget.model.dismissAlert();
     });
   }
 
-  void _close() {
-    widget.model.close();
+  void _showToast(
+    String message, {
+    TainaToastKind kind = TainaToastKind.error,
+  }) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: TainaToast(kind: kind, text: message),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+        ),
+      );
   }
+
+  void _close() => widget.model.close();
 
   void _goTo(int index) {
     final GalleryViewerState? viewer = widget.model.viewer;
-    if (viewer == null) return;
-    if (index < 0 || index >= viewer.files.length) return;
+    if (viewer == null || index < 0 || index >= viewer.files.length) return;
     widget.model.moveViewer(index);
     if (_controller.hasClients) {
       unawaited(
@@ -121,12 +119,10 @@ final class _GalleryViewerScreenState extends State<GalleryViewerScreen> {
 
   Future<void> _share(FileRecord file) async {
     if (_sharing || widget.model.working) return;
-    setState(() {
-      _sharing = true;
-    });
+    setState(() => _sharing = true);
     final TainaResult<String> result = await widget.model.download(file);
     if (!mounted) return;
-    if (result case Ok(:final value)) {
+    if (result case Ok<String>(:final value)) {
       final GalleryShareFile? share = widget.onShareFile;
       if (share == null) {
         widget.model.reportAlert(
@@ -134,10 +130,8 @@ final class _GalleryViewerScreenState extends State<GalleryViewerScreen> {
         );
       } else {
         try {
-          final message = await share(value);
-          if (message != null && mounted) {
-            widget.model.reportAlert(message);
-          }
+          final String? message = await share(value);
+          if (message != null && mounted) widget.model.reportAlert(message);
         } on Object {
           if (mounted) {
             widget.model.reportAlert(
@@ -147,11 +141,7 @@ final class _GalleryViewerScreenState extends State<GalleryViewerScreen> {
         }
       }
     }
-    if (mounted) {
-      setState(() {
-        _sharing = false;
-      });
-    }
+    if (mounted) setState(() => _sharing = false);
   }
 
   Future<void> _confirmZone(FileRecord file) async {
@@ -172,9 +162,7 @@ final class _GalleryViewerScreenState extends State<GalleryViewerScreen> {
         ],
       ),
     );
-    if (confirmed == true && mounted) {
-      await widget.model.changeZone(file);
-    }
+    if (confirmed == true && mounted) await widget.model.changeZone(file);
   }
 
   Future<void> _confirmDelete(FileRecord file) async {
@@ -195,266 +183,93 @@ final class _GalleryViewerScreenState extends State<GalleryViewerScreen> {
         ],
       ),
     );
-    if (confirmed == true && mounted) {
-      await widget.model.delete(file);
-    }
+    if (confirmed == true && mounted) await widget.model.delete(file);
+  }
+
+  Future<void> _showActions(FileRecord file) {
+    return ActionsMenu.show(
+      context: context,
+      title: 'Ações da foto',
+      actions: [
+        TainaMenuAction(
+          label: GalleryModel.zonaActionLabel(file.zona),
+          icon: file.zona == Zona.casa ? TainaIcon.praca : TainaIcon.casa,
+          onSelected: () => unawaited(_confirmZone(file)),
+          enabled: !widget.model.working,
+        ),
+        TainaMenuAction(
+          label: 'Baixar',
+          icon: TainaIcon.download,
+          onSelected: () => unawaited(_share(file)),
+          enabled: !_sharing && !widget.model.working,
+        ),
+        TainaMenuAction(
+          label: 'Compartilhar',
+          icon: TainaIcon.file,
+          onSelected: () => unawaited(_share(file)),
+          enabled: !_sharing && !widget.model.working,
+        ),
+        TainaMenuAction(
+          label: 'Detalhes',
+          icon: TainaIcon.info,
+          onSelected: () => unawaited(showGalleryDetails(context, file)),
+        ),
+        TainaMenuAction(
+          label: 'Excluir',
+          icon: TainaIcon.trash,
+          onSelected: () => unawaited(_confirmDelete(file)),
+          destructive: true,
+          enabled: !widget.model.working,
+        ),
+      ],
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final GalleryViewerState? viewer = widget.model.viewer;
-    if (viewer == null) return const SizedBox.shrink();
+    final FileRecord? file = viewer?.file;
+    if (viewer == null || file == null) return const SizedBox.shrink();
+
     return Scaffold(
       backgroundColor: TainaPalette.bgViewer,
       body: SafeArea(
-        child: Column(
-          children: [
-            _header(viewer),
-            Expanded(child: _stage(viewer)),
-            _caption(viewer),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _header(GalleryViewerState viewer) {
-    final FileRecord? file = viewer.file;
-    return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: TainaSpacing.space2,
-        vertical: TainaSpacing.space2,
-      ),
-      child: Row(
-        children: [
-          Semantics(
-            button: true,
-            label: 'Fechar',
-            child: IconButton(
-              onPressed: _close,
-              icon: const Icon(Icons.close_rounded),
-              color: TainaPalette.textPrimary,
-              tooltip: 'Fechar',
-            ),
+        child: ViewerChrome(
+          onClose: _close,
+          counter:
+              '${GalleryModel.positionOf(file, viewer.files)} de '
+              '${viewer.files.length}',
+          caption: GalleryModel.viewerCaption(file),
+          onPrevious: viewer.index > 0 ? () => _goTo(viewer.index - 1) : null,
+          onNext: viewer.index < viewer.files.length - 1
+              ? () => _goTo(viewer.index + 1)
+              : null,
+          action: TainaIconButton(
+            icon: TainaIcon.dots,
+            label: 'Ações da foto',
+            action: widget.model.working || _sharing
+                ? null
+                : () => unawaited(_showActions(file)),
           ),
-          Expanded(
-            child: file == null
-                ? const SizedBox.shrink()
-                : Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      TainaText(
-                        GalleryModel.uploadedDay(file.createdAt),
-                        style: TainaTypography.label,
-                        color: TainaPalette.textPrimary,
-                        textAlign: TextAlign.center,
-                      ),
-                      TainaText(
-                        '${GalleryModel.positionOf(file, viewer.files)} de '
-                        '${viewer.files.length}',
-                        style: TainaTypography.caption,
-                        color: TainaPalette.textFaint,
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-                  ),
-          ),
-          const SizedBox(width: TainaSizes.touch),
-        ],
-      ),
-    );
-  }
-
-  Widget _stage(GalleryViewerState viewer) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        PageView.builder(
-          controller: _controller,
-          itemCount: viewer.files.length,
-          onPageChanged: widget.model.moveViewer,
-          itemBuilder: (context, index) {
-            final FileRecord file = viewer.files[index];
-            if (GalleryModel.isVideo(file)) {
-              return GalleryVideoPage(
-                model: widget.model,
-                file: file,
-                active: index == viewer.index,
-                playerFactory: widget.playerFactory,
+          child: PageView.builder(
+            controller: _controller,
+            itemCount: viewer.files.length,
+            onPageChanged: widget.model.moveViewer,
+            itemBuilder: (context, index) {
+              final FileRecord pageFile = viewer.files[index];
+              if (GalleryModel.isVideo(pageFile)) {
+                return GalleryVideoPage(
+                  model: widget.model,
+                  file: pageFile,
+                  active: index == viewer.index,
+                  playerFactory: widget.playerFactory,
+                );
+              }
+              return GalleryImageView(
+                gateway: widget.gateway,
+                rkey: pageFile.rkey,
               );
-            }
-            return GalleryImageView(gateway: widget.gateway, rkey: file.rkey);
-          },
-        ),
-        if (viewer.files.length > 1)
-          Align(
-            alignment: Alignment.center,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                _nav(forward: false, viewer: viewer),
-                _nav(forward: true, viewer: viewer),
-              ],
-            ),
-          ),
-      ],
-    );
-  }
-
-  /// The web's prev/next arrows, for the hand the swipe misses. Dead at the
-  /// ends, gone when there is nothing to move through.
-  Widget _nav({required bool forward, required GalleryViewerState viewer}) {
-    final bool reachable = forward
-        ? viewer.index < viewer.files.length - 1
-        : viewer.index > 0;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: TainaSpacing.space2),
-      child: Semantics(
-        button: true,
-        label: forward ? 'Próxima foto' : 'Foto anterior',
-        child: Opacity(
-          opacity: reachable ? 1 : TainaOpacity.disabled,
-          child: IconButton.filled(
-            onPressed: reachable
-                ? () => _goTo(viewer.index + (forward ? 1 : -1))
-                : null,
-            icon: Icon(
-              forward
-                  ? Icons.chevron_right_rounded
-                  : Icons.chevron_left_rounded,
-            ),
-            style: IconButton.styleFrom(
-              backgroundColor: TainaPalette.surfaceScrim,
-              foregroundColor: TainaPalette.textPrimary,
-              minimumSize: const Size(TainaSizes.touch, TainaSizes.touch),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _caption(GalleryViewerState viewer) {
-    final FileRecord? file = viewer.file;
-    if (file == null) return const SizedBox.shrink();
-    return ColoredBox(
-      color: TainaPalette.surfaceScrimStrong,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(
-              vertical: TainaSpacing.space3,
-              horizontal: TainaSpacing.space4,
-            ),
-            child: Row(
-              children: [
-                _badge(file.zona),
-                const SizedBox(width: TainaSpacing.space2),
-                Expanded(
-                  child: TainaText(
-                    file.name,
-                    style: TainaTypography.bodySm,
-                    color: TainaPalette.textPrimary,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          _actions(file),
-          const SizedBox(height: TainaSpacing.space2),
-        ],
-      ),
-    );
-  }
-
-  Widget _actions(FileRecord file) {
-    final bool disabled = widget.model.working || _sharing;
-    return Opacity(
-      opacity: disabled ? TainaOpacity.disabled : 1,
-      child: IgnorePointer(
-        ignoring: disabled,
-        child: Row(
-          children: [
-            _actionButton(
-              label: 'Compartilhar',
-              icon: Icons.ios_share_rounded,
-              busy: _sharing,
-              onPressed: () => unawaited(_share(file)),
-            ),
-            _actionButton(
-              label: 'Detalhes',
-              icon: Icons.info_outline_rounded,
-              onPressed: () => unawaited(showGalleryDetails(context, file)),
-            ),
-            _actionButton(
-              label: GalleryModel.zonaActionLabel(file.zona),
-              icon: file.zona == Zona.casa
-                  ? Icons.people_rounded
-                  : Icons.lock_outline_rounded,
-              onPressed: () => unawaited(_confirmZone(file)),
-            ),
-            _actionButton(
-              label: 'Excluir',
-              icon: Icons.delete_outline_rounded,
-              destructive: true,
-              onPressed: () => unawaited(_confirmDelete(file)),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _actionButton({
-    required String label,
-    required IconData icon,
-    required VoidCallback onPressed,
-    bool busy = false,
-    bool destructive = false,
-  }) {
-    return Expanded(
-      child: Semantics(
-        button: true,
-        label: label,
-        child: InkWell(
-          onTap: onPressed,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: TainaSpacing.space2),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (busy)
-                  const SizedBox(
-                    width: TainaSizes.controlSm / 2,
-                    height: TainaSizes.controlSm / 2,
-                    child: CircularProgressIndicator(
-                      strokeWidth: TainaSizes.thick,
-                      color: TainaPalette.textPrimary,
-                    ),
-                  )
-                else
-                  Icon(
-                    icon,
-                    size: TainaFontSizes.xl,
-                    color: destructive
-                        ? TainaPalette.feedbackError
-                        : TainaPalette.textPrimary,
-                  ),
-                const SizedBox(height: TainaSpacing.space1),
-                TainaText(
-                  label,
-                  style: TainaTypography.caption,
-                  color: destructive
-                      ? TainaPalette.feedbackError
-                      : TainaPalette.textPrimary,
-                  textAlign: TextAlign.center,
-                  maxLines: 2,
-                ),
-              ],
-            ),
+            },
           ),
         ),
       ),
@@ -462,12 +277,8 @@ final class _GalleryViewerScreenState extends State<GalleryViewerScreen> {
   }
 }
 
-Widget _badge(Zona zona) => zona == Zona.casa
-    ? const TainaZonaBadge.casa()
-    : const TainaZonaBadge.praca();
-
-/// The viewer's picture: the md thumbnail from the shared store, centered, a
-/// quiet square when there is none.
+/// A photo from the shared thumbnail cache, with an explicit retry surface
+/// when the image cannot be opened.
 final class GalleryImageView extends StatefulWidget {
   const GalleryImageView({
     required this.gateway,
@@ -496,45 +307,56 @@ final class _GalleryImageViewState extends State<GalleryImageView> {
   void didUpdateWidget(GalleryImageView oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.rkey != widget.rkey || oldWidget.gateway != widget.gateway) {
-      setState(() {
-        _bytes = _load();
-      });
+      _bytes = _load();
     }
   }
+
+  void _retry() => setState(() => _bytes = _load());
 
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<TainaResult<Uint8List>>(
       future: _bytes,
       builder: (context, snapshot) {
-        final TainaResult<Uint8List>? result = snapshot.data;
-        if (snapshot.connectionState != ConnectionState.done ||
-            result == null) {
+        if (snapshot.connectionState != ConnectionState.done) {
           return const ColoredBox(
-            color: TainaPalette.surfaceRaised,
+            color: TainaPalette.bgViewer,
             child: Center(
               child: CircularProgressIndicator(color: TainaPalette.textMuted),
             ),
           );
         }
+        if (snapshot.hasError) {
+          return _errorCard(snapshot.error.toString());
+        }
+        final TainaResult<Uint8List>? result = snapshot.data;
+        if (result == null) return _errorCard('Tente abrir esta foto de novo.');
         return switch (result) {
-          Ok(:final value) => Center(
+          Ok<Uint8List>(:final value) => Center(
             child: Image.memory(
               value,
               fit: BoxFit.contain,
               gaplessPlayback: true,
-              errorBuilder: (context, error, stackTrace) => const ColoredBox(
-                color: TainaPalette.surfaceRaised,
-                child: SizedBox.expand(),
-              ),
+              errorBuilder: (context, error, stackTrace) =>
+                  _errorCard('Não foi possível exibir esta imagem.'),
             ),
           ),
-          Err() => const ColoredBox(
-            color: TainaPalette.surfaceRaised,
-            child: SizedBox.expand(),
-          ),
+          Err<Uint8List>(:final error) => _errorCard(error.message),
         };
       },
+    );
+  }
+
+  Widget _errorCard(String body) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(TainaSpacing.space4),
+        child: ErrorCard(
+          title: 'Não conseguimos abrir esta foto',
+          body: body,
+          retry: _retry,
+        ),
+      ),
     );
   }
 }

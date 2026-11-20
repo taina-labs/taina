@@ -4,24 +4,27 @@ import 'package:flutter/foundation.dart';
 import 'package:okena_app/src/session/session_gateway.dart';
 import 'package:okena_core/okena_core.dart';
 
-/// The Fotos screen's state: the grid and the timeline, each with its own
+/// The gallery screen's state: the grid and the timeline, each with its own
 /// cursor, and the fullscreen viewer over whichever list is showing.
 ///
 /// The loading logic lives here once; the decisions are the pure helpers
 /// below; the widgets only assign and call. The model talks to [SessionGateway]
 /// and never to the concrete session class.
 final class GalleryModel extends ChangeNotifier {
-  GalleryModel(this._gateway);
+  GalleryModel(this._gateway, {GalleryTab initialTab = GalleryTab.grid})
+    : _tab = initialTab;
 
   final SessionGateway _gateway;
 
-  GalleryTab _tab = GalleryTab.grid;
-  GalleryFilter _filter = GalleryFilter.all;
+  GalleryTab _tab;
   List<FileRecord> _photos = const [];
   List<GalleryDay> _days = const [];
+  StorageStats? _storage;
   String? _nextCursor;
   String? _timelineCursor;
   bool _loading = false;
+  bool _loadingCount = false;
+  bool _countLoaded = false;
   bool _loadingMore = false;
   bool _loaded = false;
   bool _working = false;
@@ -40,9 +43,9 @@ final class GalleryModel extends ChangeNotifier {
   int _loadedPageCount = 0;
 
   GalleryTab get tab => _tab;
-  GalleryFilter get filter => _filter;
   List<FileRecord> get photos => _photos;
   List<GalleryDay> get days => _days;
+  StorageStats? get storage => _storage;
   String? get nextCursor => _nextCursor;
   String? get timelineCursor => _timelineCursor;
   bool get loading => _loading;
@@ -61,35 +64,44 @@ final class GalleryModel extends ChangeNotifier {
   };
 
   /// The footer's re-arm key. It advances for every successful page, including
-  /// pages that add no photos or add only photos outside the active filter.
+  /// pages that add no media.
   int get loadedPageCount => _loadedPageCount;
 
-  /// The timeline as days, narrowed by the filter.
-  List<GalleryDay> get timelineDays => filteringDays(_days, _filter);
+  /// The timeline's non-empty days, retaining the underlying groups for
+  /// pagination when a page boundary splits a date.
+  List<GalleryDay> get timelineDays => [
+    for (final GalleryDay day in _days)
+      if (day.photos.isNotEmpty) day,
+  ];
 
-  /// The grid the filter shows.
-  List<FileRecord> get filteredPhotos => filtering(_photos, _filter);
+  /// The count line prefers community-wide totals and falls back to the
+  /// loaded media count when the storage endpoint is unavailable.
+  String get countLabel => countLabelFor(
+    _storage,
+    fallbackCount: _photos.length > GalleryModel.photosOf(_days).length
+        ? _photos.length
+        : GalleryModel.photosOf(_days).length,
+  );
 
   /// The list the viewer swipes through, in the order it is showing.
   List<FileRecord> get visiblePhotos => switch (_tab) {
-    GalleryTab.grid => filteredPhotos,
-    GalleryTab.timeline => photosOf(timelineDays),
+    GalleryTab.grid => _photos,
+    GalleryTab.timeline => photosOf(_days),
   };
 
-  /// Whether the readable set itself is empty, filter aside: its empty state
-  /// is the one that speaks first.
+  /// Whether the selected view has no media.
   bool get rawEmpty => switch (_tab) {
     GalleryTab.grid => _photos.isEmpty,
-    GalleryTab.timeline => _days.isEmpty,
+    GalleryTab.timeline => GalleryModel.photosOf(_days).isEmpty,
   };
 
-  /// Whether the filtered view has nothing to show.
+  /// Whether the selected view has nothing to show.
   bool get empty => switch (_tab) {
-    GalleryTab.grid => filteredPhotos.isEmpty,
-    GalleryTab.timeline => timelineDays.isEmpty,
+    GalleryTab.grid => _photos.isEmpty,
+    GalleryTab.timeline => GalleryModel.photosOf(_days).isEmpty,
   };
 
-  /// An empty filtered view is definitive only after its cursor is exhausted.
+  /// An empty view is definitive only after its cursor is exhausted.
   bool get showEmpty => empty && !canLoadMore;
 
   // MARK: transitions
@@ -112,14 +124,6 @@ final class GalleryModel extends ChangeNotifier {
     _notify();
   }
 
-  /// Narrows the screen to a zone. Nothing refetches: both zones are already
-  /// in memory.
-  void selectFilter(GalleryFilter filter) {
-    if (filter == _filter) return;
-    _filter = filter;
-    _notify();
-  }
-
   /// Loads the tab that is showing, once. The stale flag flips before the
   /// first await, so a second caller in the same pass waits for nothing.
   Future<void> ensureLoaded() async {
@@ -132,9 +136,24 @@ final class GalleryModel extends ChangeNotifier {
     await _reload();
   }
 
+  /// Loads the community totals separately so the count request never holds
+  /// the gallery content behind it.
+  Future<void> ensureCountLoaded() async {
+    if (_disposed || _loadingCount || _countLoaded) return;
+    _loadingCount = true;
+    final TainaResult<StorageStats> result = await _gateway.api.storage();
+    final TainaResult<StorageStats> screened = await _gateway.screen(result);
+    if (_disposed) return;
+    if (screened case Ok<StorageStats>(:final value)) _storage = value;
+    _loadingCount = false;
+    _countLoaded = true;
+    _notify();
+  }
+
   Future<void> refresh() async {
     if (_loading || _disposed) return;
-    await _reload();
+    _countLoaded = false;
+    await Future.wait([_reload(), ensureCountLoaded()]);
   }
 
   Future<void> loadMore() async {
@@ -355,52 +374,11 @@ final class GalleryModel extends ChangeNotifier {
 
   static bool isVideo(FileRecord file) => file.mime.startsWith('video/');
 
-  /// The label of a filter pill.
-  static String labelOfFilter(GalleryFilter filter) => switch (filter) {
-    GalleryFilter.all => 'Tudo',
-    GalleryFilter.praca => 'Praça',
-    GalleryFilter.casa => 'Casa',
-  };
-
-  /// The label of a tab pill.
+  /// The label of a gallery destination.
   static String labelOfTab(GalleryTab tab) => switch (tab) {
     GalleryTab.grid => 'Grade',
     GalleryTab.timeline => 'Linha do tempo',
   };
-
-  /// The files the filter shows: everything, or one zone's.
-  static List<FileRecord> filtering(
-    List<FileRecord> files,
-    GalleryFilter filter,
-  ) {
-    final Zona? zona = filter.zona;
-    if (zona == null) return files;
-    return [
-      for (final FileRecord file in files)
-        if (file.zona == zona) file,
-    ];
-  }
-
-  /// The days the filter shows: the zone's photos inside each day, the days
-  /// that stay empty dropped.
-  static List<GalleryDay> filteringDays(
-    List<GalleryDay> days,
-    GalleryFilter filter,
-  ) {
-    final Zona? zona = filter.zona;
-    final List<GalleryDay> result = [];
-    for (final GalleryDay day in days) {
-      final List<FileRecord> photos = zona == null
-          ? day.photos
-          : [
-              for (final FileRecord file in day.photos)
-                if (file.zona == zona) file,
-            ];
-      if (photos.isEmpty) continue;
-      result.add(GalleryDay(date: day.date, photos: photos));
-    }
-    return result;
-  }
 
   /// The timeline as days: the raw page groups, fused where a day straddles a
   /// page boundary. A fresh page against empty days lays the first ones out.
@@ -504,45 +482,23 @@ final class GalleryModel extends ChangeNotifier {
       ? 'Todos os moradores veem.'
       : 'Só você, e quem você deixar, vê.';
 
-  /// The empty state's words: "nothing yet" when the readable set itself is
-  /// empty, the zone's own when the filter narrowed everything away.
-  static GalleryEmptyCopy emptyCopy({
-    required bool rawEmpty,
-    required GalleryFilter filter,
-  }) {
-    if (rawEmpty || filter == GalleryFilter.all) return noPhotos;
-    return switch (filter) {
-      GalleryFilter.casa => const GalleryEmptyCopy(
-        title: 'Nada na sua casa ainda',
-        message:
-            'As fotos que você enviar aparecem aqui primeiro, só para você.',
-      ),
-      GalleryFilter.praca => const GalleryEmptyCopy(
-        title: 'Nada na praça ainda',
-        message: 'As fotos publicadas na praça da comunidade aparecem aqui.',
-      ),
-      GalleryFilter.all => noPhotos,
-    };
-  }
-
   static const GalleryEmptyCopy noPhotos = GalleryEmptyCopy(
-    title: 'Nenhuma foto ainda',
-    message: 'As imagens que a comunidade enviar aparecem aqui.',
+    title: 'Ainda não há fotos',
+    message: 'Quando alguém enviar uma foto, ela aparece aqui para toda a comunidade.',
   );
 
-  /// Grid density: 2 columns on the phone, 3 and 4 as the screen grows.
+  /// Grid density follows the three-column mobile board.
   static int columnsFor(double width) {
-    if (width < 500) return 2;
-    if (width < 900) return 3;
-    return 4;
+    if (width < 600) return 3;
+    if (width < 1000) return 4;
+    return 5;
   }
 
-  /// "Hoje, 5 fotos": the day first, relative when it is today or yesterday,
-  /// then the count.
-  static String sectionTitle(GalleryDay day, {DateTime? now}) {
-    final int count = day.photos.length;
-    final String noun = count == 1 ? 'foto' : 'fotos';
-    return '${dayTitle(day.date, now: now)}, $count $noun';
+  /// The date heading shown above a timeline group.
+  static String sectionTitle(GalleryDay day) {
+    final DateTime? parsed = _parseDay(day.date);
+    if (parsed == null) return day.date;
+    return '${parsed.day} de ${_monthName(parsed.month)}';
   }
 
   /// "Hoje" / "Ontem" / "21/06/2026". The wire date is day only, read as UTC:
@@ -574,6 +530,29 @@ final class GalleryModel extends ChangeNotifier {
     return _numericDay(local);
   }
 
+  /// The viewer caption keeps the file name, date and zone in one sentence.
+  static String viewerCaption(FileRecord file) {
+    final DateTime? parsed = DateTime.tryParse(file.createdAt);
+    final DateTime? local = parsed?.toLocal();
+    final String date = local == null
+        ? file.createdAt
+        : '${local.day} de ${_monthName(local.month)}';
+    final String zone = file.zona == Zona.praca ? 'na praça' : 'na casa';
+    return '${file.name}, $date, $zone';
+  }
+
+  static String countLabelFor(
+    StorageStats? storage, {
+    required int fallbackCount,
+  }) {
+    if (storage case final StorageStats stats) {
+      final int? videos = stats.videos;
+      if (videos != null) return '${stats.photos} fotos, $videos vídeos';
+      return '${stats.photos} fotos e vídeos';
+    }
+    return '$fallbackCount fotos e vídeos';
+  }
+
   /// The load-more failure, the web's flash sentence.
   static const String loadMoreMessage =
       'Não foi possível carregar mais fotos agora.';
@@ -581,9 +560,6 @@ final class GalleryModel extends ChangeNotifier {
   /// The act failure's sentence: the box's own pt-BR when it spoke, the
   /// generic otherwise.
   static String failureMessage(TainaError failure) => failure.message;
-
-  static const String alertTitle = 'Não deu certo';
-  static const String alertDismiss = 'Entendi';
 
   /// The action always offers the opposite of where the item is: the guarded
   /// zone is the CURRENT one.
@@ -625,6 +601,21 @@ final class GalleryModel extends ChangeNotifier {
     final String monthPart = day.month.toString().padLeft(2, '0');
     return '$dayPart/$monthPart/${day.year}';
   }
+
+  static String _monthName(int month) => const [
+    'janeiro',
+    'fevereiro',
+    'março',
+    'abril',
+    'maio',
+    'junho',
+    'julho',
+    'agosto',
+    'setembro',
+    'outubro',
+    'novembro',
+    'dezembro',
+  ][month - 1];
 
   // MARK: internals
 
@@ -710,21 +701,6 @@ final class GalleryModel extends ChangeNotifier {
 
 /// The two lists on the segmented row.
 enum GalleryTab { grid, timeline }
-
-/// The zone filter, the web's casa/praça row. The readable set already
-/// carries both zones, so narrowing is client-side only.
-enum GalleryFilter {
-  all,
-  praca,
-  casa;
-
-  /// The zone the filter narrows to, null for everything.
-  Zona? get zona => switch (this) {
-    GalleryFilter.all => null,
-    GalleryFilter.praca => Zona.praca,
-    GalleryFilter.casa => Zona.casa,
-  };
-}
 
 /// One day of the timeline for display: a page may split a day in two, so the
 /// day shown is derived, fusing adjacent groups of the same date.

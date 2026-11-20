@@ -1,10 +1,10 @@
-/// Jaci, the Fotos screen: the grid and the timeline over the same readable
-/// set, the casa/praça filter, the shared thumbnail store and the fullscreen
-/// viewer with its photo and video pages.
+/// Jaci, the Galeria screen: the grid and timeline, shared thumbnail store,
+/// session-owned upload handoff and fullscreen media viewer.
 ///
 /// The app integration provides a `SessionGateway`, wires
-/// [GalleryScreen.onShareFile] to the system share sheet and may inject a
-/// `GalleryVideoPlayerFactory`; navigation never lives here.
+/// [GalleryScreen.onShareFile] to the system share sheet, supplies a
+/// `MediaPicker` and `UploadCenter`, and owns the route replacement callbacks.
+/// [GalleryVideoPlayerFactory] can be injected for tests.
 library;
 
 export 'gallery_details.dart';
