@@ -35,6 +35,7 @@ final class CameraUploadApiFake implements TainaApi {
     required String name,
     required String mime,
     String? folderRkey,
+    UploadProgress? progress,
   }) async {
     final call = UploadCall(
       filePath: filePath,
@@ -52,6 +53,7 @@ final class CameraUploadApiFake implements TainaApi {
     int? limit,
     String? cursor,
     Sort? sort,
+    Zona? zona,
   }) async {
     folderContentsCalls += 1;
     return Ok(
