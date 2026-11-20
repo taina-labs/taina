@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
+import 'dart:io' show Directory, FileSystemEntity, FileSystemEntityType;
 
 import 'package:background_downloader/background_downloader.dart';
 import 'package:okena_app/src/mirror/mirror_paths.dart';
