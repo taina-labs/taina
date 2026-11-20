@@ -33,6 +33,9 @@ void main() {
       expect(TainaPalette.brandPrimaryHover.toARGB32(), 0xFFFCBE74);
       expect(TainaPalette.brandPrimaryPressed.toARGB32(), 0xFFDD8A3E);
       expect(TainaPalette.brandEmber.toARGB32(), 0xFFE2674A);
+      expect(TainaPalette.navSelected, TainaPalette.brandPrimary);
+      expect(TainaPalette.navIdle, TainaPalette.textSecondary);
+      expect(TainaPalette.actionDanger.toARGB32(), 0xFFFF8080);
 
       expect(TainaPalette.fieldBg.toARGB32(), 0x990F1729);
     });
@@ -48,6 +51,7 @@ void main() {
       expect(TainaPalette.serviceJaciTint, TainaPrimitives.moon400);
 
       expect(TainaPalette.serviceNhaman, TainaPrimitives.sky500);
+      expect(TainaPalette.serviceNhamanSoft.toARGB32(), 0x295BA3F5);
       expect(TainaPalette.serviceVideo, TainaPrimitives.sky300);
       expect(TainaPalette.serviceGuara, TainaPrimitives.guara500);
 
@@ -58,8 +62,17 @@ void main() {
       expect(TainaPalette.feedbackSuccess, TainaPrimitives.forest400);
       expect(TainaPalette.feedbackWarning, TainaPrimitives.amber500);
       expect(TainaPalette.feedbackError, TainaPrimitives.red500);
+      expect(TainaPalette.feedbackErrorStrong.toARGB32(), 0xFF9A2422);
       expect(TainaPalette.feedbackInfo, TainaPrimitives.sky500);
 
+      expect(TainaPalette.badgeZonePraca, TainaPrimitives.forest300);
+      expect(TainaPalette.badgeZoneCasa, TainaPrimitives.night100);
+      expect(TainaPalette.badgeRoleZelador, TainaPrimitives.ember400);
+      expect(TainaPalette.badgeRoleMorador, TainaPrimitives.sky300);
+      expect(TainaPalette.badgeStateActive, TainaPrimitives.forest300);
+      expect(TainaPalette.badgeStateInactive, TainaPrimitives.night200);
+
+      expect(TainaPrimitives.red300.toARGB32(), 0xFFFF8080);
       expect(TainaPalette.avatarTint0.toARGB32(), 0x29F2A65A);
       expect(TainaPalette.avatarTint1.toARGB32(), 0x293FA171);
       expect(TainaPalette.avatarTint2.toARGB32(), 0x29E3BC66);
@@ -100,12 +113,12 @@ void main() {
       expect(TainaSizes.controlSm, 36);
       expect(TainaSizes.controlMd, 48);
       expect(TainaSizes.controlLg, 56);
+      expect(TainaSizes.iconMd, 24);
+      expect(TainaSizes.iconLg, 28);
       expect(TainaSizes.navMobile, 72);
       expect(TainaSizes.appbar, 64);
-      expect(TainaSizes.navDot, 6);
       expect(TainaSizes.hairline, 1);
       expect(TainaSizes.thick, 2);
-      expect(TainaSizes.sidebar, 248);
       expect(TainaSizes.menuMin, 180);
       expect(TainaSizes.qr, 200);
       expect(TainaSizes.gapPhoto, 2);
@@ -230,6 +243,9 @@ void main() {
 
       expect(theme.appBarTheme.backgroundColor, TainaPalette.bgApp);
       expect(theme.appBarTheme.toolbarHeight, TainaSizes.appbar);
+      expect(theme.appBarTheme.centerTitle, isTrue);
+      expect(theme.iconTheme.size, TainaSizes.iconMd);
+      expect(theme.appBarTheme.iconTheme?.size, TainaSizes.iconMd);
       expect(theme.appBarTheme.elevation, 0);
       expect(theme.dialogTheme.backgroundColor, TainaPalette.surfaceDefault);
       expect(

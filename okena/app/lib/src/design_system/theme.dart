@@ -29,7 +29,7 @@ abstract final class TainaTheme {
     tertiary: TainaPalette.serviceNhaman,
     onTertiary: TainaPalette.textOnBrand,
     error: TainaPalette.feedbackError,
-    onError: TainaPrimitives.star50,
+    onError: TainaPalette.textPrimary,
     surface: TainaPalette.surfaceDefault,
     onSurface: TainaPalette.textPrimary,
     surfaceDim: TainaPalette.surfaceDim,
@@ -42,11 +42,11 @@ abstract final class TainaTheme {
     onSurfaceVariant: TainaPalette.textMuted,
     outline: TainaPalette.borderDefault,
     outlineVariant: TainaPalette.borderSubtle,
-    shadow: TainaPrimitives.night950,
-    scrim: TainaPrimitives.night950,
-    inverseSurface: TainaPrimitives.star50,
-    onInverseSurface: TainaPrimitives.night900,
-    inversePrimary: TainaPrimitives.dawn700,
+    shadow: TainaPalette.bgDeep,
+    scrim: TainaPalette.bgDeep,
+    inverseSurface: TainaPalette.textPrimary,
+    onInverseSurface: TainaPalette.bgApp,
+    inversePrimary: TainaPalette.brandPrimaryPressed,
     surfaceTint: Colors.transparent,
   );
 
@@ -66,7 +66,10 @@ abstract final class TainaTheme {
       canvasColor: TainaPalette.bgApp,
       dividerColor: TainaPalette.borderSubtle,
       textTheme: textTheme,
-      iconTheme: const IconThemeData(color: TainaPalette.textSecondary),
+      iconTheme: const IconThemeData(
+        color: TainaPalette.textSecondary,
+        size: TainaSizes.iconMd,
+      ),
       appBarTheme: AppBarThemeData(
         backgroundColor: TainaPalette.bgApp,
         foregroundColor: TainaPalette.textPrimary,
@@ -74,13 +77,13 @@ abstract final class TainaTheme {
         elevation: 0,
         scrolledUnderElevation: 0,
         toolbarHeight: TainaSizes.appbar,
-        centerTitle: false,
+        centerTitle: true,
         titleTextStyle: TainaTypography.h3.copyWith(
           color: TainaPalette.textPrimary,
         ),
         iconTheme: const IconThemeData(
           color: TainaPalette.textPrimary,
-          size: 24,
+          size: TainaSizes.iconMd,
         ),
       ),
       dialogTheme: DialogThemeData(

@@ -241,8 +241,8 @@ final class _StorageView extends StatelessWidget {
               child: Row(
                 children: [
                   Container(
-                    width: TainaSizes.navDot,
-                    height: TainaSizes.navDot,
+                    width: TainaSizes.progress,
+                    height: TainaSizes.progress,
                     decoration: BoxDecoration(
                       color: _kindColor(line.kind),
                       shape: BoxShape.circle,

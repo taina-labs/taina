@@ -23,15 +23,12 @@ abstract final class TainaPrimitives {
   static const Color dawn500 = Color(0xFFF2A65A); // --color-dawn-500
   static const Color dawn600 = Color(0xFFDD8A3E); // --color-dawn-600
   static const Color dawn700 = Color(0xFFB96D2C); // --color-dawn-700
-  static const Color dawn800 = Color(0xFFA35C1E); // --color-dawn-800
 
   static const Color ember400 = Color(0xFFF08A6C); // --color-ember-400
   static const Color ember500 = Color(0xFFE2674A); // --color-ember-500
   static const Color ember600 = Color(0xFFC44E33); // --color-ember-600
 
   static const Color star50 = Color(0xFFFAF7F0); // --color-star-50
-  static const Color star100 = Color(0xFFF1ECDF); // --color-star-100
-  static const Color star200 = Color(0xFFE4DCC8); // --color-star-200
 
   static const Color forest300 = Color(0xFF82CBA4); // --color-forest-300
   static const Color forest400 = Color(0xFF5FB88A); // --color-forest-400
@@ -55,14 +52,10 @@ abstract final class TainaPrimitives {
   static const Color sky600 = Color(0xFF3F84D6); // --color-sky-600
   static const Color sky700 = Color(0xFF2F66AC); // --color-sky-700
 
+  static const Color red300 = Color(0xFFFF8080); // --color-red-300
   static const Color red500 = Color(0xFFE5484D); // --color-red-500
   static const Color red600 = Color(0xFFC03538); // --color-red-600
   static const Color amber500 = Color(0xFFEFB54A); // --color-amber-500
-  static const Color amber700 = Color(0xFF8A6114); // --color-amber-700
-
-  /// The white of the light block of `tokens.css`. Kept so the primitives
-  /// mirror the CSS one to one; the app ships the night theme only.
-  static const Color paper0 = Color(0xFFFFFFFF); // --color-paper-0
 }
 
 /// The semantic colors. The only colors a component consumes.
@@ -110,6 +103,9 @@ abstract final class TainaPalette {
   static const Color brandPrimaryPressed =
       TainaPrimitives.dawn600; // --brand-primary-pressed
   static const Color brandEmber = TainaPrimitives.ember500; // --brand-ember
+  static const Color navSelected = brandPrimary; // --nav-selected
+  static const Color navIdle = textSecondary; // --nav-idle
+  static const Color actionDanger = TainaPrimitives.red300; // --action-danger
 
   static const Color serviceYbira =
       TainaPrimitives.forest500; // --service-ybira
@@ -125,6 +121,9 @@ abstract final class TainaPalette {
   static const Color serviceJaciTint =
       TainaPrimitives.moon400; // --service-jaci-tint
   static const Color serviceNhaman = TainaPrimitives.sky500; // --service-nhaman
+  static const Color serviceNhamanSoft = Color(
+    0x295BA3F5,
+  ); // --service-nhaman-soft
   static const Color serviceVideo = TainaPrimitives.sky300; // --service-video
   static const Color serviceGuara = TainaPrimitives.guara500; // --service-guara
 
@@ -143,7 +142,24 @@ abstract final class TainaPalette {
   static const Color feedbackWarning =
       TainaPrimitives.amber500; // --feedback-warning
   static const Color feedbackError = TainaPrimitives.red500; // --feedback-error
+  static const Color feedbackErrorStrong = Color(
+    0xFF9A2422,
+  ); // --feedback-error-strong
   static const Color feedbackInfo = TainaPrimitives.sky500; // --feedback-info
+
+  // Badge variants (Kind in Penpot).
+  static const Color badgeZonePraca =
+      TainaPrimitives.forest300; // --badge-zone-praca
+  static const Color badgeZoneCasa =
+      TainaPrimitives.night100; // --badge-zone-casa
+  static const Color badgeRoleZelador =
+      TainaPrimitives.ember400; // --badge-role-zelador
+  static const Color badgeRoleMorador =
+      TainaPrimitives.sky300; // --badge-role-morador
+  static const Color badgeStateActive =
+      TainaPrimitives.forest300; // --badge-state-active
+  static const Color badgeStateInactive =
+      TainaPrimitives.night200; // --badge-state-inactive
 
   /// Translucent tints for the deterministic avatar colors (hash -> 0..3).
   static const Color avatarTint0 = Color(0x29F2A65A); // --avatar-tint-0
@@ -183,7 +199,7 @@ abstract final class TainaRadii {
   static const BorderRadius pillAll = BorderRadius.all(Radius.circular(pill));
 }
 
-/// Control and layout sizes, plus the border widths.
+/// Control, icon and layout sizes, plus the border widths.
 ///
 /// The web-only `--measure-*` container widths are intentionally absent:
 /// the app lays out with the system, not with fixed widths.
@@ -192,14 +208,14 @@ abstract final class TainaSizes {
   static const double controlSm = 36; // --size-control-sm
   static const double controlMd = 48; // --size-control-md
   static const double controlLg = 56; // --size-control-lg
+  static const double iconMd = 24; // --size-icon-md
+  static const double iconLg = 28; // --size-icon-lg
   static const double navMobile = 72; // --size-nav-mobile
   static const double appbar = 64; // --size-appbar
-  static const double navDot = 6; // --size-nav-dot
 
   static const double hairline = 1; // --border-hairline
   static const double thick = 2; // --border-thick
 
-  static const double sidebar = 248; // --size-sidebar
   static const double menuMin = 180; // --size-menu-min
   static const double qr = 200; // --size-qr
   static const double gapPhoto = 2; // --gap-photo
