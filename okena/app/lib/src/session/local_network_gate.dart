@@ -1,5 +1,6 @@
 import 'dart:io' show Platform;
 
+import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 /// The local-network runtime permission Android 17 (API 37) asks for before
@@ -7,25 +8,52 @@ import 'package:permission_handler/permission_handler.dart';
 ///
 /// The gate is a boundary, not a screen concern: `connect` asks it once and
 /// reports a network failure when the person declines. On earlier Android
-/// versions, iOS and tests it is a no-op, so it never blocks a supported flow.
+/// versions it allows the connection without requesting a permission. Other
+/// platforms are a no-op.
 abstract class LocalNetworkGate {
   Future<bool> ensure();
 }
 
 /// The real gate, through `permission_handler`.
 ///
-/// `Permission.accessLocalNetwork` maps to `ACCESS_LOCAL_NETWORK`. The
-/// platform plugin returns "granted" before API 37 and on iOS, so no version
-/// branch lives here.
+/// `Permission.accessLocalNetwork` maps to `ACCESS_LOCAL_NETWORK`. Android
+/// versions before API 37 do not expose that permission, so they are allowed
+/// through without consulting `permission_handler`.
 final class PermissionLocalNetworkGate implements LocalNetworkGate {
-  const PermissionLocalNetworkGate();
+  const PermissionLocalNetworkGate({
+    bool Function()? isAndroid,
+    Future<int> Function()? androidSdkVersion,
+    Future<PermissionStatus> Function()? requestPermission,
+  }) : _isAndroid = isAndroid ?? _isAndroidPlatform,
+       _androidSdkVersion = androidSdkVersion ?? _readAndroidSdkVersion,
+       _requestPermission = requestPermission ?? _requestLocalNetworkPermission;
+
+  static const _androidDeviceChannel = MethodChannel('io.taina.app/device');
+
+  final bool Function() _isAndroid;
+  final Future<int> Function() _androidSdkVersion;
+  final Future<PermissionStatus> Function() _requestPermission;
 
   @override
   Future<bool> ensure() async {
-    if (!Platform.isAndroid) return true;
-    final status = await Permission.accessLocalNetwork.request();
+    if (!_isAndroid()) return true;
+    if (await _androidSdkVersion() < 37) return true;
+    final status = await _requestPermission();
     return status.isGranted;
   }
+
+  static bool _isAndroidPlatform() => Platform.isAndroid;
+
+  static Future<int> _readAndroidSdkVersion() async {
+    final sdkVersion = await _androidDeviceChannel.invokeMethod<int>('sdkInt');
+    if (sdkVersion == null) {
+      throw StateError('Android SDK version channel returned no value');
+    }
+    return sdkVersion;
+  }
+
+  static Future<PermissionStatus> _requestLocalNetworkPermission() =>
+      Permission.accessLocalNetwork.request();
 }
 
 /// Allows every connect: the fake composition and the widget tests.
