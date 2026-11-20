@@ -12,6 +12,7 @@ defmodule Taina.Ybira.Uploads do
   alias Taina.Repo
   alias Taina.Scope, as: ProductScope
   alias Taina.Ybira.Upload
+  alias Taina.Ybira.UploadAdmissions
   alias Ypy.Maraca.Ava
   alias Ypy.Maraca.Tekoa
   alias Ypy.Scope
@@ -23,9 +24,6 @@ defmodule Taina.Ybira.Uploads do
   @large_queue "uploads_large"
   @large_threshold 64 * 1024 * 1024
   @staging_directory "staging/uploads"
-  @max_active_upload_rows 20
-  @pending_byte_budget_multiplier 2
-  @disk_clear_headroom_bytes 64 * 1024 * 1024
   @copy_chunk_size 64 * 1024
   @max_relative_path_bytes 8 * 1024
   @max_relative_path_segments 32
@@ -73,16 +71,31 @@ defmodule Taina.Ybira.Uploads do
   def stage_and_enqueue(%Scope{} = scope, source_path, %{} = attrs) when is_binary(source_path) do
     with {:ok, source} <- validate_source_path(source_path),
          :ok <- valid_scope(scope),
-         {:ok, metadata} <- validate_input(source, attrs),
-         :ok <- disk_space_preflight(scope, metadata.size),
-         public_id = Ecto.UUID.generate(),
-         staging_key = @staging_directory <> "/" <> public_id,
-         {:ok, _target} <- stage_file(source, public_id, metadata.size) do
-      enqueue_staged(scope, metadata, public_id, staging_key)
+         {:ok, metadata} <- validate_input(source, attrs) do
+      admit_and_enqueue(scope, source, metadata)
     end
   end
 
   def stage_and_enqueue(_scope, _source_path, _attrs), do: {:error, :invalid_size}
+
+  defp admit_and_enqueue(scope, source, metadata) do
+    public_id = Ecto.UUID.generate()
+    staging_key = @staging_directory <> "/" <> public_id
+
+    UploadAdmissions.with_reservation(
+      scope.tekoa.id,
+      public_id,
+      metadata.size,
+      fn -> admission_snapshot(scope) end,
+      fn -> stage_and_enqueue_with_permit(scope, source, metadata, public_id, staging_key) end
+    )
+  end
+
+  defp stage_and_enqueue_with_permit(scope, source, metadata, public_id, staging_key) do
+    with {:ok, _target} <- stage_file(source, public_id, metadata.size) do
+      enqueue_staged(scope, metadata, public_id, staging_key)
+    end
+  end
 
   @doc """
   Lists the current owner's recent uploads, newest first.
@@ -388,13 +401,15 @@ defmodule Taina.Ybira.Uploads do
 
   defp reserve_totals(tekoa, pending_count, pending_bytes, incoming_size) do
     reserved_bytes = tekoa.storage_used_bytes + pending_bytes + incoming_size
-    pending_byte_budget = @pending_byte_budget_multiplier * Taina.Ybira.max_blob_size()
+
+    pending_byte_budget =
+      UploadAdmissions.pending_byte_budget(Taina.Ybira.max_blob_size())
 
     cond do
       is_integer(tekoa.storage_quota_bytes) and reserved_bytes > tekoa.storage_quota_bytes ->
         {:error, :storage_quota_exceeded}
 
-      pending_count + 1 > @max_active_upload_rows ->
+      pending_count + 1 > UploadAdmissions.max_active_rows() ->
         {:error, :storage_quota_exceeded}
 
       pending_bytes + incoming_size > pending_byte_budget ->
@@ -402,28 +417,6 @@ defmodule Taina.Ybira.Uploads do
 
       true ->
         :ok
-    end
-  end
-
-  defp disk_space_preflight(scope, incoming_size) do
-    with {:ok, pending_bytes} <- pending_bytes(scope) do
-      required_bytes = pending_bytes + incoming_size * 2 + @disk_clear_headroom_bytes
-
-      case disk_free_bytes() do
-        {:ok, free_bytes} when free_bytes < required_bytes -> {:error, :storage_quota_exceeded}
-        {:ok, _free_bytes} -> :ok
-        :unavailable -> :ok
-      end
-    end
-  end
-
-  defp pending_bytes(scope) do
-    case with_tekoa(scope, fn ->
-           {_pending_count, pending_bytes} = active_upload_totals(scope.tekoa.id)
-           {:ok, pending_bytes}
-         end) do
-      {:ok, pending_bytes} when is_integer(pending_bytes) -> {:ok, pending_bytes}
-      {:error, _reason} -> {:error, :database_error}
     end
   end
 
@@ -436,10 +429,111 @@ defmodule Taina.Ybira.Uploads do
     ) || {0, 0}
   end
 
+  defp admission_snapshot(scope) do
+    with {:ok, root} <- storage_root(),
+         {:ok, accounting} <- with_tekoa(scope, fn -> admission_accounting(scope) end),
+         {:ok, staging_entries} <- staging_inventory(root) do
+      {:ok,
+       Map.merge(accounting, %{
+         storage_root: root,
+         staging_entries: staging_entries,
+         disk_free_bytes: disk_free_bytes(),
+         max_blob_size: Taina.Ybira.max_blob_size()
+       })}
+    end
+  end
+
+  defp admission_accounting(scope) do
+    case Repo.get(Tekoa, scope.tekoa.id) do
+      nil ->
+        {:error, :database_error}
+
+      tekoa ->
+        active_uploads =
+          Repo.all(
+            from(upload in Upload,
+              where: upload.tekoa_id == ^scope.tekoa.id and upload.state in ^@active_states,
+              select: %{
+                public_id: upload.public_id,
+                size: upload.size,
+                staging_key: upload.staging_key
+              }
+            )
+          )
+
+        {:ok,
+         %{
+           storage_used_bytes: tekoa.storage_used_bytes,
+           storage_quota_bytes: tekoa.storage_quota_bytes,
+           active_uploads: active_uploads
+         }}
+    end
+  end
+
+  defp staging_inventory(root) do
+    with {:ok, parent} <- safe_join(root, Path.dirname(@staging_directory)),
+         {:ok, directory} <- safe_join(root, @staging_directory) do
+      case File.lstat(parent) do
+        {:error, :enoent} ->
+          {:ok, []}
+
+        {:ok, %{type: :directory}} ->
+          list_staging_entries(directory)
+
+        _other ->
+          {:error, :staging_failed}
+      end
+    end
+  end
+
+  defp list_staging_entries(directory) do
+    case File.lstat(directory) do
+      {:error, :enoent} ->
+        {:ok, []}
+
+      {:ok, %{type: :directory}} ->
+        with {:ok, names} <- File.ls(directory),
+             :ok <- staging_directory_within_limit(names) do
+          staging_entries(names, directory)
+        end
+
+      _other ->
+        {:error, :staging_failed}
+    end
+  end
+
+  defp staging_directory_within_limit(names) do
+    if Enum.count_until(names, UploadAdmissions.max_active_rows() + 1) <=
+         UploadAdmissions.max_active_rows() do
+      :ok
+    else
+      {:error, :storage_quota_exceeded}
+    end
+  end
+
+  defp staging_entries(names, directory) when is_list(names) do
+    Enum.reduce_while(names, {:ok, []}, fn name, {:ok, entries} ->
+      with true <- Path.basename(name) == name and name not in ["", ".", ".."],
+           {:ok, entry} <- safe_join(directory, name),
+           {:ok, stat} <- File.lstat(entry),
+           {:ok, size} <- staging_entry_size(stat) do
+        {:cont, {:ok, [%{name: name, size: size} | entries]}}
+      else
+        _other -> {:halt, {:error, :staging_failed}}
+      end
+    end)
+  end
+
+  defp staging_entry_size(%{type: :regular, size: size}) when is_integer(size) and size >= 0, do: {:ok, max(size, 1)}
+
+  defp staging_entry_size(%{type: :symlink, size: size}) when is_integer(size) and size >= 0, do: {:ok, max(size, 1)}
+
+  defp staging_entry_size(_stat), do: {:error, :staging_failed}
+
   defp disk_free_bytes do
     case Taina.Disk.stats() do
       {:ok, %{free_bytes: free_bytes}} when is_integer(free_bytes) and free_bytes >= 0 ->
-        {:ok, free_bytes}
+        free_bytes
 
       {:error, :unavailable} ->
         :unavailable

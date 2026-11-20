@@ -16,7 +16,8 @@ defmodule Taina.IsolationSweepTest do
   superficie nova de leitura precisa nascer com uma linha aqui.
   """
 
-  use TainaWeb.ConnCase, async: true
+  # Upload staging and blob storage use the application-wide storage_root.
+  use TainaWeb.ConnCase, async: false
 
   import Phoenix.LiveViewTest
   import Taina.Fixtures
@@ -31,6 +32,15 @@ defmodule Taina.IsolationSweepTest do
   @casa_filename "estatuto-interno.txt"
 
   setup do
+    root = Path.join(System.tmp_dir!(), "taina_isolation_#{Ecto.UUID.generate()}")
+    previous_storage_root = Application.get_env(:taina, :storage_root)
+    Application.put_env(:taina, :storage_root, root)
+
+    on_exit(fn ->
+      Application.put_env(:taina, :storage_root, previous_storage_root)
+      File.rm_rf!(root)
+    end)
+
     tekoa = tekoa_fixture()
     owner = active_ava_fixture(tekoa)
     reader = active_ava_fixture(tekoa)

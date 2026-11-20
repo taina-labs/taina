@@ -101,8 +101,8 @@ defmodule Taina.Ybira.Workers.IngestTest do
              Uploads.fetch_for_job(upload.public_id)
 
     file = Repo.get!(YbiraFile, file_id, skip_tekoa_id: true)
-    assert {:ok, _trashed} = Taina.Ybira.delete_file(ctx.scope, file.rkey)
-    assert {:ok, _purged} = Taina.Ybira.purge_trash_file(ctx.scope, file.rkey)
+    assert {:ok, _trashed} = Ybira.delete_file(ctx.scope, file.rkey)
+    assert {:ok, _purged} = Ybira.purge_trash_file(ctx.scope, file.rkey)
 
     assert {:ok, %Upload{state: :completed, file_id: nil}} =
              Uploads.fetch_for_job(completed.public_id)
