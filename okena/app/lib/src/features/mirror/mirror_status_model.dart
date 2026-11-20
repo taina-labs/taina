@@ -119,7 +119,7 @@ final class MirrorStatusModel extends ChangeNotifier {
   bool get hasLimitedAccess => _access == MirrorLibraryAccess.limited;
   bool get canEnable =>
       !_enabled &&
-      !permissionNeedsSettings &&
+      _access != MirrorLibraryAccess.restricted &&
       presentation.kind != MirrorStatusKind.quotaPaused;
   bool get canResumeQuota =>
       !_enabled && presentation.kind == MirrorStatusKind.quotaPaused;

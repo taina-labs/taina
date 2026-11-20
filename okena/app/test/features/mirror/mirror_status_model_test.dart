@@ -92,7 +92,10 @@ void main() {
     test('does not enable after denied permission', () async {
       final made = makeMirrorTestOwner(
         ownerId: 'tekoa-test:ava-test',
-        library: MirrorTestLibrary(requestedAccess: MirrorLibraryAccess.denied),
+        library: MirrorTestLibrary(
+          access: MirrorLibraryAccess.denied,
+          requestedAccess: MirrorLibraryAccess.denied,
+        ),
       );
       addTearDown(made.dispose);
       final runtime = _RuntimeHarness()..owner = made.owner;
@@ -100,12 +103,31 @@ void main() {
       addTearDown(model.dispose);
       await _waitFor(() => !model.loading);
 
+      expect(model.canEnable, isTrue);
+      expect(model.permissionNeedsSettings, isTrue);
+
       await model.enable();
 
       expect(made.library.requestAccessCalls, 1);
       expect(made.owner.enabled, isFalse);
       expect(model.access, MirrorLibraryAccess.denied);
       expect(model.permissionNeedsSettings, isTrue);
+    });
+
+    test('restricted permission cannot enable the mirror', () async {
+      final made = makeMirrorTestOwner(
+        ownerId: 'tekoa-test:ava-test',
+        library: MirrorTestLibrary(access: MirrorLibraryAccess.restricted),
+      );
+      addTearDown(made.dispose);
+      final runtime = _RuntimeHarness()..owner = made.owner;
+      final model = _model(runtime);
+      addTearDown(model.dispose);
+      await _waitFor(() => !model.loading);
+
+      expect(model.canEnable, isFalse);
+      expect(model.permissionNeedsSettings, isTrue);
+      expect(model.canOpenSettings, isTrue);
     });
 
     test(

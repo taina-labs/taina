@@ -131,9 +131,7 @@ void main() {
     expect(find.text('Ver armazenamento'), findsNothing);
   });
 
-  testWidgets('denied access offers settings and does not offer activation', (
-    tester,
-  ) async {
+  testWidgets('denied access offers settings and activation', (tester) async {
     final owner = makeMirrorTestOwner(
       ownerId: 'tekoa-test:ava-test',
       library: MirrorTestLibrary(access: MirrorLibraryAccess.denied),
@@ -147,13 +145,20 @@ void main() {
     await tester.pumpWidget(_app(fixture.runtime));
     await _waitFor(tester, find.text('Abrir Ajustes'));
 
-    expect(find.text('Ligar espelho'), findsNothing);
+    expect(find.text('Ligar espelho'), findsOneWidget);
     await tester.ensureVisible(find.text('Abrir Ajustes'));
     await tester.tap(find.text('Abrir Ajustes'));
     await _pumpActions(tester);
 
     expect(owner.library.settingsCalls, 1);
-    expect(owner.library.requestAccessCalls, 0);
+    expect(find.text('Ligar espelho'), findsOneWidget);
+
+    await tester.ensureVisible(find.text('Ligar espelho'));
+    await tester.tap(find.text('Ligar espelho'));
+    await _pumpActions(tester);
+
+    expect(owner.library.requestAccessCalls, 1);
+    expect(owner.owner.enabled, isTrue);
   });
 
   testWidgets('limited access offers a limited photo picker', (tester) async {
