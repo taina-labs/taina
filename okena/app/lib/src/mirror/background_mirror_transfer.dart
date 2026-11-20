@@ -344,6 +344,12 @@ final class BackgroundMirrorTransfer implements MirrorTransfer {
       return _rejected(MirrorAssetReadError(error.toString()));
     }
 
+    if (_disposed) {
+      return _rejected(
+        const MirrorAssetReadError('mirror transfer is disposed'),
+      );
+    }
+
     final bool enqueued;
     try {
       enqueued = await _gateway.enqueue(task);
@@ -528,7 +534,9 @@ final class BackgroundMirrorTransfer implements MirrorTransfer {
 
   void _emitFailed(TaskStatusUpdate update, TainaError error) {
     final metadata = _metadataFor(update.task);
-    if (metadata == null || !_emittedFailureTaskIds.add(update.task.taskId)) {
+    if (_disposed ||
+        metadata == null ||
+        !_emittedFailureTaskIds.add(update.task.taskId)) {
       return;
     }
     _events.add(

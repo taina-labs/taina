@@ -356,6 +356,41 @@ void main() {
     });
 
     test(
+      'does not enqueue when disposed while path splitting is pending',
+      () async {
+        final fixture = await _fixture();
+        final enteredSplit = Completer<void>();
+        final releaseSplit = Completer<void>();
+        fixture.gateway.splitHandler = (_) async {
+          enteredSplit.complete();
+          await releaseSplit.future;
+          return (
+            BaseDirectory.applicationSupport,
+            'mirror/stable',
+            'local-object.bin',
+          );
+        };
+
+        final pending = fixture.transfer.ensureStarted(
+          entry: fixture.entry,
+          folderRkey: 'folder-rkey',
+        );
+        await enteredSplit.future;
+        await fixture.transfer.dispose();
+        releaseSplit.complete();
+
+        final result = await pending;
+
+        expect(result.error, isA<MirrorTransferRejected>());
+        expect(
+          (result.error! as MirrorTransferRejected).cause,
+          isA<MirrorAssetReadError>(),
+        );
+        expect(fixture.gateway.enqueueCalls, isEmpty);
+      },
+    );
+
+    test(
       'classifies request rejection and pre-enqueue exceptions as rejected',
       () async {
         const apiError = ApiError(

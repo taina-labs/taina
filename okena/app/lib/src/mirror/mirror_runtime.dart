@@ -523,14 +523,17 @@ final class MirrorOwnerMirror {
     if (refreshAssets) {
       final access = await library.currentAccess();
       if (!_active) return _inactiveResult();
+      if (!_enabled) return const Ok<void>(null);
       if (_quotaPaused) return const Ok<void>(null);
       if (access case Err<MirrorLibraryAccess>(:final error)) {
+        _cachedAssets = null;
         _recordError(error);
         return Err(error);
       }
       final currentAccess = (access as Ok<MirrorLibraryAccess>).value;
       if (currentAccess != MirrorLibraryAccess.full &&
           currentAccess != MirrorLibraryAccess.limited) {
+        _cachedAssets = null;
         const error = MirrorAssetReadError(
           'photo library access is unavailable',
         );
@@ -539,9 +542,11 @@ final class MirrorOwnerMirror {
       }
     }
 
+    if (!_active) return _inactiveResult();
+    if (!_enabled || _quotaPaused) return const Ok<void>(null);
     final started = await _startTransfer();
     if (!_active) return _inactiveResult();
-    if (_quotaPaused) return const Ok<void>(null);
+    if (!_enabled || _quotaPaused) return const Ok<void>(null);
     if (started case Err<void>(:final error)) {
       _recordError(error);
       return Err(error);
@@ -550,7 +555,7 @@ final class MirrorOwnerMirror {
     if (refreshAssets) {
       final collected = await _collectAssets();
       if (!_active) return _inactiveResult();
-      if (_quotaPaused) return const Ok<void>(null);
+      if (!_enabled || _quotaPaused) return const Ok<void>(null);
       if (collected case Err<List<MirrorAsset>>(:final error)) {
         _recordError(error);
         return Err(error);
@@ -569,9 +574,11 @@ final class MirrorOwnerMirror {
       return const Err(error);
     }
 
-    if (_quotaPaused) return const Ok<void>(null);
+    if (!_active) return _inactiveResult();
+    if (!_enabled || _quotaPaused) return const Ok<void>(null);
     final reconciled = await engine.reconcile(assets);
     if (!_active) return _inactiveResult();
+    if (!_enabled || _quotaPaused) return const Ok<void>(null);
     if (reconciled case Err<void>(:final error)) {
       _recordError(error);
       return Err(error);
@@ -584,6 +591,7 @@ final class MirrorOwnerMirror {
 
     final loaded = await store.load();
     if (!_active) return _inactiveResult();
+    if (!_enabled || _quotaPaused) return const Ok<void>(null);
     if (_skipNextPrune) {
       _skipNextPrune = false;
       return const Ok<void>(null);
@@ -601,6 +609,7 @@ final class MirrorOwnerMirror {
     };
 
     if (!_active) return _inactiveResult();
+    if (!_enabled || _quotaPaused) return const Ok<void>(null);
     final pruned = await _prune(retainedPaths);
     if (pruned case Err<void>(:final error)) {
       _recordError(error);
@@ -883,17 +892,39 @@ final class MirrorOwnerMirror {
   }
 
   Future<void> _finishDeactivation(Future<void> cancelledEvents) async {
-    await cancelledEvents;
-    await _operationTail;
-    if (_disposedTransfer) return;
-    _disposedTransfer = true;
+    Object? failure;
+    StackTrace? failureStackTrace;
     try {
-      await disposeTransfer();
-    } on Exception catch (error) {
-      _recordError(MirrorAssetReadError(error.toString()));
-    } finally {
-      _notifierDisposed = true;
-      _notifier.dispose();
+      await cancelledEvents;
+    } catch (error, stackTrace) {
+      failure = error;
+      failureStackTrace = stackTrace;
+    }
+
+    try {
+      await _operationTail;
+    } catch (error, stackTrace) {
+      failure ??= error;
+      failureStackTrace ??= stackTrace;
+    }
+
+    if (!_disposedTransfer) {
+      _disposedTransfer = true;
+      try {
+        await disposeTransfer();
+      } on Exception catch (error) {
+        _recordError(MirrorAssetReadError(error.toString()));
+      } catch (error, stackTrace) {
+        failure ??= error;
+        failureStackTrace ??= stackTrace;
+      } finally {
+        _notifierDisposed = true;
+        _notifier.dispose();
+      }
+    }
+
+    if (failure != null) {
+      Error.throwWithStackTrace(failure, failureStackTrace!);
     }
   }
 

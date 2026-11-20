@@ -147,8 +147,15 @@ class _TestApi implements TainaApi {
   final List<String> createdFolderNames = [];
   final Completer<void>? manifestGate;
   final Completer<void>? manifestEntered;
+  final Completer<void>? hashLookupGate;
+  final Completer<void>? hashLookupEntered;
 
-  _TestApi({this.manifestGate, this.manifestEntered});
+  _TestApi({
+    this.manifestGate,
+    this.manifestEntered,
+    this.hashLookupGate,
+    this.hashLookupEntered,
+  });
 
   TainaResult<Page<FileRecord>>? manifestFailure;
   TainaResult<List<Folder>>? listFoldersFailure;
@@ -181,6 +188,10 @@ class _TestApi implements TainaApi {
     required String sha256,
   }) async {
     lookupHashes.add(sha256);
+    if (hashLookupEntered != null && !hashLookupEntered!.isCompleted) {
+      hashLookupEntered!.complete();
+    }
+    if (hashLookupGate != null) await hashLookupGate!.future;
     return lookupResults[sha256] ?? const Err<MirrorHashLookup>(_notFound);
   }
 
@@ -291,6 +302,7 @@ class _FakeTransfer implements MirrorTransfer {
   final Map<String, TainaResult<void>> ensureAnswers = {};
   TainaResult<void>? cancelAnswer;
   Future<void> Function(String taskId)? onCancel;
+  void Function(MirrorEntry entry)? beforeEnsure;
 
   @override
   Future<TainaResult<void>> ensureStarted({
@@ -298,6 +310,7 @@ class _FakeTransfer implements MirrorTransfer {
     required String folderRkey,
   }) async {
     ensureCalls.add(entry);
+    beforeEnsure?.call(entry);
     folders.add(folderRkey);
     final taskId = entry.backgroundTaskId;
     if (taskId == null) {
@@ -381,6 +394,9 @@ void main() {
       'new asset hashes, queues, and persists uploading before enqueue',
       () async {
         final fixture = _Fixture();
+        fixture.transfer.beforeEnsure = (_) {
+          expect(fixture.api.lookupHashes, ['hash-asset-a']);
+        };
         final result = await fixture.engine.reconcile([_asset()]);
 
         expect(result, isA<Ok<void>>());
@@ -1127,10 +1143,12 @@ void main() {
 
         await fixture.engine.reconcile([_asset()]);
         expect(fixture.transfer.ensureCalls, isEmpty);
+        expect(fixture.api.lookupHashes, isEmpty);
 
         now = _now.add(const Duration(seconds: 3));
         await fixture.engine.reconcile([_asset()]);
         expect(fixture.transfer.ensureCalls, hasLength(1));
+        expect(fixture.api.lookupHashes, ['hash-asset-a']);
       },
     );
 
@@ -1234,15 +1252,20 @@ void main() {
           for (var index = 0; index < count; index++)
             'hash-${index.toString().padLeft(2, '0')}',
         ];
+        final api = _TestApi();
+        for (final hash in hashes) {
+          api.lookupResults[hash] = Ok(
+            MirrorHashPresent(file: _file(hash: hash)),
+          );
+        }
         final fixture = _Fixture(
+          api: api,
           stored: _ledger([
             for (var index = 0; index < count; index++)
               _entry(
                 id: ids[index],
                 hash: hashes[index],
-                state: MirrorState.failed,
-                attempts: 1,
-                updatedAt: _now,
+                state: MirrorState.queued,
               ),
           ], destinationFolderRkey: 'saved-folder'),
         );
@@ -1259,7 +1282,7 @@ void main() {
         final ledger = (await fixture.store.read())!;
         expect(
           ledger.entries.values.map((entry) => entry.state),
-          everyElement(MirrorState.failed),
+          everyElement(MirrorState.uploaded),
         );
       },
     );
@@ -1671,6 +1694,169 @@ void main() {
       expect(api.manifestRequests, hasLength(1));
       expect(fixture.hasher.calls.map((entry) => entry.assetId), ['asset-a']);
     });
+
+    test(
+      'native completion persists during a hash lookup and survives its apply',
+      () async {
+        final lookupGate = Completer<void>();
+        final lookupEntered = Completer<void>();
+        final api =
+            _TestApi(
+                hashLookupGate: lookupGate,
+                hashLookupEntered: lookupEntered,
+              )
+              ..lookupResults['hash-asset-a'] = Ok(
+                MirrorHashPresent(file: _file(hash: 'hash-asset-a')),
+              );
+        final fixture = _Fixture(
+          api: api,
+          stored: _ledger([
+            _entry(
+              id: 'asset-a',
+              hash: 'hash-asset-a',
+              state: MirrorState.uploading,
+              taskId: 'task-a',
+            ),
+            _entry(
+              id: 'asset-b',
+              hash: 'hash-asset-b',
+              state: MirrorState.uploading,
+              taskId: 'task-b',
+            ),
+          ], destinationFolderRkey: 'saved-folder'),
+        );
+
+        final reconciliation = fixture.engine.reconcile([
+          _asset(id: 'asset-a'),
+          _asset(id: 'asset-b'),
+        ]);
+        await lookupEntered.future;
+
+        final completion = await fixture.engine.complete(
+          assetId: 'asset-b',
+          modificationDate: _modified,
+          file: _file(rkey: 'native-completion', hash: 'hash-asset-b'),
+        );
+        expect(completion.isSuccess, isTrue);
+        final completedBeforeLookupRelease =
+            (await fixture.store.read())!.entries['asset-b']!;
+        expect(completedBeforeLookupRelease.state, MirrorState.uploaded);
+        expect(completedBeforeLookupRelease.rkey, 'native-completion');
+
+        lookupGate.complete();
+        expect((await reconciliation).isSuccess, isTrue);
+
+        final ledger = (await fixture.store.read())!;
+        expect(ledger.entries['asset-a']!.state, MirrorState.uploaded);
+        expect(ledger.entries['asset-b']!.state, MirrorState.uploaded);
+        expect(ledger.entries['asset-b']!.rkey, 'native-completion');
+        expect(api.lookupHashes, ['hash-asset-a']);
+      },
+    );
+
+    test(
+      'retry eligibility stays frozen while an unrelated lookup waits',
+      () async {
+        var now = _now;
+        final lookupGate = Completer<void>();
+        final lookupEntered = Completer<void>();
+        final api =
+            _TestApi(
+                hashLookupGate: lookupGate,
+                hashLookupEntered: lookupEntered,
+              )
+              ..lookupResults['lookup-hash'] = Ok(
+                MirrorHashPresent(file: _file(hash: 'lookup-hash')),
+              );
+        final fixture = _Fixture(
+          api: api,
+          clock: () => now,
+          stored: _ledger([
+            _entry(id: 'asset-a', hash: 'lookup-hash'),
+            _entry(
+              id: 'asset-b',
+              hash: 'retry-hash',
+              state: MirrorState.failed,
+              attempts: 1,
+              updatedAt: _now.subtract(const Duration(milliseconds: 4999)),
+            ),
+          ], destinationFolderRkey: 'saved-folder'),
+        );
+
+        final firstPass = fixture.engine.reconcile([
+          _asset(id: 'asset-a'),
+          _asset(id: 'asset-b'),
+        ]);
+        await lookupEntered.future;
+        now = _now.add(const Duration(seconds: 1));
+        lookupGate.complete();
+        expect((await firstPass).isSuccess, isTrue);
+
+        expect(api.lookupHashes, ['lookup-hash']);
+        expect(fixture.transfer.ensureCalls, isEmpty);
+        expect(
+          (await fixture.store.read())!.entries['asset-b']!.state,
+          MirrorState.failed,
+        );
+
+        final secondPass = await fixture.engine.reconcile([
+          _asset(id: 'asset-a'),
+          _asset(id: 'asset-b'),
+        ]);
+
+        expect(secondPass.isSuccess, isTrue);
+        expect(api.lookupHashes, ['lookup-hash', 'retry-hash']);
+        expect(fixture.transfer.ensureCalls.map((entry) => entry.assetId), [
+          'asset-b',
+        ]);
+      },
+    );
+
+    test(
+      'a cancellation intent during lookup is not undone by its result',
+      () async {
+        final lookupGate = Completer<void>();
+        final lookupEntered = Completer<void>();
+        final api =
+            _TestApi(
+                hashLookupGate: lookupGate,
+                hashLookupEntered: lookupEntered,
+              )
+              ..lookupResults['hash-asset-a'] = Ok(
+                MirrorHashPresent(file: _file(hash: 'hash-asset-a')),
+              );
+        final fixture = _Fixture(
+          api: api,
+          stored: _ledger([
+            _entry(
+              hash: 'hash-asset-a',
+              state: MirrorState.uploading,
+              taskId: 'cancel-during-lookup',
+            ),
+          ], destinationFolderRkey: 'saved-folder'),
+        )..transfer.nativeTaskIds.add('cancel-during-lookup');
+
+        final reconciliation = fixture.engine.reconcile([_asset()]);
+        await lookupEntered.future;
+
+        expect(
+          (await fixture.engine.cancel(assetId: 'asset-a')).isSuccess,
+          isTrue,
+        );
+        final cancelled = (await fixture.store.read())!.entries['asset-a']!;
+        expect(cancelled.state, MirrorState.queued);
+        expect(cancelled.backgroundTaskId, isNull);
+        expect(fixture.transfer.cancelCalls, ['cancel-during-lookup']);
+
+        lookupGate.complete();
+        expect((await reconciliation).isSuccess, isTrue);
+
+        final finalEntry = (await fixture.store.read())!.entries['asset-a']!;
+        expect(finalEntry.state, MirrorState.queued);
+        expect(finalEntry.backgroundTaskId, isNull);
+        expect(fixture.transfer.ensureCalls, isEmpty);
+      },
+    );
   });
 
   group('MirrorEngine callbacks', () {

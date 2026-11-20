@@ -98,22 +98,6 @@ final class PhotoManagerAssetMaterializer implements MirrorAssetMaterializer {
     }
     try {
       final appRoot = rootDirectory ?? await getApplicationSupportDirectory();
-      final resolvedRetainedPaths = <String>{};
-      TainaError? resolutionError;
-      for (final retainedPath in retainedPaths) {
-        final resolved = await resolveMirrorStoredPath(
-          storedPath: retainedPath,
-          supportDirectoryProvider: () async => appRoot,
-        );
-        switch (resolved) {
-          case Ok<String>(:final value):
-            resolvedRetainedPaths.add(File(value).absolute.path);
-          case Err<String>(:final error):
-            resolutionError ??= error;
-        }
-      }
-      if (resolutionError != null) return Err(resolutionError);
-
       final mirrorDirectory = Directory(
         _joinPath([appRoot.path, 'taina_mirror']),
       );
@@ -140,12 +124,43 @@ final class PhotoManagerAssetMaterializer implements MirrorAssetMaterializer {
         }
       }
 
+      final canonicalSupportPath = await appRoot.resolveSymbolicLinks();
+      final canonicalObjectsPath = await objectsDirectory
+          .resolveSymbolicLinks();
+      final resolvedRetainedPaths = <String>{};
+      for (final retainedPath in retainedPaths) {
+        final resolved = await resolveMirrorStoredPath(
+          storedPath: retainedPath,
+          supportDirectoryProvider: () async => appRoot,
+        );
+        if (resolved case Err<String>(:final error)) return Err(error);
+        final identity = await _canonicalMirrorFileIdentity(
+          (resolved as Ok<String>).value,
+          canonicalSupportPath: canonicalSupportPath,
+          canonicalObjectsPath: canonicalObjectsPath,
+        );
+        if (identity == null) {
+          return const Err(
+            MirrorAssetReadError(
+              'retained mirror path could not be canonicalized',
+            ),
+          );
+        }
+        resolvedRetainedPaths.add(identity);
+      }
+
       await for (final entity in objectsDirectory.list(
         recursive: true,
         followLinks: false,
       )) {
         if (entity is! File) continue;
-        if (!resolvedRetainedPaths.contains(File(entity.path).absolute.path)) {
+        final identity = await _canonicalMirrorFileIdentity(
+          entity.path,
+          canonicalSupportPath: canonicalSupportPath,
+          canonicalObjectsPath: canonicalObjectsPath,
+        );
+        if (identity == null) continue;
+        if (!resolvedRetainedPaths.contains(identity)) {
           await entity.delete();
         }
       }
@@ -352,6 +367,34 @@ String _safeFilename(String filename) {
 }
 
 String _basename(String path) => path.split(RegExp(r'[/\\]')).last;
+
+Future<String?> _canonicalMirrorFileIdentity(
+  String path, {
+  required String canonicalSupportPath,
+  required String canonicalObjectsPath,
+}) async {
+  try {
+    if (await FileSystemEntity.type(path, followLinks: false) !=
+        FileSystemEntityType.file) {
+      return null;
+    }
+    final canonicalPath = await File(path).resolveSymbolicLinks();
+    if (!_isWithinDirectory(canonicalPath, canonicalSupportPath) ||
+        !_isWithinDirectory(canonicalPath, canonicalObjectsPath)) {
+      return null;
+    }
+    return File(canonicalPath).absolute.path;
+  } on Exception {
+    return null;
+  }
+}
+
+bool _isWithinDirectory(String path, String directory) {
+  final separator = Platform.pathSeparator;
+  final root = Directory(directory).absolute.path;
+  final prefix = root.endsWith(separator) ? root : '$root$separator';
+  return path == root || path.startsWith(prefix);
+}
 
 String _joinPath(List<String> segments) {
   var path = segments.first;

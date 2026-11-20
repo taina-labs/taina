@@ -307,6 +307,57 @@ void main() {
     });
 
     test(
+      'prune matches retained files through a support-root symlink alias',
+      () async {
+        final root = await Directory.systemTemp.createTemp(
+          'mirror-materializer-',
+        );
+        addTearDown(() => root.delete(recursive: true));
+        final support = Directory('${root.path}/support');
+        await support.create();
+        final alias = Link('${root.path}/support-alias');
+        await alias.create(support.path);
+
+        final entry = _entry();
+        final retained = File(
+          mirrorObjectPath(
+            supportDirectoryPath: support.path,
+            ownerId: 'owner',
+            assetId: 'retained',
+            modificationDate: entry.modificationDate,
+            filename: 'retained.jpg',
+          ),
+        );
+        final stale = File(
+          mirrorObjectPath(
+            supportDirectoryPath: alias.path,
+            ownerId: 'owner',
+            assetId: 'stale',
+            modificationDate: entry.modificationDate,
+            filename: 'stale.jpg',
+          ),
+        );
+        await retained.parent.create(recursive: true);
+        await retained.writeAsString('keep');
+        await stale.parent.create(recursive: true);
+        await stale.writeAsString('remove');
+        final materializer = PhotoManagerAssetMaterializer(
+          ownerId: 'owner',
+          originalFileProvider: _FakeOriginalFileProvider(
+            const Err<File>(MirrorAssetReadError('unused')),
+          ),
+          rootDirectory: Directory(alias.path),
+        );
+
+        final result = await materializer.prune(retainedPaths: {retained.path});
+
+        expect(result.isSuccess, isTrue);
+        expect(await retained.exists(), isTrue);
+        expect(await stale.exists(), isFalse);
+      },
+    );
+
+    test(
       'prune resolves stale retained paths under the current support root',
       () async {
         final root = await Directory.systemTemp.createTemp(

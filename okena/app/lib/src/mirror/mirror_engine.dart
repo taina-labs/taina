@@ -47,6 +47,65 @@ final class _DedupCancellationResult {
   final TainaError? localFailure;
 }
 
+final class _PreparedReconciliation {
+  const _PreparedReconciliation({
+    required this.ledger,
+    required this.knownHashes,
+    required this.cancellationResolution,
+    required this.firstHashFailure,
+    required this.lookupHashes,
+    required this.lookupAssetIdsByHash,
+    required this.retryReadyAssetIds,
+  });
+
+  final MirrorLedger ledger;
+  final Set<String> knownHashes;
+  final _PendingCancellationResolution cancellationResolution;
+  final TainaError? firstHashFailure;
+  final List<String> lookupHashes;
+  final Map<String, List<String>> lookupAssetIdsByHash;
+  final Set<String> retryReadyAssetIds;
+}
+
+final class _HashLookupPlan {
+  const _HashLookupPlan({
+    required this.hashes,
+    required this.assetIdsByHash,
+    required this.retryReadyAssetIds,
+  });
+
+  final List<String> hashes;
+  final Map<String, List<String>> assetIdsByHash;
+  final Set<String> retryReadyAssetIds;
+}
+
+final class _ReconcileState {
+  _ReconcileState(_PreparedReconciliation prepared)
+    : ledger = prepared.ledger,
+      knownHashes = prepared.knownHashes,
+      lookupAssetIdsByHash = prepared.lookupAssetIdsByHash,
+      retryReadyAssetIds = prepared.retryReadyAssetIds,
+      cancellationResolution = prepared.cancellationResolution,
+      firstHashFailure = prepared.firstHashFailure;
+
+  // This is the last state written by reconciliation itself. External changes
+  // stay visible here until the single full comparison in the finish phase.
+  MirrorLedger ledger;
+  final Set<String> knownHashes;
+  final Map<String, List<String>> lookupAssetIdsByHash;
+  final Set<String> retryReadyAssetIds;
+  _PendingCancellationResolution cancellationResolution;
+  final TainaError? firstHashFailure;
+  final Set<String> protectedAssetIds = {};
+}
+
+final class _HashLookupAttempt {
+  const _HashLookupAttempt({required this.hash, required this.entries});
+
+  final String hash;
+  final List<MirrorEntry> entries;
+}
+
 /// Coordinates the persisted camera-roll mirror state and its external edges.
 final class MirrorEngine {
   MirrorEngine({
@@ -87,7 +146,7 @@ final class MirrorEngine {
 
     final snapshot = List<MirrorAsset>.unmodifiable(assets);
     late final Future<TainaResult<void>> run;
-    run = _enqueue(() async {
+    run = () async {
       try {
         return await _runReconcile(snapshot);
       } finally {
@@ -95,7 +154,7 @@ final class MirrorEngine {
           _reconcileInFlight = null;
         }
       }
-    });
+    }();
     _reconcileInFlight = run;
     return run;
   }
@@ -272,6 +331,49 @@ final class MirrorEngine {
   }
 
   Future<TainaResult<void>> _runReconcile(List<MirrorAsset> assets) async {
+    final preparedResult = await _enqueue(() => _prepareReconciliation(assets));
+    if (preparedResult case Err<_PreparedReconciliation>(:final error)) {
+      return Err(error);
+    }
+    final prepared = (preparedResult as Ok<_PreparedReconciliation>).value;
+    final state = _ReconcileState(prepared);
+
+    for (final hash in prepared.lookupHashes) {
+      final attemptResult = await _enqueue(
+        () => _beginKnownHashLookup(state, hash),
+      );
+      if (attemptResult case Err<_HashLookupAttempt?>(:final error)) {
+        return Err(error);
+      }
+      final attempt = (attemptResult as Ok<_HashLookupAttempt?>).value;
+      if (attempt == null) continue;
+
+      // Each request waits outside the FIFO, then applies against fresh state
+      // before the next hash so native callbacks and cancellation intents run
+      // in their original queue order.
+      final response = await _session.screen(
+        await _session.api.hashLookup(sha256: hash),
+      );
+      if (response case Err<MirrorHashLookup>(:final error)) {
+        if (error case ApiError(status: 404, code: 'not_found')) {
+          // A missing hash is an expected lookup result, not a failed pass.
+        } else {
+          return Err(error);
+        }
+      }
+
+      final applied = await _enqueue(
+        () => _applyKnownHashLookup(state, attempt, response),
+      );
+      if (applied is Err<void>) return applied;
+    }
+
+    return _enqueue(() => _finishReconciliation(state));
+  }
+
+  Future<TainaResult<_PreparedReconciliation>> _prepareReconciliation(
+    List<MirrorAsset> assets,
+  ) async {
     final loaded = await _loadLedger();
     if (loaded is Err<MirrorLedger>) return Err(loaded.error);
     var ledger = (loaded as Ok<MirrorLedger>).value;
@@ -326,7 +428,7 @@ final class MirrorEngine {
       changedAssetIds: changedAssetIds,
       removedAssetIds: removedAssetIds,
     );
-    if (plannedSave is Err<void>) return plannedSave;
+    if (plannedSave case Err<void>(:final error)) return Err(error);
 
     TainaError? firstHashFailure;
     for (final entry in planned.toHash) {
@@ -342,7 +444,7 @@ final class MirrorEngine {
           changedAssetIds: {entry.assetId},
           removedAssetIds: const {},
         );
-        if (saved is Err<void>) return saved;
+        if (saved case Err<void>(:final error)) return Err(error);
         firstHashFailure ??= error;
         continue;
       }
@@ -359,27 +461,235 @@ final class MirrorEngine {
         changedAssetIds: {entry.assetId},
         removedAssetIds: const {},
       );
-      if (saved is Err<void>) return saved;
+      if (saved case Err<void>(:final error)) return Err(error);
     }
 
-    final lookedUp = await _resolveKnownHashes(
+    final lookupPlan = _hashLookupPlan(
       ledger,
       knownHashes,
-      cancellationResolution: cancellationResolution,
+      excludedAssetIds: cancellationResolution.excludedAssetIds,
+      retryCutoff: _now(),
     );
-    if (lookedUp is Err<_PendingCancellationResolution>) {
-      return Err(lookedUp.error);
-    }
-    cancellationResolution =
-        (lookedUp as Ok<_PendingCancellationResolution>).value;
-    ledger = cancellationResolution.ledger;
+    return Ok(
+      _PreparedReconciliation(
+        ledger: ledger,
+        knownHashes: knownHashes,
+        cancellationResolution: cancellationResolution,
+        firstHashFailure: firstHashFailure,
+        lookupHashes: lookupPlan.hashes,
+        lookupAssetIdsByHash: lookupPlan.assetIdsByHash,
+        retryReadyAssetIds: lookupPlan.retryReadyAssetIds,
+      ),
+    );
+  }
 
-    final now = _now();
+  Future<TainaResult<_HashLookupAttempt?>> _beginKnownHashLookup(
+    _ReconcileState state,
+    String hash,
+  ) async {
+    final loaded = await _loadLedger();
+    if (loaded is Err<MirrorLedger>) return Err(loaded.error);
+    final ledger = (loaded as Ok<MirrorLedger>).value;
+    _recordAffectedChanges(state, ledger, hash);
+
+    final group = <MirrorEntry>[];
+    for (final assetId in state.lookupAssetIdsByHash[hash] ?? const []) {
+      final entry = ledger.entries[assetId];
+      if (entry == null ||
+          entry.sha256 != hash ||
+          !_needsLookup(entry.state) ||
+          state.cancellationResolution.excludedAssetIds.contains(assetId) ||
+          state.protectedAssetIds.contains(assetId) ||
+          _hasPendingCancellation(entry)) {
+        continue;
+      }
+      group.add(entry);
+    }
+    final lookupIsNeeded =
+        !state.knownHashes.contains(hash) ||
+        group.any((entry) => entry.state == MirrorState.hashed);
+    if (!lookupIsNeeded ||
+        !group.any(
+          (entry) =>
+              entry.state != MirrorState.failed ||
+              state.retryReadyAssetIds.contains(entry.assetId),
+        )) {
+      return const Ok(null);
+    }
+
+    return Ok(_HashLookupAttempt(hash: hash, entries: group));
+  }
+
+  Future<TainaResult<void>> _applyKnownHashLookup(
+    _ReconcileState state,
+    _HashLookupAttempt attempt,
+    TainaResult<MirrorHashLookup> response,
+  ) async {
+    final loaded = await _loadLedger();
+    if (loaded is Err<MirrorLedger>) return Err(loaded.error);
+    var ledger = (loaded as Ok<MirrorLedger>).value;
+
+    final currentEntries = <MirrorEntry>[];
+    for (final snapshot in attempt.entries) {
+      final item = ledger.entries[snapshot.assetId];
+      if (item != snapshot) {
+        state.protectedAssetIds.add(snapshot.assetId);
+        continue;
+      }
+      if (state.cancellationResolution.excludedAssetIds.contains(
+            snapshot.assetId,
+          ) ||
+          state.protectedAssetIds.contains(snapshot.assetId) ||
+          item == null ||
+          !_needsLookup(item.state)) {
+        continue;
+      }
+      currentEntries.add(item);
+    }
+
+    if (response case Err<MirrorHashLookup>()) {
+      final appliedAssetIds = <String>{};
+      for (final item in currentEntries) {
+        if (item.state != MirrorState.hashed) continue;
+        ledger = ledger.markQueued(assetId: item.assetId, updatedAt: _now());
+        final saved = await _saveLedger(
+          ledger,
+          changedAssetIds: {item.assetId},
+          removedAssetIds: const {},
+        );
+        if (saved is Err<void>) return saved;
+        appliedAssetIds.add(item.assetId);
+      }
+      _recordOwnAppliedEntries(state, ledger, appliedAssetIds);
+      state.cancellationResolution = _withLedger(
+        state.cancellationResolution,
+        ledger,
+      );
+      return const Ok<void>(null);
+    }
+
+    final lookup = (response as Ok<MirrorHashLookup>).value;
+    var firstLocalFailure = state.cancellationResolution.firstLocalFailure;
+    final excludedAssetIds = Set<String>.of(
+      state.cancellationResolution.excludedAssetIds,
+    );
+    final appliedAssetIds = <String>{};
+
+    switch (lookup) {
+      case MirrorHashPresent(:final file):
+        for (final original in currentEntries) {
+          var item = ledger.entries[original.assetId];
+          if (item == null || item.sha256 != attempt.hash) continue;
+          if (item.state == MirrorState.uploading &&
+              item.backgroundTaskId != null) {
+            final cancelled = await _cancelActiveDedupTask(ledger, item);
+            if (cancelled case Err<_DedupCancellationResult>(:final error)) {
+              return Err(error);
+            }
+            final cancellation =
+                (cancelled as Ok<_DedupCancellationResult>).value;
+            ledger = cancellation.ledger;
+            final localFailure = cancellation.localFailure;
+            if (localFailure != null) {
+              excludedAssetIds.add(item.assetId);
+              appliedAssetIds.add(item.assetId);
+              firstLocalFailure ??= localFailure;
+              continue;
+            }
+            item = ledger.entries[item.assetId];
+            if (item == null) {
+              return const Err(
+                InvalidResponseError('deduplicated entry is missing'),
+              );
+            }
+          }
+          ledger = ledger.markUploaded(
+            assetId: item.assetId,
+            modificationDate: item.modificationDate,
+            file: file,
+            updatedAt: _now(),
+          );
+          final saved = await _saveLedger(
+            ledger,
+            changedAssetIds: {item.assetId},
+            removedAssetIds: const {},
+          );
+          if (saved is Err<void>) return saved;
+          appliedAssetIds.add(item.assetId);
+        }
+      case MirrorHashSuppressed():
+        for (final original in currentEntries) {
+          var item = ledger.entries[original.assetId];
+          if (item == null || item.sha256 != attempt.hash) continue;
+          if (item.state == MirrorState.uploading &&
+              item.backgroundTaskId != null) {
+            final cancelled = await _cancelActiveDedupTask(ledger, item);
+            if (cancelled case Err<_DedupCancellationResult>(:final error)) {
+              return Err(error);
+            }
+            final cancellation =
+                (cancelled as Ok<_DedupCancellationResult>).value;
+            ledger = cancellation.ledger;
+            final localFailure = cancellation.localFailure;
+            if (localFailure != null) {
+              excludedAssetIds.add(item.assetId);
+              appliedAssetIds.add(item.assetId);
+              firstLocalFailure ??= localFailure;
+              continue;
+            }
+            item = ledger.entries[item.assetId];
+            if (item == null) {
+              return const Err(
+                InvalidResponseError('deduplicated entry is missing'),
+              );
+            }
+          }
+          ledger = ledger.markSuppressed(
+            assetId: item.assetId,
+            updatedAt: _now(),
+          );
+          final saved = await _saveLedger(
+            ledger,
+            changedAssetIds: {item.assetId},
+            removedAssetIds: const {},
+          );
+          if (saved is Err<void>) return saved;
+          appliedAssetIds.add(item.assetId);
+        }
+    }
+
+    _recordOwnAppliedEntries(state, ledger, appliedAssetIds);
+    state.cancellationResolution = _PendingCancellationResolution(
+      ledger: ledger,
+      firstLocalFailure: firstLocalFailure,
+      excludedAssetIds: excludedAssetIds,
+      deferredUploadAssetIds:
+          state.cancellationResolution.deferredUploadAssetIds,
+    );
+    return const Ok<void>(null);
+  }
+
+  Future<TainaResult<void>> _finishReconciliation(_ReconcileState state) async {
+    final loaded = await _loadLedger();
+    if (loaded is Err<MirrorLedger>) return Err(loaded.error);
+    var ledger = (loaded as Ok<MirrorLedger>).value;
+    _recordFinishChanges(state, ledger);
+    final cancellationResolution = _PendingCancellationResolution(
+      ledger: ledger,
+      firstLocalFailure: state.cancellationResolution.firstLocalFailure,
+      excludedAssetIds: state.cancellationResolution.excludedAssetIds,
+      deferredUploadAssetIds: {
+        ...state.cancellationResolution.deferredUploadAssetIds,
+        ..._pendingCancellationIds(ledger),
+      },
+    );
+
     final active = _activeEntries(ledger)
         .where(
           (entry) =>
               !cancellationResolution.excludedAssetIds.contains(entry.assetId),
         )
+        .where((entry) => !state.protectedAssetIds.contains(entry.assetId))
         .toList(growable: false);
     final candidates = ledger
         .nextUploads()
@@ -392,7 +702,12 @@ final class MirrorEngine {
           (entry) =>
               !cancellationResolution.excludedAssetIds.contains(entry.assetId),
         )
-        .where((entry) => _retryIsReady(entry, now))
+        .where((entry) => !state.protectedAssetIds.contains(entry.assetId))
+        .where(
+          (entry) =>
+              entry.state != MirrorState.failed ||
+              state.retryReadyAssetIds.contains(entry.assetId),
+        )
         .toList(growable: false);
     TainaError? firstTransferFailure;
     if (active.isNotEmpty || candidates.isNotEmpty) {
@@ -504,7 +819,7 @@ final class MirrorEngine {
     if (firstTransferFailure != null) {
       return Err(firstTransferFailure);
     }
-    if (firstHashFailure != null) return Err(firstHashFailure);
+    if (state.firstHashFailure != null) return Err(state.firstHashFailure!);
     return const Ok<void>(null);
   }
 
@@ -539,21 +854,21 @@ final class MirrorEngine {
     }
   }
 
-  Future<TainaResult<_PendingCancellationResolution>> _resolveKnownHashes(
-    MirrorLedger initial,
+  _HashLookupPlan _hashLookupPlan(
+    MirrorLedger ledger,
     Set<String> knownHashes, {
-    required _PendingCancellationResolution cancellationResolution,
-  }) async {
-    var ledger = initial;
-    var firstLocalFailure = cancellationResolution.firstLocalFailure;
-    final excludedAssetIds = Set<String>.of(
-      cancellationResolution.excludedAssetIds,
-    );
+    required Set<String> excludedAssetIds,
+    required DateTime retryCutoff,
+  }) {
     final ordered = ledger.entries.values.toList()
       ..sort((a, b) => a.assetId.compareTo(b.assetId));
-    final assetIdsByHash = <String, List<String>>{};
-    final hashesToLookup = <String>{};
-
+    final entriesByHash = <String, List<MirrorEntry>>{};
+    final retryReadyAssetIds = <String>{
+      for (final entry in ordered)
+        if (entry.state == MirrorState.failed &&
+            _retryIsReady(entry, retryCutoff))
+          entry.assetId,
+    };
     for (final entry in ordered) {
       final hash = entry.sha256;
       if (hash == null ||
@@ -561,143 +876,87 @@ final class MirrorEngine {
           !_needsLookup(entry.state)) {
         continue;
       }
-      assetIdsByHash.putIfAbsent(hash, () => []).add(entry.assetId);
-      if (!knownHashes.contains(hash) || entry.state == MirrorState.hashed) {
-        hashesToLookup.add(hash);
-      }
+      entriesByHash.putIfAbsent(hash, () => []).add(entry);
     }
 
-    for (final hashEntry in assetIdsByHash.entries) {
-      final hash = hashEntry.key;
-      if (!hashesToLookup.contains(hash)) continue;
-      final response = await _session.screen(
-        await _session.api.hashLookup(sha256: hash),
+    final lookupHashes = <String>[];
+    for (final group in entriesByHash.entries) {
+      final lookupIsNeeded =
+          !knownHashes.contains(group.key) ||
+          group.value.any((entry) => entry.state == MirrorState.hashed);
+      final hasEligibleEntry = group.value.any(
+        (entry) =>
+            entry.state != MirrorState.failed ||
+            retryReadyAssetIds.contains(entry.assetId),
       );
-      if (response case Err<MirrorHashLookup>(:final error)) {
-        if (error case ApiError(status: 404, code: 'not_found')) {
-          for (final assetId in hashEntry.value) {
-            final item = ledger.entries[assetId];
-            if (item == null ||
-                item.sha256 != hash ||
-                item.state != MirrorState.hashed) {
-              continue;
-            }
-            ledger = ledger.markQueued(
-              assetId: item.assetId,
-              updatedAt: _now(),
-            );
-            final saved = await _saveLedger(
-              ledger,
-              changedAssetIds: {item.assetId},
-              removedAssetIds: const {},
-            );
-            if (saved is Err<void>) return Err(saved.error);
-          }
-          continue;
-        }
-        return Err(error);
-      }
-
-      final lookup = (response as Ok<MirrorHashLookup>).value;
-      switch (lookup) {
-        case MirrorHashPresent(:final file):
-          for (final assetId in hashEntry.value) {
-            var item = ledger.entries[assetId];
-            if (item == null ||
-                item.sha256 != hash ||
-                !_needsLookup(item.state) ||
-                excludedAssetIds.contains(assetId)) {
-              continue;
-            }
-            if (item.state == MirrorState.uploading &&
-                item.backgroundTaskId != null) {
-              final cancelled = await _cancelActiveDedupTask(ledger, item);
-              if (cancelled case Err<_DedupCancellationResult>(:final error)) {
-                return Err(error);
-              }
-              final cancellation =
-                  (cancelled as Ok<_DedupCancellationResult>).value;
-              ledger = cancellation.ledger;
-              final localFailure = cancellation.localFailure;
-              if (localFailure != null) {
-                excludedAssetIds.add(assetId);
-                firstLocalFailure ??= localFailure;
-                continue;
-              }
-              item = ledger.entries[assetId];
-              if (item == null) {
-                return const Err(
-                  InvalidResponseError('deduplicated entry is missing'),
-                );
-              }
-            }
-            ledger = ledger.markUploaded(
-              assetId: item.assetId,
-              modificationDate: item.modificationDate,
-              file: file,
-              updatedAt: _now(),
-            );
-            final saved = await _saveLedger(
-              ledger,
-              changedAssetIds: {item.assetId},
-              removedAssetIds: const {},
-            );
-            if (saved is Err<void>) return Err(saved.error);
-          }
-        case MirrorHashSuppressed():
-          for (final assetId in hashEntry.value) {
-            var item = ledger.entries[assetId];
-            if (item == null ||
-                item.sha256 != hash ||
-                !_needsLookup(item.state) ||
-                excludedAssetIds.contains(assetId)) {
-              continue;
-            }
-            if (item.state == MirrorState.uploading &&
-                item.backgroundTaskId != null) {
-              final cancelled = await _cancelActiveDedupTask(ledger, item);
-              if (cancelled case Err<_DedupCancellationResult>(:final error)) {
-                return Err(error);
-              }
-              final cancellation =
-                  (cancelled as Ok<_DedupCancellationResult>).value;
-              ledger = cancellation.ledger;
-              final localFailure = cancellation.localFailure;
-              if (localFailure != null) {
-                excludedAssetIds.add(assetId);
-                firstLocalFailure ??= localFailure;
-                continue;
-              }
-              item = ledger.entries[assetId];
-              if (item == null) {
-                return const Err(
-                  InvalidResponseError('deduplicated entry is missing'),
-                );
-              }
-            }
-            ledger = ledger.markSuppressed(
-              assetId: item.assetId,
-              updatedAt: _now(),
-            );
-            final saved = await _saveLedger(
-              ledger,
-              changedAssetIds: {item.assetId},
-              removedAssetIds: const {},
-            );
-            if (saved is Err<void>) return Err(saved.error);
-          }
-      }
+      if (lookupIsNeeded && hasEligibleEntry) lookupHashes.add(group.key);
     }
 
-    return Ok(
-      _PendingCancellationResolution(
-        ledger: ledger,
-        firstLocalFailure: firstLocalFailure,
-        excludedAssetIds: excludedAssetIds,
-        deferredUploadAssetIds: cancellationResolution.deferredUploadAssetIds,
-      ),
+    return _HashLookupPlan(
+      hashes: List.unmodifiable(lookupHashes),
+      assetIdsByHash: Map<String, List<String>>.unmodifiable({
+        for (final group in entriesByHash.entries)
+          group.key: List<String>.unmodifiable(
+            group.value.map((entry) => entry.assetId),
+          ),
+      }),
+      retryReadyAssetIds: Set.unmodifiable(retryReadyAssetIds),
     );
   }
+
+  void _recordAffectedChanges(
+    _ReconcileState state,
+    MirrorLedger ledger,
+    String hash,
+  ) {
+    for (final assetId in state.lookupAssetIdsByHash[hash] ?? const []) {
+      if (state.ledger.entries[assetId] != ledger.entries[assetId]) {
+        state.protectedAssetIds.add(assetId);
+      }
+    }
+  }
+
+  void _recordOwnAppliedEntries(
+    _ReconcileState state,
+    MirrorLedger ledger,
+    Set<String> changedAssetIds,
+  ) {
+    var baseline = state.ledger;
+    for (final assetId in changedAssetIds) {
+      final entry = ledger.entries[assetId];
+      if (entry != null) baseline = baseline.upsert(entry);
+    }
+    state.ledger = baseline;
+  }
+
+  // This full comparison runs once after lookup waits, not once per hash.
+  void _recordFinishChanges(_ReconcileState state, MirrorLedger ledger) {
+    final assetIds = <String>{
+      ...state.ledger.entries.keys,
+      ...ledger.entries.keys,
+    };
+    for (final assetId in assetIds) {
+      if (state.ledger.entries[assetId] != ledger.entries[assetId]) {
+        state.protectedAssetIds.add(assetId);
+      }
+    }
+    // This is the only all-entry comparison: retain callback writes while
+    // excluding changed entries from this pass's final transfer scheduling.
+    state.ledger = ledger;
+  }
+
+  static _PendingCancellationResolution _withLedger(
+    _PendingCancellationResolution resolution,
+    MirrorLedger ledger,
+  ) => _PendingCancellationResolution(
+    ledger: ledger,
+    firstLocalFailure: resolution.firstLocalFailure,
+    excludedAssetIds: resolution.excludedAssetIds,
+    deferredUploadAssetIds: resolution.deferredUploadAssetIds,
+  );
+
+  static bool _hasPendingCancellation(MirrorEntry entry) =>
+      entry.state == MirrorState.queued && entry.backgroundTaskId != null;
 
   Future<TainaResult<_PendingCancellationResolution>>
   _resolveActiveDedupCancellations(

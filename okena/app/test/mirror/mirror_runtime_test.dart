@@ -223,6 +223,8 @@ class _FakeLibrary implements MirrorLibrary {
   MirrorLibraryAccess access;
   TainaResult<MirrorLibraryAccess>? accessFailure;
   int currentAccessCalls = 0;
+  Completer<void>? accessEntered;
+  Completer<void>? accessGate;
   int pageCalls = 0;
   TainaResult<MirrorAssetPage>? pageFailure;
   Object? pageThrow;
@@ -232,6 +234,11 @@ class _FakeLibrary implements MirrorLibrary {
   @override
   Future<TainaResult<MirrorLibraryAccess>> currentAccess() async {
     currentAccessCalls++;
+    if (accessEntered case final entered? when !entered.isCompleted) {
+      entered.complete();
+    }
+    final gate = accessGate;
+    if (gate != null) await gate.future;
     return accessFailure ?? Ok(access);
   }
 
@@ -371,6 +378,7 @@ _MadeOwner _makeOwner({
   Future<TainaResult<void>> Function()? startTransfer,
   Future<void> Function()? onDispose,
   StreamController<MirrorTransferEvent>? events,
+  Stream<MirrorTransferEvent>? transferEventStream,
   _FakeApi? api,
   bool enabled = true,
   bool wifiOnly = true,
@@ -402,7 +410,7 @@ _MadeOwner _makeOwner({
     library: selectedLibrary,
     store: selectedStore,
     materializer: selectedMaterializer,
-    transferEvents: selectedEvents.stream,
+    transferEvents: transferEventStream ?? selectedEvents.stream,
     startTransfer: startTransfer ?? () async => const Ok<void>(null),
     disposeTransfer: disposeTransfer,
     enabled: enabled,
@@ -458,8 +466,82 @@ class _ManualForeground implements MirrorForeground {
   }
 }
 
+final class _CancelFailingStream extends Stream<MirrorTransferEvent> {
+  const _CancelFailingStream(this.error, this.stackTrace);
+
+  final Object error;
+  final StackTrace stackTrace;
+
+  @override
+  StreamSubscription<MirrorTransferEvent> listen(
+    void Function(MirrorTransferEvent event)? onData, {
+    Function? onError,
+    void Function()? onDone,
+    bool? cancelOnError,
+  }) => _CancelFailingSubscription(error, stackTrace);
+}
+
+final class _CancelFailingSubscription
+    implements StreamSubscription<MirrorTransferEvent> {
+  _CancelFailingSubscription(this.error, this.stackTrace);
+
+  final Object error;
+  final StackTrace stackTrace;
+
+  @override
+  Future<void> cancel() => Future<void>.error(error, stackTrace);
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 void main() {
   group('MirrorOwnerMirror', () {
+    test('cleans up after event cancellation fails and rethrows its original error', () async {
+      final cancelError = StateError('event cancellation failed');
+      final cancelStackTrace = StackTrace.current;
+      final library = _FakeLibrary()
+        ..accessEntered = Completer<void>()
+        ..accessGate = Completer<void>();
+      var disposeCalls = 0;
+      final made = _makeOwner(
+        ownerId: 'tekoa-a:ava-a',
+        library: library,
+        transferEventStream: _CancelFailingStream(
+          cancelError,
+          cancelStackTrace,
+        ),
+        onDispose: () async {
+          disposeCalls++;
+        },
+      );
+      var notifications = 0;
+      made.owner.changes.addListener(() => notifications++);
+      made.owner.activate();
+      final reconciliation = made.owner.reconcile();
+      await library.accessEntered!.future;
+
+      Object? caughtError;
+      StackTrace? caughtStackTrace;
+      final disposing = made.owner.dispose();
+      expect(disposeCalls, 0);
+      library.accessGate!.complete();
+      expect((await reconciliation).isFailure, isTrue);
+      try {
+        await disposing;
+      } catch (error, stackTrace) {
+        caughtError = error;
+        caughtStackTrace = stackTrace;
+      }
+
+      expect(caughtError, same(cancelError));
+      expect(caughtStackTrace, same(cancelStackTrace));
+      expect(disposeCalls, 1);
+      final notificationsAfterDispose = notifications;
+      made.owner.setForeground(false);
+      expect(notifications, notificationsAfterDispose);
+    });
+
     test(
       'subscribes before start and applies a completion emitted during start',
       () async {
@@ -682,9 +764,7 @@ void main() {
     });
 
     test('does not enumerate when photo access is not determined', () async {
-      final library = _FakeLibrary(
-        access: MirrorLibraryAccess.notDetermined,
-      );
+      final library = _FakeLibrary(access: MirrorLibraryAccess.notDetermined);
       final api = _FakeApi();
       final materializer = _RecordingMaterializer();
       var startCalls = 0;
@@ -715,10 +795,7 @@ void main() {
 
     test('cached-assets reconciliation does not reread photo access', () async {
       final library = _FakeLibrary(assets: [_asset()]);
-      final made = _makeOwner(
-        ownerId: 'tekoa-a:ava-a',
-        library: library,
-      );
+      final made = _makeOwner(ownerId: 'tekoa-a:ava-a', library: library);
       made.owner.activate();
 
       expect(
@@ -735,6 +812,102 @@ void main() {
       expect(library.currentAccessCalls, 1);
       await made.owner.dispose();
     });
+
+    test(
+      'native completion rechecks access after a refreshed snapshot is revoked',
+      () async {
+        for (final revokedAccess in <TainaResult<MirrorLibraryAccess>>[
+          const Err(MirrorAssetReadError('access state unavailable')),
+          const Ok(MirrorLibraryAccess.denied),
+          const Ok(MirrorLibraryAccess.restricted),
+          const Ok(MirrorLibraryAccess.notDetermined),
+        ]) {
+          final initial = _ledger([
+            _entry(
+              id: 'asset-a',
+              state: MirrorState.uploading,
+              path: '/support/asset-a.jpg',
+              taskId: 'task-a',
+            ),
+          ], ownerId: 'tekoa-a:ava-a');
+          final library = _FakeLibrary(assets: [_asset()]);
+          final api = _FakeApi();
+          final events = StreamController<MirrorTransferEvent>.broadcast(
+            sync: true,
+          );
+          final made = _makeOwner(
+            ownerId: 'tekoa-a:ava-a',
+            store: InMemoryMirrorStore(initial),
+            library: library,
+            api: api,
+            events: events,
+          );
+          made.owner.activate();
+
+          expect((await made.owner.reconcile()).isSuccess, isTrue);
+          expect(library.currentAccessCalls, 1);
+          final manifestCalls = api.manifestCalls;
+          final pruneCalls = made.materializer.retainedOnPrune.length;
+          library.accessFailure = revokedAccess;
+
+          final revoked = await made.owner.reconcile(refreshLibrary: true);
+          expect(revoked.error, isA<MirrorAssetReadError>());
+          expect(library.currentAccessCalls, 2);
+
+          events.add(
+            MirrorTransferCompleted(
+              assetId: 'asset-a',
+              taskId: 'task-a',
+              modificationDate: _modified,
+              file: _file(),
+            ),
+          );
+          await _waitFor(() => library.currentAccessCalls == 3);
+
+          expect(made.owner.lastError, isA<MirrorAssetReadError>());
+          expect(library.pageCalls, 1);
+          expect(api.manifestCalls, manifestCalls);
+          expect(made.materializer.retainedOnPrune, hasLength(pruneCalls));
+          await made.owner.dispose();
+        }
+      },
+    );
+
+    test(
+      'disable during pending access stops before transfer startup',
+      () async {
+        final library = _FakeLibrary()
+          ..accessEntered = Completer<void>()
+          ..accessGate = Completer<void>();
+        var startCalls = 0;
+        final api = _FakeApi();
+        final made = _makeOwner(
+          ownerId: 'tekoa-a:ava-a',
+          library: library,
+          api: api,
+          startTransfer: () async {
+            startCalls++;
+            return const Ok<void>(null);
+          },
+        );
+        made.owner.activate();
+
+        final reconciliation = made.owner.reconcile();
+        await library.accessEntered!.future;
+        final disabling = made.owner.setEnabled(false);
+        expect(made.owner.enabled, isFalse);
+        library.accessGate!.complete();
+
+        expect((await reconciliation).isSuccess, isTrue);
+        expect((await disabling).isSuccess, isTrue);
+        expect(startCalls, 0);
+        expect(library.pageCalls, 0);
+        expect(api.manifestCalls, 0);
+        expect(made.transfer.startedTaskIds, isEmpty);
+        expect(made.materializer.retainedOnPrune, isEmpty);
+        await made.owner.dispose();
+      },
+    );
 
     test(
       'records prune errors as housekeeping without failing reconciliation',
@@ -874,33 +1047,32 @@ void main() {
       },
     );
 
-    test('pause waits for reconcile and cancels tasks it created', () async {
-      final library = _FakeLibrary(assets: [_asset()])
-        ..pageEntered = Completer<void>()
-        ..pageGate = Completer<void>();
-      final made = _makeOwner(ownerId: 'tekoa-a:ava-a', library: library);
-      made.owner.activate();
+    test(
+      'pause stops a pending collection before scheduling new tasks',
+      () async {
+        final library = _FakeLibrary(assets: [_asset()])
+          ..pageEntered = Completer<void>()
+          ..pageGate = Completer<void>();
+        final made = _makeOwner(ownerId: 'tekoa-a:ava-a', library: library);
+        made.owner.activate();
 
-      final reconciliation = made.owner.reconcile();
-      await library.pageEntered!.future;
-      final pausing = made.owner.setEnabled(false);
-      expect(made.owner.enabled, isFalse);
-      expect((await made.owner.reconcile()).isSuccess, isTrue);
+        final reconciliation = made.owner.reconcile();
+        await library.pageEntered!.future;
+        final pausing = made.owner.setEnabled(false);
+        expect(made.owner.enabled, isFalse);
+        expect((await made.owner.reconcile()).isSuccess, isTrue);
 
-      library.pageGate!.complete();
-      expect((await reconciliation).isSuccess, isTrue);
-      expect((await pausing).isSuccess, isTrue);
+        library.pageGate!.complete();
+        expect((await reconciliation).isSuccess, isTrue);
+        expect((await pausing).isSuccess, isTrue);
 
-      expect(made.transfer.startedTaskIds, hasLength(1));
-      expect(made.transfer.cancelledTaskIds, made.transfer.startedTaskIds);
-      final persisted = (await made.store.load()).value!;
-      final entry = persisted.entries.values.single;
-      expect(entry.state, MirrorState.queued);
-      expect(entry.backgroundTaskId, isNull);
-      expect(entry.localPath, isNotNull);
+        expect(made.transfer.startedTaskIds, isEmpty);
+        expect(made.transfer.cancelledTaskIds, isEmpty);
+        expect((await made.store.load()).value, isNull);
 
-      await made.owner.dispose();
-    });
+        await made.owner.dispose();
+      },
+    );
 
     test(
       'failed cancellation retains task and path and pause retries all',
