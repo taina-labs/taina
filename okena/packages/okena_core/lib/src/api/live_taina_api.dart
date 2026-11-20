@@ -254,6 +254,7 @@ final class LiveTainaApi implements TainaApi {
     int? limit,
     String? cursor,
     Sort? sort,
+    Zona? zona,
   }) {
     return _conditionalGet(
       path: 'contents',
@@ -262,6 +263,7 @@ final class LiveTainaApi implements TainaApi {
         'limit': limit?.toString(),
         'cursor': cursor,
         'sort': sort?.wire,
+        'zona': zona?.name,
       },
       label: 'contents',
       decode: FolderContents.fromJson,
@@ -274,6 +276,7 @@ final class LiveTainaApi implements TainaApi {
     required String name,
     required String mime,
     String? folderRkey,
+    UploadProgress? progress,
   }) async {
     final boundary = MultipartBody.boundary();
     final parts = [
@@ -306,7 +309,11 @@ final class LiveTainaApi implements TainaApi {
           case Err(:final error):
             return Err(error);
           case Ok(value: final bodyFile):
-            final outcome = await transport.upload(value, fromFile: bodyFile);
+            final outcome = await transport.upload(
+              value,
+              fromFile: bodyFile,
+              progress: progress,
+            );
             // Cleanup is best effort; the OS clears the temp directory.
             try {
               await io.File(bodyFile).delete();
@@ -684,7 +691,7 @@ final class LiveTainaApi implements TainaApi {
   }
 
   @override
-  Future<TainaResult<Tekoa>> setQuota({required int bytes}) {
+  Future<TainaResult<Tekoa>> setQuota({required int? bytes}) {
     return _sendJson(
       path: 'storage/quota',
       method: 'PATCH',

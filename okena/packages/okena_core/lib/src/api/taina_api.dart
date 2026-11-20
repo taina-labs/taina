@@ -11,6 +11,7 @@ import 'package:okena_core/src/models/token_status.dart';
 import 'package:okena_core/src/models/wire.dart';
 import 'package:okena_core/src/result.dart';
 import 'package:okena_core/src/session/session.dart';
+import 'package:okena_core/src/transport/transport.dart';
 
 /// Thumbnail size. [sm] for list rows, [md] for the detail view.
 enum ThumbnailSize {
@@ -79,13 +80,17 @@ abstract class TainaApi {
     int? limit,
     String? cursor,
     Sort? sort,
+    Zona? zona,
   });
 
+  /// Streams a file to the box. [progress], when supplied, reports request
+  /// body bytes sent and the complete body length.
   Future<TainaResult<FileRecord>> upload({
     required String filePath,
     required String name,
     required String mime,
     String? folderRkey,
+    UploadProgress? progress,
   });
   Future<TainaResult<FileRecord>> file({required String rkey});
   Future<TainaResult<FileRecord>> updateFile({
@@ -161,8 +166,9 @@ abstract class TainaApi {
   Future<TainaResult<void>> revokeInvite({required String id});
   Future<TainaResult<ResetLink>> memberResetLink({required String id});
 
-  /// The zeladora sets the community's quota, in bytes.
-  Future<TainaResult<Tekoa>> setQuota({required int bytes});
+  /// The zeladora sets the community's quota in bytes, or clears it to use the
+  /// whole disk.
+  Future<TainaResult<Tekoa>> setQuota({required int? bytes});
 
   /// The zeladora asks the box to back itself up now.
   Future<TainaResult<void>> triggerBackup();

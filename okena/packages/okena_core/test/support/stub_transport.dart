@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io' as io;
 
 import 'package:okena_core/okena_core.dart';
 
@@ -44,9 +45,15 @@ final class StubTransport implements Transport {
   Future<TainaResult<HttpResponse>> upload(
     HttpRequest request, {
     required String fromFile,
+    UploadProgress? progress,
   }) async {
     final call = TransportCall.upload(request, fromFile);
     calls.add(call);
+    if (progress != null) {
+      final totalBytes = io.File(fromFile).lengthSync();
+      progress(0, totalBytes);
+      progress(totalBytes, totalBytes);
+    }
     return handler(call);
   }
 

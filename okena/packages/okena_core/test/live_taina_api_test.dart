@@ -303,12 +303,13 @@ void main() {
         limit: 100,
         cursor: 'abc',
         sort: const Sort(key: SortKey.date, direction: SortDirection.desc),
+        zona: Zona.praca,
       );
       await api.folderContents();
 
       expect(
         stub.requests[0].url.query,
-        'cursor=abc&folder=3kx2n8pqrv5w2&limit=100&sort=date_desc',
+        'cursor=abc&folder=3kx2n8pqrv5w2&limit=100&sort=date_desc&zona=praca',
       );
       expect(stub.requests[1].url.toString(), 'https://box/api/v1/contents');
     });
@@ -624,6 +625,7 @@ void main() {
       String? bodyFile;
       String? contentType;
       String? bodyText;
+      final progress = <(int, int)>[];
       final (api, _) = await signedInApi((call) async {
         expect(call.kind, CallKind.upload);
         bodyFile = call.filePath;
@@ -637,8 +639,13 @@ void main() {
         name: 'ata.pdf',
         mime: 'application/pdf',
         folderRkey: '3kx2n8pqrv5w2',
+        progress: (sentBytes, totalBytes) {
+          progress.add((sentBytes, totalBytes));
+        },
       )).value!;
       expect(uploaded.name, 'ata.pdf');
+      expect(progress.first, (0, progress.last.$2));
+      expect(progress.last.$1, progress.last.$2);
 
       expect(contentType, startsWith('multipart/form-data; boundary='));
       final boundary = contentType!.substring(
@@ -1232,9 +1239,15 @@ void main() {
       expect(quota.method, 'PATCH');
       expect(quota.url.toString(), 'https://box/api/v1/storage/quota');
       expect(bodyOf(quota), contains('"quota_bytes":536870912000'));
+      await api.setQuota(bytes: null);
+      expect(bodyOf(stub.requests[2]), contains('"quota_bytes":null'));
       expect(
         stub.requests[1].url.toString(),
         'https://box/api/v1/saude/backup',
+      );
+      expect(
+        stub.requests[2].url.toString(),
+        'https://box/api/v1/storage/quota',
       );
     });
 

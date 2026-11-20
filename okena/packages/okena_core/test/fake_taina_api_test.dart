@@ -48,6 +48,18 @@ void main() {
     expect((await api.me()).value!.ava.username, 'ana');
   });
 
+  test('folder contents can be filtered by zone', () async {
+    final api = fake();
+
+    final casa = (await api.folderContents(zona: Zona.casa)).value!;
+    expect(casa.folders.map((folder) => folder.rkey), [assembleiaRkey]);
+    expect(casa.items.map((file) => file.rkey), ['3m5c9vxyq2b7t']);
+
+    final praca = (await api.folderContents(zona: Zona.praca)).value!;
+    expect(praca.folders.map((folder) => folder.rkey), [festaRkey]);
+    expect(praca.items.map((file) => file.rkey), ['3m7d1wyzr4c8u']);
+  });
+
   test(
     'sem-acesso answers 401 and the empty username a validation failure',
     () async {
@@ -105,6 +117,40 @@ void main() {
     final after = (await api.folderContents(folderRkey: assembleiaRkey)).value!;
     expect(after.items.length, 2);
     expect(after.items.last.name, 'regimento.pdf');
+  });
+
+  test('upload progress reports streamed byte counts', () async {
+    final api = fake();
+    await api.createSession(
+      username: 'ana',
+      password: 'segredo',
+      deviceName: 'Teste',
+    );
+
+    final contents = List<int>.generate(256 * 1024, (index) => index % 251);
+    final source = File(
+      '${Directory.systemTemp.path}/fake-upload-progress-'
+      '${DateTime.now().microsecondsSinceEpoch}.bin',
+    );
+    await source.writeAsBytes(contents);
+    addTearDown(() async {
+      if (await source.exists()) await source.delete();
+    });
+    final progress = <(int, int)>[];
+
+    final result = await api.upload(
+      filePath: source.path,
+      name: 'video.mp4',
+      mime: 'video/mp4',
+      progress: (sentBytes, totalBytes) {
+        progress.add((sentBytes, totalBytes));
+      },
+    );
+
+    expect(result.isSuccess, isTrue);
+    expect(progress.first, (0, contents.length));
+    expect(progress.last, (contents.length, contents.length));
+    expect(progress.length, greaterThan(2));
   });
 
   test('upload into a praca folder starts in casa', () async {
@@ -794,6 +840,10 @@ void main() {
     expect((await api.storage()).value!.quotaBytes, 536870912000);
 
     expect(apiErrorOf(await api.setQuota(bytes: 0)).isValidationFailed, isTrue);
+
+    final wholeDisk = (await api.setQuota(bytes: null)).value!;
+    expect(wholeDisk.storageQuotaBytes, isNull);
+    expect((await api.storage()).value!.quotaBytes, isNull);
   });
 
   test('the backup trigger is the queue not the backup', () async {

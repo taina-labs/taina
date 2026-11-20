@@ -10,11 +10,17 @@ final class StorageStats {
     required this.files,
     required this.photos,
     required this.trash,
+    this.byZone,
+    this.diskBytes,
+    this.videos,
     this.diskTotalBytes,
     this.diskFreeBytes,
   });
 
   factory StorageStats.fromJson(JsonReader reader) {
+    final diskBytes =
+        reader.integerOrNull('disk_bytes') ??
+        reader.integerOrNull('disk_total_bytes');
     return StorageStats(
       usedBytes: reader.integer('used_bytes'),
       quotaBytes: reader.integerOrNull('quota_bytes'),
@@ -22,13 +28,24 @@ final class StorageStats {
       files: reader.integer('files'),
       photos: reader.integer('photos'),
       trash: StorageTrash.fromJson(reader.object('trash')),
-      diskTotalBytes: reader.integerOrNull('disk_total_bytes'),
+      byZone: switch (reader.objectOrNull('by_zone')) {
+        final zone? => StorageByZone.fromJson(zone),
+        null => null,
+      },
+      diskBytes: diskBytes,
+      videos: reader.integerOrNull('videos'),
+      diskTotalBytes: reader.integerOrNull('disk_total_bytes') ?? diskBytes,
       diskFreeBytes: reader.integerOrNull('disk_free_bytes'),
     );
   }
 
   final int usedBytes;
   final int? quotaBytes;
+  final StorageByZone? byZone;
+  final int? diskBytes;
+  final int? videos;
+
+  /// Legacy physical-disk names retained for boxes that still send them.
   final int? diskTotalBytes;
   final int? diskFreeBytes;
   final StorageByKind byKind;
@@ -41,6 +58,9 @@ final class StorageStats {
       other is StorageStats &&
       other.usedBytes == usedBytes &&
       other.quotaBytes == quotaBytes &&
+      other.byZone == byZone &&
+      other.diskBytes == diskBytes &&
+      other.videos == videos &&
       other.diskTotalBytes == diskTotalBytes &&
       other.diskFreeBytes == diskFreeBytes &&
       other.byKind == byKind &&
@@ -53,6 +73,9 @@ final class StorageStats {
     StorageStats,
     usedBytes,
     quotaBytes,
+    byZone,
+    diskBytes,
+    videos,
     diskTotalBytes,
     diskFreeBytes,
     byKind,
@@ -60,6 +83,37 @@ final class StorageStats {
     photos,
     trash,
   );
+}
+
+/// Bytes currently attributed to each community zone.
+final class StorageByZone {
+  const StorageByZone({
+    required this.casa,
+    required this.praca,
+    required this.lixeira,
+  });
+
+  factory StorageByZone.fromJson(JsonReader reader) {
+    return StorageByZone(
+      casa: reader.integer('casa'),
+      praca: reader.integer('praca'),
+      lixeira: reader.integer('lixeira'),
+    );
+  }
+
+  final int casa;
+  final int praca;
+  final int lixeira;
+
+  @override
+  bool operator ==(Object other) =>
+      other is StorageByZone &&
+      other.casa == casa &&
+      other.praca == praca &&
+      other.lixeira == lixeira;
+
+  @override
+  int get hashCode => Object.hash(StorageByZone, casa, praca, lixeira);
 }
 
 /// Bytes at rest, by kind of content.
@@ -127,13 +181,19 @@ final class Saude {
     required this.storage,
     required this.jobs,
     required this.backup,
+    this.summary,
+    this.update,
   });
 
   factory Saude.fromJson(JsonReader reader) {
+    final summary = reader.objectOrNull('summary');
+    final update = reader.objectOrNull('update');
     return Saude(
       storage: StorageStats.fromJson(reader.object('storage')),
       jobs: reader.integerMap('jobs'),
       backup: SaudeBackup.fromJson(reader.object('backup')),
+      summary: summary == null ? null : SaudeSummary.fromJson(summary),
+      update: update == null ? null : SaudeUpdate.fromJson(update),
     );
   }
 
@@ -142,13 +202,17 @@ final class Saude {
   /// Work waiting or running, by queue.
   final Map<String, int> jobs;
   final SaudeBackup backup;
+  final SaudeSummary? summary;
+  final SaudeUpdate? update;
 
   @override
   bool operator ==(Object other) =>
       other is Saude &&
       other.storage == storage &&
       mapEquals(other.jobs, jobs) &&
-      other.backup == backup;
+      other.backup == backup &&
+      other.summary == summary &&
+      other.update == update;
 
   @override
   int get hashCode => Object.hash(
@@ -158,13 +222,98 @@ final class Saude {
       for (final entry in jobs.entries) Object.hash(entry.key, entry.value),
     ]),
     backup,
+    summary,
+    update,
   );
+}
+
+enum SaudeSummaryState {
+  ok,
+  attention;
+
+  static const Map<String, SaudeSummaryState> byWire = {
+    'ok': ok,
+    'attention': attention,
+  };
+}
+
+/// A ready-to-show health sentence supplied by the box when BE-4 is available.
+final class SaudeSummary {
+  const SaudeSummary({required this.state, required this.line});
+
+  factory SaudeSummary.fromJson(JsonReader reader) {
+    return SaudeSummary(
+      state: reader.enumValue('state', SaudeSummaryState.byWire),
+      line: reader.string('line'),
+    );
+  }
+
+  final SaudeSummaryState state;
+  final String line;
+
+  @override
+  bool operator ==(Object other) =>
+      other is SaudeSummary && other.state == state && other.line == line;
+
+  @override
+  int get hashCode => Object.hash(SaudeSummary, state, line);
+}
+
+enum SaudeUpdateStatus {
+  upToDate,
+  updateAvailable,
+  checking,
+  checkOff,
+  unavailable,
+  unknown;
+
+  static const Map<String, SaudeUpdateStatus> byWire = {
+    'up_to_date': upToDate,
+    'update_available': updateAvailable,
+    'checking': checking,
+    'check_off': checkOff,
+    'unavailable': unavailable,
+    'unknown': unknown,
+  };
+}
+
+/// The box version and the result of its optional release check.
+final class SaudeUpdate {
+  const SaudeUpdate({
+    required this.status,
+    required this.running,
+    required this.latest,
+  });
+
+  factory SaudeUpdate.fromJson(JsonReader reader) {
+    return SaudeUpdate(
+      status: reader.enumValue('status', SaudeUpdateStatus.byWire),
+      running: reader.stringOrNull('running'),
+      latest: reader.stringOrNull('latest'),
+    );
+  }
+
+  final SaudeUpdateStatus status;
+  final String? running;
+  final String? latest;
+
+  @override
+  bool operator ==(Object other) =>
+      other is SaudeUpdate &&
+      other.status == status &&
+      other.running == running &&
+      other.latest == latest;
+
+  @override
+  int get hashCode => Object.hash(SaudeUpdate, status, running, latest);
 }
 
 /// The backup state the box reports in the community health panel.
 enum SaudeBackupStatus {
   ok,
   none,
+  never,
+  failed,
   disabled,
   notConfigured,
   unreadable;
@@ -172,6 +321,8 @@ enum SaudeBackupStatus {
   static const Map<String, SaudeBackupStatus> byWire = {
     'ok': ok,
     'none': none,
+    'never': never,
+    'failed': failed,
     'disabled': disabled,
     'not_configured': notConfigured,
     'unreadable': unreadable,

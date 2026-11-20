@@ -494,6 +494,7 @@ final class MemberInvite {
     required this.ava,
     required this.token,
     required this.inviteUrl,
+    this.webUrl,
   });
 
   factory MemberInvite.fromJson(JsonReader reader) {
@@ -501,22 +502,25 @@ final class MemberInvite {
       ava: Ava.fromJson(reader.object('ava')),
       token: reader.string('token'),
       inviteUrl: reader.string('invite_url'),
+      webUrl: reader.stringOrNull('web_url'),
     );
   }
 
   final Ava ava;
   final String token;
   final String inviteUrl;
+  final String? webUrl;
 
   @override
   bool operator ==(Object other) =>
       other is MemberInvite &&
       other.ava == ava &&
       other.token == token &&
-      other.inviteUrl == inviteUrl;
+      other.inviteUrl == inviteUrl &&
+      other.webUrl == webUrl;
 
   @override
-  int get hashCode => Object.hash(MemberInvite, ava, token, inviteUrl);
+  int get hashCode => Object.hash(MemberInvite, ava, token, inviteUrl, webUrl);
 }
 
 /// The password link of one morador, minted by the zeladora. Same one time
@@ -526,6 +530,7 @@ final class ResetLink {
     required this.ava,
     required this.token,
     required this.resetUrl,
+    this.webUrl,
   });
 
   factory ResetLink.fromJson(JsonReader reader) {
@@ -533,20 +538,23 @@ final class ResetLink {
       ava: Ava.fromJson(reader.object('ava')),
       token: reader.string('token'),
       resetUrl: reader.string('reset_url'),
+      webUrl: reader.stringOrNull('web_url'),
     );
   }
 
   final Ava ava;
   final String token;
   final String resetUrl;
+  final String? webUrl;
 
   @override
   bool operator ==(Object other) =>
       other is ResetLink &&
       other.ava == ava &&
       other.token == token &&
-      other.resetUrl == resetUrl;
+      other.resetUrl == resetUrl &&
+      other.webUrl == webUrl;
 
   @override
-  int get hashCode => Object.hash(ResetLink, ava, token, resetUrl);
+  int get hashCode => Object.hash(ResetLink, ava, token, resetUrl, webUrl);
 }

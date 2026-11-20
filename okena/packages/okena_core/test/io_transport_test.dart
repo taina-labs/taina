@@ -89,6 +89,7 @@ void main() {
 
     var received = <int>[];
     String? contentType;
+    final progress = <(int, int)>[];
     handler = (request) async {
       contentType = request.headers.value('content-type');
       received = await request.fold<List<int>>(
@@ -109,12 +110,19 @@ void main() {
         },
       ),
       fromFile: file.path,
+      progress: (sentBytes, totalBytes) {
+        progress.add((sentBytes, totalBytes));
+      },
     )).value!;
 
     expect(response.status, 200);
     expect(response.body, 'ok');
     expect(contentType, 'multipart/form-data; boundary=BOUNDARY');
     expect(received.length, payload.length);
+    expect(progress.first, (0, payload.length));
+    expect(progress.last, (payload.length, payload.length));
+    expect(progress.length, greaterThan(2));
+    expect(progress.every((event) => event.$1 <= event.$2), isTrue);
   });
 
   test('download writes the body to a file and keeps the headers', () async {

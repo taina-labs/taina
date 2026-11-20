@@ -41,12 +41,22 @@ final class IoTransport implements Transport {
   Future<TainaResult<HttpResponse>> upload(
     HttpRequest request, {
     required String fromFile,
+    UploadProgress? progress,
   }) async {
     final file = io.File(fromFile);
     try {
       final http = await _open(request);
-      http.contentLength = await file.length();
-      await http.addStream(file.openRead());
+      final totalBytes = await file.length();
+      var sentBytes = 0;
+      http.contentLength = totalBytes;
+      progress?.call(0, totalBytes);
+      await http.addStream(
+        file.openRead().map((chunk) {
+          sentBytes += chunk.length;
+          progress?.call(sentBytes, totalBytes);
+          return chunk;
+        }),
+      );
       final response = await http.close();
       final bytes = await _drain(response);
       return Ok(_assembled(response, bytes));

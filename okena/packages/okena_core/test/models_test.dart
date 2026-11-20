@@ -77,12 +77,131 @@ void main() {
       expect(withDisk, isNot(missing));
     });
 
+    test('storage decodes optional revamp fields and legacy fallbacks', () {
+      final withRevampFields = storageJson.replaceFirst(
+        '"used_bytes":',
+        '"by_zone":{"casa":100,"praca":200,"lixeira":300},'
+            '"disk_bytes":1073741824000,"videos":4,"used_bytes":',
+      );
+      final StorageStats current = decode(
+        withRevampFields,
+        StorageStats.fromJson,
+      ).value!;
+      expect(
+        current.byZone,
+        const StorageByZone(casa: 100, praca: 200, lixeira: 300),
+      );
+      expect(current.diskBytes, 1073741824000);
+      expect(current.videos, 4);
+      expect(
+        decode(
+          storageJson.replaceFirst(
+            '"quota_bytes":268435456000',
+            '"quota_bytes":null',
+          ),
+          StorageStats.fromJson,
+        ).value!.quotaBytes,
+        isNull,
+      );
+
+      final StorageStats legacy = decode(
+        storageJson,
+        StorageStats.fromJson,
+      ).value!;
+      expect(legacy.byZone, isNull);
+      expect(legacy.diskBytes, legacy.diskTotalBytes);
+      expect(legacy.videos, isNull);
+
+      final withoutDisk = storageJson.replaceFirst(
+        '"disk_total_bytes":1073741824000,"disk_free_bytes":536870912000,',
+        '',
+      );
+      expect(
+        decode(withoutDisk, StorageStats.fromJson).value!.diskBytes,
+        isNull,
+      );
+    });
+
+    test('saude optional summary and update decode when present or absent', () {
+      final withRevampFields = saudeJson.replaceFirst(
+        '"backup":',
+        '"summary":{"state":"attention","line":"Disco quase cheio"},'
+            '"update":{"status":"update_available","running":"0.6.0",'
+            '"latest":"0.7.0"},"backup":',
+      );
+      final Saude current = decode(withRevampFields, Saude.fromJson).value!;
+      expect(
+        current.summary,
+        const SaudeSummary(
+          state: SaudeSummaryState.attention,
+          line: 'Disco quase cheio',
+        ),
+      );
+      expect(
+        current.update,
+        const SaudeUpdate(
+          status: SaudeUpdateStatus.updateAvailable,
+          running: '0.6.0',
+          latest: '0.7.0',
+        ),
+      );
+
+      final Saude legacy = decode(saudeJson, Saude.fromJson).value!;
+      expect(legacy.summary, isNull);
+      expect(legacy.update, isNull);
+    });
+
+    test('token status invite context remains optional', () {
+      final legacy = decode(tokenStatusJson, TokenStatus.fromJson).value!;
+      expect(legacy.valid, isTrue);
+      expect(legacy.tekoaName, isNull);
+      expect(legacy.inviter, isNull);
+
+      final current = decode(
+        '{"valid":true,"tekoa_name":"Quilombo do Café",'
+        '"inviter":"Ana Souza"}',
+        TokenStatus.fromJson,
+      ).value!;
+      expect(current.tekoaName, 'Quilombo do Café');
+      expect(current.inviter, 'Ana Souza');
+    });
+
+    test('invite web URLs remain optional for older boxes', () {
+      final oldInvite = decode(
+        '{"ava":$anaJson,"token":"tk123","invite_url":"taina://convite/tk123"}',
+        MemberInvite.fromJson,
+      ).value!;
+      expect(oldInvite.webUrl, isNull);
+
+      final newInvite = decode(
+        '{"ava":$anaJson,"token":"tk123","invite_url":"taina://convite/tk123",'
+        '"web_url":"https://box/convite/tk123"}',
+        MemberInvite.fromJson,
+      ).value!;
+      expect(newInvite.webUrl, 'https://box/convite/tk123');
+
+      final oldReset = decode(
+        '{"ava":$anaJson,"token":"tk123","reset_url":"taina://redefinir/tk123"}',
+        ResetLink.fromJson,
+      ).value!;
+      expect(oldReset.webUrl, isNull);
+
+      final newReset = decode(
+        '{"ava":$anaJson,"token":"tk123","reset_url":"taina://redefinir/tk123",'
+        '"web_url":"https://box/redefinir/tk123"}',
+        ResetLink.fromJson,
+      ).value!;
+      expect(newReset.webUrl, 'https://box/redefinir/tk123');
+    });
+
     test(
       'decodes each backup status and rejects an unknown or missing one',
       () {
         const statuses = {
           'ok': SaudeBackupStatus.ok,
           'none': SaudeBackupStatus.none,
+          'never': SaudeBackupStatus.never,
+          'failed': SaudeBackupStatus.failed,
           'disabled': SaudeBackupStatus.disabled,
           'not_configured': SaudeBackupStatus.notConfigured,
           'unreadable': SaudeBackupStatus.unreadable,

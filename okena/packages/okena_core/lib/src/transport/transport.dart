@@ -3,6 +3,10 @@ import 'dart:typed_data';
 
 import 'package:okena_core/src/result.dart';
 
+/// Upload progress in bytes: the body bytes handed to the transport and the
+/// complete request-body length.
+typedef UploadProgress = void Function(int sentBytes, int totalBytes);
+
 /// One HTTP round trip.
 ///
 /// For [Transport.send] the body is [data]; for [Transport.download] the body
@@ -74,6 +78,7 @@ abstract class Transport {
   Future<TainaResult<HttpResponse>> upload(
     HttpRequest request, {
     required String fromFile,
+    UploadProgress? progress,
   });
 
   /// The response written to a file, with its status and headers, so the

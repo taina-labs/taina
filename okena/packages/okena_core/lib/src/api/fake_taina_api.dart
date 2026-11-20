@@ -17,6 +17,7 @@ import 'package:okena_core/src/models/wire.dart';
 import 'package:okena_core/src/result.dart';
 import 'package:okena_core/src/session/session.dart';
 import 'package:okena_core/src/taina_error.dart';
+import 'package:okena_core/src/transport/transport.dart';
 
 /// A [TainaApi] over an in-memory world: the preview double and the UI test
 /// double, and the reason a screen can be built and looked at without a box.
@@ -704,15 +705,24 @@ final class FakeTainaApi implements TainaApi {
     int? limit,
     String? cursor,
     Sort? sort,
+    Zona? zona,
   }) async {
     await _pause();
     final inside = _folders
         .where(
-          (folder) => folder.folder == folderRkey && folder.deletedAt == null,
+          (folder) =>
+              folder.folder == folderRkey &&
+              folder.deletedAt == null &&
+              (zona == null || folder.zona == zona),
         )
         .toList();
     final items = _files
-        .where((file) => file.folder == folderRkey && file.deletedAt == null)
+        .where(
+          (file) =>
+              file.folder == folderRkey &&
+              file.deletedAt == null &&
+              (zona == null || file.zona == zona),
+        )
         .toList();
     return Ok(FolderContents(folders: inside, items: items, nextCursor: null));
   }
@@ -723,6 +733,7 @@ final class FakeTainaApi implements TainaApi {
     required String name,
     required String mime,
     String? folderRkey,
+    UploadProgress? progress,
   }) async {
     await _pause();
     if (folderRkey != null) {
@@ -764,10 +775,26 @@ final class FakeTainaApi implements TainaApi {
       updatedAt: now,
     );
     _files.add(record);
-    try {
-      _bytes[record.rkey] = file.readAsBytesSync();
-    } on io.FileSystemException {
-      _bytes[record.rkey] = Uint8List(0);
+    if (progress == null) {
+      try {
+        _bytes[record.rkey] = file.readAsBytesSync();
+      } on io.FileSystemException {
+        _bytes[record.rkey] = Uint8List(0);
+      }
+    } else {
+      final builder = BytesBuilder(copy: false);
+      var sentBytes = 0;
+      progress(0, size);
+      try {
+        await for (final chunk in file.openRead()) {
+          builder.add(chunk);
+          sentBytes += chunk.length;
+          progress(sentBytes, size);
+        }
+        _bytes[record.rkey] = builder.takeBytes();
+      } on io.FileSystemException {
+        _bytes[record.rkey] = Uint8List(0);
+      }
     }
     return Ok(record);
   }
@@ -1320,9 +1347,9 @@ final class FakeTainaApi implements TainaApi {
   }
 
   @override
-  Future<TainaResult<Tekoa>> setQuota({required int bytes}) async {
+  Future<TainaResult<Tekoa>> setQuota({required int? bytes}) async {
     await _pause();
-    if (bytes < 1) {
+    if (bytes != null && bytes < 1) {
       return const Err(
         ApiError(
           code: 'validation_failed',
@@ -1352,6 +1379,8 @@ final class FakeTainaApi implements TainaApi {
     return switch (_backup.status) {
       SaudeBackupStatus.ok ||
       SaudeBackupStatus.none ||
+      SaudeBackupStatus.never ||
+      SaudeBackupStatus.failed ||
       SaudeBackupStatus.unreadable => const Ok<void>(null),
       SaudeBackupStatus.disabled => const Err(
         ApiError(
