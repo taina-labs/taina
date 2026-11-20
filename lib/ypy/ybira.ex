@@ -46,6 +46,7 @@ defmodule Ypy.Ybira do
   @upload_commit_attempts 3
 
   @type blobstore :: BlobStore.t()
+  @type cid :: Cid.t()
   @type database_id :: integer()
   @type file :: File.t()
   @type folder :: Folder.t()
@@ -271,7 +272,7 @@ defmodule Ypy.Ybira do
         commit_opts =
           [mime: mime, nome: nome, folder: folder && folder.rkey]
           |> Keyword.merge(Keyword.take(opts, [:allowed_mimes]))
-          |> put_success_callback(success_callback)
+          |> maybe_put_success_callback(success_callback)
 
         commit_upload(repo, keys, scope, blob_cid, size, commit_opts)
       end
@@ -279,11 +280,11 @@ defmodule Ypy.Ybira do
   end
 
   @doc false
-  @spec put_upload_blob(blobstore(), path()) :: {:ok, Cid.t()} | {:error, term()}
+  @spec put_upload_blob(blobstore(), path()) :: {:ok, cid()} | {:error, term()}
   def put_upload_blob(blobs, path) when is_binary(path), do: blob_put_file(blobs, path)
 
   @doc false
-  @spec commit_upload(repo(), keystore(), scope(), Cid.t(), non_neg_integer(), opts()) ::
+  @spec commit_upload(repo(), keystore(), scope(), cid(), non_neg_integer(), opts()) ::
           {:ok, file()} | {:error, term()}
   def commit_upload(repo, keys, %Scope{} = scope, %Cid{} = blob_cid, size, opts) when is_integer(size) and size >= 0 do
     success_callback = Keyword.get(opts, :success_callback)
@@ -449,8 +450,8 @@ defmodule Ypy.Ybira do
     end
   end
 
-  defp put_success_callback(opts, nil), do: opts
-  defp put_success_callback(opts, callback), do: Keyword.put(opts, :success_callback, callback)
+  defp maybe_put_success_callback(opts, nil), do: opts
+  defp maybe_put_success_callback(opts, callback), do: Keyword.put(opts, :success_callback, callback)
 
   # Grava a versao nova do envelope e o dado que ela descreve, com a entrada
   # na cadeia, numa transacao so (RFC_006 secao 8).

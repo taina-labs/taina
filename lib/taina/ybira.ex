@@ -71,6 +71,7 @@ defmodule Taina.Ybira do
   @type file :: File.t()
   @type id :: integer()
   @type metadata :: map()
+  @type opts :: keyword()
   @type path :: Path.t()
   @type scope :: Scope.t()
   @type text :: String.t()
@@ -990,7 +991,7 @@ defmodule Taina.Ybira do
               cid,
               size,
               opts
-              |> put_upload_success_callback(success_callback)
+              |> maybe_put_upload_success_callback(success_callback)
               |> Keyword.put(:require_active_owner, require_active_owner?)
             )
           end)
@@ -1068,8 +1069,8 @@ defmodule Taina.Ybira do
     _kind, _reason -> :ok
   end
 
-  defp put_upload_success_callback(opts, nil), do: opts
-  defp put_upload_success_callback(opts, callback), do: Keyword.put(opts, :success_callback, callback)
+  defp maybe_put_upload_success_callback(opts, nil), do: opts
+  defp maybe_put_upload_success_callback(opts, callback), do: Keyword.put(opts, :success_callback, callback)
 
   defp maybe_enqueue_rendition(%Scope{} = scope, %File{} = file) do
     if image?(file.mime) do
@@ -1510,7 +1511,7 @@ defmodule Taina.Ybira do
   transaction. `upload/3` remains the synchronous entry point and preserves its
   post-commit, best-effort rendition behavior.
   """
-  @spec upload_with_success(scope(), path(), keyword(), (file() -> term())) ::
+  @spec upload_with_success(scope(), path(), opts(), (file() -> term())) ::
           {:ok, file()} | {:error, term()}
   def upload_with_success(%Scope{} = scope, temporary_path, opts, success_callback)
       when is_function(success_callback, 1) do

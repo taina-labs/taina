@@ -10,6 +10,7 @@ defmodule Ypy.Ybira.PersistenceTest do
   alias Ypy.BlobStore.Blocking
   alias Ypy.BrokenKeys
   alias Ypy.Cid
+  alias Ypy.Maraca.Ava
   alias Ypy.Maraca.Tekoa
   alias Ypy.Mural.Store
   alias Ypy.RacyRepo
@@ -140,7 +141,7 @@ defmodule Ypy.Ybira.PersistenceTest do
 
     {:ok, _ava} =
       ctx.dono
-      |> Ypy.Maraca.Ava.deactivation_changeset(DateTime.truncate(DateTime.utc_now(), :second))
+      |> Ava.deactivation_changeset(DateTime.truncate(DateTime.utc_now(), :second))
       |> TestRepo.update()
 
     assert {:error, :inactive_owner} =
