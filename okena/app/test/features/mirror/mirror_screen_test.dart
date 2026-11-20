@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:okena_app/src/design_system/design_system.dart';
 import 'package:okena_app/src/features/mirror/mirror_screen.dart';
 import 'package:okena_app/src/mirror/background_mirror_transfer.dart';
@@ -98,7 +99,11 @@ void main() {
     await tester.pumpWidget(_app(fixture.runtime));
     await _waitFor(tester, find.text('Ligar espelho'));
 
-    expect(find.text('Espelho do rolo de câmera'), findsOneWidget);
+    expect(find.text('Rolo de câmera'), findsOneWidget);
+    expect(find.byType(PageHeader), findsOneWidget);
+    expect(find.byType(TainaCard), findsNWidgets(2));
+    expect(find.byType(StatusLine), findsOneWidget);
+    expect(find.byType(TainaButton), findsOneWidget);
     expect(find.text('Desligado neste aparelho'), findsOneWidget);
     expect(
       find.text(
@@ -179,7 +184,8 @@ void main() {
       find.text('O Tainá pode enviar as fotos que você escolheu.'),
       findsOneWidget,
     );
-    expect(find.byType(TainaEmptyState), findsOneWidget);
+    expect(find.byType(EmptyStateView), findsOneWidget);
+    expect(find.byType(TainaIconView), findsWidgets);
 
     await tester.ensureVisible(find.text('Escolher mais fotos'));
     await tester.tap(find.text('Escolher mais fotos'));
@@ -227,6 +233,7 @@ void main() {
       find.text('O tamanho de alguns arquivos ainda está sendo calculado.'),
       findsOneWidget,
     );
+    expect(find.byType(TainaProgress), findsOneWidget);
   });
 
   testWidgets('Wi-Fi preference explains upcoming mobile-data use', (
@@ -322,6 +329,59 @@ void main() {
     expect(owner.owner.enabled, isTrue);
   });
 
+  testWidgets('storage action falls back to the app route without a shell', (
+    tester,
+  ) async {
+    final ledger = mirrorLedger(
+      ownerId: 'tekoa-test:ava-test',
+      entries: [mirrorEntry(assetId: 'asset-a', state: MirrorState.uploading)],
+    );
+    final owner = makeMirrorTestOwner(
+      ownerId: 'tekoa-test:ava-test',
+      enabled: true,
+      store: MirrorTestStore(ledger: ledger),
+    );
+    final fixture = _runtimeForOwner(owner);
+    final router = GoRouter(
+      initialLocation: '/conta/rolo-de-camera',
+      routes: [
+        GoRoute(
+          path: '/conta/rolo-de-camera',
+          builder: (context, state) => MirrorScreen(runtime: fixture.runtime),
+        ),
+        GoRoute(
+          path: '/armazenamento',
+          builder: (context, state) =>
+              const Scaffold(body: Text('Armazenamento da comunidade')),
+        ),
+      ],
+    );
+    addTearDown(() async {
+      router.dispose();
+      await _disposeFixture(tester, fixture);
+      await owner.dispose();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp.router(theme: TainaTheme.data, routerConfig: router),
+    );
+    await _waitFor(tester, find.byType(Switch, skipOffstage: false));
+    owner.events.add(
+      const MirrorTransferFailed(
+        assetId: 'asset-a',
+        taskId: 'task-asset-a',
+        error: mirrorQuotaError,
+      ),
+    );
+    await _waitFor(tester, find.text('Ver armazenamento'));
+
+    await tester.ensureVisible(find.text('Ver armazenamento'));
+    await tester.tap(find.text('Ver armazenamento'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Armazenamento da comunidade'), findsOneWidget);
+  });
+
   testWidgets('ordinary failure offers retry without saying it is paused', (
     tester,
   ) async {
@@ -371,17 +431,17 @@ void main() {
 
     await tester.pumpWidget(_app(fixture.runtime));
     await tester.pump();
-    expect(find.byType(TainaLoadingList), findsOneWidget);
+    expect(find.byType(SkeletonView), findsOneWidget);
 
     firstFactory.complete(const Err(mirrorOfflineError));
-    await _waitFor(tester, find.byType(TainaErrorState));
+    await _waitFor(tester, find.byType(ErrorCard));
     expect(find.text(mirrorOfflineError.message), findsOneWidget);
 
     await tester.tap(find.text('Tentar de novo'));
     await _pumpActions(tester);
 
     expect(factoryCalls, 2);
-    expect(find.byType(TainaErrorState), findsNothing);
+    expect(find.byType(ErrorCard), findsNothing);
     expect(find.text('Desligado neste aparelho'), findsOneWidget);
   });
 
