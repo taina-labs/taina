@@ -5,3 +5,8 @@
   min-height: 280px;
   overflow: hidden;
 }
+
+.media-frame img {
+  width: auto;
+  height: auto;
+}
