@@ -4,28 +4,18 @@ import 'package:okena_app/src/design_system/design_system.dart';
 import 'package:okena_app/src/features/auth/invite_accept_view.dart';
 import 'package:okena_app/src/features/auth/reset_password_view.dart';
 import 'package:okena_app/src/features/login/login_view.dart';
-import 'package:okena_app/src/features/setup/setup_view.dart';
+import 'package:okena_app/src/routing/route_helpers.dart';
+import 'package:okena_app/src/session/session_gateway.dart';
 import 'package:okena_app/src/session/session_model.dart';
 import 'package:okena_app/src/session/session_state.dart';
+import 'package:okena_app/src/session/upload_center.dart';
 import 'package:okena_app/src/shared/widgets/bootstrap_screen.dart';
-import 'package:okena_app/src/shell/more_view.dart';
-import 'package:okena_app/src/shell/shell_view.dart';
+import 'package:okena_core/okena_core.dart';
+import 'package:provider/provider.dart';
 
 import 'shell_screens.dart';
 
-/// The app's router.
-///
-/// Without a [session] it keeps the launch-only router the bootstrap shipped.
-/// The orchestrator mounts the real app by passing the composed session:
-///
-/// ```dart
-/// final session = SessionComposition.production();
-/// await session.restore();
-/// runApp(OkenaApp(router: createAppRouter(session: session)));
-/// ```
-///
-/// Restoring before `runApp` is what lets a cold-start deep link win the
-/// restore race: the session source is attached before the router exists.
+/// Builds the router before or after the session composition is available.
 GoRouter createAppRouter({
   SessionModel? session,
   ShellScreens screens = const ShellScreens(),
@@ -43,115 +33,168 @@ GoRouter createAppRouter({
   return createSessionRouter(session: session, screens: screens);
 }
 
-/// The session-aware router: the explicit state decides the top-level route,
-/// and each shell tab keeps its own navigation stack.
+/// The authenticated route set is one go_router stack. Service tabs use
+/// `go`, so selecting a place replaces the service URL instead of keeping a
+/// parallel tab history.
 GoRouter createSessionRouter({
   required SessionModel session,
   ShellScreens screens = const ShellScreens(),
 }) {
   return GoRouter(
-    initialLocation: '/',
+    initialLocation:
+        debugRouteLocation(const String.fromEnvironment('TAINA_ROUTE')) ??
+        AppRoutes.home,
     refreshListenable: session,
     redirect: (context, state) =>
-        sessionRedirect(session.state, state.matchedLocation),
+        sessionRedirect(session.state, state.uri.toString()),
     routes: [
       GoRoute(
-        path: '/checking',
+        path: AppRoutes.checking,
         builder: (context, state) => const _CheckingView(),
       ),
       GoRoute(
         path: '/setup',
-        builder: (context, state) => SetupView(session: session),
+        builder: (context, state) => LoginView(
+          session: session,
+          onOpenInvite: () => context.push(AppRoutes.invitePaste),
+        ),
       ),
       GoRoute(
-        path: '/login',
-        builder: (context, state) => LoginView(session: session),
+        path: AppRoutes.login,
+        builder: (context, state) => LoginView(
+          session: session,
+          onOpenInvite: () => context.push(AppRoutes.invitePaste),
+        ),
       ),
-      GoRoute(path: '/convite', builder: (context, state) => _invite(session)),
-      GoRoute(path: '/redefinir', builder: (context, state) => _reset(session)),
-      StatefulShellRoute.indexedStack(
-        builder: (context, state, navigationShell) =>
-            ShellView(navigationShell: navigationShell, session: session),
-        branches: [
-          StatefulShellBranch(
+      GoRoute(
+        path: AppRoutes.inviteAuth,
+        builder: (context, state) => _invite(session),
+      ),
+      GoRoute(
+        path: AppRoutes.invitePaste,
+        builder: (context, state) =>
+            _required(screens.invitePaste, context, state),
+      ),
+      GoRoute(
+        path: AppRoutes.resetAuth,
+        builder: (context, state) => _reset(session),
+      ),
+      ShellRoute(
+        builder: (context, state, child) =>
+            _AuthenticatedRoutes(session: session, child: child),
+        routes: [
+          GoRoute(
+            path: AppRoutes.home,
+            builder: (context, state) =>
+                _required(screens.home, context, state),
+          ),
+          GoRoute(
+            path: AppRoutes.documentsPraca,
+            builder: (context, state) =>
+                _required(screens.documents, context, state),
+          ),
+          GoRoute(
+            path: AppRoutes.documentsCasa,
+            builder: (context, state) =>
+                _required(screens.documents, context, state),
+          ),
+          GoRoute(
+            path: AppRoutes.documentsTrash,
+            builder: (context, state) =>
+                _required(screens.trash, context, state),
+          ),
+          GoRoute(
+            path: '/documentos/pasta/:rkey',
+            builder: (context, state) =>
+                _required(screens.folder, context, state),
+          ),
+          GoRoute(
+            path: '/documentos/arquivo/:rkey',
+            builder: (context, state) =>
+                _required(screens.file, context, state),
+          ),
+          GoRoute(
+            path: AppRoutes.documentsUpload,
+            builder: (context, state) =>
+                _required(screens.upload, context, state),
+          ),
+          GoRoute(
+            path: AppRoutes.galleryGrid,
+            builder: (context, state) =>
+                _required(screens.gallery, context, state),
+          ),
+          GoRoute(
+            path: AppRoutes.galleryTimeline,
+            builder: (context, state) =>
+                _required(screens.gallery, context, state),
+          ),
+          GoRoute(
+            path: AppRoutes.galleryViewer,
+            builder: (context, state) =>
+                _required(screens.galleryViewer, context, state),
             routes: [
               GoRoute(
-                path: '/inicio',
+                path: ':rkey',
                 builder: (context, state) =>
-                    _destination(context, screens.home, 'Início'),
+                    _required(screens.galleryViewer, context, state),
               ),
             ],
           ),
-          StatefulShellBranch(
+          GoRoute(
+            path: AppRoutes.mural,
+            builder: (context, state) =>
+                _required(screens.mural, context, state),
+          ),
+          GoRoute(
+            path: AppRoutes.health,
+            builder: (context, state) =>
+                _required(screens.health, context, state),
+          ),
+          GoRoute(
+            path: AppRoutes.members,
+            builder: (context, state) =>
+                _required(screens.members, context, state),
             routes: [
               GoRoute(
-                path: '/arquivos',
+                path: 'convidar',
+                redirect: (context, state) =>
+                    inviteRouteAllowed(session.identity?.ava.papel)
+                    ? null
+                    : AppRoutes.members,
                 builder: (context, state) =>
-                    _destination(context, screens.files, 'Arquivos'),
+                    _required(screens.inviteMember, context, state),
               ),
             ],
           ),
-          StatefulShellBranch(
-            routes: [
-              GoRoute(
-                path: '/fotos',
-                builder: (context, state) =>
-                    _destination(context, screens.gallery, 'Fotos'),
-              ),
-            ],
+          GoRoute(
+            path: AppRoutes.storage,
+            builder: (context, state) =>
+                _required(screens.storage, context, state),
           ),
-          StatefulShellBranch(
+          GoRoute(
+            path: AppRoutes.account,
+            builder: (context, state) =>
+                _required(screens.account, context, state),
             routes: [
               GoRoute(
-                path: '/mural',
+                path: 'pedidos',
                 builder: (context, state) =>
-                    _destination(context, screens.mural, 'Mural'),
+                    _required(screens.requests, context, state),
               ),
-            ],
-          ),
-          StatefulShellBranch(
-            routes: [
               GoRoute(
-                path: '/mais',
-                builder: (context, state) => const MoreView(),
-                routes: [
-                  GoRoute(
-                    path: 'moradores',
-                    builder: (context, state) =>
-                        _destination(context, screens.members, 'Moradores'),
-                  ),
-                  GoRoute(
-                    path: 'armazenamento',
-                    builder: (context, state) =>
-                        _destination(context, screens.storage, 'Armazenamento'),
-                  ),
-                  GoRoute(
-                    path: 'espelho',
-                    builder: (context, state) => _destination(
-                      context,
-                      screens.mirror,
-                      'Espelho do rolo de câmera',
-                    ),
-                  ),
-                  GoRoute(
-                    path: 'saude',
-                    builder: (context, state) =>
-                        _destination(context, screens.saude, 'Saúde'),
-                  ),
-                  GoRoute(
-                    path: 'pedidos',
-                    builder: (context, state) => _destination(
-                      context,
-                      screens.requests,
-                      'Pedidos de acesso',
-                    ),
-                  ),
-                  GoRoute(
-                    path: 'conta',
-                    builder: (context, state) =>
-                        _destination(context, screens.account, 'Conta'),
-                  ),
-                ],
+                path: 'privacidade',
+                builder: (context, state) =>
+                    _required(screens.privacy, context, state),
+              ),
+              GoRoute(
+                path: 'dispositivos',
+                builder: (context, state) =>
+                    _required(screens.devices, context, state),
+              ),
+              GoRoute(
+                path: 'rolo-de-camera',
+                builder: (context, state) =>
+                    _required(screens.cameraRoll, context, state),
               ),
             ],
           ),
@@ -161,51 +204,21 @@ GoRouter createSessionRouter({
   );
 }
 
-/// The pure switch from the session state to the route that must be on top.
-///
-/// It is synchronous on purpose: the session owns every decision, and the
-/// router only reflects it. A change notifies [SessionModel], go_router
-/// re-runs this redirect, and a deep link moves from whichever screen was up
-/// to the invite or reset one.
-String? sessionRedirect(SessionState state, String location) {
-  final path = location.split('?').first;
-
-  switch (state) {
-    case SessionChecking():
-      return path == '/checking' ? null : '/checking';
-    case SessionNeedsInstance():
-      return path == '/setup' ? null : '/setup';
-    case SessionNeedsLogin():
-      return path == '/login' ? null : '/login';
-    case SessionPendingAuth(:final pending):
-      final target = pending.kind == PendingAuthKind.invite
-          ? '/convite'
-          : '/redefinir';
-      return path == target ? null : target;
-    case SessionReady():
-      const preAuth = {
-        '/',
-        '/checking',
-        '/setup',
-        '/login',
-        '/convite',
-        '/redefinir',
-      };
-      if (preAuth.contains(path)) return '/inicio';
-      return null;
-  }
-}
-
-Widget _destination(
+Widget _required(
+  AppRouteBuilder? builder,
   BuildContext context,
-  WidgetBuilder? builder,
-  String title,
+  GoRouterState state,
 ) {
-  return builder?.call(context) ?? ShellPlaceholder(title: title);
+  if (builder == null) {
+    throw StateError(
+      'No route screen registered for ${state.matchedLocation}.',
+    );
+  }
+  return builder(context, state);
 }
 
 Widget _invite(SessionModel session) {
-  final state = session.state;
+  final SessionState state = session.state;
   if (state is SessionPendingAuth) {
     return InviteAcceptView(session: session, pending: state.pending);
   }
@@ -213,11 +226,49 @@ Widget _invite(SessionModel session) {
 }
 
 Widget _reset(SessionModel session) {
-  final state = session.state;
+  final SessionState state = session.state;
   if (state is SessionPendingAuth) {
     return ResetPasswordView(session: session, pending: state.pending);
   }
   return const _CheckingView();
+}
+
+final class _AuthenticatedRoutes extends StatelessWidget {
+  const _AuthenticatedRoutes({required this.session, required this.child});
+
+  final SessionModel session;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider<SessionModel>.value(value: session),
+        Provider<SessionGateway>.value(value: _SessionGatewayBinding(session)),
+        ChangeNotifierProvider<UploadCenter>.value(value: session.uploadCenter),
+      ],
+      child: child,
+    );
+  }
+}
+
+final class _SessionGatewayBinding implements SessionGateway {
+  const _SessionGatewayBinding(this._session);
+
+  final SessionModel _session;
+
+  @override
+  TainaApi get api => _session.api;
+
+  @override
+  ThumbnailStore get thumbnails => _session.thumbnails;
+
+  @override
+  Me? get identity => _session.identity;
+
+  @override
+  Future<TainaResult<T>> screen<T>(TainaResult<T> outcome) =>
+      _session.screen(outcome);
 }
 
 final class _CheckingView extends StatelessWidget {

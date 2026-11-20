@@ -1,62 +1,53 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
-import '../design_system/design_system.dart';
+typedef AppRouteBuilder = Widget Function(
+  BuildContext context,
+  GoRouterState state,
+);
 
-/// The builders of the authenticated destinations.
-///
-/// The session agent owns the shell, not the screens inside it. The
-/// orchestrator wires the real feature screens here once the other wave-2
-/// agents land; until then the router falls back to [ShellPlaceholder], which
-/// is deliberately explicit about not being final parity.
+/// Builders composed by the app integration. Route definitions stay in
+/// routing, while feature implementations can be replaced independently.
 final class ShellScreens {
   const ShellScreens({
     this.home,
-    this.files,
+    this.documents,
+    this.trash,
+    this.folder,
+    this.file,
+    this.upload,
     this.gallery,
+    this.galleryViewer,
     this.mural,
+    this.health,
     this.members,
+    this.inviteMember,
     this.storage,
-    this.mirror,
-    this.saude,
-    this.requests,
     this.account,
+    this.requests,
+    this.privacy,
+    this.devices,
+    this.cameraRoll,
+    this.invitePaste,
   });
 
-  final WidgetBuilder? home;
-  final WidgetBuilder? files;
-  final WidgetBuilder? gallery;
-  final WidgetBuilder? mural;
-  final WidgetBuilder? members;
-  final WidgetBuilder? storage;
-  final WidgetBuilder? mirror;
-  final WidgetBuilder? saude;
-  final WidgetBuilder? requests;
-  final WidgetBuilder? account;
-}
-
-/// The not-yet-integrated destination of a shell branch or a Mais row.
-///
-/// It exists so the router can be exercised in isolation without reaching
-/// into another agent's feature. It is not a finished screen and must not
-/// ship: the orchestrator replaces it through [ShellScreens].
-final class ShellPlaceholder extends StatelessWidget {
-  const ShellPlaceholder({required this.title, super.key});
-
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text(title)),
-      body: Center(
-        child: TainaEmptyState(
-          icon: Icons.construction_outlined,
-          title: 'Tela em integração',
-          message:
-              'Esta tela pertence a outra frente da migração e ainda não foi '
-              'conectada a este fluxo.',
-        ),
-      ),
-    );
-  }
+  final AppRouteBuilder? home;
+  final AppRouteBuilder? documents;
+  final AppRouteBuilder? trash;
+  final AppRouteBuilder? folder;
+  final AppRouteBuilder? file;
+  final AppRouteBuilder? upload;
+  final AppRouteBuilder? gallery;
+  final AppRouteBuilder? galleryViewer;
+  final AppRouteBuilder? mural;
+  final AppRouteBuilder? health;
+  final AppRouteBuilder? members;
+  final AppRouteBuilder? inviteMember;
+  final AppRouteBuilder? storage;
+  final AppRouteBuilder? account;
+  final AppRouteBuilder? requests;
+  final AppRouteBuilder? privacy;
+  final AppRouteBuilder? devices;
+  final AppRouteBuilder? cameraRoll;
+  final AppRouteBuilder? invitePaste;
 }

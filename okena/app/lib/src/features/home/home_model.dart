@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart';
-import 'package:okena_app/src/design_system/format.dart';
+import 'package:okena_app/src/design_system/design_system.dart';
 import 'package:okena_app/src/session/session_gateway.dart';
 import 'package:okena_core/okena_core.dart';
 
@@ -10,41 +10,70 @@ import 'package:okena_core/okena_core.dart';
 /// so one failing call never blanks the screen.
 final class HomeModel extends ChangeNotifier {
   HomeModel(this._gateway) {
-    _communityName = _gateway.identity?.tekoa.name;
+    final Me? identity = _gateway.identity;
+    _communityName = identity?.tekoa.name;
+    _userName = identity == null ? null : firstName(identity.ava.label);
   }
 
   final SessionGateway _gateway;
 
   bool _loaded = false;
   String? _communityName;
+  String? _userName;
   List<FileRecord> _recent = const [];
   TainaError? _recentError;
   StorageStats? _stats;
-  bool _statsError = false;
+  TainaError? _statsError;
   List<HomeMuralLine> _mural = const [];
-  bool _muralError = false;
+  TainaError? _muralError;
+  int? _activeMembers;
+  TainaError? _membersError;
+  String? _healthSummary;
+  TainaError? _healthError;
   int? _pendingRequests;
-  bool _requestsError = false;
+  String? _firstPendingName;
+  TainaError? _requestsError;
   bool _disposed = false;
+  Future<void>? _activeLoad;
 
   bool get loaded => _loaded;
   String? get communityName => _communityName;
+  String? get userName => _userName;
   List<FileRecord> get recent => _recent;
   TainaError? get recentError => _recentError;
   StorageStats? get stats => _stats;
-  bool get statsError => _statsError;
+  TainaError? get statsError => _statsError;
   List<HomeMuralLine> get mural => _mural;
-  bool get muralError => _muralError;
+  TainaError? get muralError => _muralError;
+  int? get activeMembers => _activeMembers;
+  TainaError? get membersError => _membersError;
+  String? get healthSummary => _healthSummary;
+  TainaError? get healthError => _healthError;
   int? get pendingRequests => _pendingRequests;
-  bool get requestsError => _requestsError;
+  String? get firstPendingName => _firstPendingName;
+  TainaError? get requestsError => _requestsError;
 
-  Future<void> load() async {
-    if (_disposed) return;
-    await _loadInstance();
-    await _loadMural();
-    await _loadRecent();
-    await _loadStorage();
-    await _loadRequests();
+  Future<void> load() {
+    if (_disposed) return Future<void>.value();
+    final Future<void>? active = _activeLoad;
+    if (active != null) return active;
+    final Future<void> next = _load();
+    _activeLoad = next;
+    return next.whenComplete(() {
+      if (identical(_activeLoad, next)) _activeLoad = null;
+    });
+  }
+
+  Future<void> _load() async {
+    _loaded = false;
+    _notify();
+    await Future.wait<void>([
+      _loadRecent(),
+      _loadStorage(),
+      _loadRequests(),
+      _loadHealth(),
+      _loadCommunity(),
+    ]);
     if (_disposed) return;
     _loaded = true;
     _notify();
@@ -57,10 +86,23 @@ final class HomeModel extends ChangeNotifier {
 
   /// The greeting by the clock of the device: the phone is where the person
   /// is, so its hour is the hour that greets them.
-  static String greeting(int hour) {
-    if (hour >= 5 && hour <= 11) return 'Bom dia,';
-    if (hour >= 12 && hour <= 17) return 'Boa tarde,';
-    return 'Boa noite,';
+  static String greeting(int hour, {String? name}) {
+    final String dayPart;
+    if (hour >= 5 && hour <= 11) {
+      dayPart = 'Bom dia';
+    } else if (hour >= 12 && hour <= 17) {
+      dayPart = 'Boa tarde';
+    } else {
+      dayPart = 'Boa noite';
+    }
+    final String first = firstName(name ?? '');
+    return first.isEmpty ? '$dayPart,' : '$dayPart, $first';
+  }
+
+  static String firstName(String name) {
+    final String trimmed = name.trim();
+    if (trimmed.isEmpty) return '';
+    return trimmed.split(RegExp(r'\s+')).first;
   }
 
   /// A quota defined and above zero: without one there is no free space to
@@ -98,7 +140,6 @@ final class HomeModel extends ChangeNotifier {
       fileKind(file.mime),
       TainaFormat.bytes(file.size),
       TainaFormat.relative(file.createdAt, now: now),
-      zonaWord(file.zona),
     ].where((String part) => part.isNotEmpty).join(', ');
   }
 
@@ -120,6 +161,66 @@ final class HomeModel extends ChangeNotifier {
     if (count == 0) return 'Nenhum pedido esperando';
     if (count == 1) return '1 pedido esperando';
     return '$count pedidos esperando';
+  }
+
+  static String memberCountLabel(int count) =>
+      '$count ${count == 1 ? 'pessoa' : 'pessoas'} na comunidade';
+
+  static String muralMeta(HomeMuralLine line) {
+    final String sentence = line.sentence.trim().replaceFirst(
+      RegExp(r'\.$'),
+      '',
+    );
+    return '$sentence, ${line.ago}';
+  }
+
+  static String? careLine({
+    required int? count,
+    required String? firstRequester,
+  }) {
+    if (count == null || count == 0) return null;
+    if (count == 1) {
+      final String requester = firstName(firstRequester ?? '');
+      if (requester.isEmpty) {
+        return 'Uma pessoa pediu para abrir um arquivo da sua casa';
+      }
+      return '$requester pediu para abrir um arquivo da sua casa';
+    }
+    return '$count pessoas pediram para abrir arquivos da sua casa';
+  }
+
+  /// Mirrors `TainaWeb.Saude.summary_line/1` until the box supplies BE-4's
+  /// ready-to-show `summary.line`.
+  static String saudeSummaryLine(Saude saude) {
+    final SaudeSummary? summary = saude.summary;
+    if (summary != null) return summary.line;
+    final StorageStats stats = saude.storage;
+    final int? quota = stats.quotaBytes;
+    if (quota != null && quota > 0 && stats.usedBytes / quota >= 0.9) {
+      return 'Disco quase cheio';
+    }
+    if (saude.backup.at == null) return 'Nenhum backup ainda';
+    return 'Backup em dia';
+  }
+
+  static int activeCount(List<Ava> avas) => avas
+      .where((Ava ava) => ava.activatedAt != null && ava.deactivatedAt == null)
+      .length;
+
+  static StorageSummary storageSummary(StorageStats stats) {
+    final int? quota = stats.quotaBytes;
+    final bool quotaAvailable = quota != null && quota > 0;
+    final int percent = storagePercent(stats);
+    final String caption = quotaAvailable
+        ? '${TainaFormat.bytes(stats.usedBytes)} de '
+              '${TainaFormat.bytes(quota)} usados'
+        : '${TainaFormat.bytes(stats.usedBytes)} em uso';
+    return StorageSummary(
+      usedLabel: caption,
+      caption: caption,
+      progress: percent / 100,
+      freeLabel: quotaAvailable ? freeLabel(stats) : null,
+    );
   }
 
   /// The pending ones are the only count worth a card: a decided pedido
@@ -245,16 +346,6 @@ final class HomeModel extends ChangeNotifier {
 
   // MARK: internals
 
-  Future<void> _loadInstance() async {
-    final TainaResult<Instance> result = await _gateway.api.instance();
-    final TainaResult<Instance> screened = await _gateway.screen(result);
-    if (_disposed) return;
-    if (screened case Ok(:final value)) {
-      _communityName = value.tekoa?.name;
-      _notify();
-    }
-  }
-
   Future<void> _loadRecent() async {
     final TainaResult<Page<FileRecord>> result = await _gateway.api.recent(
       limit: 4,
@@ -265,7 +356,7 @@ final class HomeModel extends ChangeNotifier {
     if (_disposed) return;
     switch (screened) {
       case Ok(:final value):
-        _recent = value.items;
+        _recent = value.items.take(4).toList(growable: false);
         _recentError = null;
       case Err(:final error):
         _recent = const [];
@@ -281,37 +372,47 @@ final class HomeModel extends ChangeNotifier {
     switch (screened) {
       case Ok(:final value):
         _stats = value;
-        _statsError = false;
-      case Err():
+        _statsError = null;
+      case Err(:final error):
         _stats = null;
-        _statsError = true;
+        _statsError = error;
     }
     _notify();
   }
 
-  Future<void> _loadMural() async {
-    Map<String, String> names = const {};
-    final TainaResult<Page<Ava>> roster = await _gateway.api.members();
-    final TainaResult<Page<Ava>> screenedRoster = await _gateway.screen(roster);
+  Future<void> _loadCommunity() async {
+    Future<TainaResult<Page<Ava>>> loadMembers() async =>
+        _gateway.screen(await _gateway.api.members());
+    Future<TainaResult<Page<MuralEntry>>> loadMural() async =>
+        _gateway.screen(await _gateway.api.mural(limit: 1, cursor: null));
+    final List<Object> results = await Future.wait<Object>([
+      loadMembers(),
+      loadMural(),
+    ]);
     if (_disposed) return;
-    if (screenedRoster case Ok(:final value)) {
-      names = actorNames(value.items);
-    }
-    final TainaResult<Page<MuralEntry>> result = await _gateway.api.mural(
-      limit: 3,
-      cursor: null,
-    );
-    final TainaResult<Page<MuralEntry>> screened = await _gateway.screen(
-      result,
-    );
-    if (_disposed) return;
-    switch (screened) {
+    final TainaResult<Page<Ava>> members =
+        results.first as TainaResult<Page<Ava>>;
+    final TainaResult<Page<MuralEntry>> mural =
+        results.last as TainaResult<Page<MuralEntry>>;
+    Map<String, String> names = _gateway.identity == null
+        ? const {}
+        : actorNames([_gateway.identity!.ava]);
+    switch (members) {
       case Ok(:final value):
-        _mural = lines(value.items, names);
-        _muralError = false;
-      case Err():
+        _activeMembers = activeCount(value.items);
+        _membersError = null;
+        names = actorNames(value.items);
+      case Err(:final error):
+        _activeMembers = null;
+        _membersError = error;
+    }
+    switch (mural) {
+      case Ok(:final value):
+        _mural = lines(value.items, names).take(1).toList(growable: false);
+        _muralError = null;
+      case Err(:final error):
         _mural = const [];
-        _muralError = true;
+        _muralError = error;
     }
     _notify();
   }
@@ -324,10 +425,33 @@ final class HomeModel extends ChangeNotifier {
     switch (screened) {
       case Ok(:final value):
         _pendingRequests = pendingCount(value);
-        _requestsError = false;
-      case Err():
+        final List<Pedido> pending = value.items
+            .where((Pedido pedido) => pedido.status == PedidoStatus.pendente)
+            .toList(growable: false);
+        _firstPendingName = pending.isEmpty
+            ? null
+            : pending.first.pedinte?.label;
+        _requestsError = null;
+      case Err(:final error):
         _pendingRequests = null;
-        _requestsError = true;
+        _firstPendingName = null;
+        _requestsError = error;
+    }
+    _notify();
+  }
+
+  Future<void> _loadHealth() async {
+    final TainaResult<Saude> result = await _gateway.screen(
+      await _gateway.api.saude(),
+    );
+    if (_disposed) return;
+    switch (result) {
+      case Ok(:final value):
+        _healthSummary = saudeSummaryLine(value);
+        _healthError = null;
+      case Err(:final error):
+        _healthSummary = null;
+        _healthError = error;
     }
     _notify();
   }

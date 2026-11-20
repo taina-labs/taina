@@ -51,11 +51,13 @@ void main() {
   group('pure helpers', () {
     test('the greeting follows the device clock', () {
       expect(HomeModel.greeting(5), 'Bom dia,');
-      expect(HomeModel.greeting(11), 'Bom dia,');
-      expect(HomeModel.greeting(12), 'Boa tarde,');
+      expect(HomeModel.greeting(11, name: 'Ana Souza'), 'Bom dia, Ana');
+      expect(HomeModel.greeting(12, name: 'Ana'), 'Boa tarde, Ana');
       expect(HomeModel.greeting(17), 'Boa tarde,');
-      expect(HomeModel.greeting(18), 'Boa noite,');
+      expect(HomeModel.greeting(18, name: 'Ana Souza'), 'Boa noite, Ana');
       expect(HomeModel.greeting(4), 'Boa noite,');
+      expect(HomeModel.firstName('  Ana   Souza '), 'Ana');
+      expect(HomeModel.firstName('  '), isEmpty);
     });
 
     test('storage reads quota, percent, warning and free space', () {
@@ -72,7 +74,7 @@ void main() {
       expect(HomeModel.freeLabel(_noQuota), isEmpty);
     });
 
-    test('the recent meta ends in the zone in words', () {
+    test('recent metadata uses the board order and comma separators', () {
       final FileRecord file = FileRecord(
         rkey: 'a',
         cid: 'cid',
@@ -93,11 +95,11 @@ void main() {
       );
       expect(
         HomeModel.recentMeta(file, now: DateTime(2026, 11, 9, 12)),
-        'Imagem, 1,1 MB, ontem, na praça',
+        'Imagem, 1,1 MB, ontem',
       );
     });
 
-    test('the kind words and the pending label match the screen', () {
+    test('the kind words and live labels match the screen', () {
       expect(HomeModel.fileKind('application/pdf'), 'PDF');
       expect(HomeModel.fileKind('video/mp4'), 'Vídeo');
       expect(HomeModel.fileKind('text/plain'), 'Texto');
@@ -107,12 +109,130 @@ void main() {
       expect(HomeModel.pendingLabel(0), 'Nenhum pedido esperando');
       expect(HomeModel.pendingLabel(1), '1 pedido esperando');
       expect(HomeModel.pendingLabel(4), '4 pedidos esperando');
+      expect(HomeModel.memberCountLabel(1), '1 pessoa na comunidade');
+      expect(HomeModel.memberCountLabel(12), '12 pessoas na comunidade');
+      expect(
+        HomeModel.careLine(count: 1, firstRequester: 'Carla Souza'),
+        'Carla pediu para abrir um arquivo da sua casa',
+      );
+      expect(
+        HomeModel.careLine(count: 2, firstRequester: 'Carla'),
+        '2 pessoas pediram para abrir arquivos da sua casa',
+      );
+      expect(HomeModel.careLine(count: 0, firstRequester: null), isNull);
     });
 
-    test('pending count ignores the decided pedidos', () async {
-      final HomeTestGateway gateway = HomeTestGateway();
-      final Page<Pedido> page = (await gateway.api.accessRequests()).value!;
-      expect(HomeModel.pendingCount(page), 1);
+    test(
+      'pending count ignores decided pedidos and active roster is counted',
+      () async {
+        final HomeTestGateway gateway = HomeTestGateway();
+        final Page<Pedido> page = (await gateway.api.accessRequests()).value!;
+        expect(HomeModel.pendingCount(page), 1);
+        expect(
+          HomeModel.activeCount([
+            const Ava(
+              publicId: 'active',
+              username: 'active',
+              displayName: null,
+              papel: Papel.morador,
+              activatedAt: '2026-01-01T00:00:00Z',
+              deactivatedAt: null,
+              createdAt: '2026-01-01T00:00:00Z',
+            ),
+            const Ava(
+              publicId: 'pending',
+              username: null,
+              displayName: null,
+              papel: Papel.morador,
+              activatedAt: null,
+              deactivatedAt: null,
+              createdAt: '2026-01-01T00:00:00Z',
+            ),
+            const Ava(
+              publicId: 'deactivated',
+              username: 'deactivated',
+              displayName: null,
+              papel: Papel.morador,
+              activatedAt: '2026-01-01T00:00:00Z',
+              deactivatedAt: '2026-02-01T00:00:00Z',
+              createdAt: '2026-01-01T00:00:00Z',
+            ),
+          ]),
+          1,
+        );
+      },
+    );
+
+    test('storage summary carries used, free and clamped progress', () {
+      final summary = HomeModel.storageSummary(_half);
+      expect(summary.usedLabel, '50 B de 100 B usados');
+      expect(summary.caption, '50 B de 100 B usados');
+      expect(summary.progress, 0.5);
+      expect(summary.freeLabel, '50 B livres');
+      expect(HomeModel.storageSummary(_noQuota).progress, 0);
+    });
+
+    test('health summary uses the box line or the specified fallback', () {
+      const Saude noBackup = Saude(
+        storage: _half,
+        jobs: {},
+        backup: SaudeBackup(
+          status: SaudeBackupStatus.never,
+          at: null,
+          bytes: null,
+        ),
+      );
+      const Saude nearFull = Saude(
+        storage: _nearlyFull,
+        jobs: {},
+        backup: SaudeBackup(
+          status: SaudeBackupStatus.ok,
+          at: '2026-11-09T10:00:00Z',
+          bytes: 95,
+        ),
+      );
+      const Saude withBackup = Saude(
+        storage: _half,
+        jobs: {},
+        backup: SaudeBackup(
+          status: SaudeBackupStatus.ok,
+          at: '2026-11-09T10:00:00Z',
+          bytes: 50,
+        ),
+      );
+      const Saude withBoxSummary = Saude(
+        storage: _half,
+        jobs: {},
+        backup: SaudeBackup(
+          status: SaudeBackupStatus.ok,
+          at: '2026-11-09T10:00:00Z',
+          bytes: 50,
+        ),
+        summary: SaudeSummary(
+          state: SaudeSummaryState.attention,
+          line: 'Atenção à comunidade',
+        ),
+      );
+
+      expect(HomeModel.saudeSummaryLine(noBackup), 'Nenhum backup ainda');
+      expect(HomeModel.saudeSummaryLine(nearFull), 'Disco quase cheio');
+      expect(HomeModel.saudeSummaryLine(withBackup), 'Backup em dia');
+      expect(
+        HomeModel.saudeSummaryLine(withBoxSummary),
+        'Atenção à comunidade',
+      );
+    });
+
+    test('the Mural meta appends relative time without double punctuation', () {
+      final line = HomeMuralLine(
+        id: 'cid',
+        sentence: 'Ana publicou um arquivo na praça.',
+        ago: 'hoje',
+      );
+      expect(
+        HomeModel.muralMeta(line),
+        'Ana publicou um arquivo na praça, hoje',
+      );
     });
   });
 
@@ -225,15 +345,27 @@ void main() {
       await model.load();
 
       expect(model.loaded, isTrue);
-      expect(model.communityName, 'Tekoa Sapukai');
+      expect(model.communityName, 'Quilombo do Café');
+      expect(model.userName, 'Ana');
       expect(model.recent, hasLength(4));
       expect(model.recentError, isNull);
       expect(model.stats, isNotNull);
-      expect(model.statsError, isFalse);
-      expect(model.mural, hasLength(3));
-      expect(model.muralError, isFalse);
+      expect(model.statsError, isNull);
+      expect(model.mural, hasLength(1));
+      expect(model.muralError, isNull);
+      expect(model.activeMembers, isNotNull);
+      expect(model.membersError, isNull);
+      expect(model.healthSummary, isNotNull);
+      expect(model.healthError, isNull);
       expect(model.pendingRequests, 1);
-      expect(model.requestsError, isFalse);
+      expect(model.firstPendingName, isNotNull);
+      expect(model.requestsError, isNull);
+      expect(gateway.recentCalls, 1);
+      expect(gateway.storageCalls, 1);
+      expect(gateway.membersCalls, 1);
+      expect(gateway.muralCalls, 1);
+      expect(gateway.requestsCalls, 1);
+      expect(gateway.healthCalls, 1);
     });
 
     test('a section failure degrades only that section', () async {
@@ -241,16 +373,22 @@ void main() {
       gateway.failStats = true;
       gateway.failMural = true;
       gateway.failRequests = true;
+      gateway.failMembers = true;
+      gateway.failHealth = true;
       final HomeModel model = HomeModel(gateway);
       addTearDown(model.dispose);
 
       await model.load();
 
-      expect(model.statsError, isTrue);
+      expect(model.statsError, isA<NetworkError>());
       expect(model.stats, isNull);
-      expect(model.muralError, isTrue);
+      expect(model.muralError, isA<NetworkError>());
       expect(model.mural, isEmpty);
-      expect(model.requestsError, isTrue);
+      expect(model.membersError, isA<NetworkError>());
+      expect(model.activeMembers, isNull);
+      expect(model.healthError, isA<NetworkError>());
+      expect(model.healthSummary, isNull);
+      expect(model.requestsError, isA<NetworkError>());
       expect(model.pendingRequests, isNull);
       expect(model.recent, hasLength(4));
       expect(model.recentError, isNull);
@@ -269,7 +407,7 @@ void main() {
       await model.retryStorage();
 
       expect(model.stats, isNotNull);
-      expect(model.statsError, isFalse);
+      expect(model.statsError, isNull);
       expect(gateway.recentCalls, recentCalls);
       expect(gateway.storageCalls, 2);
     });
