@@ -86,10 +86,10 @@ final class _CameraRollUploadSheetState extends State<CameraRollUploadSheet>
                               color: TainaPalette.textPrimary,
                             ),
                           ),
-                          IconButton(
-                            tooltip: 'Fechar',
-                            onPressed: model.busy ? null : () => _close(model),
-                            icon: const Icon(Icons.close),
+                          TainaIconButton(
+                            icon: TainaIcon.close,
+                            label: 'Fechar',
+                            action: model.busy ? null : () => _close(model),
                           ),
                         ],
                       ),
@@ -134,7 +134,7 @@ final class _CameraRollUploadSheetState extends State<CameraRollUploadSheet>
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const TainaEmptyState(
-          icon: Icons.photo_library_outlined,
+          icon: TainaIcon.image,
           title: 'Nenhuma foto selecionada',
           message: 'Escolha fotos e vídeos do aparelho ou tire uma foto agora.',
         ),

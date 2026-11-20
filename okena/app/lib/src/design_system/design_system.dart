@@ -13,8 +13,8 @@
 /// - Material defaults: [TainaTheme.data].
 /// - Shared components: [TainaPrimaryButton], [TainaSecondaryButton],
 ///   [TainaTextField], [TainaRowCard], [TainaZonaBadge],
-///   [TainaCleartextNotice], [TainaEmptyState], [TainaErrorState],
-///   [TainaSkeleton], [TainaLoadingList], [TainaText].
+///   [TainaEmptyState], [TainaErrorState], [TainaSkeleton],
+///   [TainaLoadingList], [TainaText].
 /// - Pure formatting: [TainaFormat].
 library;
 

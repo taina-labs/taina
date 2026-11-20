@@ -133,6 +133,31 @@ void main() {
     expect(router.canPop(), isTrue);
   });
 
+  testWidgets('Conta hides camera-roll when no mirror runtime is composed', (
+    tester,
+  ) async {
+    final SessionModel session = await readySession();
+    addTearDown(session.dispose);
+    final GoRouter router = createSessionRouter(
+      session: session,
+      screens: buildShellScreens(session),
+    );
+    await tester.pumpWidget(
+      MaterialApp.router(theme: TainaTheme.data, routerConfig: router),
+    );
+    await tester.pumpAndSettle();
+
+    router.go(AppRoutes.account);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AccountScreen), findsOneWidget);
+    expect(find.text('Rolo de câmera'), findsNothing);
+    router.go(AppRoutes.cameraRoll);
+    await tester.pumpAndSettle();
+    expect(find.byType(MirrorScreen), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     'Conta rows open privacy, devices and sent Pedidos destinations',
     (tester) async {

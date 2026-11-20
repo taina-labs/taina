@@ -5,6 +5,7 @@ import 'package:okena_core/okena_core.dart';
 
 import '../tokens.dart';
 import 'buttons.dart';
+import 'icons.dart';
 import 'surfaces.dart';
 import 'text.dart';
 
@@ -19,7 +20,7 @@ final class TainaEmptyState extends StatelessWidget {
     super.key,
   });
 
-  final IconData icon;
+  final TainaIcon icon;
   final String title;
   final String message;
   final String? actionLabel;
@@ -35,8 +36,8 @@ final class TainaEmptyState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              icon,
+            TainaIconView(
+              icon: icon,
               size: TainaFontSizes.display,
               color: TainaPalette.textFaint,
             ),
@@ -89,8 +90,8 @@ final class TainaErrorState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(
-              Icons.warning_amber_rounded,
+            const TainaIconView(
+              icon: TainaIcon.warning,
               size: TainaFontSizes.xxl,
               color: TainaPalette.feedbackWarning,
             ),

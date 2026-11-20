@@ -52,7 +52,7 @@ void main() {
     expect(find.text('Convidar'), findsOneWidget);
     expect(find.text('Trocar senha'), findsOneWidget);
     expect(find.text('Dispositivos'), findsOneWidget);
-    expect(find.text('Rolo de câmera'), findsOneWidget);
+    expect(find.text('Rolo de câmera'), findsNothing);
     expect(find.text('taina.sapukai.ts.net'), findsNothing);
     expect(find.text('Versão da caixa: 0.6.0'), findsNothing);
     expect(find.text('Espaço'), findsNothing);

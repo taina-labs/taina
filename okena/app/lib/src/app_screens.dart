@@ -223,7 +223,8 @@ ShellScreens buildShellScreens(
       session: context.read<SessionGateway>(),
       onBack: () => _routeBack(context, AppRoutes.home),
     ),
-    account: (context, state) => _accountScreen(context, session),
+    account: (context, state) =>
+        _accountScreen(context, session, mirrorRuntime: mirrorRuntime),
     requests: (context, state) {
       final RequestsRouteTarget target = state.extra is RequestsRouteTarget
           ? state.extra! as RequestsRouteTarget
@@ -258,7 +259,11 @@ ShellScreens buildShellScreens(
   );
 }
 
-Widget _accountScreen(BuildContext context, SessionModel session) {
+Widget _accountScreen(
+  BuildContext context,
+  SessionModel session, {
+  required MirrorRuntime? mirrorRuntime,
+}) {
   return AccountScreen(
     session: context.read<SessionGateway>(),
     onSignOut: session.signOut,
@@ -272,7 +277,9 @@ Widget _accountScreen(BuildContext context, SessionModel session) {
     onOpenPrivacy: () => context.push(AppRoutes.privacy),
     onOpenInvite: () => context.push(AppRoutes.inviteMember),
     onOpenDevices: () => context.push(AppRoutes.devices),
-    onOpenCameraRoll: () => context.push(AppRoutes.cameraRoll),
+    onOpenCameraRoll: mirrorRuntime == null
+        ? null
+        : () => context.push(AppRoutes.cameraRoll),
   );
 }
 

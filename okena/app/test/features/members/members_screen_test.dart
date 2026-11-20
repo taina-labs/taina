@@ -204,6 +204,10 @@ void main() {
     await tester.tap(find.text('Convidar'));
     await tester.pumpAndSettle();
     expect(find.text('Convidar moradores'), findsOneWidget);
+    expect(
+      tester.widget<TainaBackButton>(find.byType(TainaBackButton)).label,
+      'Moradores',
+    );
     expect(find.text('Vê a praça e ganha uma casa própria.'), findsOneWidget);
     expect(
       find.textContaining('Cuida da máquina: disco, backups e convites.'),

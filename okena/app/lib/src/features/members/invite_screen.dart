@@ -41,7 +41,7 @@ final class _MembersInviteScreenState extends State<MembersInviteScreen> {
           children: [
             PageHeader(
               title: 'Convidar moradores',
-              backLabel: 'Início',
+              backLabel: 'Moradores',
               onBack: () => Navigator.of(context).pop(_model.invite),
             ),
             Expanded(

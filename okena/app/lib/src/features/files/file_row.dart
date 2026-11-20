@@ -94,8 +94,8 @@ final class _FileThumbnailState extends State<FileThumbnail> {
   Widget _glyph() {
     return ColoredBox(
       color: TainaPalette.surfaceRaised,
-      child: Icon(
-        Icons.description_outlined,
+      child: TainaIconView(
+        icon: TainaIcon.file,
         size: TainaFontSizes.xl,
         color: TainaPalette.textFaint,
       ),

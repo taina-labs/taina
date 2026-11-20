@@ -207,12 +207,13 @@ final class _AccountViewState extends State<_AccountView> {
         mark: TainaServiceMark.dispositivos,
         onTap: () => _openDevices(context),
       ),
-      _accountRow(
-        title: 'Rolo de câmera',
-        meta: 'Fotos e vídeos deste aparelho',
-        mark: TainaServiceMark.jaci,
-        onTap: widget.onOpenCameraRoll,
-      ),
+      if (widget.onOpenCameraRoll != null)
+        _accountRow(
+          title: 'Rolo de câmera',
+          meta: 'Fotos e vídeos deste aparelho',
+          mark: TainaServiceMark.jaci,
+          onTap: widget.onOpenCameraRoll,
+        ),
     ];
     return SliverPadding(
       padding: const EdgeInsets.fromLTRB(

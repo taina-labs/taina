@@ -129,7 +129,7 @@ abstract final class TainaTheme {
       ),
       textSelectionTheme: const TextSelectionThemeData(
         cursorColor: TainaPalette.brandPrimary,
-        selectionColor: Color(0x52F2A65A),
+        selectionColor: TainaPalette.textSelection,
         selectionHandleColor: TainaPalette.brandPrimary,
       ),
       filledButtonTheme: FilledButtonThemeData(

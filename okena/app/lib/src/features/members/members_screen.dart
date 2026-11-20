@@ -146,13 +146,13 @@ final class _MembersViewState extends State<_MembersView> {
           const SizedBox(height: TainaSpacing.space3),
           if (model.members.isEmpty)
             const TainaEmptyState(
-              icon: Icons.people_outline,
+              icon: TainaIcon.moradores,
               title: 'Ninguém por aqui',
               message: 'A comunidade ainda não tem moradores.',
             )
           else if (filtered.isEmpty)
             const TainaEmptyState(
-              icon: Icons.folder_outlined,
+              icon: TainaIcon.search,
               title: 'Ninguém com esse nome',
               message: 'Confira a escrita ou procure por outro nome.',
             )

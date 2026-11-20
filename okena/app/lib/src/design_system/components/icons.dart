@@ -28,6 +28,7 @@ enum TainaIcon {
   info,
   shield,
   file,
+  warning,
   restore,
   praca,
   casa,
@@ -40,7 +41,6 @@ enum TainaIcon {
   senha,
   dispositivos,
   sair,
-  warning,
   x;
 
   String get assetName => name;

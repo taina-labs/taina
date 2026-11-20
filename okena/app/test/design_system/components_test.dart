@@ -102,7 +102,10 @@ void main() {
       await tester.pumpWidget(_app(const TainaZonaBadge.casa()));
 
       expect(find.text('Casa'), findsOneWidget);
-      expect(find.byIcon(Icons.home_rounded), findsOneWidget);
+      expect(
+        tester.widget<TainaIconView>(find.byType(TainaIconView)).icon,
+        TainaIcon.casa,
+      );
       final Container container = tester.widget<Container>(
         find.descendant(
           of: find.byType(TainaZonaBadge),
@@ -117,7 +120,10 @@ void main() {
       await tester.pumpWidget(_app(const TainaZonaBadge.praca()));
 
       expect(find.text('Praça'), findsOneWidget);
-      expect(find.byIcon(Icons.people_rounded), findsOneWidget);
+      expect(
+        tester.widget<TainaIconView>(find.byType(TainaIconView)).icon,
+        TainaIcon.praca,
+      );
       final Container container = tester.widget<Container>(
         find.descendant(
           of: find.byType(TainaZonaBadge),
@@ -126,13 +132,6 @@ void main() {
       );
       final BoxDecoration decoration = container.decoration! as BoxDecoration;
       expect(decoration.color, TainaPalette.serviceJaciSoft);
-    });
-
-    testWidgets('cleartext notice shows the full warning', (tester) async {
-      await tester.pumpWidget(_sized(const TainaCleartextNotice()));
-
-      expect(find.text(TainaCleartextNotice.message), findsOneWidget);
-      expect(find.byIcon(Icons.lock_open), findsOneWidget);
     });
   });
 
@@ -200,7 +199,7 @@ void main() {
       await tester.pumpWidget(
         _sized(
           TainaEmptyState(
-            icon: Icons.inbox_rounded,
+            icon: TainaIcon.file,
             title: 'Nada por aqui',
             message: 'Quando a comunidade enviar algo, aparece aqui.',
             actionLabel: 'Tentar de novo',
@@ -224,7 +223,7 @@ void main() {
       await tester.pumpWidget(
         _sized(
           const TainaEmptyState(
-            icon: Icons.inbox_rounded,
+            icon: TainaIcon.file,
             title: 'Nada por aqui',
             message: 'Ainda não há nada.',
             actionLabel: 'Tentar de novo',
@@ -249,7 +248,10 @@ void main() {
       );
 
       expect(find.text(const NetworkError().message), findsOneWidget);
-      expect(find.byIcon(Icons.warning_amber_rounded), findsOneWidget);
+      expect(
+        tester.widget<TainaIconView>(find.byType(TainaIconView)).icon,
+        TainaIcon.warning,
+      );
 
       await tester.tap(find.text('Tentar de novo'));
       await tester.pump();
@@ -297,5 +299,12 @@ void main() {
 
       expect(find.text('MURAL'), findsOneWidget);
     });
+  });
+
+  test('text selection uses its semantic palette token', () {
+    expect(
+      TainaTheme.data.textSelectionTheme.selectionColor,
+      TainaPalette.textSelection,
+    );
   });
 }

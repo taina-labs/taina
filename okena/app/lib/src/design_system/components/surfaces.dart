@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../tokens.dart';
+import 'icons.dart';
 import 'text.dart';
 
 /// A list row surface: `surface-default` fill, `border-subtle` stroke,
@@ -44,9 +45,7 @@ final class TainaRowCard extends StatelessWidget {
 /// The casa / praça mark, wherever a file or folder appears: the product's
 /// core promise, in `service-ybira` for Casa and `service-jaci` for Praça.
 ///
-/// No padlock on Casa: its privacy is a software promise, not a cryptographic
-/// one, so the glyph says home. Feature agents map the wire zone to one of the
-/// two named constructors.
+/// Feature agents map the wire zone to one of the two named constructors.
 final class TainaZonaBadge extends StatelessWidget {
   const TainaZonaBadge.casa({super.key}) : _casa = true;
 
@@ -72,8 +71,8 @@ final class TainaZonaBadge extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            _casa ? Icons.home_rounded : Icons.people_rounded,
+          TainaIconView(
+            icon: _casa ? TainaIcon.casa : TainaIcon.praca,
             size: TainaFontSizes.sm,
             color: color,
           ),
@@ -85,40 +84,6 @@ final class TainaZonaBadge extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-/// The path to the box has no TLS. Not a blocker, and never silent: a private
-/// network (a tailnet, a VPN) already encrypts the path under the app's feet,
-/// and outside one it does not. Shown where the address is typed, and on the
-/// account screen, where it still matters later.
-final class TainaCleartextNotice extends StatelessWidget {
-  const TainaCleartextNotice({super.key});
-
-  static const String message =
-      'Esta comunidade responde sem criptografia (http). Numa rede privada, '
-      'como uma VPN, o caminho já vai protegido; fora dela, não.';
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Icon(
-          Icons.lock_open,
-          size: TainaFontSizes.sm,
-          color: TainaPalette.feedbackWarning,
-        ),
-        const SizedBox(width: TainaSpacing.space2),
-        Expanded(
-          child: TainaText(
-            message,
-            style: TainaTypography.caption,
-            color: TainaPalette.feedbackWarning,
-          ),
-        ),
-      ],
     );
   }
 }

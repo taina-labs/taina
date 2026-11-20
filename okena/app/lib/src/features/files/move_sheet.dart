@@ -174,7 +174,7 @@ final class _MoveSheetBodyState extends State<_MoveSheetBody> {
         ),
         const SizedBox(height: TainaSpacing.space4),
         _DestinationRow(
-          icon: Icons.home_outlined,
+          icon: TainaIcon.casa,
           label: 'Início (raiz)',
           disabled: _moving,
           onTap: () => _pick(null),
@@ -182,7 +182,7 @@ final class _MoveSheetBodyState extends State<_MoveSheetBody> {
         const SizedBox(height: TainaSpacing.space2),
         for (final folder in destinations) ...[
           _DestinationRow(
-            icon: Icons.folder_rounded,
+            icon: TainaIcon.folder,
             label: folder.name,
             disabled: _moving,
             onTap: () => _pick(folder),
@@ -202,7 +202,7 @@ final class _DestinationRow extends StatelessWidget {
     required this.onTap,
   });
 
-  final IconData icon;
+  final TainaIcon icon;
   final String label;
   final bool disabled;
   final VoidCallback onTap;
@@ -213,7 +213,11 @@ final class _DestinationRow extends StatelessWidget {
       onTap: disabled ? null : onTap,
       child: Row(
         children: [
-          Icon(icon, size: TainaFontSizes.xl, color: TainaPalette.serviceYbira),
+          TainaIconView(
+            icon: icon,
+            size: TainaFontSizes.xl,
+            color: TainaPalette.serviceYbira,
+          ),
           const SizedBox(width: TainaSpacing.space3),
           Expanded(
             child: TainaText(

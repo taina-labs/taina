@@ -18,7 +18,7 @@ import 'shell_screens.dart';
 /// Builds the router before or after the session composition is available.
 GoRouter createAppRouter({
   SessionModel? session,
-  ShellScreens screens = const ShellScreens(),
+  required ShellScreens screens,
 }) {
   if (session == null) {
     return GoRouter(
@@ -38,8 +38,9 @@ GoRouter createAppRouter({
 /// parallel tab history.
 GoRouter createSessionRouter({
   required SessionModel session,
-  ShellScreens screens = const ShellScreens(),
+  required ShellScreens screens,
 }) {
+  final AppRouteBuilder? cameraRoll = screens.cameraRoll;
   return GoRouter(
     initialLocation:
         debugRouteLocation(const String.fromEnvironment('TAINA_ROUTE')) ??
@@ -72,8 +73,7 @@ GoRouter createSessionRouter({
       ),
       GoRoute(
         path: AppRoutes.invitePaste,
-        builder: (context, state) =>
-            _required(screens.invitePaste, context, state),
+        builder: (context, state) => screens.invitePaste(context, state),
       ),
       GoRoute(
         path: AppRoutes.resetAuth,
@@ -85,48 +85,39 @@ GoRouter createSessionRouter({
         routes: [
           GoRoute(
             path: AppRoutes.home,
-            builder: (context, state) =>
-                _required(screens.home, context, state),
+            builder: (context, state) => screens.home(context, state),
           ),
           GoRoute(
             path: AppRoutes.documentsPraca,
-            builder: (context, state) =>
-                _required(screens.documents, context, state),
+            builder: (context, state) => screens.documents(context, state),
           ),
           GoRoute(
             path: AppRoutes.documentsCasa,
-            builder: (context, state) =>
-                _required(screens.documents, context, state),
+            builder: (context, state) => screens.documents(context, state),
           ),
           GoRoute(
             path: AppRoutes.documentsTrash,
-            builder: (context, state) =>
-                _required(screens.trash, context, state),
+            builder: (context, state) => screens.trash(context, state),
           ),
           GoRoute(
             path: '/documentos/pasta/:rkey',
-            builder: (context, state) =>
-                _required(screens.folder, context, state),
+            builder: (context, state) => screens.folder(context, state),
           ),
           GoRoute(
             path: '/documentos/arquivo/:rkey',
-            builder: (context, state) =>
-                _required(screens.file, context, state),
+            builder: (context, state) => screens.file(context, state),
           ),
           GoRoute(
             path: AppRoutes.documentsUpload,
-            builder: (context, state) =>
-                _required(screens.upload, context, state),
+            builder: (context, state) => screens.upload(context, state),
           ),
           GoRoute(
             path: AppRoutes.galleryGrid,
-            builder: (context, state) =>
-                _required(screens.gallery, context, state),
+            builder: (context, state) => screens.gallery(context, state),
           ),
           GoRoute(
             path: AppRoutes.galleryTimeline,
-            builder: (context, state) =>
-                _required(screens.gallery, context, state),
+            builder: (context, state) => screens.gallery(context, state),
           ),
           GoRoute(
             path: AppRoutes.galleryViewer,
@@ -134,23 +125,19 @@ GoRouter createSessionRouter({
           ),
           GoRoute(
             path: '/galeria/visualizador/:rkey',
-            builder: (context, state) =>
-                _required(screens.galleryViewer, context, state),
+            builder: (context, state) => screens.galleryViewer(context, state),
           ),
           GoRoute(
             path: AppRoutes.mural,
-            builder: (context, state) =>
-                _required(screens.mural, context, state),
+            builder: (context, state) => screens.mural(context, state),
           ),
           GoRoute(
             path: AppRoutes.health,
-            builder: (context, state) =>
-                _required(screens.health, context, state),
+            builder: (context, state) => screens.health(context, state),
           ),
           GoRoute(
             path: AppRoutes.members,
-            builder: (context, state) =>
-                _required(screens.members, context, state),
+            builder: (context, state) => screens.members(context, state),
             routes: [
               GoRoute(
                 path: 'convidar',
@@ -159,59 +146,41 @@ GoRouter createSessionRouter({
                     ? null
                     : AppRoutes.members,
                 builder: (context, state) =>
-                    _required(screens.inviteMember, context, state),
+                    screens.inviteMember(context, state),
               ),
             ],
           ),
           GoRoute(
             path: AppRoutes.storage,
-            builder: (context, state) =>
-                _required(screens.storage, context, state),
+            builder: (context, state) => screens.storage(context, state),
           ),
           GoRoute(
             path: AppRoutes.account,
-            builder: (context, state) =>
-                _required(screens.account, context, state),
+            builder: (context, state) => screens.account(context, state),
             routes: [
               GoRoute(
                 path: 'pedidos',
-                builder: (context, state) =>
-                    _required(screens.requests, context, state),
+                builder: (context, state) => screens.requests(context, state),
               ),
               GoRoute(
                 path: 'privacidade',
-                builder: (context, state) =>
-                    _required(screens.privacy, context, state),
+                builder: (context, state) => screens.privacy(context, state),
               ),
               GoRoute(
                 path: 'dispositivos',
-                builder: (context, state) =>
-                    _required(screens.devices, context, state),
+                builder: (context, state) => screens.devices(context, state),
               ),
-              GoRoute(
-                path: 'rolo-de-camera',
-                builder: (context, state) =>
-                    _required(screens.cameraRoll, context, state),
-              ),
+              if (cameraRoll != null)
+                GoRoute(
+                  path: 'rolo-de-camera',
+                  builder: (context, state) => cameraRoll(context, state),
+                ),
             ],
           ),
         ],
       ),
     ],
   );
-}
-
-Widget _required(
-  AppRouteBuilder? builder,
-  BuildContext context,
-  GoRouterState state,
-) {
-  if (builder == null) {
-    throw StateError(
-      'No route screen registered for ${state.matchedLocation}.',
-    );
-  }
-  return builder(context, state);
 }
 
 Widget _invite(SessionModel session) {

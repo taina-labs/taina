@@ -105,6 +105,7 @@ abstract final class TainaPalette {
   static const Color brandEmber = TainaPrimitives.ember500; // --brand-ember
   static const Color navSelected = brandPrimary; // --nav-selected
   static const Color navIdle = textSecondary; // --nav-idle
+  static const Color textSelection = Color(0x52F2A65A);
   static const Color actionDanger = TainaPrimitives.red300; // --action-danger
 
   static const Color serviceYbira =
