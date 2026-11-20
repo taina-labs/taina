@@ -175,7 +175,13 @@ defmodule TainaWeb.Router do
     pipe_through :browser
 
     live_session :authenticated,
-      on_mount: [{TainaWeb.Auth, :require_authenticated}, {TainaWeb.Hooks, :shell}] do
+      session: {TainaWeb.Layouts, :authenticated_session, []},
+      layout: {TainaWeb.Layouts, :authenticated},
+      on_mount: [
+        {TainaWeb.Auth, :require_authenticated},
+        {TainaWeb.Hooks, :shell},
+        {TainaWeb.Layouts, :upload_manager}
+      ] do
       live "/", HomeLive
 
       # Os caminhos especificos (/casa, /lixeira, /enviar, /pasta/:id) vem

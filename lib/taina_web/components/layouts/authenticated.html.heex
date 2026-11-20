@@ -1,0 +1,7 @@
+{@inner_content}
+{live_render(@socket, TainaWeb.UploadManagerLive,
+  id: "upload-manager",
+  session: TainaWeb.Layouts.upload_manager_session(assigns),
+  sticky: true,
+  container: {:div, TainaWeb.Layouts.upload_manager_container(@socket.view)}
+)}

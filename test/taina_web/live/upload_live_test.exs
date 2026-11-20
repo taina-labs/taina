@@ -18,9 +18,10 @@ defmodule TainaWeb.UploadLiveTest do
 
   test "envia arquivo e mostra no grupo concluído", %{conn: conn, scope: scope, ava: ava} do
     {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/enviar")
+    manager = upload_manager(lv)
 
     input =
-      file_input(lv, "#dropzone", :files, [
+      file_input(manager, "#dropzone", :files, [
         %{name: "ata.txt", content: "ata da assembleia", type: "text/plain"}
       ])
 
@@ -43,8 +44,9 @@ defmodule TainaWeb.UploadLiveTest do
 
   test "oferece a escolha de pastas no desktop", %{conn: conn, ava: ava} do
     {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/enviar")
+    manager = upload_manager(lv)
 
-    assert has_element?(lv, "#folder-input input[name='folders'][webkitdirectory]")
+    assert has_element?(manager, "#folder-input input[name='folders'][webkitdirectory]")
   end
 
   test "o voltar aponta a pasta de destino, pelo nome", %{conn: conn, scope: scope, ava: ava} do
@@ -77,9 +79,10 @@ defmodule TainaWeb.UploadLiveTest do
   test "envia para a pasta indicada em ?pasta=", %{conn: conn, scope: scope, ava: ava} do
     {:ok, folder} = Ybira.create_folder(scope, %{name: "Atas"})
     {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/enviar?#{[pasta: folder.rkey]}")
+    manager = upload_manager(lv)
 
     input =
-      file_input(lv, "#dropzone", :files, [
+      file_input(manager, "#dropzone", :files, [
         %{name: "junho.txt", content: "ata de junho", type: "text/plain"}
       ])
 
@@ -96,9 +99,10 @@ defmodule TainaWeb.UploadLiveTest do
   } do
     {:ok, destination} = Ybira.create_folder(scope, %{name: "Destino"})
     {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/enviar?#{[pasta: destination.rkey]}")
+    manager = upload_manager(lv)
 
     input =
-      file_input(lv, "#folder-input", :folders, [
+      file_input(manager, "#folder-input", :folders, [
         %{name: "junho.txt", relative_path: "Atas/2026/junho.txt", content: "ata de junho", type: "text/plain"},
         %{name: "julho.txt", relative_path: "Atas/2026/julho.txt", content: "ata de julho", type: "text/plain"},
         %{name: "capa.txt", relative_path: "Atas/capa.txt", content: "capa", type: "text/plain"}
@@ -121,10 +125,11 @@ defmodule TainaWeb.UploadLiveTest do
 
   test "arquivo rejeitado pelo Ybira aparece como falha", %{conn: conn, scope: scope, ava: ava} do
     {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/enviar")
+    manager = upload_manager(lv)
 
     # ELF magic bytes, executável, rejeitado pela allowlist de MIME
     input =
-      file_input(lv, "#dropzone", :files, [
+      file_input(manager, "#dropzone", :files, [
         %{name: "virus.bin", content: <<0x7F, ?E, ?L, ?F, 0, 1, 2, 3>>, type: "application/octet-stream"}
       ])
 
@@ -140,11 +145,16 @@ defmodule TainaWeb.UploadLiveTest do
 
   test "entrada da câmera chega a CONCLUÍDO", %{conn: conn, scope: scope, ava: ava} do
     {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/enviar")
+    manager = upload_manager(lv)
 
     # JPEG de verdade: o Ybira detecta MIME pelos magic bytes, não pela extensão
     content = File.read!(tmp_image_fixture(width: 8, height: 8))
 
-    input = file_input(lv, "#camera-input", :camera, [%{name: "foto-da-roca.jpg", content: content, type: "image/jpeg"}])
+    input =
+      file_input(manager, "#camera-input", :camera, [
+        %{name: "foto-da-roca.jpg", content: content, type: "image/jpeg"}
+      ])
+
     render_upload(input, "foto-da-roca.jpg")
 
     html = render(lv)
@@ -161,8 +171,13 @@ defmodule TainaWeb.UploadLiveTest do
     ava: ava
   } do
     {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/enviar")
+    manager = upload_manager(lv)
 
-    input = file_input(lv, "#dropzone", :files, [%{name: "ata.txt", content: "ata da assembleia", type: "text/plain"}])
+    input =
+      file_input(manager, "#dropzone", :files, [
+        %{name: "ata.txt", content: "ata da assembleia", type: "text/plain"}
+      ])
+
     render_upload(input, "ata.txt")
 
     html = render(lv)
@@ -187,9 +202,10 @@ defmodule TainaWeb.UploadLiveTest do
     tekoa |> Ecto.Changeset.change(storage_quota_bytes: 10, storage_used_bytes: 10) |> Repo.update!()
 
     {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/enviar")
+    manager = upload_manager(lv)
 
     input =
-      file_input(lv, "#dropzone", :files, [
+      file_input(manager, "#dropzone", :files, [
         %{name: "grande.txt", content: "esse conteúdo passa da cota", type: "text/plain"}
       ])
 
@@ -201,5 +217,50 @@ defmodule TainaWeb.UploadLiveTest do
     assert has_element?(lv, ~S(a[href="/armazenamento"]), "Ver espaço")
     # nada persistiu: a cota vale no domínio
     assert {:ok, %{items: []}} = Ybira.list_files(scope)
+  end
+
+  test "o manager único fica oculto fora de Enviar", %{conn: conn, ava: ava} do
+    {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/")
+    manager = upload_manager(lv)
+
+    assert manager.module == TainaWeb.UploadManagerLive
+    assert has_element?(lv, "#upload-manager[hidden][inert][aria-hidden='true']")
+    assert has_element?(manager, "#upload-manager-panel")
+  end
+
+  test "a entrada mantém a pasta de destino capturada ao mudar o contexto da rota", %{
+    conn: conn,
+    scope: scope,
+    ava: ava
+  } do
+    {:ok, first_folder} = Ybira.create_folder(scope, %{name: "Primeira"})
+    {:ok, second_folder} = Ybira.create_folder(scope, %{name: "Segunda"})
+
+    {:ok, lv, _html} =
+      conn
+      |> log_in(ava)
+      |> live(~p"/documentos/enviar?#{[pasta: first_folder.rkey]}")
+
+    manager = upload_manager(lv)
+
+    input =
+      file_input(manager, "#dropzone", :files, [
+        %{name: "ata.txt", content: "ata da primeira pasta", type: "text/plain"}
+      ])
+
+    render_upload(input, "ata.txt", 0)
+    render_patch(lv, ~p"/documentos/enviar?#{[pasta: second_folder.rkey]}")
+    assert manager.pid == upload_manager(lv).pid
+
+    render_upload(input, "ata.txt")
+
+    assert {:ok, %{files: [file]}} = Ybira.list_folder_contents(scope, first_folder.rkey)
+    assert file.nome == "ata.txt"
+    assert {:ok, %{files: []}} = Ybira.list_folder_contents(scope, second_folder.rkey)
+  end
+
+  defp upload_manager(lv) do
+    assert manager = find_live_child(lv, "upload-manager")
+    manager
   end
 end

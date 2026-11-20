@@ -20,10 +20,57 @@ defmodule TainaWeb.Layouts do
 
   use TainaWeb, :html
 
+  alias Phoenix.Component
+
   # Resolved value of --bg-deep (via --color-night-950) for browser metadata.
   @theme_color "#060a14"
 
   embed_templates "layouts/*"
+
+  @doc false
+  def authenticated_session(_conn) do
+    %{"upload_manager_id" => Ecto.UUID.generate()}
+  end
+
+  @doc false
+  def on_mount(:upload_manager, _params, %{"upload_manager_id" => <<_first::utf8, _rest::binary>> = manager_id}, socket) do
+    {:cont, Component.assign(socket, :upload_manager_id, manager_id)}
+  end
+
+  def on_mount(:upload_manager, _params, _session, socket) do
+    {:halt, Phoenix.LiveView.redirect(socket, to: "/login")}
+  end
+
+  @doc false
+  def upload_manager_session(assigns) do
+    scope = Map.fetch!(assigns, :current_scope)
+    manager_id = Map.fetch!(assigns, :upload_manager_id)
+    route_context = Map.get(assigns, :upload_route_context, %{})
+
+    %{
+      "ava_id" => scope.ava.public_id,
+      "upload_manager_id" => manager_id,
+      "route_context" => %{
+        "folder_rkey" => Map.get(route_context, :folder_rkey),
+        "return_to" => Map.get(route_context, :return_to)
+      }
+    }
+  end
+
+  @doc false
+  def upload_manager_container(view) do
+    hidden? = view != TainaWeb.UploadLive
+
+    [
+      {:"aria-hidden", to_string(hidden?)},
+      {:class, "upload-manager"},
+      {:hidden, hidden?},
+      {:inert, hidden?}
+    ]
+  end
+
+  @doc false
+  def upload_manager_topic(manager_id), do: "taina:upload-manager:" <> manager_id
 
   @doc """
   Shell de auth (setup, login, convite, redefinir): fundo sólido `--bg-deep`

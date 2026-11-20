@@ -14,7 +14,7 @@ defmodule TainaWeb.InviteDeepLinkTest do
 
     {:ok, lv, _html} = conn |> log_in(zelador) |> live(~p"/moradores/convidar")
 
-    html = lv |> element("form") |> render_submit(%{})
+    html = lv |> element("#invite-form") |> render_submit(%{})
 
     assert html =~ "QR code do link de convite"
     assert html =~ "QR code do convite para o aplicativo"

@@ -51,7 +51,7 @@ defmodule TainaWeb.InviteFlowTest do
   test "zelador gera convite com link + QR, sem e-mail", %{conn: conn, zelador: zelador} do
     {:ok, lv, _html} = conn |> log_in(zelador) |> live(~p"/moradores/convidar")
 
-    html = lv |> element("form") |> render_submit(%{})
+    html = lv |> element("#invite-form") |> render_submit(%{})
 
     assert html =~ "/convite/"
     assert html =~ "<svg"
@@ -64,7 +64,7 @@ defmodule TainaWeb.InviteFlowTest do
   test "aviso honesto quando o navegador não consegue copiar o link", %{conn: conn, zelador: zelador} do
     {:ok, lv, _html} = conn |> log_in(zelador) |> live(~p"/moradores/convidar")
 
-    lv |> element("form") |> render_submit(%{})
+    lv |> element("#invite-form") |> render_submit(%{})
 
     # O hook Clipboard cai aqui em origem insegura (http://taina.local, sem
     # navigator.clipboard). Antes este evento derrubava a LiveView.
