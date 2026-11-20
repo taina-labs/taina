@@ -13,8 +13,10 @@ dependencies:
   flutter:
     sdk: flutter
   flutter_secure_storage: ^11.2.0
+  flutter_svg: ^2.5.0
   go_router: ^18.1.3
   image_picker: ^1.2.4
+  mobile_scanner: ^7.5.0
   okena_core:
     path: ../packages/okena_core
   open_filex: ^5.0.0
@@ -22,6 +24,7 @@ dependencies:
   permission_handler: ^13.0.2
   photo_manager: ^3.12.0
   provider: ^6.1.5+1
+  qr_flutter: ^4.1.0
   share_plus: ^13.3.1
   shared_preferences: ^2.5.6
   video_player: ^2.14.1
@@ -35,6 +38,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/fonts/
+    - assets/icons/
   fonts:
     - family: Bricolage Grotesque
       fonts:

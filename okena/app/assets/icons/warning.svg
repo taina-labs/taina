@@ -1,0 +1,44 @@
+<svg width="20" xmlns="http://www.w3.org/2000/svg" height="20" viewBox="5214 7530 20 20" xmlns:xlink="http://www.w3.org/1999/xlink" fill="none" version="1.1">
+  <g id="shape-cc1037dc-e8ab-80cc-8008-d5d9e78ad465" style="fill:currentColor" width="24" height="24" rx="0" ry="0">
+    <g id="shape-cc1037dc-e8ab-80cc-8008-d5d9e78ad466">
+      <g class="fills" id="fills-cc1037dc-e8ab-80cc-8008-d5d9e78ad466">
+        <path d="M5224.00048828125,7530L5234.00048828125,7550L5214.00048828125,7550Z">
+        </path>
+      </g>
+      <g id="strokes-4ddf7677-af0a-8015-8008-f9cdb0f5f501-cc1037dc-e8ab-80cc-8008-d5d9e78ad466" class="strokes">
+        <g class="inner-stroke-shape">
+          <defs>
+            <clipPath id="inner-stroke-render-1133-cc1037dc-e8ab-80cc-8008-d5d9e78ad466-0">
+              <use href="#stroke-shape-render-1133-cc1037dc-e8ab-80cc-8008-d5d9e78ad466-0">
+              </use>
+            </clipPath>
+            <path d="M5224.00048828125,7530L5234.00048828125,7550L5214.00048828125,7550Z" style="fill:none;stroke-width:4;stroke:currentColor;stroke-opacity:1" id="stroke-shape-render-1133-cc1037dc-e8ab-80cc-8008-d5d9e78ad466-0">
+            </path>
+          </defs>
+          <use href="#stroke-shape-render-1133-cc1037dc-e8ab-80cc-8008-d5d9e78ad466-0" clip-path="url(&#x27;#inner-stroke-render-1133-cc1037dc-e8ab-80cc-8008-d5d9e78ad466-0&#x27;)">
+          </use>
+        </g>
+      </g>
+    </g>
+  </g>
+  <g id="shape-cc1037dc-e8ab-80cc-8008-d5d9e78ad466">
+    <g class="fills" id="fills-cc1037dc-e8ab-80cc-8008-d5d9e78ad466">
+      <path d="M5224.00048828125,7530L5234.00048828125,7550L5214.00048828125,7550Z">
+      </path>
+    </g>
+    <g id="strokes-4ddf7677-af0a-8015-8008-f9cdb0f62ae7-cc1037dc-e8ab-80cc-8008-d5d9e78ad466" class="strokes">
+      <g class="inner-stroke-shape">
+        <defs>
+          <clipPath id="inner-stroke-render-1134-cc1037dc-e8ab-80cc-8008-d5d9e78ad466-0">
+            <use href="#stroke-shape-render-1134-cc1037dc-e8ab-80cc-8008-d5d9e78ad466-0">
+            </use>
+          </clipPath>
+          <path d="M5224.00048828125,7530L5234.00048828125,7550L5214.00048828125,7550Z" style="fill:none;stroke-width:4;stroke:currentColor;stroke-opacity:1" id="stroke-shape-render-1134-cc1037dc-e8ab-80cc-8008-d5d9e78ad466-0">
+          </path>
+        </defs>
+        <use href="#stroke-shape-render-1134-cc1037dc-e8ab-80cc-8008-d5d9e78ad466-0" clip-path="url(&#x27;#inner-stroke-render-1134-cc1037dc-e8ab-80cc-8008-d5d9e78ad466-0&#x27;)">
+        </use>
+      </g>
+    </g>
+  </g>
+</svg>

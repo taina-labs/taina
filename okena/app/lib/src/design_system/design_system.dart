@@ -18,8 +18,17 @@
 /// - Pure formatting: [TainaFormat].
 library;
 
+export 'components/actions.dart';
 export 'components/buttons.dart';
+export 'components/content.dart';
+export 'components/feedback.dart';
 export 'components/field.dart';
+export 'components/forms.dart';
+export 'components/icons.dart';
+export 'components/identity.dart';
+export 'components/media.dart';
+export 'components/navigation.dart';
+export 'components/overlays.dart';
 export 'components/states.dart';
 export 'components/surfaces.dart';
 export 'components/text.dart';

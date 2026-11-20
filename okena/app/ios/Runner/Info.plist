@@ -42,7 +42,7 @@
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Para enviar suas fotos e vídeos à sua comunidade Tainá.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Para fotografar e enviar imagens à sua comunidade Tainá.</string>
+	<string>Para fotografar, enviar imagens e ler QR codes de convite.</string>
 	<key>PHPhotoLibraryPreventAutomaticLimitedAccessAlert</key>
 	<true/>
 	<key>NSAppTransportSecurity</key>
