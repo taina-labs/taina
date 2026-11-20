@@ -27,6 +27,7 @@ defmodule TainaWeb.SaudeLive do
   alias Taina.Nhaman.Backup
   alias Taina.Nhaman.Update
   alias Taina.Ybira
+  alias TainaWeb.Disk
   alias TainaWeb.Layouts
   alias TainaWeb.Saude
 
@@ -101,6 +102,8 @@ defmodule TainaWeb.SaudeLive do
   defp assign_painel(socket, scope) do
     with {:ok, stats} <- Ybira.storage_stats(scope),
          {:ok, members} <- Maraca.list_members(scope) do
+      stats = Disk.enrich_stats(stats)
+
       socket
       |> assign(:painel, %{
         stats: stats,
@@ -138,8 +141,8 @@ defmodule TainaWeb.SaudeLive do
   defp backup_state(reason) when reason in [:none, :no_dir], do: @attention_state
   defp backup_state(_reason), do: "problem"
 
-  # O veredito do backup, isolado do disco: com cota nil o disco não chama
-  # atenção, então a linha do resumo é só do backup (`TainaWeb.Saude`).
+  # O veredito do backup, isolado do disco: sem cota nem dados físicos, a
+  # linha do resumo é só do backup (`TainaWeb.Saude`).
   defp backup_verdict(backup) do
     Saude.summary_line(%{storage: %{used_bytes: 0, quota_bytes: nil}, backup: backup})
   end
@@ -190,9 +193,9 @@ defmodule TainaWeb.SaudeLive do
 
   defp checking_status, do: %{running: Update.running_version(), result: :checking}
 
-  # Sem limite não há o que estourar (`Saude.disk_attention?/1`): o espaço é
-  # de sobra. Na atenção, a palavra é a do resumo (o disco fala primeiro,
-  # doc do Saude), seja qual for o backup.
+  # Sem cota nem sinal de pouco espaço físico, não há limite a estourar
+  # (`Saude.disk_attention?/1`). Na atenção, a palavra é a do resumo (o disco
+  # fala primeiro, doc do Saude), seja qual for o backup.
   defp disk_row(stats, backup) do
     if Saude.disk_attention?(stats) do
       %{state: @attention_state, title: Saude.summary_line(%{storage: stats, backup: backup}).line}

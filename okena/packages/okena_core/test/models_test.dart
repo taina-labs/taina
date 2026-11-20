@@ -45,6 +45,38 @@ void main() {
   });
 
   group('boundary decoding', () {
+    test('storage decodes optional physical disk fields', () {
+      final StorageStats withDisk = decode(
+        storageJson,
+        StorageStats.fromJson,
+      ).value!;
+      expect(withDisk.diskTotalBytes, 1073741824000);
+      expect(withDisk.diskFreeBytes, 536870912000);
+
+      final String withoutDiskFields = storageJson.replaceFirst(
+        '"disk_total_bytes":1073741824000,"disk_free_bytes":536870912000,',
+        '',
+      );
+      final StorageStats missing = decode(
+        withoutDiskFields,
+        StorageStats.fromJson,
+      ).value!;
+      expect(missing.diskTotalBytes, isNull);
+      expect(missing.diskFreeBytes, isNull);
+
+      final String nullDiskFields = storageJson.replaceFirst(
+        '"disk_total_bytes":1073741824000,"disk_free_bytes":536870912000,',
+        '"disk_total_bytes":null,"disk_free_bytes":null,',
+      );
+      final StorageStats nullValues = decode(
+        nullDiskFields,
+        StorageStats.fromJson,
+      ).value!;
+      expect(nullValues.diskTotalBytes, isNull);
+      expect(nullValues.diskFreeBytes, isNull);
+      expect(withDisk, isNot(missing));
+    });
+
     test(
       'decodes each backup status and rejects an unknown or missing one',
       () {

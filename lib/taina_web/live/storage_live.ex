@@ -102,8 +102,8 @@ defmodule TainaWeb.StorageLive do
   # Carrega os fatos sem derrubar a tela: se o domínio falhar, o cartão de
   # erro com "Tentar de novo" assume o lugar (sem flash duplicado).
   # O teto do campo: o disco inteiro em GB (o board diz "de 1 a 256").
-  defp disk_gb do
-    case Disk.total_bytes() do
+  defp disk_gb(%{disk_total_bytes: total}) do
+    case total do
       total when is_integer(total) and total > 0 -> div(total, @gigabyte)
       _other -> nil
     end
@@ -115,11 +115,13 @@ defmodule TainaWeb.StorageLive do
     with {:ok, stats} <- Ybira.storage_stats(scope),
          {:ok, zones} <- Ybira.storage_stats_by_zone(scope),
          {:ok, members} <- Maraca.list_members(scope) do
+      stats = Disk.enrich_stats(stats)
+
       socket
       |> assign(:caretakers, caretaker_names(members))
-      |> assign(:disk_gb, disk_gb())
+      |> assign(:disk_gb, disk_gb(stats))
       |> assign(:load_error, false)
-      |> assign(:stats, Map.put(stats, :disk_bytes, Disk.total_bytes()))
+      |> assign(:stats, stats)
       |> assign(:zones, zones)
     else
       _error ->

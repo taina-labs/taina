@@ -20,6 +20,22 @@ const StorageStats stats = StorageStats(
   trash: StorageTrash(count: 0, bytes: 0),
 );
 
+StorageStats _stats({
+  int usedBytes = 90,
+  int? quotaBytes = 100,
+  int? diskTotalBytes,
+  int? diskFreeBytes,
+}) => StorageStats(
+  usedBytes: usedBytes,
+  quotaBytes: quotaBytes,
+  diskTotalBytes: diskTotalBytes,
+  diskFreeBytes: diskFreeBytes,
+  byKind: noBytes,
+  files: 1,
+  photos: 0,
+  trash: const StorageTrash(count: 0, bytes: 0),
+);
+
 void main() {
   test('load reads the panel and the zeladora role', () async {
     final FakeTainaApi api = FakeTainaApi(delay: Duration.zero);
@@ -84,6 +100,75 @@ void main() {
       final SaudeRow row = SaudeModel.diskRow(unlimited);
       expect(row.lines.first, '90 B usados. Sem limite.');
       expect(row.warning, isNull);
+      expect(SaudeModel.isAlmostFull(unlimited), isFalse);
+    });
+
+    test('diskRow without a quota includes known physical free space', () {
+      final SaudeRow row = SaudeModel.diskRow(
+        _stats(quotaBytes: null, diskTotalBytes: 100, diskFreeBytes: 10),
+      );
+      expect(row.lines.first, '90 B usados. 10 B livres no disco.');
+      expect(
+        row.warning,
+        'O espaço do disco está acabando. Quem cuida da máquina precisa '
+        'liberar espaço no disco.',
+      );
+    });
+
+    test('physical disk alert starts at ten percent free', () {
+      expect(
+        SaudeModel.isAlmostFull(
+          _stats(quotaBytes: null, diskTotalBytes: 100, diskFreeBytes: 10),
+        ),
+        isTrue,
+      );
+    });
+
+    test('physical disk alert stays off above ten percent free', () {
+      expect(
+        SaudeModel.isAlmostFull(
+          _stats(quotaBytes: null, diskTotalBytes: 100, diskFreeBytes: 11),
+        ),
+        isFalse,
+      );
+    });
+
+    test('physical disk alert applies below ten percent free', () {
+      expect(
+        SaudeModel.isAlmostFull(
+          _stats(quotaBytes: null, diskTotalBytes: 100, diskFreeBytes: 9),
+        ),
+        isTrue,
+      );
+    });
+
+    test('physical disk alert works without a quota', () {
+      final SaudeRow row = SaudeModel.diskRow(
+        _stats(quotaBytes: null, diskTotalBytes: 100, diskFreeBytes: 9),
+      );
+      expect(
+        SaudeModel.isAlmostFull(
+          _stats(quotaBytes: null, diskTotalBytes: 100, diskFreeBytes: 9),
+        ),
+        isTrue,
+      );
+      expect(row.warning, contains('O espaço do disco está acabando.'));
+    });
+
+    test('physical disk warning takes precedence over the quota warning', () {
+      final SaudeRow row = SaudeModel.diskRow(
+        _stats(
+          usedBytes: 95,
+          quotaBytes: 100,
+          diskTotalBytes: 100,
+          diskFreeBytes: 10,
+        ),
+      );
+      expect(
+        row.warning,
+        'O espaço do disco está acabando. Quem cuida da máquina precisa '
+        'liberar espaço no disco.',
+      );
     });
 
     test('trashLines is a fact only when the trash holds something', () {

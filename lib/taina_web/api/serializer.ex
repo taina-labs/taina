@@ -43,7 +43,12 @@ defmodule TainaWeb.API.Serializer do
   @type pedido :: Pedido.t()
   @type public_id :: String.t()
   @type scope :: Scope.t()
-  @type storage_stats :: %{used_bytes: non_neg_integer(), quota_bytes: non_neg_integer() | nil}
+  @type storage_stats :: %{
+          required(:used_bytes) => non_neg_integer(),
+          required(:quota_bytes) => non_neg_integer() | nil,
+          optional(:disk_total_bytes) => non_neg_integer() | nil,
+          optional(:disk_free_bytes) => non_neg_integer() | nil
+        }
   @type tekoa :: Tekoa.t()
   @type trash_stats :: %{count: non_neg_integer(), bytes: non_neg_integer()}
 
@@ -239,10 +244,12 @@ defmodule TainaWeb.API.Serializer do
   e o lixo.
   """
   @spec storage(storage_stats(), counts_by_kind(), non_neg_integer(), non_neg_integer(), trash_stats()) :: json_object()
-  def storage(%{used_bytes: used, quota_bytes: quota}, by_kind, files, photos, trash) do
+  def storage(%{used_bytes: used, quota_bytes: quota} = stats, by_kind, files, photos, trash) do
     %{
       "used_bytes" => used,
       "quota_bytes" => quota,
+      "disk_total_bytes" => Map.get(stats, :disk_total_bytes),
+      "disk_free_bytes" => Map.get(stats, :disk_free_bytes),
       "by_kind" => by_kind_json(by_kind),
       "files" => files,
       "photos" => photos,

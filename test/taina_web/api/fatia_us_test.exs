@@ -346,6 +346,8 @@ defmodule TainaWeb.API.FatiaUsTest do
 
       assert body["quota_bytes"] > 0
       assert is_integer(body["used_bytes"])
+      assert is_integer(body["disk_total_bytes"])
+      assert is_integer(body["disk_free_bytes"])
       assert %{"photos" => _, "others" => _} = body["by_kind"]
       assert %{"count" => _, "bytes" => _} = body["trash"]
     end
@@ -372,6 +374,8 @@ defmodule TainaWeb.API.FatiaUsTest do
       body = conn |> authorize_device(morador) |> get(~p"/api/v1/saude") |> json_response(200)
 
       assert %{"used_bytes" => _} = body["storage"]
+      assert is_integer(body["storage"]["disk_total_bytes"])
+      assert is_integer(body["storage"]["disk_free_bytes"])
       assert %{"renditions" => _, "trash_purge" => _} = body["jobs"]
       assert %{"status" => "disabled", "at" => nil, "bytes" => nil} = body["backup"]
     end

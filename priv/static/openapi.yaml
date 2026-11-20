@@ -1905,6 +1905,16 @@ components:
           type: integer
           format: int64
           nullable: true
+        disk_total_bytes:
+          type: integer
+          format: int64
+          nullable: true
+          description: Tamanho total do disco onde mora o armazenamento, ou null quando a leitura falha.
+        disk_free_bytes:
+          type: integer
+          format: int64
+          nullable: true
+          description: Espaço disponível no disco onde mora o armazenamento, ou null quando a leitura falha.
         by_kind:
           type: object
           properties:

@@ -86,6 +86,25 @@ defmodule TainaWeb.SaudeLiveTest do
     assert html =~ "Vale falar com quem cuida da nuvem. Ninguém perdeu arquivo."
   end
 
+  test "disco físico quase cheio marca a linha existente de espaço em atenção", %{conn: _conn} do
+    html =
+      saude_body_html(
+        zelador?: false,
+        zeladores: ["Ana"],
+        stats: %{
+          used_bytes: 0,
+          quota_bytes: nil,
+          disk_total_bytes: 100,
+          disk_free_bytes: 10
+        },
+        backup: {:ok, %{at: now(), bytes: 100}}
+      )
+
+    assert html =~ ~S(status-line--attention)
+    assert html =~ "Disco quase cheio"
+    assert Enum.count_until(Regex.scan(~r/status-line(?:--[a-z]+)?"/, html), 5) == 4
+  end
+
   # load error (componente puro: o contexto não falha sob demanda)
   test "degradado: cartão de erro quando a nuvem não responde", %{conn: _conn} do
     html = render_component(&TainaWeb.SaudeLive.saude_body/1, %{load_error: true, painel: nil})

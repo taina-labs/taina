@@ -11,6 +11,7 @@ defmodule TainaWeb.API.SaudeController do
   alias Taina.Ybira
   alias TainaWeb.API.Error
   alias TainaWeb.API.Serializer
+  alias TainaWeb.Disk
 
   def show(conn, _params) do
     scope = conn.assigns[:current_scope]
@@ -20,7 +21,7 @@ defmodule TainaWeb.API.SaudeController do
          {:ok, files} <- Ybira.count_files(scope),
          {:ok, photos} <- Ybira.count_photos(scope),
          {:ok, trash} <- Ybira.trash_stats(scope) do
-      storage = Serializer.storage(stats, by_kind, files, photos, trash)
+      storage = Serializer.storage(Disk.enrich_stats(stats), by_kind, files, photos, trash)
       json(conn, Serializer.saude(storage, Ybira.pending_job_counts(), Backup.status()))
     else
       {:error, reason} -> Error.reply(conn, reason)

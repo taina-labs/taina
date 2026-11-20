@@ -1249,6 +1249,8 @@ void main() {
       final stats = (await api.storage()).value!;
       expect(stats.usedBytes, 1832110000);
       expect(stats.quotaBytes, 268435456000);
+      expect(stats.diskTotalBytes, 1073741824000);
+      expect(stats.diskFreeBytes, 536870912000);
       expect(stats.byKind.photos, 1100000000);
       expect(stats.byKind.documents, 132110000);
       expect(stats.files, 42);

@@ -365,11 +365,48 @@ defmodule TainaWeb.UI.ContentTest do
   end
 
   test "storage_card full sem cota: disco inteiro com o tamanho do disco quando a tela sabe" do
-    stats = %{used_bytes: 82_000_000_000, quota_bytes: nil, disk_bytes: 256_000_000_000}
+    stats = %{
+      used_bytes: 82_000_000_000,
+      quota_bytes: nil,
+      disk_total_bytes: 256_000_000_000,
+      disk_free_bytes: 200_000_000_000
+    }
+
     html = storage_card_html(stats: stats, detail: "full")
 
     assert html =~ "Usando o disco inteiro: 76 GB de 238 GB"
-    assert html =~ "162 GB livres"
+    assert html =~ "186 GB livres"
+    refute html =~ "progress__fill"
+  end
+
+  test "storage_card sem cota: disco físico quase cheio mantém o aviso existente" do
+    stats = %{
+      used_bytes: 0,
+      quota_bytes: nil,
+      disk_total_bytes: 100,
+      disk_free_bytes: 10
+    }
+
+    html = storage_card_html(stats: stats, detail: "full")
+
+    assert html =~ "storage-card--warning"
+    assert html =~ "storage-card__hint"
+    assert html =~ "Quase cheio, libere espaço na lixeira."
+    refute html =~ "progress__fill"
+  end
+
+  test "storage_card compacto: disco físico quase cheio mantém o aviso curto" do
+    stats = %{
+      used_bytes: 0,
+      quota_bytes: nil,
+      disk_total_bytes: 100,
+      disk_free_bytes: 10
+    }
+
+    html = storage_card_html(stats: stats, detail: "compact")
+
+    assert html =~ "storage-card--warning"
+    assert html =~ "Quase cheio."
     refute html =~ "progress__fill"
   end
 

@@ -31,6 +31,20 @@ defmodule TainaWeb.Disk do
     _error in ErlangError -> {:error, :unavailable}
   end
 
+  @doc "Acrescenta total e espaço livre físicos às estatísticas lógicas, ou `nil` quando não dá para ler."
+  def enrich_stats(%{} = storage_stats) do
+    disk_stats =
+      case stats() do
+        {:ok, %{total_bytes: total, free_bytes: free}} ->
+          %{disk_total_bytes: total, disk_free_bytes: free}
+
+        {:error, _reason} ->
+          %{disk_total_bytes: nil, disk_free_bytes: nil}
+      end
+
+    Map.merge(storage_stats, disk_stats)
+  end
+
   @doc "Tamanho total do disco em bytes, ou `nil` quando não dá para ler."
   def total_bytes do
     case stats() do

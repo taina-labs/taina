@@ -457,17 +457,20 @@ defmodule TainaWeb.UI.Content do
   @doc """
   Espaço da comunidade (Penpot: StorageCard, Detail compact/full, Tone
   normal/warning, 3fd18cd2-90f8-80f3-8008-d5ae4c520d6d). O tom deriva do
-  próprio uso: `TainaWeb.Saude.disk_attention?/1` decide o aviso (90%), e o
-  card repete o aviso no modifier `--warning`, na barra
-  (`progress__fill--warning`) e na frase do board.
+  próprio uso: `TainaWeb.Saude.disk_attention?/1` decide o aviso (90% da cota
+  ou até 10% livre no disco físico), e o card repete o aviso no modifier
+  `--warning`, na barra (`progress__fill--warning`) e na frase do board.
 
   Sem cota (`quota_bytes: nil`, disco inteiro) não existe limite para
-  mostrar: nada de barra, a linha vira "Usando o disco inteiro".
+  mostrar: nada de barra, a linha vira "Usando o disco inteiro". A folga
+  informada nessa modalidade vem do disco físico, não da cota lógica.
 
       <.storage_card stats={@storage_stats} detail="compact" navigate={~p"/armazenamento"} />
   """
 
-  attr :stats, :map, required: true, doc: "%{used_bytes:, quota_bytes:} (nil = disco inteiro)"
+  attr :stats, :map,
+    required: true,
+    doc: "%{used_bytes:, quota_bytes:, disk_total_bytes:, disk_free_bytes:} (nil = disco inteiro)"
 
   attr :detail, :string,
     default: "compact",
@@ -513,7 +516,7 @@ defmodule TainaWeb.UI.Content do
     """
   end
 
-  defp storage_hero(%{stats: %{used_bytes: used, disk_bytes: disk}} = assigns) when is_integer(disk) and disk > 0 do
+  defp storage_hero(%{stats: %{used_bytes: used, disk_total_bytes: disk}} = assigns) when is_integer(disk) and disk > 0 do
     assigns =
       assigns
       |> assign(:used_text, format_bytes(used))
@@ -560,11 +563,10 @@ defmodule TainaWeb.UI.Content do
     """
   end
 
-  # Sem cota: o board do disco inteiro também mostra "N livres" quando a tela
-  # sabe o tamanho do disco; sem esse número, a linha do disco inteiro fica
-  # sozinha em vez de inventar folga.
-  defp storage_lines(%{stats: %{used_bytes: used, disk_bytes: disk}} = assigns) when is_integer(disk) and disk > 0 do
-    assigns = assign(assigns, :free, format_bytes(max(disk - used, 0)))
+  # Sem cota: mostrar a folga física, quando conhecida; sem esse número, a
+  # linha do disco inteiro fica sozinha em vez de inventar folga.
+  defp storage_lines(%{stats: %{disk_free_bytes: free}} = assigns) when is_integer(free) and free >= 0 do
+    assigns = assign(assigns, :free, format_bytes(free))
 
     ~H"""
     <p :if={@detail == "full"} class="storage-card__free">

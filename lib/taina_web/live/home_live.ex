@@ -22,6 +22,7 @@ defmodule TainaWeb.HomeLive do
   alias Taina.Maraca
   alias Taina.Nhaman.Backup
   alias Taina.Ybira
+  alias TainaWeb.Disk
   alias TainaWeb.Layouts
   alias TainaWeb.MuralText
   alias TainaWeb.Saude
@@ -138,7 +139,11 @@ defmodule TainaWeb.HomeLive do
   # Uma leitura por bloco: `%{care:, community:, storage:, recent:}`, cada uma
   # `{:ok, dados} | {:error, motivo}`. O bloco que falha não derruba os outros.
   defp load_hub(scope) do
-    storage = Ybira.storage_stats(scope)
+    storage =
+      case Ybira.storage_stats(scope) do
+        {:ok, stats} -> {:ok, Disk.enrich_stats(stats)}
+        error -> error
+      end
 
     %{
       care: load_care(scope),

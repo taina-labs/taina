@@ -10,6 +10,8 @@ final class StorageStats {
     required this.files,
     required this.photos,
     required this.trash,
+    this.diskTotalBytes,
+    this.diskFreeBytes,
   });
 
   factory StorageStats.fromJson(JsonReader reader) {
@@ -20,11 +22,15 @@ final class StorageStats {
       files: reader.integer('files'),
       photos: reader.integer('photos'),
       trash: StorageTrash.fromJson(reader.object('trash')),
+      diskTotalBytes: reader.integerOrNull('disk_total_bytes'),
+      diskFreeBytes: reader.integerOrNull('disk_free_bytes'),
     );
   }
 
   final int usedBytes;
   final int? quotaBytes;
+  final int? diskTotalBytes;
+  final int? diskFreeBytes;
   final StorageByKind byKind;
   final int files;
   final int photos;
@@ -35,6 +41,8 @@ final class StorageStats {
       other is StorageStats &&
       other.usedBytes == usedBytes &&
       other.quotaBytes == quotaBytes &&
+      other.diskTotalBytes == diskTotalBytes &&
+      other.diskFreeBytes == diskFreeBytes &&
       other.byKind == byKind &&
       other.files == files &&
       other.photos == photos &&
@@ -45,6 +53,8 @@ final class StorageStats {
     StorageStats,
     usedBytes,
     quotaBytes,
+    diskTotalBytes,
+    diskFreeBytes,
     byKind,
     files,
     photos,

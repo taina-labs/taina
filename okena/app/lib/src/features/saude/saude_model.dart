@@ -36,6 +36,7 @@ final class SaudeModel extends ChangeNotifier {
   /// The share of the quota where "o espaço está acabando" starts, the web's
   /// own threshold.
   static const double diskWarningShare = 0.9;
+  static const double diskFreeWarningShare = 0.1;
 
   /// The label of the backup row, the anchor the screen hangs the zeladora's
   /// act on.
@@ -129,14 +130,23 @@ final class SaudeModel extends ChangeNotifier {
             '${TainaFormat.bytes(quota)}. ${TainaFormat.bytes(free)} livres.',
       ];
     } else {
-      lines = ['${TainaFormat.bytes(stats.usedBytes)} usados. Sem limite.'];
+      final int? diskFreeBytes = stats.diskFreeBytes;
+      lines = [
+        diskFreeBytes == null
+            ? '${TainaFormat.bytes(stats.usedBytes)} usados. Sem limite.'
+            : '${TainaFormat.bytes(stats.usedBytes)} usados. '
+                  '${TainaFormat.bytes(diskFreeBytes)} livres no disco.',
+      ];
     }
     lines.addAll(trashLines(stats.trash));
     return SaudeRow(
       icon: SaudeRowIcon.disk,
       label: 'Disco',
       lines: List<String>.unmodifiable(lines),
-      warning: isAlmostFull(stats)
+      warning: _physicalDiskAlmostFull(stats)
+          ? 'O espaço do disco está acabando. Quem cuida da máquina precisa '
+                'liberar espaço no disco.'
+          : _quotaAlmostFull(stats)
           ? 'O espaço está acabando. Quem cuida da máquina pode aumentar o '
                 'limite.'
           : null,
@@ -157,9 +167,22 @@ final class SaudeModel extends ChangeNotifier {
   }
 
   static bool isAlmostFull(StorageStats stats) {
+    return _physicalDiskAlmostFull(stats) || _quotaAlmostFull(stats);
+  }
+
+  static bool _quotaAlmostFull(StorageStats stats) {
     final int? quota = stats.quotaBytes;
     if (quota == null || quota <= 0) return false;
     return stats.usedBytes / quota >= diskWarningShare;
+  }
+
+  static bool _physicalDiskAlmostFull(StorageStats stats) {
+    final int? total = stats.diskTotalBytes;
+    final int? free = stats.diskFreeBytes;
+    if (total == null || total <= 0 || free == null || free < 0) {
+      return false;
+    }
+    return free / total <= diskFreeWarningShare;
   }
 
   static SaudeRow backupRow(SaudeBackup backup) {

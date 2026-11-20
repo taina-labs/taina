@@ -51,6 +51,21 @@ defmodule TainaWeb.SaudeTest do
       assert resumo == %{state: :attention, line: "Disco quase cheio"}
     end
 
+    test "disco físico quase cheio fala antes do backup" do
+      resumo =
+        Saude.summary_line(%{
+          storage: %{
+            used_bytes: 0,
+            quota_bytes: nil,
+            disk_total_bytes: 100,
+            disk_free_bytes: 10
+          },
+          backup: {:error, :unreadable}
+        })
+
+      assert resumo == %{state: :attention, line: "Disco quase cheio"}
+    end
+
     test ":attention com \"Último backup falhou\" em {:error, _}" do
       resumo =
         Saude.summary_line(%{
@@ -69,9 +84,43 @@ defmodule TainaWeb.SaudeTest do
       refute Saude.disk_attention?(%{used_bytes: 89, quota_bytes: 100})
     end
 
-    test "falso para cota nil (disco inteiro) ou zerada" do
+    test "sem dados físicos, cota nil (disco inteiro) ou zerada não chama atenção" do
       refute Saude.disk_attention?(%{used_bytes: 900, quota_bytes: nil})
       refute Saude.disk_attention?(%{used_bytes: 900, quota_bytes: 0})
+    end
+
+    test "disco físico chama atenção com 10% ou menos livre, mesmo sem cota" do
+      assert Saude.disk_attention?(%{
+               used_bytes: 0,
+               quota_bytes: nil,
+               disk_total_bytes: 100,
+               disk_free_bytes: 10
+             })
+
+      assert Saude.disk_attention?(%{
+               used_bytes: 0,
+               quota_bytes: 1_000,
+               disk_total_bytes: 100,
+               disk_free_bytes: 9
+             })
+
+      refute Saude.disk_attention?(%{
+               used_bytes: 0,
+               quota_bytes: nil,
+               disk_total_bytes: 100,
+               disk_free_bytes: 11
+             })
+    end
+
+    test "dados físicos inválidos não chamam atenção por si só" do
+      for stats <- [
+            %{used_bytes: 0, quota_bytes: nil, disk_total_bytes: 0, disk_free_bytes: 0},
+            %{used_bytes: 0, quota_bytes: nil, disk_total_bytes: 100, disk_free_bytes: -1},
+            %{used_bytes: 0, quota_bytes: nil, disk_total_bytes: 100, disk_free_bytes: 10.0},
+            %{used_bytes: 0, quota_bytes: nil, disk_total_bytes: 100.0, disk_free_bytes: 10}
+          ] do
+        refute Saude.disk_attention?(stats)
+      end
     end
   end
 

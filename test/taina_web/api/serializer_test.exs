@@ -52,6 +52,20 @@ defmodule TainaWeb.API.SerializerTest do
     assert Serializer.files(scope, []) == []
   end
 
+  test "o retrato do armazenamento inclui fatos físicos nulos quando ausentes" do
+    json =
+      Serializer.storage(
+        %{used_bytes: 0, quota_bytes: nil},
+        %{photos: 0, videos: 0, documents: 0, others: 0},
+        0,
+        0,
+        %{count: 0, bytes: 0}
+      )
+
+    assert is_nil(json["disk_total_bytes"])
+    assert is_nil(json["disk_free_bytes"])
+  end
+
   test "o dono sai resolvido (public_id), em arquivo e pasta, do mesmo jeito no lote", %{
     scope: scope
   } do

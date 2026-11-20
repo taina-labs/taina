@@ -121,6 +121,7 @@ const pedidosPageJson = '{"items":[$pedidoJson],"next_cursor":null}';
 
 const storageJson =
     '{"used_bytes":1832110000,"quota_bytes":268435456000,'
+    '"disk_total_bytes":1073741824000,"disk_free_bytes":536870912000,'
     '"by_kind":{"photos":1100000000,"videos":600000000,'
     '"documents":132110000,"others":0},"files":42,"photos":30,'
     '"trash":{"count":3,"bytes":1000000}}';
