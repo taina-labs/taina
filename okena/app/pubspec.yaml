@@ -9,7 +9,8 @@ environment:
 dependencies:
   background_downloader: ^9.6.6
   crypto: ^3.0.8
-  file_picker: ^13.3.2
+  # 13.4.0 pulls android_file_picker 2.2.0, which does not compile.
+  file_picker: 13.3.2
   flutter:
     sdk: flutter
   flutter_secure_storage: ^11.2.0
