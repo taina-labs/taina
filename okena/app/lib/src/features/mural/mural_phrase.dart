@@ -1,13 +1,12 @@
 import 'package:okena_app/src/design_system/design_system.dart';
 import 'package:okena_core/okena_core.dart';
 
-/// The mural's words, in one place.
+/// The mural screen's words, in one place.
 ///
 /// Each chain `tipo` becomes one plain pt-BR sentence, no ids and no jargon.
-/// The table mirrors the web's `mural_live.sentence/2` and the Swift
-/// `MuralPhrase`, so the Home teaser and the Mural screen never drift. The
-/// mural is append-only: a type the screen does not know yet keeps its row on
-/// the air with the generic sentence.
+/// The table follows the web's `mural_live.sentence/2` and the Swift
+/// `MuralPhrase`. The mural is append-only: a type the screen does not know
+/// yet keeps its row on the air with the generic sentence.
 abstract final class MuralPhrase {
   /// The chain stores the actor's `public_id`; the screen is who translates it
   /// to people, from the community roster.
@@ -24,13 +23,17 @@ abstract final class MuralPhrase {
 
     switch (entry.tipo) {
       case 'invite_created':
+        final String? invitee =
+            _string('member', entry.payload) ??
+            _string('invitee', entry.payload);
+        if (invitee != null) return '$actor criou um convite para $invitee';
         return role == 'zelador'
             ? '$actor convidou uma nova pessoa para cuidar da máquina.'
             : '$actor convidou uma nova pessoa para a comunidade.';
       case 'invite_accepted':
         return role == 'zelador'
-            ? '$actor entrou na comunidade para cuidar da máquina.'
-            : '$actor entrou na comunidade.';
+            ? '$actor entrou na comunidade para cuidar da máquina'
+            : '$actor entrou na comunidade';
       case 'invite_revoked':
         return role == 'zelador'
             ? '$actor revogou um convite para cuidar da máquina.'
@@ -64,6 +67,14 @@ abstract final class MuralPhrase {
             ? '$actor criou uma pasta.'
             : '$actor guardou um arquivo na caixa.';
       case 'publicar':
+        final String? name =
+            _string('name', entry.payload) ??
+            _string('resource', entry.payload);
+        if (name != null) {
+          return folder
+              ? '$actor publicou a pasta $name na praça'
+              : '$actor publicou $name na praça';
+        }
         return folder
             ? '$actor publicou uma pasta na praça.'
             : '$actor publicou um arquivo na praça.';
@@ -84,6 +95,9 @@ abstract final class MuralPhrase {
             ? '$actor renomeou uma pasta.'
             : '$actor renomeou um arquivo.';
       case 'concessao':
+        final String? readerId = _string('leitor', entry.payload);
+        final String? reader = readerId == null ? null : names[readerId];
+        if (reader != null) return '$actor abriu a casa para $reader';
         return '$actor abriu a sua casa para a leitura de um morador.';
       case 'revogar':
         return '$actor tirou a leitura que tinha aberto.';
@@ -91,6 +105,12 @@ abstract final class MuralPhrase {
         return role == 'zelador'
             ? '$actor deu a um morador o cuidado da máquina.'
             : '$actor tirou de um morador o cuidado da máquina.';
+      case 'backup_scheduled':
+        return '$actor agendou um backup da nuvem';
+      case 'backup_succeeded':
+        return '$actor fez o backup da nuvem';
+      case 'backup_failed':
+        return '$actor não conseguiu concluir o backup da nuvem';
       default:
         return '$actor fez um ato registrado na comunidade.';
     }

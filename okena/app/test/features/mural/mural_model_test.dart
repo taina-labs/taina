@@ -55,6 +55,7 @@ void main() {
     expect(model.nextCursor, isNull);
     expect(model.error, isNull);
     expect(model.names, containsPair('avap2xw5m8q3', 'Ana Souza'));
+    expect(model.caretakers, contains('Ana Souza'));
     expect(
       model.sentenceFor(model.entries.first),
       'O sistema fez um ato registrado na comunidade.',
@@ -116,6 +117,14 @@ void main() {
     expect(api.calls, 1);
   });
 
+  test('chronological keeps the newest chain entry first', () {
+    expect(
+      MuralModel.chronological([entry(1), entry(3), entry(2)])
+          .map((MuralEntry value) => value.seq),
+      [3, 2, 1],
+    );
+  });
+
   test(
     'a failed first page surfaces the error and keeps the list empty',
     () async {
@@ -134,4 +143,46 @@ void main() {
       expect(model.loading, isFalse);
     },
   );
+
+  group('mural time labels', () {
+    final DateTime now = DateTime(2026, 10, 14, 12);
+
+    test('uses the board labels for today, yesterday and the day before', () {
+      expect(
+        MuralModel.timeLabel(
+          DateTime(2026, 10, 14, 9, 12).toIso8601String(),
+          now: now,
+        ),
+        'Hoje, 09:12',
+      );
+      expect(
+        MuralModel.timeLabel(
+          DateTime(2026, 10, 13, 18, 2).toIso8601String(),
+          now: now,
+        ),
+        'Ontem, 18:02',
+      );
+      expect(
+        MuralModel.timeLabel(
+          DateTime(2026, 10, 12, 21, 15).toIso8601String(),
+          now: now,
+        ),
+        'Antes de ontem, 21:15',
+      );
+    });
+
+    test(
+      'uses a short date for older entries and preserves invalid values',
+      () {
+        expect(
+          MuralModel.timeLabel(
+            DateTime(2026, 10, 10, 10, 5).toIso8601String(),
+            now: now,
+          ),
+          '10 out., 10:05',
+        );
+        expect(MuralModel.timeLabel('not-a-date', now: now), 'not-a-date');
+      },
+    );
+  });
 }

@@ -1,43 +1,38 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:okena_app/src/design_system/design_system.dart';
 import 'package:okena_app/src/features/saude/saude_model.dart';
 import 'package:okena_core/okena_core.dart';
 
 import '../support/fake_session.dart';
 
-const StorageByKind noBytes = StorageByKind(
-  photos: 0,
-  videos: 0,
-  documents: 0,
-  others: 0,
-);
-
-const StorageStats stats = StorageStats(
-  usedBytes: 90,
+const StorageStats _space = StorageStats(
+  usedBytes: 50,
   quotaBytes: 100,
-  byKind: noBytes,
-  files: 1,
+  byKind: StorageByKind(photos: 0, videos: 0, documents: 0, others: 0),
+  files: 0,
   photos: 0,
   trash: StorageTrash(count: 0, bytes: 0),
 );
 
-StorageStats _stats({
-  int usedBytes = 90,
-  int? quotaBytes = 100,
-  int? diskTotalBytes,
-  int? diskFreeBytes,
-}) => StorageStats(
-  usedBytes: usedBytes,
-  quotaBytes: quotaBytes,
-  diskTotalBytes: diskTotalBytes,
-  diskFreeBytes: diskFreeBytes,
-  byKind: noBytes,
-  files: 1,
-  photos: 0,
-  trash: const StorageTrash(count: 0, bytes: 0),
+Saude _saude({
+  SaudeBackupStatus backup = SaudeBackupStatus.ok,
+  SaudeSummary? summary,
+  SaudeUpdate? update,
+  StorageStats storage = _space,
+}) => Saude(
+  storage: storage,
+  jobs: const {},
+  backup: SaudeBackup(
+    status: backup,
+    at: backup == SaudeBackupStatus.ok ? '2026-10-14T03:00:00Z' : null,
+    bytes: null,
+  ),
+  summary: summary,
+  update: update,
 );
 
 void main() {
-  test('load reads the panel and the zeladora role', () async {
+  test('load reads the panel and the zelador role', () async {
     final FakeTainaApi api = FakeTainaApi(delay: Duration.zero);
     final SaudeModel model = SaudeModel(
       gateway: FakeSession(api, me: identity(ana)),
@@ -48,11 +43,13 @@ void main() {
     expect(model.saude, isNotNull);
     expect(model.isZelador, isTrue);
     expect(model.canTriggerBackup, isTrue);
+    expect(model.panelState, SaudePanelState.zelador);
+    expect(model.zeladorNames, ['Ana Souza']);
     expect(model.error, isNull);
-    expect(SaudeModel.rows(model.saude!), hasLength(2));
+    expect(model.loading, isFalse);
   });
 
-  test('a morador reads the panel but cannot trigger the backup', () async {
+  test('a morador sees the panel and cannot trigger a backup', () async {
     final FakeTainaApi api = FakeTainaApi(delay: Duration.zero);
     final SaudeModel model = SaudeModel(
       gateway: FakeSession(api, me: identity(joana)),
@@ -62,6 +59,11 @@ void main() {
 
     expect(model.isZelador, isFalse);
     expect(model.canTriggerBackup, isFalse);
+    expect(model.panelState, SaudePanelState.morador);
+    expect(
+      SaudeModel.footer(model.panelState, zeladorName: 'Ana Souza'),
+      'Quem cuida da nuvem: Ana Souza. Cuida da máquina, não dos arquivos.',
+    );
   });
 
   test('backupNow queues the backup and answers', () async {
@@ -76,211 +78,156 @@ void main() {
     expect(model.triggering, isFalse);
   });
 
-  group('pure transitions', () {
-    test('diskRow reads the used, the quota and the free room', () {
-      final SaudeRow row = SaudeModel.diskRow(stats);
-      expect(row.icon, SaudeRowIcon.disk);
-      expect(row.lines.first, '90 B usados de 100 B. 10 B livres.');
+  test(
+    'a zelador can start the first backup and retry a failed backup',
+    () async {
+      for (final SaudeBackupStatus status in [
+        SaudeBackupStatus.never,
+        SaudeBackupStatus.failed,
+      ]) {
+        final FakeTainaApi api = FakeTainaApi(
+          delay: Duration.zero,
+          backup: SaudeBackup(status: status, at: null, bytes: null),
+        );
+        final SaudeModel model = SaudeModel(
+          gateway: FakeSession(api, me: identity(ana)),
+        );
+
+        await model.load();
+
+        expect(model.canTriggerBackup, isTrue, reason: status.name);
+        model.dispose();
+      }
+    },
+  );
+
+  group('pure status selection', () {
+    test('always returns the four board rows in order', () {
+      final List<SaudeStatus> rows = SaudeModel.statuses(_saude());
+      expect(rows, hasLength(4));
+      expect(rows.map((SaudeStatus row) => row.title), [
+        'Espaço de sobra',
+        'Backup em dia',
+        'Atualizações',
+        'Tudo no ar',
+      ]);
+      expect(rows.map((SaudeStatus row) => row.state), [
+        TainaStatusState.ok,
+        TainaStatusState.ok,
+        TainaStatusState.unknown,
+        TainaStatusState.ok,
+      ]);
+    });
+
+    test('the disk summary and capacity select the attention status', () {
+      final Saude attention = _saude(
+        backup: SaudeBackupStatus.failed,
+        summary: const SaudeSummary(
+          state: SaudeSummaryState.attention,
+          line: 'Disco quase cheio',
+        ),
+        storage: const StorageStats(
+          usedBytes: 95,
+          quotaBytes: 100,
+          byKind: StorageByKind(photos: 0, videos: 0, documents: 0, others: 0),
+          files: 0,
+          photos: 0,
+          trash: StorageTrash(count: 0, bytes: 0),
+        ),
+        update: const SaudeUpdate(
+          status: SaudeUpdateStatus.upToDate,
+          running: '1.0.0',
+          latest: '1.0.0',
+        ),
+      );
+      final List<SaudeStatus> rows = SaudeModel.statuses(attention);
+
+      expect(rows.map((SaudeStatus row) => row.title), [
+        'Disco quase cheio',
+        'Último backup falhou',
+        'Atualizações em dia',
+        'Tudo no ar',
+      ]);
+      expect(rows.map((SaudeStatus row) => row.state), [
+        TainaStatusState.attention,
+        TainaStatusState.problem,
+        TainaStatusState.ok,
+        TainaStatusState.ok,
+      ]);
       expect(
-        row.warning,
-        'O espaço está acabando. Quem cuida da máquina pode '
-        'aumentar o limite.',
+        SaudeModel.stateFor(attention, isZelador: false),
+        SaudePanelState.atencao,
+      );
+      expect(
+        SaudeModel.footer(SaudePanelState.atencao),
+        'Vale falar com quem cuida da nuvem. Ninguém perdeu arquivo.',
       );
     });
 
-    test('diskRow without a quota says there is no limit', () {
-      const StorageStats unlimited = StorageStats(
-        usedBytes: 90,
+    test('the fallback marks a first backup as attention', () {
+      final SaudeStatus status = SaudeModel.backupStatus(
+        const SaudeBackup(
+          status: SaudeBackupStatus.never,
+          at: null,
+          bytes: null,
+        ),
+      );
+      expect(status.title, 'Nenhum backup ainda');
+      expect(status.state, TainaStatusState.attention);
+      expect(
+        SaudeModel.stateFor(
+          _saude(backup: SaudeBackupStatus.never),
+          isZelador: true,
+        ),
+        SaudePanelState.atencao,
+      );
+    });
+
+    test('an absent update model is a present unknown row', () {
+      expect(SaudeModel.updateStatus(null).title, 'Atualizações');
+      expect(SaudeModel.updateStatus(null).state, TainaStatusState.unknown);
+    });
+
+    test('update statuses use the available optional model', () {
+      expect(
+        SaudeModel.updateStatus(
+          const SaudeUpdate(
+            status: SaudeUpdateStatus.updateAvailable,
+            running: '1.0.0',
+            latest: '1.1.0',
+          ),
+        ),
+        const SaudeStatus(
+          state: TainaStatusState.attention,
+          title: 'Atualização disponível',
+        ),
+      );
+      expect(
+        SaudeModel.updateStatus(
+          const SaudeUpdate(
+            status: SaudeUpdateStatus.upToDate,
+            running: '1.0.0',
+            latest: '1.0.0',
+          ),
+        ).title,
+        'Atualizações em dia',
+      );
+    });
+
+    test('disk warning falls back to the physical disk values', () {
+      const StorageStats stats = StorageStats(
+        usedBytes: 91,
         quotaBytes: null,
-        byKind: noBytes,
-        files: 1,
+        diskBytes: 100,
+        byKind: StorageByKind(photos: 0, videos: 0, documents: 0, others: 0),
+        files: 0,
         photos: 0,
         trash: StorageTrash(count: 0, bytes: 0),
       );
-      final SaudeRow row = SaudeModel.diskRow(unlimited);
-      expect(row.lines.first, '90 B usados. Sem limite.');
-      expect(row.warning, isNull);
-      expect(SaudeModel.isAlmostFull(unlimited), isFalse);
-    });
-
-    test('diskRow without a quota includes known physical free space', () {
-      final SaudeRow row = SaudeModel.diskRow(
-        _stats(quotaBytes: null, diskTotalBytes: 100, diskFreeBytes: 10),
-      );
-      expect(row.lines.first, '90 B usados. 10 B livres no disco.');
+      expect(SaudeModel.isAlmostFull(stats), isTrue);
       expect(
-        row.warning,
-        'O espaço do disco está acabando. Quem cuida da máquina precisa '
-        'liberar espaço no disco.',
-      );
-    });
-
-    test('physical disk alert starts at ten percent free', () {
-      expect(
-        SaudeModel.isAlmostFull(
-          _stats(quotaBytes: null, diskTotalBytes: 100, diskFreeBytes: 10),
-        ),
-        isTrue,
-      );
-    });
-
-    test('physical disk alert stays off above ten percent free', () {
-      expect(
-        SaudeModel.isAlmostFull(
-          _stats(quotaBytes: null, diskTotalBytes: 100, diskFreeBytes: 11),
-        ),
-        isFalse,
-      );
-    });
-
-    test('physical disk alert applies below ten percent free', () {
-      expect(
-        SaudeModel.isAlmostFull(
-          _stats(quotaBytes: null, diskTotalBytes: 100, diskFreeBytes: 9),
-        ),
-        isTrue,
-      );
-    });
-
-    test('physical disk alert works without a quota', () {
-      final SaudeRow row = SaudeModel.diskRow(
-        _stats(quotaBytes: null, diskTotalBytes: 100, diskFreeBytes: 9),
-      );
-      expect(
-        SaudeModel.isAlmostFull(
-          _stats(quotaBytes: null, diskTotalBytes: 100, diskFreeBytes: 9),
-        ),
-        isTrue,
-      );
-      expect(row.warning, contains('O espaço do disco está acabando.'));
-    });
-
-    test('physical disk warning takes precedence over the quota warning', () {
-      final SaudeRow row = SaudeModel.diskRow(
-        _stats(
-          usedBytes: 95,
-          quotaBytes: 100,
-          diskTotalBytes: 100,
-          diskFreeBytes: 10,
-        ),
-      );
-      expect(
-        row.warning,
-        'O espaço do disco está acabando. Quem cuida da máquina precisa '
-        'liberar espaço no disco.',
-      );
-    });
-
-    test('trashLines is a fact only when the trash holds something', () {
-      expect(
-        SaudeModel.trashLines(const StorageTrash(count: 0, bytes: 0)),
-        isEmpty,
-      );
-      expect(SaudeModel.trashLines(const StorageTrash(count: 1, bytes: 2048)), [
-        '2,0 KB na lixeira esperando a limpeza (1 arquivo).',
-      ]);
-    });
-
-    test('backupRow reads a successful backup with and without its size', () {
-      expect(
-        SaudeModel.backupRow(
-          const SaudeBackup(
-            status: SaudeBackupStatus.ok,
-            at: '2026-10-14T03:00:00Z',
-            bytes: 2048,
-          ),
-        ).lines.first,
-        contains('guardados'),
-      );
-      expect(
-        SaudeModel.backupRow(
-          const SaudeBackup(
-            status: SaudeBackupStatus.ok,
-            at: '2026-10-14T03:00:00Z',
-            bytes: null,
-          ),
-        ).lines.first,
-        isNot(contains('guardados')),
-      );
-      expect(
-        SaudeModel.backupRow(
-          const SaudeBackup(
-            status: SaudeBackupStatus.none,
-            at: null,
-            bytes: null,
-          ),
-        ).lines.first,
-        'Nunca foi feito um backup.',
-      );
-    });
-
-    test('backupRow reports disabled, unconfigured and unreadable states', () {
-      final SaudeRow disabled = SaudeModel.backupRow(
-        const SaudeBackup(
-          status: SaudeBackupStatus.disabled,
-          at: null,
-          bytes: null,
-        ),
-      );
-      expect(disabled.lines, ['O backup está desativado.']);
-      expect(
-        disabled.warning,
-        'Quem cuida da máquina precisa ativar o backup.',
-      );
-
-      final SaudeRow notConfigured = SaudeModel.backupRow(
-        const SaudeBackup(
-          status: SaudeBackupStatus.notConfigured,
-          at: null,
-          bytes: null,
-        ),
-      );
-      expect(notConfigured.lines, ['O backup está sem destino.']);
-      expect(
-        notConfigured.warning,
-        'Quem cuida da máquina precisa escolher onde guardar o backup.',
-      );
-
-      final SaudeRow unreadable = SaudeModel.backupRow(
-        const SaudeBackup(
-          status: SaudeBackupStatus.unreadable,
-          at: null,
-          bytes: null,
-        ),
-      );
-      expect(unreadable.lines, ['Não foi possível ler o destino do backup.']);
-      expect(
-        unreadable.warning,
-        'Quem cuida da máquina precisa verificar o destino.',
-      );
-    });
-
-    test('jobsRow disappears when every queue is quiet', () {
-      expect(SaudeModel.jobsRow(const {'renditions': 0, 'backups': 0}), isNull);
-    });
-
-    test('jobsRow orders queues and speaks each one', () {
-      final SaudeRow? row = SaudeModel.jobsRow(const {
-        'renditions': 1,
-        'backups': 2,
-        'trash_purge': 1,
-      });
-      expect(row, isNotNull);
-      expect(row!.lines, [
-        '2 backups em andamento',
-        '1 miniatura ainda sendo gerada',
-        '1 limpeza da lixeira em andamento',
-      ]);
-    });
-
-    test('an unknown queue keeps its name', () {
-      expect(
-        SaudeModel.jobLine(queue: 'exports', count: 1),
-        '1 trabalho na fila exports',
-      );
-      expect(
-        SaudeModel.jobLine(queue: 'exports', count: 3),
-        '3 trabalhos na fila exports',
+        SaudeModel.statuses(_saude(storage: stats)).first.title,
+        'Disco quase cheio',
       );
     });
   });
@@ -301,6 +248,8 @@ void main() {
         model.canTriggerBackup,
         status == SaudeBackupStatus.ok ||
             status == SaudeBackupStatus.none ||
+            status == SaudeBackupStatus.never ||
+            status == SaudeBackupStatus.failed ||
             status == SaudeBackupStatus.unreadable,
       );
       model.dispose();

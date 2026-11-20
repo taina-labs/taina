@@ -16,7 +16,10 @@ MuralEntry entry(String tipo, Map<String, JsonValue> payload) {
 }
 
 void main() {
-  const Map<String, String> names = {'avap2xw5m8q3': 'Ana Souza'};
+  const Map<String, String> names = {
+    'avap2xw5m8q3': 'Ana Souza',
+    'avaq7r2m5xk9p1': 'Joana Reis',
+  };
 
   group('actor', () {
     test('resolves the public_id through the roster', () {
@@ -55,6 +58,19 @@ void main() {
   });
 
   group('invites and membership', () {
+    test('names the invitee when the entry provides one', () {
+      expect(
+        MuralPhrase.sentence(
+          entry('invite_created', const {
+            'actor': JsonString('avap2xw5m8q3'),
+            'member': JsonString('Carla'),
+          }),
+          names,
+        ),
+        'Ana Souza criou um convite para Carla',
+      );
+    });
+
     test('invite_created distinguishes the machine role', () {
       expect(
         MuralPhrase.sentence(
@@ -87,7 +103,7 @@ void main() {
           }),
           names,
         ),
-        'Ana Souza entrou na comunidade para cuidar da máquina.',
+        'Ana Souza entrou na comunidade para cuidar da máquina',
       );
       expect(
         MuralPhrase.sentence(
@@ -97,7 +113,7 @@ void main() {
           }),
           names,
         ),
-        'Ana Souza entrou na comunidade.',
+        'Ana Souza entrou na comunidade',
       );
     });
 
@@ -286,6 +302,16 @@ void main() {
         MuralPhrase.sentence(entry('publicar', actor), names),
         'Ana Souza publicou um arquivo na praça.',
       );
+      expect(
+        MuralPhrase.sentence(
+          entry('publicar', const {
+            'actor': JsonString('avap2xw5m8q3'),
+            'name': JsonString('Estatuto.pdf'),
+          }),
+          names,
+        ),
+        'Ana Souza publicou Estatuto.pdf na praça',
+      );
     });
 
     test('tirar_da_praca distinguishes folder and file', () {
@@ -353,6 +379,16 @@ void main() {
         'Ana Souza abriu a sua casa para a leitura de um morador.',
       );
       expect(
+        MuralPhrase.sentence(
+          entry('concessao', const {
+            'actor': JsonString('avap2xw5m8q3'),
+            'leitor': JsonString('avaq7r2m5xk9p1'),
+          }),
+          names,
+        ),
+        'Ana Souza abriu a casa para Joana Reis',
+      );
+      expect(
         MuralPhrase.sentence(entry('revogar', actor), names),
         'Ana Souza tirou a leitura que tinha aberto.',
       );
@@ -362,6 +398,25 @@ void main() {
       expect(
         MuralPhrase.sentence(entry('arquivo.publicado', actor), names),
         'Ana Souza fez um ato registrado na comunidade.',
+      );
+    });
+
+    test('backup events use the board wording', () {
+      expect(
+        MuralPhrase.sentence(
+          entry('backup_succeeded', const {
+            'actor': JsonString('avap2xw5m8q3'),
+          }),
+          names,
+        ),
+        'Ana Souza fez o backup da nuvem',
+      );
+      expect(
+        MuralPhrase.sentence(
+          entry('backup_failed', const {'actor': JsonString('avap2xw5m8q3')}),
+          names,
+        ),
+        'Ana Souza não conseguiu concluir o backup da nuvem',
       );
     });
   });

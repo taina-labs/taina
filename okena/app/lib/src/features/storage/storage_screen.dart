@@ -1,19 +1,19 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:okena_app/src/design_system/design_system.dart';
 import 'package:okena_app/src/features/storage/storage_model.dart';
 import 'package:okena_app/src/session/session_gateway.dart';
 import 'package:okena_core/okena_core.dart';
 import 'package:provider/provider.dart';
 
-/// The vault's size: used against the quota, broken down by kind, with the
-/// counts and what the trash holds. Read only, for every morador; the quota is
-/// the zeladora's act from this screen.
+/// The community-wide storage portrait and, for zeladores, the shared quota.
 final class StorageScreen extends StatefulWidget {
-  const StorageScreen({required this.session, super.key});
+  const StorageScreen({required this.session, this.onBack, super.key});
 
   final SessionGateway session;
+  final VoidCallback? onBack;
 
   @override
   State<StorageScreen> createState() => _StorageScreenState();
@@ -39,350 +39,51 @@ final class _StorageScreenState extends State<StorageScreen> {
   Widget build(BuildContext context) {
     return ChangeNotifierProvider<StorageModel>.value(
       value: _model,
-      child: const _StorageView(),
+      child: _StorageView(onBack: widget.onBack),
     );
   }
 }
 
 final class _StorageView extends StatelessWidget {
-  const _StorageView();
+  const _StorageView({required this.onBack});
+
+  final VoidCallback? onBack;
 
   @override
   Widget build(BuildContext context) {
     final StorageModel model = context.watch<StorageModel>();
     final StorageStats? stats = model.stats;
     return Scaffold(
-      appBar: AppBar(title: const Text('Armazenamento')),
       body: SafeArea(
-        child: switch (stats) {
-          final StorageStats value => _panel(context, model, value),
-          null when model.error != null => TainaErrorState(
-            error: model.error!,
-            onRetry: model.load,
-          ),
-          null => const TainaLoadingList(),
-        },
-      ),
-    );
-  }
-
-  Widget _panel(BuildContext context, StorageModel model, StorageStats stats) {
-    return RefreshIndicator(
-      onRefresh: model.load,
-      child: ListView(
-        padding: const EdgeInsets.all(TainaSpacing.space4),
-        children: [
-          _usageCard(stats),
-          const SizedBox(height: TainaSpacing.space3),
-          TainaText(
-            'Só entra o que está na praça, a sua casa e o que te deixarem ver. '
-            'A casa dos outros fica de fora.',
-            style: TainaTypography.caption,
-            color: TainaPalette.textMuted,
-          ),
-          const SizedBox(height: TainaSpacing.space5),
-          _kindList(stats),
-          const SizedBox(height: TainaSpacing.space3),
-          TainaText(
-            'Soma do que você vê: '
-            '${TainaFormat.bytes(StorageModel.byKindTotal(stats))}',
-            style: TainaTypography.caption,
-            color: TainaPalette.textMuted,
-          ),
-          const SizedBox(height: TainaSpacing.space5),
-          _counts(stats),
-          if (model.isZelador) ...[
-            const SizedBox(height: TainaSpacing.space5),
-            _quotaCard(context, model, stats),
-          ],
-        ],
-      ),
-    );
-  }
-
-  /// The big card: the used bytes, the quota line, the bar by kind.
-  Widget _usageCard(StorageStats stats) {
-    return TainaRowCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TainaText(
-            'Espaço da comunidade',
-            style: TainaTypography.overline,
-            uppercase: true,
-            color: TainaPalette.textMuted,
-          ),
-          const SizedBox(height: TainaSpacing.space1),
-          TainaText(
-            TainaFormat.bytes(stats.usedBytes),
-            style: TainaTypography.display.copyWith(
-              fontFamily: TainaFonts.mono,
-            ),
-            color: TainaPalette.textPrimary,
-          ),
-          const SizedBox(height: TainaSpacing.space2),
-          _quotaLine(stats),
-          const SizedBox(height: TainaSpacing.space3),
-          _UsageBar(segments: StorageModel.segments(stats)),
-          const SizedBox(height: TainaSpacing.space2),
-          TainaText(
-            'Uso por tipo',
-            style: TainaTypography.caption,
-            color: TainaPalette.textMuted,
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// "de X usados" with the free room beside it, or the absence of a limit
-  /// said as a state. The color never works alone: the word "livres" carries
-  /// the meaning, the color only underlines it. A limit set below the use says
-  /// so, instead of a negative number of livres.
-  Widget _quotaLine(StorageStats stats) {
-    final int? quota = stats.quotaBytes;
-    if (quota == null) {
-      return TainaText(
-        'Sem limite definido.',
-        style: TainaTypography.bodySm,
-        color: TainaPalette.textMuted,
-      );
-    }
-    if (StorageModel.isOverQuota(stats)) {
-      return Row(
-        children: [
-          Expanded(
-            child: TainaText(
-              'de ${TainaFormat.bytes(quota)} usados',
-              style: TainaTypography.bodySm,
-              color: TainaPalette.textMuted,
-            ),
-          ),
-          const SizedBox(width: TainaSpacing.space2),
-          Expanded(
-            child: TainaText(
-              'O limite está abaixo do que já está guardado.',
-              style: TainaTypography.bodySm,
-              color: TainaPalette.feedbackWarning,
-              textAlign: TextAlign.end,
-            ),
-          ),
-        ],
-      );
-    }
-    return Row(
-      children: [
-        Expanded(
-          child: TainaText(
-            'de ${TainaFormat.bytes(quota)} usados',
-            style: TainaTypography.bodySm,
-            color: TainaPalette.textMuted,
-          ),
-        ),
-        TainaText(
-          '${TainaFormat.bytes(quota - stats.usedBytes)} livres',
-          style: TainaTypography.bodySm,
-          color: StorageModel.isLowFree(stats)
-              ? TainaPalette.feedbackWarning
-              : TainaPalette.feedbackSuccess,
-        ),
-      ],
-    );
-  }
-
-  /// The zeladora's limit card: the number as it stands and the way to change
-  /// it. The act is the box's to accept or refuse.
-  Widget _quotaCard(
-    BuildContext context,
-    StorageModel model,
-    StorageStats stats,
-  ) {
-    final int? quota = stats.quotaBytes;
-    return TainaRowCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TainaText(
-            'Limite da comunidade',
-            style: TainaTypography.overline,
-            uppercase: true,
-            color: TainaPalette.textMuted,
-          ),
-          const SizedBox(height: TainaSpacing.space2),
-          TainaText(
-            quota != null
-                ? '${TainaFormat.bytes(quota)} de espaço para os '
-                      'arquivos de todo mundo.'
-                : 'Nenhum limite definido. A caixa usa o espaço que o disco '
-                      'tem.',
-            style: TainaTypography.bodySm,
-            color: TainaPalette.textSecondary,
-          ),
-          const SizedBox(height: TainaSpacing.space3),
-          TainaSecondaryButton(
-            label: 'Mudar o limite',
-            onPressed: () => _openQuota(context, model),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _kindList(StorageStats stats) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        for (final StorageKindLine line in StorageModel.kinds(stats))
-          Padding(
-            padding: const EdgeInsets.only(bottom: TainaSpacing.space2),
-            child: TainaRowCard(
-              child: Row(
-                children: [
-                  Container(
-                    width: TainaSizes.progress,
-                    height: TainaSizes.progress,
-                    decoration: BoxDecoration(
-                      color: _kindColor(line.kind),
-                      shape: BoxShape.circle,
+        child: RefreshIndicator(
+          onRefresh: model.load,
+          child: CustomScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: [
+              PageHeaderSliver(
+                title: 'Armazenamento',
+                backLabel: 'Início',
+                onBack: () => _handleBack(context),
+              ),
+              if (stats case final StorageStats value)
+                _panel(context, model, value)
+              else if (model.loading)
+                const SliverPadding(
+                  padding: EdgeInsets.all(TainaSpacing.space4),
+                  sliver: SliverToBoxAdapter(
+                    child: SkeletonView(kind: TainaSkeletonKind.card, count: 1),
+                  ),
+                )
+              else
+                SliverPadding(
+                  padding: const EdgeInsets.all(TainaSpacing.space4),
+                  sliver: SliverToBoxAdapter(
+                    child: ErrorCard(
+                      title: 'Não conseguimos falar com a nuvem agora.',
+                      body: '',
+                      retry: () => unawaited(model.load()),
                     ),
                   ),
-                  const SizedBox(width: TainaSpacing.space3),
-                  TainaText(
-                    line.kind.label,
-                    style: TainaTypography.body,
-                    color: TainaPalette.textPrimary,
-                  ),
-                  const Spacer(),
-                  TainaText(
-                    TainaFormat.bytes(line.bytes),
-                    style: TainaTypography.monoSm,
-                    color: TainaPalette.textPrimary,
-                  ),
-                ],
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _counts(StorageStats stats) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _countRow(
-          icon: Icons.folder_outlined,
-          label: 'Arquivos',
-          value: '${stats.files}',
-        ),
-        const SizedBox(height: TainaSpacing.space2),
-        _countRow(
-          icon: Icons.photo_outlined,
-          label: 'Fotos',
-          value: '${stats.photos}',
-        ),
-        const SizedBox(height: TainaSpacing.space2),
-        _countRow(
-          icon: Icons.delete_outline,
-          label: 'Lixeira',
-          value: StorageModel.trashSummary(stats.trash),
-        ),
-      ],
-    );
-  }
-
-  Widget _countRow({
-    required IconData icon,
-    required String label,
-    required String value,
-  }) {
-    return TainaRowCard(
-      child: Row(
-        children: [
-          Icon(icon, size: TainaFontSizes.md, color: TainaPalette.serviceYbira),
-          const SizedBox(width: TainaSpacing.space3),
-          TainaText(
-            label,
-            style: TainaTypography.body,
-            color: TainaPalette.textPrimary,
-          ),
-          const Spacer(),
-          TainaText(
-            value,
-            style: TainaTypography.monoSm,
-            color: TainaPalette.textPrimary,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _openQuota(BuildContext context, StorageModel model) async {
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (BuildContext sheetContext) => _QuotaSheet(
-        model: model,
-        onFailure: (TainaError error) {
-          if (context.mounted) _showFailure(context, error);
-        },
-      ),
-    );
-  }
-
-  void _showFailure(BuildContext context, TainaError error) {
-    showDialog<void>(
-      context: context,
-      builder: (BuildContext dialogContext) => AlertDialog(
-        title: const Text('Não deu certo'),
-        content: Text(error.message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Entendi'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-Color _kindColor(StorageKind kind) {
-  return switch (kind) {
-    StorageKind.photos => TainaPalette.serviceJaci,
-    StorageKind.videos => TainaPalette.serviceVideo,
-    StorageKind.documents => TainaPalette.serviceYbira,
-    StorageKind.others => TainaPalette.textFaint,
-  };
-}
-
-/// The segmented bar: one fill per kind with bytes, widest first, on a quiet
-/// track. The height is the progress token, the colors the same the legend
-/// rows use.
-final class _UsageBar extends StatelessWidget {
-  const _UsageBar({required this.segments});
-
-  final List<StorageSegment> segments;
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: TainaRadii.smAll,
-      child: SizedBox(
-        height: TainaSizes.progress,
-        child: ColoredBox(
-          color: TainaPalette.surfaceHigh,
-          child: Row(
-            children: [
-              for (final StorageSegment segment in segments)
-                Expanded(
-                  flex: (segment.fraction * 1000)
-                      .round()
-                      .clamp(1, 1000)
-                      .toInt(),
-                  child: ColoredBox(color: _kindColor(segment.kind)),
                 ),
             ],
           ),
@@ -390,15 +91,118 @@ final class _UsageBar extends StatelessWidget {
       ),
     );
   }
+
+  Widget _panel(BuildContext context, StorageModel model, StorageStats stats) {
+    final List<StorageZoneLine>? zones = StorageModel.zones(stats);
+    final String? zeladorName = model.zeladorNames.firstOrNull;
+    return SliverPadding(
+      padding: const EdgeInsets.fromLTRB(
+        TainaSpacing.space4,
+        TainaSpacing.space3,
+        TainaSpacing.space4,
+        TainaSpacing.space6,
+      ),
+      sliver: SliverToBoxAdapter(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            StorageCard(
+              detail: TainaStorageDetail.full,
+              summary: StorageModel.summary(stats),
+            ),
+            if (zones != null) ...[
+              const SizedBox(height: TainaSpacing.space5),
+              Text(
+                'O que ocupa espaço',
+                style: TainaTypography.overline.copyWith(
+                  color: TainaPalette.textMuted,
+                ),
+              ),
+              const SizedBox(height: TainaSpacing.space2),
+              for (int index = 0; index < zones.length; index++)
+                TainaListRow(
+                  kind: TainaListRowKind.civic,
+                  title: zones[index].title,
+                  meta: TainaFormat.bytes(zones[index].bytes),
+                  leadingBuilder: (_) => TainaIconView(
+                    icon: zones[index].icon,
+                    color: TainaPalette.textSecondary,
+                  ),
+                  showDivider: index < zones.length - 1,
+                ),
+            ],
+            if (model.isZelador) ...[
+              const SizedBox(height: TainaSpacing.space4),
+              TainaSecondaryButton(
+                label: 'Mudar limite',
+                onPressed: () => unawaited(_openQuota(context, model, stats)),
+              ),
+            ] else ...[
+              const SizedBox(height: TainaSpacing.space4),
+              Text(
+                StorageModel.moradorFooter(zeladorName),
+                style: TainaTypography.bodySm.copyWith(
+                  color: TainaPalette.textSecondary,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openQuota(
+    BuildContext context,
+    StorageModel model,
+    StorageStats stats,
+  ) async {
+    await TainaSheet.show<void>(
+      context: context,
+      title: 'Limite de espaço',
+      isScrollControlled: true,
+      child: _QuotaSheet(
+        model: model,
+        stats: stats,
+        onFailure: (TainaError error) {
+          if (context.mounted) _showToast(context, error.message);
+        },
+      ),
+    );
+  }
+
+  void _handleBack(BuildContext context) {
+    final VoidCallback? callback = onBack;
+    if (callback != null) {
+      callback();
+    } else {
+      Navigator.of(context).maybePop();
+    }
+  }
+
+  void _showToast(BuildContext context, String text) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: TainaToast(kind: TainaToastKind.error, text: text),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+        ),
+      );
+  }
 }
 
-/// The zeladora's limit form: whole gigabytes, the number the box's quota card
-/// speaks. Below the current use is allowed and said on the spot; the box has
-/// the last word.
 final class _QuotaSheet extends StatefulWidget {
-  const _QuotaSheet({required this.model, required this.onFailure});
+  const _QuotaSheet({
+    required this.model,
+    required this.stats,
+    required this.onFailure,
+  });
 
   final StorageModel model;
+  final StorageStats stats;
   final ValueChanged<TainaError> onFailure;
 
   @override
@@ -407,8 +211,10 @@ final class _QuotaSheet extends StatefulWidget {
 
 final class _QuotaSheetState extends State<_QuotaSheet> {
   late final TextEditingController _controller = TextEditingController(
-    text: '${StorageModel.gigabytes(widget.model.stats?.quotaBytes)}',
+    text:
+        '${StorageModel.gigabytes(widget.stats.quotaBytes ?? StorageModel.diskBytes(widget.stats))}',
   );
+  late bool _wholeDisk = widget.stats.quotaBytes == null;
   bool _saving = false;
 
   @override
@@ -420,26 +226,34 @@ final class _QuotaSheetState extends State<_QuotaSheet> {
   int? get _gigabytes {
     final int? parsed = int.tryParse(_controller.text.trim());
     if (parsed == null || parsed < 1) return null;
+    final int? diskBytes = StorageModel.diskBytes(widget.stats);
+    if (diskBytes != null && parsed > StorageModel.gigabytes(diskBytes)) {
+      return null;
+    }
     return parsed;
+  }
+
+  String get _help {
+    final int? diskBytes = StorageModel.diskBytes(widget.stats);
+    if (diskBytes == null) return 'Em GB.';
+    return 'Em GB, de 1 a ${StorageModel.gigabytes(diskBytes)}.';
   }
 
   String? get _warning {
     final int? gigabytes = _gigabytes;
-    final int? used = widget.model.stats?.usedBytes;
-    if (gigabytes == null || used == null) return null;
-    final int bytes = StorageModel.bytesFromGigabytes(gigabytes);
-    return bytes < used
+    if (_wholeDisk || gigabytes == null) return null;
+    return StorageModel.bytesFromGigabytes(gigabytes) < widget.stats.usedBytes
         ? 'Este limite é menor do que já está guardado. Nada é apagado; a '
               'caixa só não aceita mais nada até o limite subir.'
         : null;
   }
 
   Future<void> _save() async {
-    final int? gigabytes = _gigabytes;
-    if (gigabytes == null) return;
+    final int? gigabytes = _wholeDisk ? null : _gigabytes;
+    if (!_wholeDisk && gigabytes == null) return;
     setState(() => _saving = true);
-    final result = await widget.model.setQuota(
-      StorageModel.bytesFromGigabytes(gigabytes),
+    final TainaResult<void> result = await widget.model.setQuota(
+      gigabytes == null ? null : StorageModel.bytesFromGigabytes(gigabytes),
     );
     if (!mounted) return;
     switch (result) {
@@ -453,57 +267,54 @@ final class _QuotaSheetState extends State<_QuotaSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final bool valid = _gigabytes != null;
+    final bool valid = _wholeDisk || _gigabytes != null;
     final String? warning = _warning;
-    return SafeArea(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(TainaSpacing.space5),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TainaText(
-              'Mudar o limite',
-              style: TainaTypography.h3,
-              color: TainaPalette.textPrimary,
-            ),
-            const SizedBox(height: TainaSpacing.space2),
-            TainaText(
-              'O espaço total da comunidade, em gigabytes. A lixeira conta até '
-              'a limpeza passar.',
-              style: TainaTypography.bodySm,
-              color: TainaPalette.textSecondary,
-            ),
-            const SizedBox(height: TainaSpacing.space4),
+    return Padding(
+      padding: const EdgeInsets.all(TainaSpacing.space4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TainaRadioCard(
+            title: 'Usar o disco inteiro',
+            description: 'A comunidade usa todo o disco.',
+            selected: _wholeDisk,
+            action: () => setState(() => _wholeDisk = true),
+          ),
+          const SizedBox(height: TainaSpacing.space2),
+          TainaRadioCard(
+            title: 'Definir um limite',
+            selected: !_wholeDisk,
+            action: () => setState(() => _wholeDisk = false),
+          ),
+          if (!_wholeDisk) ...[
+            const SizedBox(height: TainaSpacing.space3),
             TainaTextField(
-              label: 'Gigabytes',
+              label: 'Limite (GB)',
               controller: _controller,
-              placeholder: '250',
-              help: 'Por exemplo: 250',
+              placeholder: _controller.text,
+              help: _help,
               keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
               onChanged: (_) => setState(() {}),
             ),
             if (warning != null) ...[
               const SizedBox(height: TainaSpacing.space2),
-              TainaText(
+              Text(
                 warning,
-                style: TainaTypography.caption,
-                color: TainaPalette.feedbackWarning,
+                style: TainaTypography.caption.copyWith(
+                  color: TainaPalette.feedbackWarning,
+                ),
               ),
             ],
-            const SizedBox(height: TainaSpacing.space4),
-            TainaPrimaryButton(
-              label: 'Salvar',
-              loading: _saving,
-              onPressed: valid && !_saving ? () => unawaited(_save()) : null,
-            ),
-            const SizedBox(height: TainaSpacing.space2),
-            TainaSecondaryButton(
-              label: 'Cancelar',
-              onPressed: () => Navigator.of(context).pop(),
-            ),
           ],
-        ),
+          const SizedBox(height: TainaSpacing.space4),
+          TainaPrimaryButton(
+            label: 'Salvar',
+            loading: _saving,
+            onPressed: valid && !_saving ? () => unawaited(_save()) : null,
+          ),
+        ],
       ),
     );
   }
