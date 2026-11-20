@@ -95,23 +95,38 @@ defmodule Taina.Ybira.UploadMaintenanceTest do
     assert File.exists?(recent_part)
   end
 
-  test "removes staging for terminal rows without pruning their history", ctx do
-    upload = stage(ctx, "terminal.txt")
-    staged_path = staged_path(ctx, upload)
+  test "cleans aged terminal staging and prunes history only after 30 days", ctx do
+    grace_upload = failed_upload(ctx, "grace-terminal.txt")
+    grace_staged_path = staged_path(ctx, grace_upload)
+    age_terminal_row(ctx, grace_upload, 2)
+    :ok = File.touch(grace_staged_path, @old_time)
 
-    assert {:ok, failed} =
-             Uploads.mark_failed_for_job(upload.public_id, upload.oban_job_id, :processing_failed)
+    expired_upload = failed_upload(ctx, "expired-terminal.txt")
+    expired_staged_path = staged_path(ctx, expired_upload)
+    age_terminal_row(ctx, expired_upload, 31)
+    :ok = File.touch(expired_staged_path, @old_time)
 
-    assert failed.state == :failed
-    assert File.exists?(staged_path)
+    expired_with_recent_file = failed_upload(ctx, "expired-recent-file.txt")
+    age_terminal_row(ctx, expired_with_recent_file, 31)
+    recent_staged_path = staged_path(ctx, expired_with_recent_file)
+
+    recent_upload = failed_upload(ctx, "recent-terminal.txt")
+    recent_upload_staged_path = staged_path(ctx, recent_upload)
 
     assert {:ok, result} = UploadMaintenance.run()
-    assert result.terminal_staging_cleaned == 1
-    refute File.exists?(staged_path)
+    assert result.terminal_staging_cleaned == 2
+    assert result.terminal_history_pruned == 1
 
-    assert {:ok, retained} = Uploads.fetch_for_job(upload.public_id)
-    assert retained.state == :failed
-    assert retained.id == upload.id
+    refute File.exists?(grace_staged_path)
+    refute File.exists?(expired_staged_path)
+    assert File.exists?(recent_staged_path)
+    assert File.exists?(recent_upload_staged_path)
+
+    assert {:ok, %{state: :failed, id: grace_id}} = Uploads.fetch_for_job(grace_upload.public_id)
+    assert grace_id == grace_upload.id
+    assert {:error, :not_found} = Uploads.fetch_for_job(expired_upload.public_id)
+    assert {:ok, %{state: :failed}} = Uploads.fetch_for_job(expired_with_recent_file.public_id)
+    assert {:ok, %{state: :failed}} = Uploads.fetch_for_job(recent_upload.public_id)
   end
 
   defp stage(ctx, filename) do
@@ -125,6 +140,33 @@ defmodule Taina.Ybira.UploadMaintenanceTest do
              })
 
     upload
+  end
+
+  defp failed_upload(ctx, filename) do
+    upload = stage(ctx, filename)
+
+    assert {:ok, %{state: :failed}} =
+             Uploads.mark_failed_for_job(upload.public_id, upload.oban_job_id, :processing_failed)
+
+    upload
+  end
+
+  defp age_terminal_row(ctx, upload, days) do
+    updated_at =
+      DateTime.utc_now()
+      |> DateTime.shift(day: -days)
+      |> DateTime.truncate(:second)
+
+    assert {:ok, 1} =
+             Repo.with_tekoa(ctx.scope.tekoa.public_id, fn ->
+               {updated, _rows} =
+                 Repo.update_all(
+                   from(row in Upload, where: row.id == ^upload.id),
+                   set: [updated_at: updated_at]
+                 )
+
+               {:ok, updated}
+             end)
   end
 
   defp staged_path(ctx, upload) do
