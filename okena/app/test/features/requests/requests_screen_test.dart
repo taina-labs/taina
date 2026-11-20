@@ -24,120 +24,161 @@ final class _FailingPedidosApi implements TainaApi {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-Widget _app(SessionGateway session) {
+final class _EmptyPedidosApi implements TainaApi {
+  @override
+  Future<TainaResult<Page<Pedido>>> accessRequests() async =>
+      Ok(Page(items: const [], nextCursor: null));
+
+  @override
+  Future<TainaResult<Page<Pedido>>> myRequests() async =>
+      Ok(Page(items: const [], nextCursor: null));
+
+  @override
+  Future<TainaResult<Page<Concessao>>> grants({
+    required GrantRole role,
+  }) async => Ok(Page(items: const [], nextCursor: null));
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+Widget _app(SessionGateway session, {bool showSentState = false}) {
   return MaterialApp(
     theme: TainaTheme.data,
-    home: RequestsScreen(session: session),
+    home: RequestsScreen(
+      session: session,
+      showSentState: showSentState,
+      sentTo: 'Ana',
+    ),
   );
 }
 
 void main() {
-  testWidgets('the received list carries the decision', (tester) async {
+  testWidgets('renders one combined feed with the pending decision', (
+    tester,
+  ) async {
     final FakeTainaApi api = FakeTainaApi(delay: Duration.zero);
     await api.createSession(username: 'ana', password: 'x', deviceName: 'test');
     await tester.pumpWidget(_app(FakeSession(api)));
     await tester.pumpAndSettle();
 
     expect(find.text('Pedidos'), findsOneWidget);
-    expect(find.text('1 PEDIDO ESPERANDO SUA RESPOSTA'), findsOneWidget);
-    expect(find.text('Pendente'), findsOneWidget);
-    expect(
-      find.text('Pediu acesso a Estatuto da associacao.pdf'),
-      findsOneWidget,
-    );
-    expect(find.text('Aprovar'), findsOneWidget);
-    expect(find.text('Negar'), findsOneWidget);
-  });
-
-  testWidgets('a failed load shows the error with a way out', (tester) async {
-    await tester.pumpWidget(_app(FakeSession(_FailingPedidosApi())));
+    expect(find.text('Joana Reis pediu acesso'), findsOneWidget);
+    expect(find.text('Recusar'), findsOneWidget);
+    expect(find.text('Dar acesso'), findsOneWidget);
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -500));
     await tester.pumpAndSettle();
-
-    expect(
-      find.text('Não foi possível falar com a comunidade.'),
-      findsOneWidget,
-    );
-    expect(find.text('Tentar de novo'), findsOneWidget);
-  });
-
-  testWidgets('approving says the outcome and empties the pending list', (
-    tester,
-  ) async {
-    final FakeTainaApi api = FakeTainaApi(delay: Duration.zero);
-    await api.createSession(username: 'ana', password: 'x', deviceName: 'test');
-    await tester.pumpWidget(_app(FakeSession(api)));
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('Aprovar'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Pedido aprovado'), findsOneWidget);
     expect(
       find.text(
-        'Acesso a Estatuto da associacao.pdf liberado. A pessoa já pode ler.',
+        'Os pedidos resolvidos ficam visíveis. Você pode mudar de ideia '
+        'quando quiser.',
       ),
       findsOneWidget,
     );
-
-    await tester.tap(find.text('Entendi'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Nenhum pedido por enquanto'), findsOneWidget);
+    expect(find.text('Recebidos'), findsNothing);
+    expect(find.text('Enviados'), findsNothing);
+    expect(find.text('Acessos'), findsNothing);
   });
 
-  testWidgets('denying confirms first and says the person may ask again', (
+  testWidgets('shows the empty state when the combined feed is empty', (
     tester,
   ) async {
+    await tester.pumpWidget(_app(FakeSession(_EmptyPedidosApi())));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Nenhum pedido ainda'), findsOneWidget);
+    expect(
+      find.text(
+        'Quando alguém pedir para abrir um arquivo da sua casa, aparece aqui.',
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('a failed load shows an error with a retry action', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app(FakeSession(_FailingPedidosApi())));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Não conseguimos carregar os pedidos.'), findsOneWidget);
+    expect(find.text('Tentar de novo'), findsOneWidget);
+  });
+
+  testWidgets('approving keeps the granted access visible', (tester) async {
     final FakeTainaApi api = FakeTainaApi(delay: Duration.zero);
     await api.createSession(username: 'ana', password: 'x', deviceName: 'test');
     await tester.pumpWidget(_app(FakeSession(api)));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Negar'));
-    await tester.pumpAndSettle();
-    expect(find.text('Negar este pedido?'), findsOneWidget);
-    expect(find.textContaining('pode pedir de novo'), findsOneWidget);
-
-    await tester.tap(find.widgetWithText(TextButton, 'Negar'));
+    await tester.tap(find.text('Dar acesso'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Pedido negado'), findsOneWidget);
+    expect(
+      find.text(
+        'Acesso a Estatuto da associacao.pdf liberado. '
+        'A pessoa já pode ler.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Joana Reis recebeu acesso'), findsWidgets);
+  });
+
+  testWidgets('refusing keeps the resolved request visible', (tester) async {
+    final FakeTainaApi api = FakeTainaApi(delay: Duration.zero);
+    await api.createSession(username: 'ana', password: 'x', deviceName: 'test');
+    await tester.pumpWidget(_app(FakeSession(api)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Recusar'));
+    await tester.pumpAndSettle();
+
     expect(
       find.text('A pessoa pode pedir de novo quando quiser.'),
       findsOneWidget,
     );
+    expect(find.text('Joana Reis teve o acesso recusado'), findsOneWidget);
+    expect(find.textContaining('Acesso recusado em'), findsOneWidget);
   });
 
-  testWidgets(
-    'the accesses tab shows both sides and revokes a standing grant',
-    (tester) async {
-      final FakeTainaApi api = FakeTainaApi(delay: Duration.zero);
-      await api.createSession(
-        username: 'ana',
-        password: 'x',
-        deviceName: 'test',
-      );
-      await tester.pumpWidget(_app(FakeSession(api)));
-      await tester.pumpAndSettle();
+  testWidgets('sent state appears above the combined feed', (tester) async {
+    final FakeTainaApi api = FakeTainaApi(delay: Duration.zero);
+    await api.createSession(username: 'ana', password: 'x', deviceName: 'test');
+    await tester.pumpWidget(_app(FakeSession(api), showSentState: true));
+    await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Acessos'));
-      await tester.pumpAndSettle();
+    expect(find.text('Pedido enviado'), findsOneWidget);
+    expect(
+      find.text('Ana vai decidir. Você vê a resposta aqui em Pedidos.'),
+      findsOneWidget,
+    );
+  });
 
-      expect(find.text('VOCÊ LIBEROU'), findsOneWidget);
-      expect(find.text('LIBERADOS PARA VOCÊ'), findsOneWidget);
-      expect(find.text('Ativo'), findsOneWidget);
-      expect(find.text('Revogado'), findsOneWidget);
+  testWidgets('the grant kebab offers taking access back', (tester) async {
+    final FakeTainaApi api = FakeTainaApi(delay: Duration.zero);
+    await api.createSession(username: 'ana', password: 'x', deviceName: 'test');
+    await tester.pumpWidget(_app(FakeSession(api)));
+    await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Revogar'));
-      await tester.pumpAndSettle();
-      expect(find.text('Revogar este acesso?'), findsOneWidget);
-      expect(find.textContaining('deixa de poder abrir'), findsOneWidget);
+    final Finder kebab = find.byType(TainaIconButton);
+    expect(kebab, findsOneWidget);
+    await tester.ensureVisible(kebab);
+    await tester.tap(kebab);
+    await tester.pumpAndSettle();
+    expect(find.text('Ações do pedido'), findsOneWidget);
+    expect(find.text('Tirar acesso'), findsOneWidget);
 
-      await tester.tap(find.widgetWithText(TextButton, 'Revogar'));
-      await tester.pumpAndSettle();
+    await tester.tap(find.text('Tirar acesso'));
+    await tester.pumpAndSettle();
+    expect(find.text('Tirar este acesso?'), findsOneWidget);
 
-      expect(find.text('Acesso revogado'), findsOneWidget);
-      expect(find.textContaining('A pessoa já não pode ler.'), findsOneWidget);
-    },
-  );
+    await tester.tap(find.text('Tirar acesso').last);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining('Acesso a Lista de presenca.pdf revogado'),
+      findsOneWidget,
+    );
+    expect(find.text('Acesso retirado de Joana Reis'), findsOneWidget);
+  });
 }

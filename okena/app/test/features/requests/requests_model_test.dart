@@ -1,175 +1,146 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:okena_app/src/design_system/design_system.dart';
 import 'package:okena_app/src/features/requests/requests_model.dart';
 import 'package:okena_core/okena_core.dart';
 
 import '../support/fake_session.dart';
 
+Future<RequestsModel> _loadedModel() async {
+  final FakeTainaApi api = FakeTainaApi(delay: Duration.zero);
+  await api.createSession(username: 'ana', password: 'x', deviceName: 'test');
+  final RequestsModel model = RequestsModel(gateway: FakeSession(api));
+  await model.load();
+  return model;
+}
+
 void main() {
   test(
-    'load reads both pedido lists and resolves the resource names',
+    'load merges incoming, sent and owner-granted access newest first',
     () async {
-      final FakeTainaApi api = FakeTainaApi(delay: Duration.zero);
-      await api.createSession(
-        username: 'ana',
-        password: 'x',
-        deviceName: 'test',
-      );
-      final RequestsModel model = RequestsModel(gateway: FakeSession(api));
-
-      await model.load();
+      final RequestsModel model = await _loadedModel();
 
       expect(model.loading, isFalse);
-      expect(model.sections.received, hasLength(1));
-      expect(model.sections.sent, hasLength(2));
+      expect(model.items, hasLength(4));
+      expect(model.items.first.kind, RequestFeedKind.outgoing);
       expect(
-        model.receivedNames['3m2a8twqpv5z2'],
-        'Estatuto da associacao.pdf',
+        model.items.map((RequestFeedItem item) => item.title),
+        contains('Joana Reis pediu acesso'),
       );
-      expect(model.sentNames['3q9p2xk5m8v1'], RequestsModel.deletedResource);
-      expect(model.grantNames['3m5c9vxyq2b7t'], 'Lista de presenca.pdf');
       expect(
-        model.grantNames['3q9p2xk5m8v1'],
-        RequestsModel.unreadableResource,
+        model.items.map((RequestFeedItem item) => item.title),
+        contains('Você recebeu acesso a arquivo apagado'),
+      );
+      expect(
+        model.items.map((RequestFeedItem item) => item.title),
+        contains('Joana Reis recebeu acesso'),
+      );
+      expect(
+        model.items.map((RequestFeedItem item) => item.state),
+        containsAll([TainaPedidoState.esperando, TainaPedidoState.dado]),
       );
       expect(model.error, isNull);
     },
   );
 
-  test('approve removes the pending pedido', () async {
-    final FakeTainaApi api = FakeTainaApi(delay: Duration.zero);
-    await api.createSession(username: 'ana', password: 'x', deviceName: 'test');
-    final RequestsModel model = RequestsModel(gateway: FakeSession(api));
-    await model.load();
+  test('approval remains visible as an owner grant', () async {
+    final RequestsModel model = await _loadedModel();
 
-    final result = await model.approve('ped3xk9mq2v7w4');
+    final TainaResult<void> result = await model.approve('ped3xk9mq2v7w4');
 
     expect(result.isSuccess, isTrue);
-    expect(model.sections.received, isEmpty);
     expect(model.deciding, isNull);
+    expect(
+      model.items.map((RequestFeedItem item) => item.title),
+      contains('Joana Reis recebeu acesso'),
+    );
+    expect(
+      model.items
+          .where(
+            (RequestFeedItem item) => item.pedido?.publicId == 'ped3xk9mq2v7w4',
+          )
+          .length,
+      1,
+    );
   });
 
   test(
-    'deny removes the pending pedido and keeps the fact on the box',
+    'denial remains visible after a reload in the same screen model',
     () async {
-      final FakeTainaApi api = FakeTainaApi(delay: Duration.zero);
-      await api.createSession(
-        username: 'ana',
-        password: 'x',
-        deviceName: 'test',
-      );
-      final RequestsModel model = RequestsModel(gateway: FakeSession(api));
-      await model.load();
+      final RequestsModel model = await _loadedModel();
 
-      final result = await model.deny('ped3xk9mq2v7w4');
+      final TainaResult<void> result = await model.deny('ped3xk9mq2v7w4');
 
       expect(result.isSuccess, isTrue);
-      expect(model.sections.received, isEmpty);
+      expect(
+        model.items.map((RequestFeedItem item) => item.title),
+        contains('Joana Reis teve o acesso recusado'),
+      );
+      expect(
+        model.items
+            .firstWhere(
+              (RequestFeedItem item) =>
+                  item.pedido?.publicId == 'ped3xk9mq2v7w4',
+            )
+            .state,
+        TainaPedidoState.recusado,
+      );
+
+      await model.load();
+
+      expect(
+        model.items.map((RequestFeedItem item) => item.title),
+        contains('Joana Reis teve o acesso recusado'),
+      );
+      expect(
+        model.items
+            .where(
+              (RequestFeedItem item) =>
+                  item.pedido?.publicId == 'ped3xk9mq2v7w4',
+            )
+            .length,
+        1,
+      );
     },
   );
 
   test('a second decision answers the box conflict', () async {
-    final FakeTainaApi api = FakeTainaApi(delay: Duration.zero);
-    await api.createSession(username: 'ana', password: 'x', deviceName: 'test');
-    final RequestsModel model = RequestsModel(gateway: FakeSession(api));
-    await model.load();
+    final RequestsModel model = await _loadedModel();
     await model.approve('ped3xk9mq2v7w4');
 
-    final again = await model.approve('ped3xk9mq2v7w4');
+    final TainaResult<void> again = await model.approve('ped3xk9mq2v7w4');
 
     expect(again.isFailure, isTrue);
     expect((again.error! as ApiError).code, 'already_decided');
   });
 
-  test('revoke reads the grants again and flips the row', () async {
-    final FakeTainaApi api = FakeTainaApi(delay: Duration.zero);
-    await api.createSession(username: 'ana', password: 'x', deviceName: 'test');
-    final RequestsModel model = RequestsModel(gateway: FakeSession(api));
-    await model.load();
+  test('revoke keeps the grant visible with its revoked state', () async {
+    final RequestsModel model = await _loadedModel();
 
-    final result = await model.revoke('con3qk9mq2v7w1');
+    final TainaResult<void> result = await model.revoke('con3qk9mq2v7w1');
 
     expect(result.isSuccess, isTrue);
-    expect(RequestsModel.isRevoked(model.grants.given.first), isTrue);
     expect(model.revoking, isNull);
+    final RequestFeedItem row = model.items.firstWhere(
+      (RequestFeedItem item) => item.grant?.publicId == 'con3qk9mq2v7w1',
+    );
+    expect(row.state, TainaPedidoState.recusado);
+    expect(row.canRevoke, isFalse);
+    expect(row.title, 'Acesso retirado de Joana Reis');
   });
 
-  group('pure transitions', () {
-    const Pedido pedido = Pedido(
-      publicId: 'p1',
-      tipo: 'leitura',
-      recurso: 'missing',
-      motivo: null,
-      status: PedidoStatus.pendente,
-      decididoEm: null,
-      createdAt: '2026-10-14T10:00:00Z',
-      pedinte: null,
-      dono: null,
-    );
-
-    test('resource names fall back to the neutral labels', () {
+  group('pure formatting', () {
+    test('timestamps include the relative day and local time', () {
       expect(
-        RequestsModel.resourceNameForPedido(pedido, const {}),
-        RequestsModel.deletedResource,
-      );
-      expect(
-        RequestsModel.resourceNameForPedido(pedido, const {'missing': 'x.zip'}),
-        'x.zip',
+        RequestsModel.timestamp(
+          '2026-10-13T15:30:00Z',
+          now: DateTime.utc(2026, 10, 13, 18),
+        ),
+        matches(RegExp(r'^hoje \d{2}:\d{2}$')),
       );
     });
 
-    test(
-      'personLabel keeps a person of the community when the wire is empty',
-      () {
-        expect(RequestsModel.personLabel(null), 'Pessoa da comunidade');
-        expect(RequestsModel.personLabel(joana), 'Joana Reis');
-      },
-    );
-
-    test('resourceLine speaks from each side', () {
-      expect(
-        RequestsModel.resourceLine(received: true, name: 'x.zip'),
-        'Pediu acesso a x.zip',
-      );
-      expect(
-        RequestsModel.resourceLine(received: false, name: 'x.zip'),
-        'Pedido para abrir x.zip',
-      );
-    });
-
-    test('receivedHeader agrees in number', () {
-      expect(
-        RequestsModel.receivedHeader(1),
-        '1 pedido esperando sua resposta',
-      );
-      expect(
-        RequestsModel.receivedHeader(2),
-        '2 pedidos esperando sua resposta',
-      );
-    });
-
-    test('outcome messages name the file when the name is known', () {
-      expect(
-        RequestsModel.approvedMessage('x.zip'),
-        'Acesso a x.zip liberado. A pessoa já pode ler.',
-      );
-      expect(
-        RequestsModel.approvedMessage(null),
-        'Acesso liberado. A pessoa já pode ler.',
-      );
-      expect(
-        RequestsModel.revokedMessage('x.zip'),
-        'Acesso a x.zip revogado. A pessoa já não pode ler.',
-      );
-    });
-
-    test('removing drops the identity from both lists', () {
-      final RequestSections sections = RequestSections(
-        received: const [pedido],
-        sent: const [pedido],
-      );
-      final RequestSections next = RequestsModel.removing('p1', sections);
-      expect(next.received, isEmpty);
-      expect(next.sent, isEmpty);
+    test('short dates use the board month abbreviation', () {
+      expect(RequestsModel.shortDate('2026-10-23T09:00:00Z'), '23 out');
     });
   });
 }

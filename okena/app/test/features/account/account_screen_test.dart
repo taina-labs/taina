@@ -6,11 +6,15 @@ import 'package:okena_core/okena_core.dart';
 
 import '../support/fake_session.dart';
 
-Widget _app({required DevicesApi api, Future<void> Function()? onSignOut}) {
+Widget _app({
+  required TainaApi api,
+  Me? me,
+  Future<void> Function()? onSignOut,
+}) {
   return MaterialApp(
     theme: TainaTheme.data,
     home: AccountScreen(
-      session: FakeSession(api, me: identity(ana)),
+      session: FakeSession(api, me: me ?? identity(ana)),
       onSignOut: onSignOut ?? () async {},
       hostDisplay: 'taina.sapukai.ts.net',
       cleartext: true,
@@ -18,11 +22,10 @@ Widget _app({required DevicesApi api, Future<void> Function()? onSignOut}) {
   );
 }
 
-DevicesApi _devicesApi() {
-  return DevicesApi(FakeTainaApi(delay: Duration.zero), const [
-    currentDevice,
-    otherDevice,
-  ]);
+Future<FakeTainaApi> _api() async {
+  final FakeTainaApi api = FakeTainaApi(delay: Duration.zero);
+  await api.createSession(username: 'ana', password: 'x', deviceName: 'test');
+  return api;
 }
 
 void _large(WidgetTester tester) {
@@ -33,68 +36,81 @@ void _large(WidgetTester tester) {
 }
 
 void main() {
-  testWidgets('the account reads identity, community and devices', (
+  testWidgets('the account shows identity and the available destinations', (
     tester,
   ) async {
     _large(tester);
-    await tester.pumpWidget(_app(api: _devicesApi()));
+    await tester.pumpWidget(_app(api: await _api()));
     await tester.pumpAndSettle();
 
     expect(find.text('Conta'), findsOneWidget);
     expect(find.text('Ana Souza'), findsOneWidget);
-    expect(find.text('@ana'), findsOneWidget);
-    expect(find.text('Zelador'), findsOneWidget);
-    expect(find.text('Tekoa Sapukai'), findsOneWidget);
-    expect(find.text('taina.sapukai.ts.net'), findsOneWidget);
-    expect(find.text('Versão da caixa: 0.6.0'), findsOneWidget);
-    expect(find.text('iPhone da Ana'), findsOneWidget);
-    expect(find.text('Este aparelho'), findsOneWidget);
-    expect(find.text('Tablet da Ana'), findsOneWidget);
-    expect(find.text('Identificação deste aparelho'), findsOneWidget);
-    expect(find.textContaining('http'), findsOneWidget);
+    expect(find.text('Zelador, Tekoa Sapukai'), findsOneWidget);
+    expect(find.text('Pedidos'), findsOneWidget);
+    expect(find.text('1 pedido esperando sua resposta'), findsOneWidget);
+    expect(find.text('Privacidade'), findsOneWidget);
+    expect(find.text('Convidar'), findsOneWidget);
+    expect(find.text('Trocar senha'), findsOneWidget);
+    expect(find.text('Dispositivos'), findsOneWidget);
+    expect(find.text('Rolo de câmera'), findsOneWidget);
+    expect(find.text('taina.sapukai.ts.net'), findsNothing);
+    expect(find.text('Versão da caixa: 0.6.0'), findsNothing);
+    expect(find.text('Espaço'), findsNothing);
   });
 
-  testWidgets('the other device revokes after a confirmation', (tester) async {
+  testWidgets('a morador does not see the invite row', (tester) async {
     _large(tester);
-    final DevicesApi api = _devicesApi();
-    await tester.pumpWidget(_app(api: api));
+    await tester.pumpWidget(_app(api: await _api(), me: identity(joana)));
     await tester.pumpAndSettle();
 
-    expect(find.text('Revogar'), findsOneWidget);
-    await tester.tap(find.text('Revogar'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Revogar o acesso deste aparelho?'), findsOneWidget);
-    await tester.tap(find.widgetWithText(TextButton, 'Revogar'));
-    await tester.pumpAndSettle();
-
-    expect(api.revoked, [otherDevice.publicId]);
-    expect(find.textContaining('Revogado em'), findsOneWidget);
+    expect(find.text('Morador, Tekoa Sapukai'), findsOneWidget);
+    expect(find.text('Convidar'), findsNothing);
   });
 
-  testWidgets('the password change says the mismatch on the spot', (
+  testWidgets('the password sheet has only the current and new fields', (
     tester,
   ) async {
     _large(tester);
-    await tester.pumpWidget(_app(api: _devicesApi()));
+    await tester.pumpWidget(_app(api: await _api()));
     await tester.pumpAndSettle();
 
-    await tester.enterText(find.byType(TextField).at(1), 'novasenha');
-    await tester.enterText(find.byType(TextField).at(2), 'outra');
+    await tester.tap(find.text('Trocar senha'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Senha atual'), findsOneWidget);
+    expect(find.text('Senha nova'), findsOneWidget);
+    expect(find.text('Confirme a senha nova'), findsNothing);
+    expect(find.byType(TextField), findsNWidgets(2));
+
+    await tester.enterText(find.byType(TextField).at(0), 'atual');
+    await tester.enterText(find.byType(TextField).at(1), 'curta');
     await tester.tap(find.text('Trocar minha senha'));
     await tester.pumpAndSettle();
 
-    expect(find.text('As duas senhas não são iguais.'), findsOneWidget);
+    expect(find.textContaining('8 caracteres'), findsOneWidget);
   });
 
-  testWidgets('signing out goes through the orchestrator callback', (
+  testWidgets('account navigation opens the separate devices page', (
+    tester,
+  ) async {
+    _large(tester);
+    await tester.pumpWidget(_app(api: await _api()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Dispositivos'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Dispositivos'), findsOneWidget);
+  });
+
+  testWidgets('signing out goes through the orchestrator after confirmation', (
     tester,
   ) async {
     _large(tester);
     bool signedOut = false;
     await tester.pumpWidget(
       _app(
-        api: _devicesApi(),
+        api: await _api(),
         onSignOut: () async {
           signedOut = true;
         },
@@ -102,11 +118,11 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Sair da comunidade'));
+    await tester.tap(find.text('Sair').first);
     await tester.pumpAndSettle();
 
     expect(find.text('Sair da comunidade?'), findsOneWidget);
-    await tester.tap(find.widgetWithText(TextButton, 'Sair'));
+    await tester.tap(find.text('Sair').last);
     await tester.pumpAndSettle();
 
     expect(signedOut, isTrue);

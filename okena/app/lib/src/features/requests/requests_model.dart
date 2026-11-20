@@ -1,43 +1,53 @@
 import 'package:flutter/foundation.dart';
+import 'package:okena_app/src/design_system/design_system.dart';
 import 'package:okena_app/src/session/session_gateway.dart';
 import 'package:okena_core/okena_core.dart';
 
-/// The two lists of pedidos, received and sent.
-final class RequestSections {
-  const RequestSections({this.received = const [], this.sent = const []});
+enum RequestFeedKind { incoming, outgoing, grant }
 
-  final List<Pedido> received;
-  final List<Pedido> sent;
+/// One row in the combined requests feed.
+final class RequestFeedItem {
+  const RequestFeedItem({
+    required this.id,
+    required this.kind,
+    required this.sortDate,
+    required this.title,
+    required this.meta,
+    required this.resourceName,
+    required this.state,
+    this.stateSummary,
+    this.pedido,
+    this.grant,
+    this.canDecide = false,
+    this.canRevoke = false,
+  });
+
+  final String id;
+  final RequestFeedKind kind;
+  final String sortDate;
+  final String title;
+  final String meta;
+  final String resourceName;
+  final TainaPedidoState state;
+  final String? stateSummary;
+  final Pedido? pedido;
+  final Concessao? grant;
+  final bool canDecide;
+  final bool canRevoke;
 }
 
-/// The accesses of both sides: the ones this person gave (she is the dono) and
-/// the ones she received (she is the leitor), the revoked included, because
-/// granting must stay visible to be reversible.
-final class RequestGrants {
-  const RequestGrants({this.given = const [], this.received = const []});
-
-  final List<Concessao> given;
-  final List<Concessao> received;
-}
-
-/// The pedidos screen's state: what the community asked of this person and
-/// what this person asked of others, the decisions on the received ones, and
-/// the accesses granted in both directions.
-///
-/// Both wire lists hold the pending ones only, so deciding is removing; the
-/// loading logic lives here once and the transitions are pure functions the
-/// views never reimplement.
+/// Loads and merges received requests, sent requests and accesses this person
+/// has given. Decisions stay in the feed instead of disappearing.
 final class RequestsModel extends ChangeNotifier {
   RequestsModel({required this.gateway});
 
   final SessionGateway gateway;
 
-  RequestSections _sections = const RequestSections();
-  RequestGrants _grants = const RequestGrants();
-
-  /// Resource rkey to display name, one map per list: the owner resolves the
-  /// name on their own file record, the pedinte reads the access target, which
-  /// carries the name without the file itself.
+  List<Pedido> _received = const [];
+  List<Pedido> _sent = const [];
+  List<Concessao> _given = const [];
+  final Map<String, Pedido> _localReceivedDecisions = {};
+  final Set<String> _locallyRevokedGrants = {};
   Map<String, String> _receivedNames = const {};
   Map<String, String> _sentNames = const {};
   Map<String, String> _grantNames = const {};
@@ -47,200 +57,369 @@ final class RequestsModel extends ChangeNotifier {
   String? _revoking;
   bool _disposed = false;
 
-  RequestSections get sections => _sections;
-  RequestGrants get grants => _grants;
-  Map<String, String> get receivedNames => _receivedNames;
-  Map<String, String> get sentNames => _sentNames;
-  Map<String, String> get grantNames => _grantNames;
   bool get loading => _loading;
   TainaError? get error => _error;
-
-  /// The `public_id` of the pedido the box is deciding right now.
   String? get deciding => _deciding;
-
-  /// The `public_id` of the concessao the box is revoking right now.
   String? get revoking => _revoking;
+
+  List<RequestFeedItem> get items => mergeFeed(
+    received: _received,
+    sent: _sent,
+    given: _given,
+    localReceivedDecisions: _localReceivedDecisions.values.toList(),
+    receivedNames: _receivedNames,
+    sentNames: _sentNames,
+    grantNames: _grantNames,
+    locallyRevokedGrantIds: _locallyRevokedGrants,
+  );
 
   Future<void> load() async {
     _loading = true;
     _notify();
-    final received = await gateway.screen(await gateway.api.accessRequests());
-    final sent = await gateway.screen(await gateway.api.myRequests());
-    await _apply(received: received, sent: sent);
-    await _loadGrants();
+
+    Future<TainaResult<Page<Pedido>>> readReceived() async =>
+        gateway.screen(await gateway.api.accessRequests());
+    Future<TainaResult<Page<Pedido>>> readSent() async =>
+        gateway.screen(await gateway.api.myRequests());
+    Future<TainaResult<Page<Concessao>>> readGiven() async =>
+        gateway.screen(await gateway.api.grants(role: GrantRole.owner));
+
+    final Future<TainaResult<Page<Pedido>>> receivedFuture = readReceived();
+    final Future<TainaResult<Page<Pedido>>> sentFuture = readSent();
+    final Future<TainaResult<Page<Concessao>>> givenFuture = readGiven();
+
+    final List<Object> results = await Future.wait<Object>([
+      receivedFuture,
+      sentFuture,
+      givenFuture,
+    ]);
+    final TainaResult<Page<Pedido>> received =
+        results[0] as TainaResult<Page<Pedido>>;
+    final TainaResult<Page<Pedido>> sent =
+        results[1] as TainaResult<Page<Pedido>>;
+    final TainaResult<Page<Concessao>> given =
+        results[2] as TainaResult<Page<Concessao>>;
+
+    final List<Pedido> receivedItems = switch (received) {
+      Ok(:final value) => value.items,
+      Err() => _received,
+    };
+    final List<Pedido> sentItems = switch (sent) {
+      Ok(:final value) => value.items,
+      Err() => _sent,
+    };
+    final List<Concessao> givenItems = switch (given) {
+      Ok(:final value) => value.items,
+      Err() => _given,
+    };
+
+    _received = List<Pedido>.unmodifiable(receivedItems);
+    _sent = List<Pedido>.unmodifiable(sentItems);
+    _given = List<Concessao>.unmodifiable(givenItems);
+
+    final List<Pedido> allReceived = [
+      ..._received,
+      ..._localReceivedDecisions.values,
+    ];
+    final List<Map<String, String>> names = await Future.wait([
+      _namesFor(allReceived, asOwner: true),
+      _namesFor(_sent, asOwner: false),
+      _grantNamesFor(_given),
+    ]);
+    _receivedNames = names[0];
+    _sentNames = names[1];
+    _grantNames = names[2];
+
+    _locallyRevokedGrants.removeWhere(
+      (String id) => _given.any(
+        (Concessao grant) => grant.publicId == id && grant.revogadaEm != null,
+      ),
+    );
+    _error = _firstError(received, sent, given);
     _loading = false;
     _notify();
   }
 
-  /// Grants the read: the concessao is born on the box and the pedido leaves
-  /// the pending list. The screen says what the outcome was.
+  /// Grants the read. The box creates the grant, which remains visible as a
+  /// resolved row in the same feed.
   Future<TainaResult<void>> approve(String id) async {
     _deciding = id;
     _notify();
-    final result = await gateway.screen(
+    final TainaResult<Concessao> result = await gateway.screen(
       await gateway.api.approveRequest(id: id),
     );
-    final settled = _settle(result.map((_) {}), id);
+    final TainaResult<void> settled = switch (result) {
+      Ok(:final value) => _rememberApproval(value, id),
+      Err(:final error) => Err<void>(error),
+    };
+    if (settled case Ok()) {
+      _received = List<Pedido>.unmodifiable(
+        _received.where((Pedido pedido) => pedido.publicId != id),
+      );
+      await load();
+    }
     _deciding = null;
     _notify();
     return settled;
   }
 
-  /// Denies the read: nothing opens, and the person may ask again later.
+  /// Refuses the read and keeps the returned decision in this screen's feed.
   Future<TainaResult<void>> deny(String id) async {
     _deciding = id;
     _notify();
-    final result = await gateway.screen(await gateway.api.denyRequest(id: id));
-    final settled = _settle(result.map((_) {}), id);
+    final TainaResult<Pedido> result = await gateway.screen(
+      await gateway.api.denyRequest(id: id),
+    );
+    final TainaResult<void> settled = switch (result) {
+      Ok(:final value) => _rememberDenied(value),
+      Err(:final error) => Err<void>(error),
+    };
     _deciding = null;
     _notify();
     return settled;
   }
 
-  /// Takes an access back, the dono's act, one way only: the person deixa de
-  /// poder abrir o arquivo e pode pedir de novo depois.
-  ///
-  /// The lists are read again, so the row flips to revoked with the date.
+  /// Takes back one access this person gave. The owner grant remains visible
+  /// with its revoked state.
   Future<TainaResult<void>> revoke(String id) async {
     _revoking = id;
     _notify();
-    final result = await gateway.screen(await gateway.api.revokeGrant(id: id));
+    final TainaResult<void> result = await gateway.screen(
+      await gateway.api.revokeGrant(id: id),
+    );
     if (result case Ok()) {
-      await _loadGrants();
+      _locallyRevokedGrants.add(id);
+      await load();
     }
     _revoking = null;
     _notify();
     return result;
   }
 
-  // Pure transitions.
+  // Pure projections.
 
-  /// The neutral label for a resource the box no longer knows. Never an error
-  /// screen: the pedido, and the decision about it, still stand.
   static const String deletedResource = 'arquivo apagado';
-
-  /// The neutral label for a file the caller cannot read anymore: a revoked
-  /// grant keeps the fact but takes the name with it.
   static const String unreadableResource = 'nome não disponível';
 
   static String resourceNameForPedido(
     Pedido pedido,
     Map<String, String> names,
-  ) {
-    return names[pedido.recurso] ?? deletedResource;
-  }
+  ) => names[pedido.recurso] ?? deletedResource;
 
-  static String resourceNameForConcessao(
-    Concessao concessao,
+  static String resourceNameForGrant(
+    Concessao grant,
     Map<String, String> names,
-  ) {
-    return names[concessao.recurso] ?? unreadableResource;
-  }
+  ) => names[grant.recurso] ?? unreadableResource;
 
-  /// The row's title: the person the row is about, the pedinte on the received
-  /// list and the dono on the sent one. The wire preloads both ends; a missing
-  /// end still names a person of the community.
   static String personLabel(Ava? ava) => ava?.label ?? 'Pessoa da comunidade';
 
-  /// The resource line, in the sentence the row speaks: the owner reads who
-  /// asked, the pedinte reads who decides.
-  static String resourceLine({required bool received, required String name}) {
-    return received ? 'Pediu acesso a $name' : 'Pedido para abrir $name';
-  }
+  static bool isRevoked(Concessao grant) => grant.revogadaEm != null;
 
-  /// Whether a grant still stands: the date of the revoke is the end of it,
-  /// and the row says so.
-  static bool isRevoked(Concessao concessao) => concessao.revogadaEm != null;
-
-  /// The overline of the received list: every row there waits on this person.
-  static String receivedHeader(int count) {
-    return count == 1
-        ? '1 pedido esperando sua resposta'
-        : '$count pedidos esperando sua resposta';
-  }
-
-  /// The outcome named on the file, like the web's flash: a decision is about
-  /// that file, not about "a pedido".
   static String approvedMessage(String? name) {
     if (name == null) return 'Acesso liberado. A pessoa já pode ler.';
     return 'Acesso a $name liberado. A pessoa já pode ler.';
   }
 
-  /// The outcome of a revoke, said about the file it took back.
   static String revokedMessage(String? name) {
     if (name == null) return 'Acesso revogado. A pessoa já não pode ler.';
     return 'Acesso a $name revogado. A pessoa já não pode ler.';
   }
 
-  /// Removing the decided pedido from both pending lists, by identity.
-  static RequestSections removing(String id, RequestSections sections) {
-    return RequestSections(
-      received: List<Pedido>.unmodifiable(
-        sections.received.where((Pedido pedido) => pedido.publicId != id),
+  static List<RequestFeedItem> mergeFeed({
+    required List<Pedido> received,
+    required List<Pedido> sent,
+    required List<Concessao> given,
+    required List<Pedido> localReceivedDecisions,
+    required Map<String, String> receivedNames,
+    required Map<String, String> sentNames,
+    required Map<String, String> grantNames,
+    Set<String> locallyRevokedGrantIds = const {},
+  }) {
+    final Map<String, Pedido> incomingById = {
+      for (final Pedido pedido in received) pedido.publicId: pedido,
+      for (final Pedido pedido in localReceivedDecisions)
+        pedido.publicId: pedido,
+    };
+    final Set<String> approvedReads = {
+      for (final Pedido pedido in incomingById.values)
+        if (pedido.status == PedidoStatus.aprovado)
+          _accessKey(pedido.recurso, pedido.pedinte?.publicId),
+    };
+    final List<RequestFeedItem> rows = [
+      for (final Pedido pedido in incomingById.values)
+        _pedidoItem(
+          pedido,
+          kind: RequestFeedKind.incoming,
+          name: resourceNameForPedido(pedido, receivedNames),
+        ),
+      for (final Pedido pedido in sent)
+        _pedidoItem(
+          pedido,
+          kind: RequestFeedKind.outgoing,
+          name: resourceNameForPedido(pedido, sentNames),
+        ),
+      for (final Concessao grant in given)
+        if (!approvedReads.contains(
+          _accessKey(grant.recurso, grant.leitor?.publicId),
+        ))
+          _grantItem(
+            grant,
+            name: resourceNameForGrant(grant, grantNames),
+            locallyRevoked: locallyRevokedGrantIds.contains(grant.publicId),
+          ),
+    ];
+    rows.sort(_newestFirst);
+    return List<RequestFeedItem>.unmodifiable(rows);
+  }
+
+  static String timestamp(String iso, {DateTime? now}) {
+    final DateTime? parsed = DateTime.tryParse(iso)?.toLocal();
+    if (parsed == null) return TainaFormat.relative(iso, now: now);
+    final String relative = TainaFormat.relative(iso, now: now);
+    return '$relative ${_twoDigits(parsed.hour)}:${_twoDigits(parsed.minute)}';
+  }
+
+  static String shortDate(String iso) {
+    final DateTime? parsed = DateTime.tryParse(iso)?.toLocal();
+    if (parsed == null) return TainaFormat.relative(iso);
+    return '${parsed.day} ${_months[parsed.month - 1]}';
+  }
+
+  static RequestFeedItem _pedidoItem(
+    Pedido pedido, {
+    required RequestFeedKind kind,
+    required String name,
+  }) {
+    final bool incoming = kind == RequestFeedKind.incoming;
+    final String eventDate = pedido.decididoEm ?? pedido.createdAt;
+    final TainaPedidoState state = switch (pedido.status) {
+      PedidoStatus.pendente => TainaPedidoState.esperando,
+      PedidoStatus.aprovado => TainaPedidoState.dado,
+      PedidoStatus.negado => TainaPedidoState.recusado,
+    };
+    final String title = switch ((incoming, pedido.status)) {
+      (true, PedidoStatus.pendente) =>
+        '${personLabel(pedido.pedinte)} pediu acesso',
+      (true, PedidoStatus.aprovado) =>
+        '${personLabel(pedido.pedinte)} recebeu acesso',
+      (true, PedidoStatus.negado) =>
+        '${personLabel(pedido.pedinte)} teve o acesso recusado',
+      (false, PedidoStatus.pendente) => 'Você pediu acesso a $name',
+      (false, PedidoStatus.aprovado) => 'Você recebeu acesso a $name',
+      (false, PedidoStatus.negado) => 'Seu pedido de acesso foi recusado',
+    };
+    final String meta = incoming
+        ? '$name, ${timestamp(pedido.createdAt)}'
+        : '${personLabel(pedido.dono)}, ${timestamp(pedido.createdAt)}';
+    final String? stateSummary = switch (pedido.status) {
+      PedidoStatus.pendente when incoming => null,
+      PedidoStatus.pendente =>
+        'Aguardando resposta de ${personLabel(pedido.dono)}',
+      PedidoStatus.aprovado => 'Acesso dado em ${shortDate(eventDate)}',
+      PedidoStatus.negado => 'Acesso recusado em ${shortDate(eventDate)}',
+    };
+    return RequestFeedItem(
+      id: 'pedido:${pedido.publicId}',
+      kind: kind,
+      sortDate: eventDate,
+      title: title,
+      meta: meta,
+      resourceName: name,
+      state: state,
+      stateSummary: stateSummary,
+      pedido: pedido,
+      canDecide: incoming && pedido.status == PedidoStatus.pendente,
+    );
+  }
+
+  static RequestFeedItem _grantItem(
+    Concessao grant, {
+    required String name,
+    required bool locallyRevoked,
+  }) {
+    final bool revoked = isRevoked(grant) || locallyRevoked;
+    final String eventDate =
+        grant.revogadaEm ?? grant.concedidaEm ?? grant.createdAt;
+    final String person = personLabel(grant.leitor);
+    return RequestFeedItem(
+      id: 'grant:${grant.publicId}',
+      kind: RequestFeedKind.grant,
+      sortDate: eventDate,
+      title: revoked ? 'Acesso retirado de $person' : '$person recebeu acesso',
+      meta: '$name, ${timestamp(grant.createdAt)}',
+      resourceName: name,
+      state: revoked ? TainaPedidoState.recusado : TainaPedidoState.dado,
+      stateSummary: revoked
+          ? 'Acesso tirado em ${shortDate(eventDate)}'
+          : 'Acesso dado em ${shortDate(eventDate)}',
+      grant: grant,
+      canRevoke: !revoked,
+    );
+  }
+
+  static int _newestFirst(RequestFeedItem left, RequestFeedItem right) {
+    final DateTime? leftDate = DateTime.tryParse(left.sortDate);
+    final DateTime? rightDate = DateTime.tryParse(right.sortDate);
+    if (leftDate != null && rightDate != null) {
+      final int chronological = rightDate.compareTo(leftDate);
+      if (chronological != 0) return chronological;
+    }
+    return right.sortDate.compareTo(left.sortDate);
+  }
+
+  static String _accessKey(String resource, String? readerId) =>
+      '$resource:${readerId ?? ''}';
+
+  TainaResult<void> _rememberDenied(Pedido pedido) {
+    if (pedido.status != PedidoStatus.negado) {
+      return const Err<void>(
+        InvalidResponseError(
+          'denial response did not contain a denied request',
+        ),
+      );
+    }
+    _localReceivedDecisions[pedido.publicId] = pedido;
+    _received = List<Pedido>.unmodifiable(
+      _received.where(
+        (Pedido existing) => existing.publicId != pedido.publicId,
       ),
-      sent: List<Pedido>.unmodifiable(
-        sections.sent.where((Pedido pedido) => pedido.publicId != id),
+    );
+    return const Ok<void>(null);
+  }
+
+  TainaResult<void> _rememberApproval(Concessao grant, String requestId) {
+    _received = List<Pedido>.unmodifiable(
+      _received.where((Pedido pedido) => pedido.publicId != requestId),
+    );
+    _given = List<Concessao>.unmodifiable([
+      grant,
+      ..._given.where(
+        (Concessao existing) => existing.publicId != grant.publicId,
       ),
-    );
-  }
-
-  Future<void> _apply({
-    required TainaResult<Page<Pedido>> received,
-    required TainaResult<Page<Pedido>> sent,
-  }) async {
-    switch ((received, sent)) {
-      case (Ok(:final value), Ok(value: final sentPage)):
-        _sections = RequestSections(
-          received: value.items,
-          sent: sentPage.items,
-        );
-        _receivedNames = await _namesFor(value.items, asOwner: true);
-        _sentNames = await _namesFor(sentPage.items, asOwner: false);
-        _error = null;
-      case (Err(:final error), _):
-        _error = error;
-      case (_, Err(:final error)):
-        _error = error;
+    ]);
+    final String? name = _receivedNames[grant.recurso];
+    if (name != null) {
+      _grantNames = Map<String, String>.unmodifiable({
+        ..._grantNames,
+        grant.recurso: name,
+      });
     }
+    return const Ok<void>(null);
   }
 
-  Future<void> _loadGrants() async {
-    final given = await gateway.screen(
-      await gateway.api.grants(role: GrantRole.owner),
-    );
-    final received = await gateway.screen(
-      await gateway.api.grants(role: GrantRole.reader),
-    );
-    switch ((given, received)) {
-      case (Ok(:final value), Ok(value: final receivedPage)):
-        _grants = RequestGrants(
-          given: value.items,
-          received: receivedPage.items,
-        );
-        _grantNames = await _grantNamesFor([
-          ...value.items,
-          ...receivedPage.items,
-        ]);
-        _error = null;
-      case (Err(:final error), _):
-        _error = error;
-      case (_, Err(:final error)):
-        _error = error;
-    }
+  static TainaError? _firstError(
+    TainaResult<Page<Pedido>> received,
+    TainaResult<Page<Pedido>> sent,
+    TainaResult<Page<Concessao>> given,
+  ) {
+    return switch ((received, sent, given)) {
+      (Err(:final error), _, _) => error,
+      (_, Err(:final error), _) => error,
+      (_, _, Err(:final error)) => error,
+      _ => null,
+    };
   }
 
-  TainaResult<void> _settle(TainaResult<void> result, String id) {
-    switch (result) {
-      case Ok():
-        _sections = removing(id, _sections);
-        return const Ok<void>(null);
-      case Err(:final error):
-        return Err<void>(error);
-    }
-  }
-
-  /// One name per unique resource. A resource that is gone answers the neutral
-  /// label, like the web; the pedido line stays legible.
   Future<Map<String, String>> _namesFor(
     List<Pedido> pedidos, {
     required bool asOwner,
@@ -259,17 +438,14 @@ final class RequestsModel extends ChangeNotifier {
     return Map<String, String>.unmodifiable(names);
   }
 
-  /// One name per unique resource across both grant lists, read through the
-  /// grant itself: who holds a standing grant can read the file, and who lost
-  /// it reads the neutral label.
-  Future<Map<String, String>> _grantNamesFor(List<Concessao> concessoes) async {
+  Future<Map<String, String>> _grantNamesFor(List<Concessao> grants) async {
     final Map<String, String> names = {};
-    for (final Concessao concessao in concessoes) {
-      if (names.containsKey(concessao.recurso)) continue;
+    for (final Concessao grant in grants) {
+      if (names.containsKey(grant.recurso)) continue;
       final TainaResult<String> found = (await gateway.screen(
-        await gateway.api.file(rkey: concessao.recurso),
+        await gateway.api.file(rkey: grant.recurso),
       )).map((FileRecord file) => file.name);
-      names[concessao.recurso] = found.value ?? unreadableResource;
+      names[grant.recurso] = found.value ?? unreadableResource;
     }
     return Map<String, String>.unmodifiable(names);
   }
@@ -283,4 +459,21 @@ final class RequestsModel extends ChangeNotifier {
     _disposed = true;
     super.dispose();
   }
+
+  static const List<String> _months = [
+    'jan',
+    'fev',
+    'mar',
+    'abr',
+    'mai',
+    'jun',
+    'jul',
+    'ago',
+    'set',
+    'out',
+    'nov',
+    'dez',
+  ];
+
+  static String _twoDigits(int value) => value.toString().padLeft(2, '0');
 }
