@@ -43,6 +43,27 @@ defmodule Taina.Nhaman.BackupTest do
       assert File.read!(Path.join(dest, "root.txt")) == "top"
     end
 
+    test "package excludes upload staging and keeps committed files" do
+      storage = temporary_directory()
+      staging = Path.join(storage, "staging/uploads")
+      File.mkdir_p!(staging)
+      File.write!(Path.join(staging, "pending.part"), "unfinished")
+      File.write!(Path.join(staging, "queued.bin"), "queued")
+      File.write!(Path.join(storage, "committed.txt"), "committed")
+
+      dump = Path.join(temporary_directory(), "db.dump")
+      File.write!(dump, "D")
+      secret = Path.join(temporary_directory(), "secret_key_base")
+      File.write!(secret, "test-secret")
+      archive = Path.join(temporary_directory(), "backup.tar.gz")
+
+      assert :ok = Backup.package_archive(archive, dump, storage, secret)
+      extracted = temporary_directory()
+      assert :ok = Backup.extract_archive(archive, extracted)
+      assert File.read!(Path.join(extracted, "storage/committed.txt")) == "committed"
+      refute File.exists?(Path.join(extracted, "storage/staging"))
+    end
+
     test "backup and restore round-trip the persistent secret" do
       root = temporary_directory()
       storage = Path.join(root, "storage")

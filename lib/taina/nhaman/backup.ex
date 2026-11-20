@@ -6,7 +6,8 @@ defmodule Taina.Nhaman.Backup do
 
     * `db.dump` — snapshot do SQLite (`VACUUM INTO`), um arquivo de banco
       standalone e completo;
-    * `storage/…` — a árvore de arquivos do Ybira (`storage_root`).
+    * `storage/…` — os arquivos commitados do Ybira (`storage_root`), sem
+      `staging/` de uploads ainda em processamento.
 
   O destino (`dir`) é configurável — um disco USB montado, um remote sincronizado
   por rclone, etc. (`config :taina, :backup, dir: …`). Sem criptografia no MVP:
@@ -390,12 +391,22 @@ defmodule Taina.Nhaman.Backup do
     if File.dir?(storage_root) do
       storage_root
       |> all_files()
+      |> Enum.reject(&staging_file?(&1, storage_root))
       |> Enum.map(fn abs ->
         rel = Path.relative_to(abs, storage_root)
         {String.to_charlist(Path.join("storage", rel)), String.to_charlist(abs)}
       end)
     else
       []
+    end
+  end
+
+  # Staging belongs to unfinished uploads, not to the committed-file backup.
+  # Its rows are reconciled as failed after a restore without the source bytes.
+  defp staging_file?(path, storage_root) do
+    case path |> Path.relative_to(storage_root) |> Path.split() do
+      ["staging" | _rest] -> true
+      _other -> false
     end
   end
 
