@@ -70,6 +70,30 @@ export function activatePending(queue) {
   };
 }
 
+export function pendingSnapshot(queue) {
+  return queue.pending.map((item) => ({
+    queue_id: item.id,
+    input_key: item.inputKey,
+    name: item.metadata.name,
+    size: item.metadata.size,
+    destination_folder: item.destinationFolder,
+    relative_path: item.relativePath,
+  }));
+}
+
+export function cancelPending(queue, id) {
+  const cancelled = queue.pending.find((item) => item.id === id);
+  if (!cancelled) return { queue, cancelled: null };
+
+  return {
+    queue: {
+      ...queue,
+      pending: queue.pending.filter((item) => item.id !== id),
+    },
+    cancelled,
+  };
+}
+
 export function settle(queue, id, outcome = "complete") {
   if (!outcomes.has(outcome)) {
     throw new TypeError(`unsupported queue outcome: ${outcome}`);

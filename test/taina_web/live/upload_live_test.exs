@@ -1,5 +1,6 @@
 defmodule TainaWeb.UploadLiveTest do
-  use TainaWeb.ConnCase, async: true
+  # Upload admission inspects private staging on the process-wide storage root.
+  use TainaWeb.ConnCase, async: false
 
   import Phoenix.LiveViewTest
   import Taina.Fixtures
@@ -12,7 +13,18 @@ defmodule TainaWeb.UploadLiveTest do
   alias Taina.Ybira.Uploads
   alias Taina.Ybira.Workers.Ingest
 
+  @notification_window_ms 650
+
   setup do
+    storage_root = Path.join(System.tmp_dir!(), "taina_upload_live_#{Ecto.UUID.generate()}")
+    previous_storage_root = Application.get_env(:taina, :storage_root)
+    Application.put_env(:taina, :storage_root, storage_root)
+
+    on_exit(fn ->
+      Application.put_env(:taina, :storage_root, previous_storage_root)
+      File.rm_rf!(storage_root)
+    end)
+
     tekoa = tekoa_fixture()
     ava = active_ava_fixture(tekoa)
     %{scope: Scope.new(ava, tekoa), ava: ava, tekoa: tekoa}
@@ -257,6 +269,160 @@ defmodule TainaWeb.UploadLiveTest do
     assert has_element?(manager, "#upload-manager-panel")
   end
 
+  test "the sticky manager applies route visibility updates without remounting", %{
+    conn: conn,
+    ava: ava
+  } do
+    {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/")
+    manager = upload_manager(lv)
+
+    send(manager.pid, {:upload_manager_visibility, true})
+    assert_push_event(manager, "upload_manager_visibility", %{visible: true})
+
+    send(manager.pid, {:upload_manager_visibility, false})
+    assert_push_event(manager, "upload_manager_visibility", %{visible: false})
+
+    assert manager.pid == upload_manager(lv).pid
+  end
+
+  test "a terminal notification uses persisted state and names one successful file", %{
+    conn: conn,
+    scope: scope,
+    ava: ava
+  } do
+    upload = complete_upload(scope, "atas.txt", "reunião de moradores")
+    {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/")
+
+    send(lv.pid, {:ybira_upload, upload.public_id, :processing})
+    render(lv)
+    refute has_element?(lv, "#flash-info")
+    refute has_element?(lv, "#flash-error")
+
+    send(lv.pid, {:ybira_upload, upload.public_id, :failed})
+    send(lv.pid, {:ybira_upload, upload.public_id, :completed})
+    await_notification_window()
+    render(lv)
+
+    assert has_element?(lv, "#flash-info", "atas.txt foi enviado.")
+    refute has_element?(lv, "#flash-error")
+  end
+
+  test "terminal batches aggregate mixed outcomes and deduplicate each upload state", %{
+    conn: conn,
+    scope: scope,
+    ava: ava
+  } do
+    completed = complete_upload(scope, "foto.txt", "foto da comunidade")
+    failed = fail_upload(scope, "arquivo.bin", <<0x4D, 0x5A, 0x90, 0x00, "invalid">>)
+    {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/")
+
+    send(lv.pid, {:ybira_upload, completed.public_id, :completed})
+    send(lv.pid, {:ybira_upload, failed.public_id, :failed})
+    send(lv.pid, {:ybira_upload, completed.public_id, :completed})
+    send(lv.pid, {:ybira_upload, failed.public_id, :failed})
+    await_notification_window()
+    render(lv)
+
+    assert has_element?(lv, "#flash-error", "1 arquivo enviado")
+    assert has_element?(lv, "#flash-error", "1 envio falhou")
+    refute has_element?(lv, "#flash-info")
+    refute has_element?(lv, "#flash-error", "2 arquivos enviados")
+  end
+
+  test "the Enviar screen leaves terminal upload results to its sticky manager", %{
+    conn: conn,
+    scope: scope,
+    ava: ava
+  } do
+    {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/enviar")
+    manager = upload_manager(lv)
+    upload = complete_upload(scope, "memoria.txt", "memória da comunidade")
+
+    send(lv.pid, {:ybira_upload, upload.public_id, :completed})
+    render(lv)
+    render(manager)
+
+    refute has_element?(lv, "#flash-info")
+    refute has_element?(lv, "#flash-error")
+    assert has_element?(manager, ".list-row .text-success")
+    assert has_element?(manager, ".list-row", "memoria.txt")
+  end
+
+  test "pending queue entries stay visible without transfer progress and can be cancelled", %{
+    conn: conn,
+    ava: ava
+  } do
+    {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/enviar")
+    manager = upload_manager(lv)
+
+    render_hook(manager, "upload_queue_pending", %{
+      revision: 1,
+      items: [
+        %{
+          queue_id: "pending-one",
+          input_key: "files",
+          name: "same.txt",
+          size: 12,
+          destination_folder: nil,
+          relative_path: "same.txt"
+        },
+        %{
+          queue_id: "pending-two",
+          input_key: "camera",
+          name: "same.txt",
+          size: 20,
+          destination_folder: nil,
+          relative_path: "same.txt"
+        }
+      ]
+    })
+
+    html = render(manager)
+    assert has_element?(manager, "#pending-upload-pending-one", "Aguardando para enviar")
+    assert has_element?(manager, "#pending-upload-pending-two", "Aguardando para enviar")
+    refute html =~ "0%"
+
+    render_click(manager, "cancel_pending_upload", %{"queue_id" => "pending-one"})
+    assert_push_event(manager, "upload_queue_cancel", %{queue_id: "pending-one"})
+
+    refute has_element?(manager, "#pending-upload-pending-one")
+    assert has_element?(manager, "#pending-upload-pending-two")
+  end
+
+  test "cancelling an active entry uses its ref and releases the queue reservation", %{
+    conn: conn,
+    scope: scope,
+    ava: ava
+  } do
+    {:ok, lv, _html} = conn |> log_in(ava) |> live(~p"/documentos/enviar")
+    manager = upload_manager(lv)
+
+    render_hook(manager, "upload_queue_item", %{
+      queue_id: "active-cancel",
+      input_key: "files",
+      destination_folder: nil,
+      relative_path: "active.txt",
+      client_name: "not-the-entry-name.txt",
+      client_size: 1
+    })
+
+    input =
+      file_input(manager, "#upload-form", :files, [
+        %{name: "active.txt", content: "active bytes", type: "text/plain"}
+      ])
+
+    render_upload(input, "active.txt", 0)
+    assert has_element?(manager, "#upload-form[data-upload-queue-active-ids='active-cancel']")
+    assert has_element?(manager, "button[phx-click='cancel_active_upload']", "Cancelar")
+
+    assert [%{"ref" => entry_ref}] = input.entries
+    render_click(manager, "cancel_active_upload", %{"entry_ref" => entry_ref})
+
+    assert_push_event(manager, "upload_queue_cancel", %{queue_id: "active-cancel"})
+    assert has_element?(manager, "#upload-form[data-upload-queue-active-ids='']")
+    assert {:ok, []} = Uploads.list(scope)
+  end
+
   test "a entrada mantém a pasta de destino capturada ao mudar o contexto da rota", %{
     conn: conn,
     scope: scope,
@@ -442,5 +608,41 @@ defmodule TainaWeb.UploadLiveTest do
       attempt: 1,
       max_attempts: 3
     })
+  end
+
+  defp complete_upload(scope, filename, contents) do
+    upload = stage_upload(scope, filename, contents)
+    assert :ok = perform_ingest(upload)
+    durable_upload(scope, upload.public_id)
+  end
+
+  defp fail_upload(scope, filename, contents) do
+    upload = stage_upload(scope, filename, contents)
+    assert {:cancel, :invalid_mime} = perform_ingest(upload)
+    durable_upload(scope, upload.public_id)
+  end
+
+  defp stage_upload(scope, filename, contents) do
+    path = tmp_upload_fixture(contents, filename)
+
+    assert {:ok, upload} =
+             Uploads.stage_and_enqueue(scope, path, %{
+               filename: filename,
+               size: byte_size(contents)
+             })
+
+    upload
+  end
+
+  defp durable_upload(scope, public_id) do
+    assert {:ok, uploads} = Uploads.list(scope)
+    assert %Upload{} = upload = Enum.find(uploads, &(&1.public_id == public_id))
+    upload
+  end
+
+  defp await_notification_window do
+    reference = make_ref()
+    Process.send_after(self(), {:notification_window_elapsed, reference}, @notification_window_ms + 50)
+    assert_receive {:notification_window_elapsed, ^reference}, 1_000
   end
 end

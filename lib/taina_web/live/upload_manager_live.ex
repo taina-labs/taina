@@ -48,11 +48,14 @@ defmodule TainaWeb.UploadManagerLive do
           |> assign(:entry_destinations, %{})
           |> assign(:entry_queue_ids, %{})
           |> assign(:entry_relative_paths, %{})
+          |> assign(:entry_upload_names, %{})
           |> assign(:failed, [])
           |> assign(:finalizing_refs, MapSet.new())
           |> assign(:max_blob_size, max_blob_size)
           |> assign(:max_concurrent_uploads, max_concurrent_uploads)
+          |> assign(:pending_queue_items, [])
           |> assign(:pending_queue_metadata, %{})
+          |> assign(:pending_queue_revision, 0)
           |> assign(:quota_error?, false)
           |> assign(:route_context, route_context)
           |> assign(:uploads_load_error?, false)
@@ -146,6 +149,63 @@ defmodule TainaWeb.UploadManagerLive do
   defp valid_optional_text?(value) when is_binary(value), do: true
   defp valid_optional_text?(_value), do: false
 
+  defp normalize_pending_report(params) do
+    revision = param(params, :revision)
+    items = param(params, :items)
+
+    if is_integer(revision) and revision >= 0 and is_list(items) do
+      {:ok, revision, deduplicate_pending_items(items)}
+    else
+      :error
+    end
+  end
+
+  defp deduplicate_pending_items(items) do
+    {pending, _seen} = Enum.reduce(items, {[], MapSet.new()}, &collect_pending_item/2)
+    Enum.reverse(pending)
+  end
+
+  defp collect_pending_item(item, {pending, seen}) do
+    case normalize_pending_item(item) do
+      {:ok, item} ->
+        if MapSet.member?(seen, item.queue_id) do
+          {pending, seen}
+        else
+          {[item | pending], MapSet.put(seen, item.queue_id)}
+        end
+
+      :error ->
+        {pending, seen}
+    end
+  end
+
+  defp normalize_pending_item(%{} = item) do
+    queue_id = param(item, :queue_id)
+    input_key = param(item, :input_key)
+    name = param(item, :name)
+    size = param(item, :size)
+    destination_folder = param(item, :destination_folder)
+    relative_path = param(item, :relative_path)
+
+    if valid_queue_id?(queue_id) and input_key in Map.values(@input_keys) and is_binary(name) and
+         is_integer(size) and size >= 0 and valid_optional_text?(destination_folder) and
+         is_binary(relative_path) do
+      {:ok,
+       %{
+         queue_id: queue_id,
+         input_key: input_key,
+         name: name,
+         size: size,
+         destination_folder: destination_folder,
+         relative_path: relative_path
+       }}
+    else
+      :error
+    end
+  end
+
+  defp normalize_pending_item(_item), do: :error
+
   @impl true
   def handle_event("validate", _params, socket) do
     socket =
@@ -177,12 +237,69 @@ defmodule TainaWeb.UploadManagerLive do
     end
   end
 
+  def handle_event("upload_queue_pending", params, socket) do
+    case normalize_pending_report(params) do
+      {:ok, revision, items} when revision > socket.assigns.pending_queue_revision ->
+        {:noreply,
+         socket
+         |> assign(:pending_queue_revision, revision)
+         |> assign(:pending_queue_items, items)}
+
+      _stale_or_invalid ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event("cancel_pending_upload", params, socket) do
+    queue_id = param(params, :queue_id)
+    {cancelled, pending} = Enum.split_with(socket.assigns.pending_queue_items, &(&1.queue_id == queue_id))
+
+    if cancelled == [] do
+      {:noreply, socket}
+    else
+      socket =
+        socket
+        |> assign(:pending_queue_items, pending)
+        |> push_event("upload_queue_cancel", %{queue_id: queue_id})
+
+      {:noreply, socket}
+    end
+  end
+
+  def handle_event("cancel_active_upload", params, socket) do
+    case Map.get(socket.assigns.entry_upload_names, param(params, :entry_ref)) do
+      nil ->
+        {:noreply, socket}
+
+      upload_name ->
+        entry_ref = param(params, :entry_ref)
+        queue_id = Map.get(socket.assigns.entry_queue_ids, entry_ref)
+
+        socket =
+          socket
+          |> Phoenix.LiveView.cancel_upload(upload_name, entry_ref)
+          |> release_entry_context(entry_ref)
+          |> maybe_push_queue_cancel(queue_id)
+
+        {:noreply, socket}
+    end
+  end
+
+  defp maybe_push_queue_cancel(socket, queue_id) when is_binary(queue_id),
+    do: push_event(socket, "upload_queue_cancel", %{queue_id: queue_id})
+
+  defp maybe_push_queue_cancel(socket, _queue_id), do: socket
+
   @impl true
   def handle_info({:upload_manager_route_context, context}, socket) do
     {:noreply,
      socket
      |> assign(:route_context, normalize_route_context(context))
      |> assign(:quota_error?, false)}
+  end
+
+  def handle_info({:upload_manager_visibility, visible?}, socket) when is_boolean(visible?) do
+    {:noreply, push_event(socket, "upload_manager_visibility", %{visible: visible?})}
   end
 
   def handle_info({:ybira_upload, _public_id, _state}, socket) do
@@ -233,6 +350,7 @@ defmodule TainaWeb.UploadManagerLive do
       socket
       |> update(:entry_destinations, &Map.put_new(&1, entry.ref, folder_rkey))
       |> update(:entry_relative_paths, &Map.put_new(&1, entry.ref, relative_path))
+      |> update(:entry_upload_names, &Map.put_new(&1, entry.ref, name))
       |> maybe_remember_entry_queue_id(entry.ref, metadata)
     end
   end
@@ -290,6 +408,7 @@ defmodule TainaWeb.UploadManagerLive do
     |> update(:entry_destinations, &Map.delete(&1, entry_ref))
     |> update(:entry_queue_ids, &Map.delete(&1, entry_ref))
     |> update(:entry_relative_paths, &Map.delete(&1, entry_ref))
+    |> update(:entry_upload_names, &Map.delete(&1, entry_ref))
     |> update(:finalizing_refs, &MapSet.delete(&1, entry_ref))
     |> maybe_release_queue_id(queue_id)
   end
@@ -391,6 +510,24 @@ defmodule TainaWeb.UploadManagerLive do
     end
   end
 
+  defp cancellable_upload_entries(uploads, finalizing_refs) do
+    Enum.flat_map(@upload_names, fn name ->
+      uploads
+      |> Map.fetch!(name)
+      |> Map.fetch!(:entries)
+      |> Enum.reject(fn entry ->
+        entry.done? or MapSet.member?(finalizing_refs, entry.ref)
+      end)
+      |> Enum.map(fn entry ->
+        %{ref: entry.ref, name: entry.client_name, progress: entry.progress}
+      end)
+    end)
+  end
+
+  defp pending_upload_meta(item) do
+    gettext("Aguardando para enviar, %{size}", size: format_bytes(item.size))
+  end
+
   defp upload_state_text(%Upload{state: :queued}), do: gettext("Na fila")
   defp upload_state_text(%Upload{state: :processing}), do: gettext("Guardando na casa...")
   defp upload_state_text(%Upload{state: :completed}), do: gettext("Concluído")
@@ -448,6 +585,13 @@ defmodule TainaWeb.UploadManagerLive do
 
   @impl true
   def render(assigns) do
+    assigns =
+      assign(
+        assigns,
+        :cancellable_uploads,
+        cancellable_upload_entries(assigns.uploads, assigns.finalizing_refs)
+      )
+
     ~H"""
     <main id="upload-manager-main-content" class="shell__content">
       <div id="upload-manager-panel" class="col gap-6 mx-auto w-full measure-md">
@@ -540,6 +684,63 @@ defmodule TainaWeb.UploadManagerLive do
             {upload_config_error(err, @max_blob_size, @max_concurrent_uploads)}
           </p>
         </form>
+
+        <div :if={@cancellable_uploads != []} class="col gap-2">
+          <ul class="list">
+            <.list_row
+              :for={entry <- @cancellable_uploads}
+              id={"active-upload-#{entry.ref}"}
+              kind="file"
+              title={entry.name}
+              meta={gettext("Enviando %{progress}%", progress: entry.progress)}
+            >
+              <:leading>
+                <.service_square mark="neutral" />
+              </:leading>
+              <:actions>
+                <.button
+                  kind="secondary"
+                  size="md"
+                  aria-label={gettext("Cancelar o envio de %{name}", name: entry.name)}
+                  phx-click="cancel_active_upload"
+                  phx-value-entry-ref={entry.ref}
+                >
+                  {gettext("Cancelar")}
+                </.button>
+              </:actions>
+            </.list_row>
+          </ul>
+        </div>
+
+        <div :if={@pending_queue_items != []} id="pending-upload-queue" class="col gap-2">
+          <p class="type-overline text-muted">
+            {gettext("Aguardando para enviar (%{count})", count: length(@pending_queue_items))}
+          </p>
+          <ul class="list">
+            <.list_row
+              :for={item <- @pending_queue_items}
+              id={"pending-upload-#{item.queue_id}"}
+              kind="file"
+              title={item.name}
+              meta={pending_upload_meta(item)}
+            >
+              <:leading>
+                <.service_square mark="neutral" />
+              </:leading>
+              <:actions>
+                <.button
+                  kind="secondary"
+                  size="md"
+                  aria-label={gettext("Cancelar o envio de %{name}", name: item.name)}
+                  phx-click="cancel_pending_upload"
+                  phx-value-queue_id={item.queue_id}
+                >
+                  {gettext("Cancelar")}
+                </.button>
+              </:actions>
+            </.list_row>
+          </ul>
+        </div>
 
         <div :if={@failed != []}>
           <p class="type-overline text-error mb-2">

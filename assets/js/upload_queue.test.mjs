@@ -3,8 +3,10 @@ import test from "node:test";
 
 import {
   activatePending,
+  cancelPending,
   createQueue,
   enqueue,
+  pendingSnapshot,
   settle,
   snapshotItem,
 } from "./upload_queue.js";
@@ -59,6 +61,45 @@ test("pending items become active only when a slot is available", () => {
   const noSlot = activatePending(first.queue);
   assert.deepEqual(noSlot.activated, []);
   assert.equal(noSlot.queue, first.queue);
+});
+
+test("pending snapshots expose display metadata without File contents", () => {
+  let queue = createQueue(1);
+  queue = enqueue(queue, [
+    item("active", "files", null, "active.txt"),
+    item("pending", "folders", "folder-at-selection", "same.txt"),
+  ]);
+  queue = activatePending(queue).queue;
+
+  assert.deepEqual(pendingSnapshot(queue), [
+    {
+      queue_id: "pending",
+      input_key: "folders",
+      name: "same.txt",
+      size: 12,
+      destination_folder: "folder-at-selection",
+      relative_path: "same.txt",
+    },
+  ]);
+  assert.equal(Object.hasOwn(pendingSnapshot(queue)[0], "file"), false);
+});
+
+test("cancelling a pending duplicate name preserves the active and other item", () => {
+  let queue = createQueue(1);
+  queue = enqueue(queue, [
+    item("active", "files", null, "same.txt"),
+    item("cancel-me", "folders", null, "same.txt"),
+    item("keep-me", "camera", null, "same.txt"),
+  ]);
+  queue = activatePending(queue).queue;
+
+  const cancelled = cancelPending(queue, "cancel-me");
+  assert.equal(cancelled.cancelled.id, "cancel-me");
+  assert.deepEqual(cancelled.queue.active.map(({ id }) => id), ["active"]);
+  assert.deepEqual(cancelled.queue.pending.map(({ id }) => id), ["keep-me"]);
+
+  const released = settle(cancelled.queue, "active", "cancelled");
+  assert.deepEqual(activatePending(released.queue).activated.map(({ id }) => id), ["keep-me"]);
 });
 
 test("completion frees a slot and the next pending item can start", () => {

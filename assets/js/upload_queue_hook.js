@@ -2,6 +2,8 @@ import {
   activatePending,
   createQueue,
   enqueue,
+  cancelPending,
+  pendingSnapshot,
   settle,
   snapshotItem,
 } from "./upload_queue.js";
@@ -20,6 +22,9 @@ const releaseEventName = "upload-queue:release";
 //   dispatches one public input event for that file. The server should retain
 //   that metadata in per-input order and correlate it with the next native
 //   upload entry for that input. queue_id, not the filename, is the identity.
+// - After queue changes, upload_queue_pending reports pending item snapshots
+//   with a monotonically increasing revision. The server may send
+//   upload_queue_cancel with a queue_id to cancel a pending or active item.
 // - Keep each reserved/active queue_id in the hook element's
 //   data-upload-queue-active-ids attribute until its native entry is consumed.
 //   The value is a whitespace- or comma-separated list. Removing an observed
@@ -45,15 +50,27 @@ export const UploadQueueHook = {
     this.syntheticEvents = new WeakSet();
     this.reportedIds = new Set();
     this.dispatchChain = Promise.resolve();
+    this.pendingRevision = 0;
 
     this.onInput = (event) => this.captureInput(event);
     this.onDrop = (event) => this.captureDrop(event);
     this.onRelease = (event) => this.release(event.detail);
+    this.onPageLoadingStart = (event) => {
+      if (event.detail?.kind === "redirect") this.setManagerVisibility(false);
+    };
 
     this.el.addEventListener("input", this.onInput, true);
     this.el.addEventListener("change", this.onInput, true);
     this.el.addEventListener("drop", this.onDrop, true);
     this.el.addEventListener(releaseEventName, this.onRelease);
+    window.addEventListener("phx:page-loading-start", this.onPageLoadingStart);
+    this.cancelHandleRef = this.handleEvent("upload_queue_cancel", ({queue_id}) => {
+      this.cancelQueueItem(queue_id);
+    });
+    this.visibilityHandleRef = this.handleEvent(
+      "upload_manager_visibility",
+      ({visible}) => this.setManagerVisibility(visible),
+    );
 
     if (typeof MutationObserver !== "undefined") {
       this.observer = new MutationObserver(() => this.reconcile());
@@ -74,6 +91,9 @@ export const UploadQueueHook = {
     this.el.removeEventListener("change", this.onInput, true);
     this.el.removeEventListener("drop", this.onDrop, true);
     this.el.removeEventListener(releaseEventName, this.onRelease);
+    window.removeEventListener("phx:page-loading-start", this.onPageLoadingStart);
+    this.removeHandleEvent(this.cancelHandleRef);
+    this.removeHandleEvent(this.visibilityHandleRef);
     this.observer?.disconnect();
   },
 
@@ -130,6 +150,7 @@ export const UploadQueueHook = {
   pump() {
     const transition = activatePending(this.queue);
     this.queue = transition.queue;
+    this.reportPending();
 
     for (const item of transition.activated) {
       this.dispatchChain = this.dispatchChain
@@ -177,6 +198,43 @@ export const UploadQueueHook = {
     this.queue = transition.queue;
     this.reportedIds.delete(detail.id);
     this.pump();
+  },
+
+  cancelQueueItem(id) {
+    if (!id) return;
+
+    const pending = cancelPending(this.queue, id);
+    if (pending.cancelled) {
+      this.queue = pending.queue;
+      this.pump();
+      return;
+    }
+
+    const active = settle(this.queue, id, "cancelled");
+    if (!active.released) return;
+
+    this.queue = active.queue;
+    this.reportedIds.delete(id);
+    this.pump();
+  },
+
+  reportPending() {
+    const event = this.el.dataset.uploadQueuePendingEvent || "upload_queue_pending";
+    const revision = ++this.pendingRevision;
+    this.pushEvent(event, { revision, items: pendingSnapshot(this.queue) }).catch(() => {});
+  },
+
+  setManagerVisibility(visible) {
+    if (typeof visible !== "boolean") return;
+
+    const container = this.el.closest("#upload-manager");
+    if (!container) return;
+
+    const hidden = !visible;
+    container.hidden = hidden;
+    container.inert = hidden;
+    container.setAttribute("aria-hidden", String(hidden));
+    container.style.display = hidden ? "none" : "";
   },
 
   reconcile() {
