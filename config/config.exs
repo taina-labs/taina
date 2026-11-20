@@ -28,7 +28,9 @@ end
 # Configures Elixir's Logger
 config :logger, :default_formatter,
   format: "$time $metadata[$level] $message\n",
-  metadata: [:request_id, :path, :file_id, :reason, :errors, :bytes, :event_type, :event_id]
+  metadata:
+    [:request_id, :path, :file_id, :reason, :errors, :bytes, :event_type, :event_id] ++
+      [:blob_cid, :failed, :terminal_staging_cleaned, :orphan_files_cleaned, :cleanup_errors]
 
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, JSON

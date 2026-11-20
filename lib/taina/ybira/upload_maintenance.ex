@@ -74,36 +74,45 @@ defmodule Taina.Ybira.UploadMaintenance do
         %{}
 
       _job_ids ->
-        from(job in Oban.Job,
-          where: job.id in ^job_ids,
-          select: {job.id, job.state}
-        )
-        |> Repo.all(skip_tekoa_id: true)
-        |> Map.new()
+        job_rows =
+          Repo.all(
+            from(job in Oban.Job,
+              where: job.id in ^job_ids,
+              select: {job.id, job.state}
+            ),
+            skip_tekoa_id: true
+          )
+
+        Map.new(job_rows)
     end
   end
 
   defp reconcile_active(uploads, job_states) do
     uploads
     |> Enum.filter(&(&1.state in @active_states))
-    |> Enum.reduce_while({:ok, [], []}, fn upload, {:ok, active, failed} ->
-      case failure_code(upload, job_states) do
-        nil ->
-          {:cont, {:ok, [upload | active], failed}}
-
-        error_code ->
-          case fail(upload, error_code) do
-            {:ok, failed_upload} ->
-              {:cont, {:ok, active, [failed_upload | failed]}}
-
-            {:error, _reason} ->
-              {:halt, {:error, :database_error}}
-          end
-      end
+    |> Enum.reduce_while({:ok, [], []}, fn upload, state ->
+      reconcile_upload(upload, job_states, state)
     end)
     |> case do
       {:ok, active, failed} -> {:ok, Enum.reverse(active), Enum.reverse(failed)}
       {:error, _reason} = error -> error
+    end
+  end
+
+  defp reconcile_upload(upload, job_states, {:ok, active, failed}) do
+    case failure_code(upload, job_states) do
+      nil ->
+        {:cont, {:ok, [upload | active], failed}}
+
+      error_code ->
+        fail_active_upload(upload, error_code, active, failed)
+    end
+  end
+
+  defp fail_active_upload(upload, error_code, active, failed) do
+    case fail(upload, error_code) do
+      {:ok, failed_upload} -> {:cont, {:ok, active, [failed_upload | failed]}}
+      {:error, _reason} -> {:halt, {:error, :database_error}}
     end
   end
 
@@ -170,38 +179,40 @@ defmodule Taina.Ybira.UploadMaintenance do
 
     case staging_directory() do
       {:ok, directory} ->
-        case File.ls(directory) do
-          {:ok, names} ->
-            Enum.reduce(names, {0, 0}, fn name, {cleaned, errors} ->
-              cleanup_orphan(directory, name, active_public_ids, known_public_ids, now, cleaned, errors)
-            end)
-
-          {:error, _reason} ->
-            {0, 0}
-        end
+        clean_staging_directory(directory, active_public_ids, known_public_ids, now)
 
       :error ->
         {0, 0}
     end
   end
 
-  defp cleanup_orphan(directory, name, active_ids, known_ids, now, cleaned, errors) do
-    cond do
-      valid_upload_id?(name) and (MapSet.member?(active_ids, name) or MapSet.member?(known_ids, name)) ->
-        {cleaned, errors}
+  defp clean_staging_directory(directory, active_public_ids, known_public_ids, now) do
+    case File.ls(directory) do
+      {:ok, names} ->
+        Enum.reduce(names, {0, 0}, fn name, counts ->
+          cleanup_orphan(directory, name, active_public_ids, known_public_ids, now, counts)
+        end)
 
-      not generated_staging_filename?(name) ->
-        {cleaned, errors}
-
-      true ->
-        delete_if_old(Path.join(directory, name), now, cleaned, errors)
+      {:error, _reason} ->
+        {0, 0}
     end
   end
 
-  defp delete_if_old(path, now, cleaned, errors) do
-    case File.lstat(path, time: :posix) do
+  defp cleanup_orphan(directory, name, active_ids, known_ids, now, {cleaned, errors}) do
+    if valid_upload_id?(name) and (MapSet.member?(active_ids, name) or MapSet.member?(known_ids, name)) do
+      {cleaned, errors}
+    else
+      case staging_entry(directory, name) do
+        {:ok, candidate} -> delete_if_old(candidate, now, cleaned, errors)
+        :error -> {cleaned, errors}
+      end
+    end
+  end
+
+  defp delete_if_old(candidate, now, cleaned, errors) do
+    case File.lstat(candidate, time: :posix) do
       {:ok, %{type: :regular, mtime: mtime}} when is_integer(mtime) and now - mtime >= @staging_grace_seconds ->
-        case File.rm(path) do
+        case File.rm(candidate) do
           :ok -> {cleaned + 1, errors}
           {:error, :enoent} -> {cleaned, errors}
           {:error, _reason} -> {cleaned, errors + 1}
@@ -209,6 +220,18 @@ defmodule Taina.Ybira.UploadMaintenance do
 
       _other ->
         {cleaned, errors}
+    end
+  end
+
+  defp staging_entry(directory, name) do
+    with true <- generated_staging_filename?(name),
+         expanded_directory = Path.expand(directory),
+         candidate = Path.expand(name, expanded_directory),
+         true <- Path.dirname(candidate) == expanded_directory,
+         true <- Path.basename(candidate) == name do
+      {:ok, candidate}
+    else
+      _other -> :error
     end
   end
 
@@ -232,13 +255,13 @@ defmodule Taina.Ybira.UploadMaintenance do
 
   defp staging_directory do
     case Application.get_env(:taina, :storage_root) do
-      root when is_binary(root) and root != "" ->
-        staging = Path.join(root, "staging")
+      <<_::utf8, _::binary>> = root ->
+        staging = root |> Path.expand() |> Path.join("staging")
         directory = Path.join(staging, "uploads")
 
         with {:ok, %{type: :directory}} <- File.lstat(staging),
              {:ok, %{type: :directory}} <- File.lstat(directory) do
-          {:ok, directory}
+          {:ok, Path.expand(directory)}
         else
           _other -> :error
         end

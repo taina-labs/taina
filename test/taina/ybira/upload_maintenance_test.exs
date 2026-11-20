@@ -1,4 +1,5 @@
 defmodule Taina.Ybira.UploadMaintenanceTest do
+  # Each test changes the application-wide storage_root used by staging.
   use Taina.DataCase, async: false
 
   import Taina.Fixtures
@@ -76,14 +77,10 @@ defmodule Taina.Ybira.UploadMaintenanceTest do
     active_path = staged_path(ctx, active_upload)
     :ok = File.touch(active_path, @old_time)
 
-    old_orphan = Path.join(uploads_directory(ctx), Ecto.UUID.generate())
-    old_part = Path.join(uploads_directory(ctx), part_filename())
-    recent_orphan = Path.join(uploads_directory(ctx), Ecto.UUID.generate())
-    recent_part = Path.join(uploads_directory(ctx), part_filename())
-
-    for path <- [old_orphan, old_part, recent_orphan, recent_part] do
-      File.write!(path, "staging bytes")
-    end
+    old_orphan = write_staging_fixture(ctx, Ecto.UUID.generate())
+    old_part = write_staging_fixture(ctx, part_filename())
+    recent_orphan = write_staging_fixture(ctx, Ecto.UUID.generate())
+    recent_part = write_staging_fixture(ctx, part_filename())
 
     :ok = File.touch(old_orphan, @old_time)
     :ok = File.touch(old_part, @old_time)
@@ -135,6 +132,24 @@ defmodule Taina.Ybira.UploadMaintenanceTest do
   end
 
   defp uploads_directory(ctx), do: Path.join([ctx.storage_root, "staging", "uploads"])
+
+  defp write_staging_fixture(ctx, name) do
+    assert generated_staging_filename?(name)
+    base = Path.expand(uploads_directory(ctx))
+    candidate = Path.expand(name, base)
+    assert Path.dirname(candidate) == base
+    assert Path.basename(candidate) == name
+    File.write!(candidate, "staging bytes")
+    candidate
+  end
+
+  defp generated_staging_filename?(name) do
+    match?({:ok, ^name}, Ecto.UUID.cast(name)) or
+      Regex.match?(
+        ~r/\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.part\z/,
+        name
+      )
+  end
 
   defp part_filename do
     Ecto.UUID.generate() <> "-" <> Ecto.UUID.generate() <> ".part"
