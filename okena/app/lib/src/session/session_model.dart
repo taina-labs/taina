@@ -14,6 +14,7 @@ import 'session_gateway.dart';
 import 'session_lifecycle.dart';
 import 'session_poller.dart';
 import 'session_state.dart';
+import 'upload_center.dart';
 
 /// The per-address probe a connect runs. Production builds a `LiveTainaApi`
 /// over the address and the shared session store; the fake composition answers
@@ -90,6 +91,12 @@ final class SessionModel extends ChangeNotifier implements SessionGateway {
   final LocalNetworkGate _localNetwork;
   final ThumbnailStore _thumbnails;
 
+  /// Upload state belongs to this authenticated session, not to a screen.
+  ///
+  /// The transfer therefore remains alive when a route leaves Enviar. The
+  /// center is disposed with the session model, alongside its gateway.
+  late final UploadCenter uploadCenter = UploadCenter(gateway: this);
+
   /// The scene-active refresh cadence. Injectable so tests never wait 30s.
   final Duration pollInterval;
 
@@ -99,6 +106,7 @@ final class SessionModel extends ChangeNotifier implements SessionGateway {
   String? _notice;
   bool _polling = false;
   bool _disposed = false;
+  int _hostGeneration = 0;
 
   SessionState get state => _state;
 
@@ -135,8 +143,9 @@ final class SessionModel extends ChangeNotifier implements SessionGateway {
     );
     _deepLinks?.attach((uri) => unawaited(handleDeepLink(uri)));
 
+    final int hostGeneration = _hostGeneration;
     final storedHost = await _hostStore.address();
-    _host ??= storedHost;
+    if (hostGeneration == _hostGeneration) _host ??= storedHost;
     final restored = await _store.restore();
     if (_state is! SessionChecking) return;
 
@@ -183,18 +192,117 @@ final class SessionModel extends ChangeNotifier implements SessionGateway {
     return _connect(ordered);
   }
 
+  /// Probes an address without changing this session's host, instance,
+  /// authentication state, or API binding.
+  Future<TainaResult<Instance>> probeAddress(InstanceAddress address) async {
+    if (!await _localNetwork.ensure()) {
+      return const Err(NetworkError('local network permission denied'));
+    }
+    return _probe(address);
+  }
+
+  /// Connects to a first-access address and signs in as one session
+  /// transition. The router sees no intermediate `needsLogin` state, so the
+  /// address and credentials remain mounted until authentication settles.
+  ///
+  /// For an unbootstrapped box, [instance] is updated and the result is an
+  /// [InvalidResponseError]; the caller should prefer the instance's
+  /// `bootstrapped` state over showing a generic login failure.
+  Future<TainaResult<Me>> connectAndLogin({
+    required String address,
+    required String username,
+    required String password,
+    required String deviceName,
+  }) async {
+    _clearNotice();
+    final candidates = InstanceAddress.candidates(address);
+    if (candidates case Err<AddressCandidates>(:final error)) {
+      return Err<Me>(error);
+    }
+    if (!await _localNetwork.ensure()) {
+      return const Err<Me>(NetworkError('local network permission denied'));
+    }
+
+    final int hostGeneration = _hostGeneration;
+    final (TainaResult<Instance> probed, InstanceAddress selectedAddress) =
+        await _probeCandidates((candidates as Ok<AddressCandidates>).value);
+    final Instance? found = probed.value;
+    if (found == null) return Err<Me>(probed.error!);
+    if (hostGeneration != _hostGeneration) {
+      return const Err<Me>(
+        InvalidResponseError('community changed during sign in'),
+      );
+    }
+    if (_store.current != null && _host != selectedAddress) {
+      return const Err<Me>(
+        InvalidResponseError('clear the current community before switching'),
+      );
+    }
+
+    if (!found.bootstrapped) {
+      _instance = found;
+      _notify();
+      return const Err<Me>(
+        InvalidResponseError('community is not bootstrapped'),
+      );
+    }
+
+    final saved = await _hostStore.save(selectedAddress);
+    if (saved case Err<void>(:final error)) return Err<Me>(error);
+    _host = selectedAddress;
+    _instance = found;
+    _hostGeneration += 1;
+
+    final TainaResult<Me> result = await _settle(
+      await _api.createSession(
+        username: username.trim(),
+        password: password,
+        deviceName: deviceName,
+      ),
+    );
+    if (result case Err<Me>()) {
+      // A reachable box is now known. Stay on the same login route and let
+      // the form render the failure without an intermediate route transition.
+      _setState(const SessionNeedsLogin());
+    }
+    return result;
+  }
+
+  /// Clears the remembered box and returns the app to first access.
+  ///
+  /// Any stored device token is discarded before a future address is used, so
+  /// a failed connection cannot restore or reuse the previous community.
+  Future<void> clearHost() async {
+    _hostGeneration += 1;
+    await _hostStore.clear();
+    await _store.signOut();
+    _thumbnails.clear();
+    _host = null;
+    _instance = null;
+    _notice = null;
+    _setState(const SessionNeedsInstance());
+  }
+
   /// Tries the candidates in order and keeps the first address the box
   /// answers; when none does, the primary's failure is the answer the screen
   /// shows.
   Future<TainaResult<Instance>> _connect(AddressCandidates candidates) async {
+    final (TainaResult<Instance> result, InstanceAddress address) =
+        await _probeCandidates(candidates);
+    return _settleConnect(result, address);
+  }
+
+  Future<(TainaResult<Instance>, InstanceAddress)> _probeCandidates(
+    AddressCandidates candidates,
+  ) async {
     final first = await _probe(candidates.primary);
     final fallback = candidates.fallback;
     if (_unreachable(first) && fallback != null) {
       final second = await _probe(fallback);
-      if (_unreachable(second)) return first;
-      return _settleConnect(second, fallback);
+      if (_unreachable(second)) return (first, candidates.primary);
+      return (second, fallback);
     }
-    return _settleConnect(first, candidates.primary);
+    return (first, candidates.primary);
   }
 
   /// Nothing answered: the transport never reached a box. The one failure
@@ -216,6 +324,7 @@ final class SessionModel extends ChangeNotifier implements SessionGateway {
 
     _host = address;
     await _hostStore.save(address);
+    _hostGeneration += 1;
     _setState(const SessionNeedsLogin());
     return result;
   }
@@ -365,6 +474,7 @@ final class SessionModel extends ChangeNotifier implements SessionGateway {
 
     _host = box;
     await _hostStore.save(box);
+    _hostGeneration += 1;
     _setInstance(null);
     final probed = await _api.instance();
     final found = probed.value;
@@ -510,6 +620,7 @@ final class SessionModel extends ChangeNotifier implements SessionGateway {
     _poller.stop();
     _lifecycle.detach();
     _deepLinks?.detach();
+    uploadCenter.dispose();
     super.dispose();
   }
 }

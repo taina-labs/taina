@@ -171,6 +171,182 @@ void main() {
     });
   });
 
+  group('connectAndLogin', () {
+    test(
+      'successful first access commits one ready-state transition',
+      () async {
+        final composed = makeSession(state: const SessionNeedsInstance());
+        final transitions = <SessionState>[];
+        composed.model.addListener(() => transitions.add(composed.model.state));
+
+        final result = await composed.model.connectAndLogin(
+          address: 'box.local',
+          username: 'ana',
+          password: 'segredo',
+          deviceName: 'Android de ana',
+        );
+
+        expect(result.value, isNotNull);
+        expect(composed.model.state, isA<SessionReady>());
+        expect(composed.model.host, testBox());
+        expect(await composed.hosts.address(), testBox());
+        expect(composed.store.token, isNotNull);
+        expect(transitions, hasLength(1));
+        expect(transitions.single, isA<SessionReady>());
+      },
+    );
+
+    test(
+      'rejected credentials retain the login state without a token',
+      () async {
+        final composed = makeSession(state: const SessionNeedsInstance());
+        final transitions = <SessionState>[];
+        composed.model.addListener(() => transitions.add(composed.model.state));
+
+        final result = await composed.model.connectAndLogin(
+          address: 'box.local',
+          username: 'sem-acesso',
+          password: 'segredo',
+          deviceName: 'Android de ana',
+        );
+
+        expect(result.error, isA<ApiError>());
+        expect(composed.model.state, isA<SessionNeedsLogin>());
+        expect(composed.model.host, testBox());
+        expect(composed.store.token, isNull);
+        expect(transitions, hasLength(1));
+        expect(transitions.single, isA<SessionNeedsLogin>());
+      },
+    );
+
+    test(
+      'an unbootstrapped box is exposed without saving its address',
+      () async {
+        final composed = makeSession(
+          state: const SessionNeedsInstance(),
+          probe: (_) async => const Ok(
+            Instance(bootstrapped: false, tekoa: null, version: null),
+          ),
+        );
+
+        final result = await composed.model.connectAndLogin(
+          address: 'box.local',
+          username: 'ana',
+          password: 'segredo',
+          deviceName: 'Android de ana',
+        );
+
+        expect(result.error, isA<InvalidResponseError>());
+        expect(composed.model.instance?.bootstrapped, isFalse);
+        expect(composed.model.state, isA<SessionNeedsInstance>());
+        expect(composed.model.host, isNull);
+        expect(await composed.hosts.address(), isNull);
+      },
+    );
+  });
+
+  group('host switching', () {
+    test(
+      'probeAddress is non-mutating and probes only the supplied address',
+      () async {
+        final probed = <InstanceAddress>[];
+        final composed = makeSession(
+          host: testBox(),
+          state: const SessionNeedsLogin(),
+          probe: (address) async {
+            probed.add(address);
+            return const Ok(
+              Instance(bootstrapped: true, tekoa: testTekoa, version: '0.6.0'),
+            );
+          },
+        );
+        await composed.model.restore();
+        final previousState = composed.model.state;
+        final previousApi = composed.model.api;
+        final nextAddress = testBox('https://other.box');
+
+        final result = await composed.model.probeAddress(nextAddress);
+
+        expect(result.value?.bootstrapped, isTrue);
+        expect(probed, [nextAddress]);
+        expect(composed.model.state, same(previousState));
+        expect(composed.model.host, testBox());
+        expect(composed.model.instance, isNull);
+        expect(composed.model.api, same(previousApi));
+        expect(await composed.hosts.address(), testBox());
+      },
+    );
+
+    test('clearHost discards the old host and any stored session', () async {
+      final storage = InMemorySessionStorage(testSession());
+      final composed = makeSession(
+        host: testBox(),
+        storage: storage,
+        state: const SessionNeedsLogin(),
+      );
+      await composed.model.restore();
+
+      await composed.model.clearHost();
+
+      expect(composed.model.host, isNull);
+      expect(composed.model.instance, isNull);
+      expect(composed.model.state, isA<SessionNeedsInstance>());
+      expect(await composed.hosts.address(), isNull);
+      expect((await storage.load()).value, isNull);
+      expect(composed.store.current, isNull);
+    });
+
+    test(
+      'a failed attempt after clearHost cannot restore the previous box',
+      () async {
+        final composed = makeSession(
+          host: testBox(),
+          state: const SessionNeedsLogin(),
+          probe: (_) async => const Err(NetworkError('unreachable')),
+        );
+        await composed.model.restore();
+
+        await composed.model.clearHost();
+        final result = await composed.model.connect('new.box');
+        await composed.model.restore();
+
+        expect(result.error, isA<NetworkError>());
+        expect(composed.model.host, isNull);
+        expect(await composed.hosts.address(), isNull);
+        expect(composed.model.state, isA<SessionNeedsInstance>());
+      },
+    );
+
+    test(
+      'connectAndLogin cannot carry a stored token to another host',
+      () async {
+        final storage = InMemorySessionStorage(testSession());
+        final composed = makeSession(
+          host: testBox(),
+          storage: storage,
+          state: const SessionNeedsLogin(),
+          probe: (_) async => const Ok(
+            Instance(bootstrapped: true, tekoa: testTekoa, version: '0.6.0'),
+          ),
+        );
+        await composed.model.restore();
+
+        final result = await composed.model.connectAndLogin(
+          address: 'other.box',
+          username: 'ana',
+          password: 'segredo',
+          deviceName: 'Android de ana',
+        );
+
+        expect(result.error, isA<InvalidResponseError>());
+        expect(composed.model.host, testBox());
+        expect(await composed.hosts.address(), testBox());
+        expect(composed.store.token, isNotNull);
+        expect((await storage.load()).value, testSession());
+      },
+    );
+  });
+
   group('sign in', () {
     test('a login stores the session and becomes ready', () async {
       final composed = makeSession(
