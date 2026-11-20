@@ -14,15 +14,20 @@ defmodule Ypy.RacyRepo do
   alias Ypy.TestRepo
 
   @armed :racy_repo_armed
+  @transaction_count :racy_repo_transaction_count
   @barrier_key {__MODULE__, :concurrent_commit_owner}
 
   def arm(keys, tekoa_id, tipo, payload) do
+    Process.put(@transaction_count, 0)
     Process.put(@armed, {:once, keys, tekoa_id, tipo, payload})
   end
 
   def arm_always(keys, tekoa_id, tipo, payload) do
+    Process.put(@transaction_count, 0)
     Process.put(@armed, {:always, keys, tekoa_id, tipo, payload})
   end
+
+  def transaction_count, do: Process.get(@transaction_count, 0)
 
   def arm_concurrent_commit(owner), do: :persistent_term.put(@barrier_key, owner)
 
@@ -59,6 +64,7 @@ defmodule Ypy.RacyRepo do
   def update(changeset, opts \\ []), do: TestRepo.update(changeset, opts)
 
   def transaction(fun, opts \\ []) do
+    Process.put(@transaction_count, transaction_count() + 1)
     await_barrier(:transaction)
     Process.put(:racy_repo_in_transaction, true)
 

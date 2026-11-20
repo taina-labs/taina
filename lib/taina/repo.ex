@@ -146,11 +146,21 @@ defmodule Taina.Repo do
   pré-contexto, jobs administrativos).
   """
   def with_tekoa(tekoa_public_id, cb) do
+    with_tekoa_context(tekoa_public_id, fn -> transact(fn -> cb.() end) end)
+  end
+
+  @doc """
+  Executes a callback with the Tekoa query guard enabled, without opening a
+  transaction. Use this only when the operation owns its transaction boundary,
+  such as retrying a complete database commit. The previous process context is
+  restored after the callback returns or raises.
+  """
+  def with_tekoa_context(tekoa_public_id, cb) when is_function(cb, 0) do
     public_id = to_string(tekoa_public_id)
     previous = Process.put(@tekoa_context_key, public_id)
 
     try do
-      transact(fn -> cb.() end)
+      cb.()
     after
       if is_nil(previous) do
         Process.delete(@tekoa_context_key)

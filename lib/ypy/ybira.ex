@@ -16,6 +16,7 @@ defmodule Ypy.Ybira do
   alias Ypy.Handle
   alias Ypy.KeyStore
   alias Ypy.Lexicon.Registry
+  alias Ypy.Maraca.Ava
   alias Ypy.Maraca.Policy
   alias Ypy.Maraca.Store, as: MaracaStore
   alias Ypy.Mural
@@ -42,6 +43,7 @@ defmodule Ypy.Ybira do
   @file_collection "ypy.file.v0"
   @folder_collection "ypy.folder.v0"
   @tipos %{@file_collection => File, @folder_collection => Folder}
+  @upload_commit_attempts 3
 
   @type blobstore :: BlobStore.t()
   @type database_id :: integer()
@@ -221,12 +223,39 @@ defmodule Ypy.Ybira do
   @doc """
   O upload (RFC_005 secao 8): transmite os bytes de `path` direto ao
   `BlobStore` (sem ler o arquivo na memoria), confere cota e MIME, monta o
-  envelope `ypy.file.v0` e commita blob, record, arquivo e cota numa
-  transacao. Nasce sempre `:casa`; a praca e um ato proprio (`publicar/5`).
-  O mime detectado por magic bytes chega em opts.
+  envelope `ypy.file.v0` e commita blob, record, arquivo e cota. Nasce sempre
+  `:casa`; a praca e um ato proprio (`publicar/5`). O mime detectado por magic
+  bytes chega em opts.
+
+  O callback de sucesso roda dentro da transacao final, depois de arquivo,
+  record, cota e entrada do Mural estarem escritos. Ele recebe o arquivo
+  inserido e deve retornar `:ok`, `{:ok, valor}` ou `{:error, motivo}`.
+  Um erro desfaz arquivo, record, Mural, cota e as escritas do callback.
+  Mantenha-o restrito a operacoes no mesmo banco: nao faca I/O de arquivos,
+  PubSub nem chamadas externas. Use `put_upload_blob/2` e
+  `commit_upload/6` quando o chamador precisa manter I/O fora da transacao
+  final.
   """
   @spec upload(repo(), keystore(), blobstore(), scope(), path(), opts()) :: {:ok, file()} | {:error, term()}
   def upload(repo, keys, blobs, %Scope{} = scope, path, opts \\ []) when is_binary(path) do
+    upload_pipeline(repo, keys, blobs, scope, path, opts, nil)
+  end
+
+  @doc """
+  Upload com callback de sucesso atomico. O callback recebe o `%File{}` ja
+  inserido e roda na mesma transacao do record, entrada no Mural e cota. Seu
+  retorno precisa ser `:ok`, `{:ok, valor}` ou `{:error, motivo}`. Use-o para
+  completar estado de dominio e inserir jobs de banco, nunca para I/O de
+  arquivos, PubSub ou chamadas externas.
+  """
+  @spec upload_with_success(repo(), keystore(), blobstore(), scope(), path(), opts(), (file() -> term())) ::
+          {:ok, file()} | {:error, term()}
+  def upload_with_success(repo, keys, blobs, %Scope{} = scope, path, opts, success_callback)
+      when is_binary(path) and is_function(success_callback, 1) do
+    upload_pipeline(repo, keys, blobs, scope, path, opts, success_callback)
+  end
+
+  defp upload_pipeline(repo, keys, blobs, %Scope{} = scope, path, opts, success_callback) do
     nome = nome(path, opts)
 
     with {:ok, %{size: size}} <- Elixir.File.stat(path),
@@ -235,8 +264,34 @@ defmodule Ypy.Ybira do
          {:ok, tekoa} <- fetch_tekoa(repo, scope),
          :ok <- quota_ok?(repo, tekoa, size),
          {:ok, folder} <- resolve_folder(repo, scope, Keyword.get(opts, :folder)) do
-      meta = %{size: size, mime: mime, nome: nome, folder: folder}
-      commit_upload(repo, keys, blobs, scope, tekoa, path, meta)
+      # BlobStore I/O is deliberately outside the database transaction. The
+      # final commit below rechecks the owner, folder and quota under its
+      # write transaction.
+      with {:ok, blob_cid} <- put_upload_blob(blobs, path) do
+        commit_opts =
+          [mime: mime, nome: nome, folder: folder && folder.rkey]
+          |> Keyword.merge(Keyword.take(opts, [:allowed_mimes]))
+          |> put_success_callback(success_callback)
+
+        commit_upload(repo, keys, scope, blob_cid, size, commit_opts)
+      end
+    end
+  end
+
+  @doc false
+  @spec put_upload_blob(blobstore(), path()) :: {:ok, Cid.t()} | {:error, term()}
+  def put_upload_blob(blobs, path) when is_binary(path), do: blob_put_file(blobs, path)
+
+  @doc false
+  @spec commit_upload(repo(), keystore(), scope(), Cid.t(), non_neg_integer(), opts()) ::
+          {:ok, file()} | {:error, term()}
+  def commit_upload(repo, keys, %Scope{} = scope, %Cid{} = blob_cid, size, opts) when is_integer(size) and size >= 0 do
+    success_callback = Keyword.get(opts, :success_callback)
+
+    if is_nil(success_callback) or is_function(success_callback, 1) do
+      commit_upload_transaction(repo, keys, scope, blob_cid, size, opts, success_callback)
+    else
+      {:error, :invalid_success_callback}
     end
   end
 
@@ -290,22 +345,52 @@ defmodule Ypy.Ybira do
     )
   end
 
-  defp commit_upload(repo, keys, blobs, scope, tekoa, path, meta) do
-    case blob_put_file(blobs, path) do
-      {:ok, blob_cid} ->
-        # O hash e o digest do proprio CID (sha2-256 raw), em hex minusculo:
-        # nenhum segundo calculo sobre bytes na memoria.
-        hash = Base.encode16(blob_cid.digest, case: :lower)
-        upload = Map.merge(meta, %{blob_cid: blob_cid, hash: hash})
+  defp commit_upload_transaction(repo, keys, scope, blob_cid, size, opts, success_callback) do
+    commit_upload_transaction(repo, keys, scope, blob_cid, size, opts, success_callback, @upload_commit_attempts)
+  end
 
-        commit_upload_rows(repo, keys, scope, tekoa, upload)
+  defp commit_upload_transaction(repo, keys, scope, blob_cid, size, opts, success_callback, attempts) do
+    retry_marker = make_ref()
+
+    result =
+      repo.transaction(fn ->
+        with {:ok, tekoa} <- fetch_tekoa(repo, scope),
+             :ok <- quota_ok?(repo, tekoa, size),
+             :ok <- owner_status(repo, scope, Keyword.get(opts, :require_active_owner, false)),
+             {:ok, folder} <- resolve_folder(repo, scope, Keyword.get(opts, :folder)),
+             {:ok, mime} <- fetch_mime(opts),
+             :ok <- mime_allowed?(mime, opts),
+             upload = %{
+               size: size,
+               mime: mime,
+               nome: nome_from_opts(opts),
+               folder: folder,
+               blob_cid: blob_cid,
+               hash: Base.encode16(blob_cid.digest, case: :lower)
+             },
+             {:ok, file} <- commit_upload_rows(repo, keys, scope, tekoa, upload, success_callback, retry_marker) do
+          file
+        else
+          {:error, reason} -> repo.rollback(reason)
+        end
+      end)
+
+    case result do
+      {:ok, file} ->
+        {:ok, file}
+
+      {:error, ^retry_marker} when attempts > 1 ->
+        commit_upload_transaction(repo, keys, scope, blob_cid, size, opts, success_callback, attempts - 1)
+
+      {:error, ^retry_marker} ->
+        {:error, :chain_conflict}
 
       {:error, reason} ->
         {:error, reason}
     end
   end
 
-  defp commit_upload_rows(repo, keys, scope, tekoa, upload) do
+  defp commit_upload_rows(repo, keys, scope, tekoa, upload, success_callback, retry_marker) do
     rkey = Tid.now()
     actor = Handle.of(scope.ava.username, tekoa.domain)
     blob = Cid.to_string(upload.blob_cid)
@@ -336,14 +421,36 @@ defmodule Ypy.Ybira do
 
         put = %{rkey: rkey, cid: cid_string, blob: blob, wire: wire, hash: hash}
 
-        Mural.Store.commit(repo, keys, tekoa.id, "put", entrada, fn ->
-          write_upload(repo, scope, tekoa, upload, put)
-        end)
+        with {:ok, file} <- write_upload(repo, scope, tekoa, upload, put) do
+          append_upload(repo, keys, tekoa.id, entrada, file, success_callback, retry_marker)
+        end
 
       {:error, reason} ->
         {:error, reason}
     end
   end
+
+  defp append_upload(repo, keys, tekoa_id, entrada, file, success_callback, retry_marker) do
+    case Mural.Store.append(repo, keys, tekoa_id, "put", entrada) do
+      {:ok, _entry} -> run_success_callback(success_callback, file)
+      {:error, :chain_conflict} -> {:error, retry_marker}
+      {:error, _reason} = error -> error
+    end
+  end
+
+  defp run_success_callback(nil, file), do: {:ok, file}
+
+  defp run_success_callback(callback, file) do
+    case callback.(file) do
+      :ok -> {:ok, file}
+      {:ok, _value} -> {:ok, file}
+      {:error, _reason} = error -> error
+      _other -> {:error, :invalid_success_callback_result}
+    end
+  end
+
+  defp put_success_callback(opts, nil), do: opts
+  defp put_success_callback(opts, callback), do: Keyword.put(opts, :success_callback, callback)
 
   # Grava a versao nova do envelope e o dado que ela descreve, com a entrada
   # na cadeia, numa transacao so (RFC_006 secao 8).
@@ -600,14 +707,25 @@ defmodule Ypy.Ybira do
                zona: :casa
              })
            ),
-         # A cota vale pelo estado no momento da escrita: o caminho rapido la
-         # fora pode ter visto lugar que um upload concorrente ja ocupou, e o
-         # used e relido aqui dentro, antes de somar. Estourar agora desfaz a
-         # transacao inteira (RFC_006 secao 8).
-         {:ok, tekoa_agora} <- fetch_tekoa(repo, scope),
-         :ok <- quota_ok?(repo, tekoa_agora, upload.size),
+         # The quota was read under the same outer write transaction before
+         # any upload rows were written.
          :ok <- MaracaStore.add_storage(repo, tekoa.id, upload.size) do
       {:ok, file}
+    end
+  end
+
+  defp owner_status(repo, %Scope{} = scope, require_active?) do
+    case MaracaStore.get_ava(repo, scope.tekoa.id, scope.ava.id) do
+      %Ava{} when not require_active? -> :ok
+      %Ava{} = ava -> if Ava.active?(ava), do: :ok, else: {:error, :inactive_owner}
+      nil -> {:error, :not_found}
+    end
+  end
+
+  defp nome_from_opts(opts) do
+    case Keyword.fetch(opts, :nome) do
+      {:ok, nome} -> nome
+      :error -> "arquivo"
     end
   end
 end

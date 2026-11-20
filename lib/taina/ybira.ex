@@ -969,13 +969,107 @@ defmodule Taina.Ybira do
   defp image?("image/" <> _rest), do: true
   defp image?(_mime), do: false
 
-  defp locked_upload(%Scope{} = scope, temporary_path, opts, cid) do
-    BlobLock.run(Ypy.Cid.to_string(cid), fn ->
-      within_tekoa(scope, fn ->
-        Kernel.upload(Repo, Keys.new(), Blobs.new(), scope, temporary_path, opts)
+  defp locked_upload(%Scope{} = scope, temporary_path, size, opts, cid, success_callback, require_active_owner?) do
+    result =
+      BlobLock.run(Ypy.Cid.to_string(cid), fn ->
+        upload_locked_blob(scope, temporary_path, size, opts, cid, success_callback, require_active_owner?)
       end)
-    end)
+
+    finish_locked_upload(result)
   end
+
+  defp upload_locked_blob(scope, temporary_path, size, opts, cid, success_callback, require_active_owner?) do
+    result =
+      case Kernel.put_upload_blob(Blobs.new(), temporary_path) do
+        {:ok, ^cid} ->
+          Repo.with_tekoa_context(scope.tekoa.public_id, fn ->
+            Kernel.commit_upload(
+              Repo,
+              Keys.new(),
+              scope,
+              cid,
+              size,
+              opts
+              |> put_upload_success_callback(success_callback)
+              |> Keyword.put(:require_active_owner, require_active_owner?)
+            )
+          end)
+
+        {:ok, different_cid} ->
+          {:error, {:blob_changed, different_cid}}
+
+        {:error, _reason} = error ->
+          error
+      end
+
+    handle_locked_upload_result(result, cid)
+  catch
+    kind, reason ->
+      stacktrace = __STACKTRACE__
+      compensate_safely(cid)
+      :erlang.raise(kind, reason, stacktrace)
+  end
+
+  defp handle_locked_upload_result({:error, {:blob_changed, _different_cid}} = result, _cid), do: result
+
+  defp handle_locked_upload_result({:error, _reason} = error, cid) do
+    compensate_safely(cid)
+    error
+  end
+
+  defp handle_locked_upload_result(result, _cid), do: result
+
+  defp finish_locked_upload({:error, {:blob_changed, different_cid}}) do
+    BlobLock.run(Ypy.Cid.to_string(different_cid), fn -> compensate_safely(different_cid) end)
+    {:error, :blob_changed}
+  end
+
+  defp finish_locked_upload(result), do: result
+
+  defp preflight_upload_capacity(%Scope{} = scope, size) do
+    case within_tekoa(scope, fn -> capacity_result(scope, size) end) do
+      {:ok, :ok} -> :ok
+      {:error, _reason} = error -> error
+    end
+  end
+
+  defp capacity_result(%Scope{} = scope, size) do
+    case quota_check(scope.tekoa.id, size) do
+      :ok -> {:ok, :ok}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp compensate_orphan_blob(cid) do
+    cid_string = Ypy.Cid.to_string(cid)
+
+    if not blob_referenced?(cid_string) do
+      case Disk.delete(Blobs.new(), cid) do
+        :ok ->
+          :ok
+
+        {:error, :not_found} ->
+          :ok
+
+        {:error, reason} ->
+          Logger.warning("Ybira: failed to remove an unreferenced upload blob",
+            blob_cid: cid_string,
+            reason: inspect(reason)
+          )
+      end
+    end
+
+    :ok
+  end
+
+  defp compensate_safely(cid) do
+    compensate_orphan_blob(cid)
+  catch
+    _kind, _reason -> :ok
+  end
+
+  defp put_upload_success_callback(opts, nil), do: opts
+  defp put_upload_success_callback(opts, callback), do: Keyword.put(opts, :success_callback, callback)
 
   defp maybe_enqueue_rendition(%Scope{} = scope, %File{} = file) do
     if image?(file.mime) do
@@ -1379,22 +1473,51 @@ defmodule Taina.Ybira do
 
   @doc """
   O upload: o kernel le o arquivo, confere cota e MIME, guarda os bytes no
-  `Ypy.BlobStore` e commita blob, record, arquivo e cota com a entrada na
-  cadeia. O mime vem dos magic bytes (produto); a rendition de imagem
-  enfileira depois do commit (best-effort: a foto existe sem thumbnail).
+  `Ypy.BlobStore` e commita record, arquivo e cota com a entrada na cadeia. O
+  mime vem dos magic bytes (produto); a rendition de imagem enfileira depois
+  do commit (best-effort: a foto existe sem thumbnail).
 
-  O kernel inteiro roda sob a travessa do CID dos bytes (`Taina.Ybira.BlobLock`):
-  os bytes entram no disco antes de a referencia commitar, e o GC diferido so
-  pode apagar bytes sem referencia DENTRO da mesma travessa. Sem ela, o GC
-  conferiria referencias entre a gravacao dos bytes e o commit, apagaria o
-  blob e o arquivo commitaria apontando para bytes que nao existem mais. So
-  espera a vez quem sobe os MESMOS bytes (mesmo CID, a corrida da dedup);
-  upload de conteudo diferente nunca espera.
+  O hash e a copia dos bytes ficam fora das transacoes SQLite. A travessa do
+  CID (`Taina.Ybira.BlobLock`) fica retida da gravacao ate o commit da
+  referencia, para excluir a corrida com o GC. Se o commit falhar, os bytes
+  sao removidos somente quando nenhuma Tekoa os referencia.
 
   A opcao `:relative_path` preserva a hierarquia escolhida no navegador: as
   pastas proprias do caminho sao reutilizadas ou criadas antes do upload.
   """
   def upload(%Scope{} = scope, temporary_path, opts \\ []) do
+    with {:ok, file} <- upload_pipeline(scope, temporary_path, opts, nil, false) do
+      maybe_enqueue_rendition(scope, file)
+      {:ok, file}
+    end
+  end
+
+  @doc """
+  Upload with an atomic database callback. The callback receives the inserted
+  `%Ypy.Ybira.File{}` and runs in the same transaction as the file, record,
+  Mural entry and quota update. It must return `:ok`, `{:ok, value}` or
+  `{:error, reason}`; an error rolls back all of those writes and callback
+  writes.
+
+  Keep the callback limited to writes on the same database transaction. Do not
+  perform filesystem work, PubSub broadcasts or external calls there. This
+  path does not enqueue renditions after the callback; for image files, insert
+  the rendition job from the callback so it commits atomically and is not
+  enqueued twice. An ingestion worker should condition its completion update
+  on both upload and Oban job identity, and return an error unless exactly one
+  row changed. Only after that update succeeds should it insert the rendition
+  job. The async path also rechecks that the owner is active in the final write
+  transaction. `upload/3` remains the synchronous entry point and preserves its
+  post-commit, best-effort rendition behavior.
+  """
+  @spec upload_with_success(scope(), path(), keyword(), (file() -> term())) ::
+          {:ok, file()} | {:error, term()}
+  def upload_with_success(%Scope{} = scope, temporary_path, opts, success_callback)
+      when is_function(success_callback, 1) do
+    upload_pipeline(scope, temporary_path, opts, success_callback, true)
+  end
+
+  defp upload_pipeline(%Scope{} = scope, temporary_path, opts, success_callback, require_active_owner?) do
     opts = [
       mime: MimeDetector.detect(temporary_path),
       nome: Keyword.get(opts, :filename, Path.basename(temporary_path)),
@@ -1405,11 +1528,10 @@ defmodule Taina.Ybira do
     with {:ok, %{size: size}} <- Elixir.File.stat(temporary_path),
          :ok <- blob_size_allowed?(size),
          {:ok, cid} <- blob_cid(temporary_path),
-         {:ok, folder_rkey} <- resolve_upload_folder(scope, Keyword.get(opts, :relative_path), Keyword.get(opts, :folder)),
-         opts = Keyword.put(opts, :folder, folder_rkey),
-         {:ok, file} <- locked_upload(scope, temporary_path, opts, cid) do
-      maybe_enqueue_rendition(scope, file)
-      {:ok, file}
+         :ok <- preflight_upload_capacity(scope, size),
+         {:ok, folder_rkey} <- resolve_upload_folder(scope, Keyword.get(opts, :relative_path), Keyword.get(opts, :folder)) do
+      opts = Keyword.put(opts, :folder, folder_rkey)
+      locked_upload(scope, temporary_path, size, opts, cid, success_callback, require_active_owner?)
     end
   end
 

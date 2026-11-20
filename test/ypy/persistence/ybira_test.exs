@@ -6,13 +6,13 @@ defmodule Ypy.Ybira.PersistenceTest do
 
   alias Ecto.Adapters.SQL.Sandbox
   alias Ypy.BlobStore
+  ## Upload
   alias Ypy.BlobStore.Blocking
   alias Ypy.BrokenKeys
   alias Ypy.Cid
+  alias Ypy.Maraca.Tekoa
   alias Ypy.Mural.Store
-
-  ## Upload
-
+  alias Ypy.RacyRepo
   alias Ypy.Scope
   alias Ypy.Ybira
   alias Ypy.Ybira.Blob
@@ -69,6 +69,176 @@ defmodule Ypy.Ybira.PersistenceTest do
              "size_bytes" => byte_size(dados),
              "blob" => file.blob_cid
            }
+  end
+
+  test "callback de sucesso roda no commit atomico e sua falha desfaz o upload", ctx do
+    armazenamento = blobs()
+    {path, dados} = arquivo("callback atomico")
+
+    callback = fn file ->
+      assert %Ypy.Ybira.File{} = TestRepo.get!(Ypy.Ybira.File, file.id)
+      assert TestRepo.reload!(ctx.tekoa).storage_used_bytes == byte_size(dados)
+      {:error, :completion_failed}
+    end
+
+    assert {:error, :completion_failed} =
+             Ybira.upload_with_success(
+               TestRepo,
+               ctx.keys,
+               armazenamento,
+               ctx.dono_scope,
+               path,
+               [mime: @mime],
+               callback
+             )
+
+    assert TestRepo.aggregate(Ypy.Ybira.File, :count) == 0
+    assert TestRepo.aggregate(Ypy.Ybira.Record, :count) == 0
+    assert TestRepo.aggregate(Blob, :count) == 0
+    assert TestRepo.reload!(ctx.tekoa).storage_used_bytes == 0
+    assert Store.cadeia(TestRepo, ctx.tekoa.id) == []
+  end
+
+  test "final quota is checked after the blob is written", ctx do
+    armazenamento = blobs()
+    {path, dados} = arquivo("quota final")
+    {:ok, cid} = Ybira.put_upload_blob(armazenamento, path)
+
+    {:ok, _tekoa} =
+      ctx.tekoa
+      |> Ecto.Changeset.change(storage_quota_bytes: byte_size(dados) - 1)
+      |> TestRepo.update()
+
+    assert {:error, :storage_quota_exceeded} =
+             Ybira.commit_upload(TestRepo, ctx.keys, ctx.dono_scope, cid, byte_size(dados),
+               mime: @mime,
+               nome: "quota.txt"
+             )
+
+    assert TestRepo.aggregate(Ypy.Ybira.File, :count) == 0
+    assert TestRepo.reload!(ctx.tekoa).storage_used_bytes == 0
+    assert Store.cadeia(TestRepo, ctx.tekoa.id) == []
+  end
+
+  test "commit revalidates the destination folder and active owner", ctx do
+    armazenamento = blobs()
+    {:ok, folder} = Ybira.criar_pasta(TestRepo, ctx.keys, ctx.dono_scope, "destino")
+    {path, dados} = arquivo("validacoes finais")
+    {:ok, cid} = Ybira.put_upload_blob(armazenamento, path)
+
+    {:ok, _deleted} =
+      Ybira.apagar(TestRepo, ctx.keys, ctx.dono_scope, "ypy.folder.v0", folder.rkey)
+
+    assert {:error, :not_found} =
+             Ybira.commit_upload(TestRepo, ctx.keys, ctx.dono_scope, cid, byte_size(dados),
+               mime: @mime,
+               nome: "sem-pasta.txt",
+               folder: folder.rkey
+             )
+
+    {:ok, active_cid} = Ybira.put_upload_blob(armazenamento, path)
+
+    {:ok, _ava} =
+      ctx.dono
+      |> Ypy.Maraca.Ava.deactivation_changeset(DateTime.truncate(DateTime.utc_now(), :second))
+      |> TestRepo.update()
+
+    assert {:error, :inactive_owner} =
+             Ybira.commit_upload(TestRepo, ctx.keys, ctx.dono_scope, active_cid, byte_size(dados),
+               mime: @mime,
+               nome: "morador-inativo.txt",
+               require_active_owner: true
+             )
+
+    assert TestRepo.aggregate(Ypy.Ybira.File, :count) == 0
+  end
+
+  test "upload commit retries one chain conflict without retaining failed attempt effects", ctx do
+    armazenamento = blobs()
+    {path, dados} = arquivo("upload com conflito unico")
+    {:ok, cid} = Ybira.put_upload_blob(armazenamento, path)
+    RacyRepo.arm(ctx.keys, ctx.tekoa.id, "rival", %{"rkey" => "rival"})
+    on_exit(&RacyRepo.disarm/0)
+
+    callback = fn file ->
+      Process.put(:upload_callback_count, Process.get(:upload_callback_count, 0) + 1)
+      tekoa = TestRepo.get!(Tekoa, ctx.tekoa.id)
+      {:ok, _} = TestRepo.update(Ecto.Changeset.change(tekoa, name: "committed"))
+      {:ok, file}
+    end
+
+    assert {:ok, file} =
+             Ybira.commit_upload(RacyRepo, ctx.keys, ctx.dono_scope, cid, byte_size(dados),
+               mime: @mime,
+               nome: "retry.jpg",
+               success_callback: callback
+             )
+
+    assert RacyRepo.transaction_count() == 2
+    assert Process.get(:upload_callback_count) == 1
+    assert TestRepo.aggregate(Ypy.Ybira.File, :count) == 1
+    assert TestRepo.aggregate(Ypy.Ybira.Record, :count) == 1
+    assert TestRepo.aggregate(Blob, :count) == 1
+    assert TestRepo.reload!(ctx.tekoa).storage_used_bytes == byte_size(dados)
+    assert TestRepo.get!(Tekoa, ctx.tekoa.id).name == "committed"
+
+    assert [entry] = Store.cadeia(TestRepo, ctx.tekoa.id)
+    assert entry.tipo == "put"
+    assert entry.payload["rkey"] == file.rkey
+    assert Store.verificar_cadeia(TestRepo, ctx.tekoa.id) == :ok
+  end
+
+  test "exhausted upload chain conflicts leave no file, quota, callback or Mural write", ctx do
+    armazenamento = blobs()
+    {path, dados} = arquivo("upload com conflito esgotado")
+    {:ok, cid} = Ybira.put_upload_blob(armazenamento, path)
+    RacyRepo.arm_always(ctx.keys, ctx.tekoa.id, "rival", %{"rkey" => "rival"})
+    on_exit(&RacyRepo.disarm/0)
+
+    callback = fn _file ->
+      Process.put(:upload_callback_count, Process.get(:upload_callback_count, 0) + 1)
+      {:ok, :completed}
+    end
+
+    assert {:error, :chain_conflict} =
+             Ybira.commit_upload(RacyRepo, ctx.keys, ctx.dono_scope, cid, byte_size(dados),
+               mime: @mime,
+               nome: "never-committed.jpg",
+               success_callback: callback
+             )
+
+    assert RacyRepo.transaction_count() == 3
+    assert Process.get(:upload_callback_count, 0) == 0
+    assert TestRepo.aggregate(Ypy.Ybira.File, :count) == 0
+    assert TestRepo.aggregate(Ypy.Ybira.Record, :count) == 0
+    assert TestRepo.aggregate(Blob, :count) == 0
+    assert TestRepo.reload!(ctx.tekoa).storage_used_bytes == 0
+    assert Store.cadeia(TestRepo, ctx.tekoa.id) == []
+  end
+
+  test "callback chain conflict is not retried as a Mural conflict", ctx do
+    armazenamento = blobs()
+    {path, dados} = arquivo("callback chain conflict")
+    {:ok, cid} = Ybira.put_upload_blob(armazenamento, path)
+
+    callback = fn _file ->
+      Process.put(:upload_callback_count, Process.get(:upload_callback_count, 0) + 1)
+      {:error, :chain_conflict}
+    end
+
+    assert {:error, :chain_conflict} =
+             Ybira.commit_upload(RacyRepo, ctx.keys, ctx.dono_scope, cid, byte_size(dados),
+               mime: @mime,
+               nome: "callback-conflict.jpg",
+               success_callback: callback
+             )
+
+    assert RacyRepo.transaction_count() == 1
+    assert Process.get(:upload_callback_count) == 1
+    assert TestRepo.aggregate(Ypy.Ybira.File, :count) == 0
+    assert TestRepo.aggregate(Ypy.Ybira.Record, :count) == 0
+    assert TestRepo.reload!(ctx.tekoa).storage_used_bytes == 0
+    assert Store.cadeia(TestRepo, ctx.tekoa.id) == []
   end
 
   test "o hash do arquivo e o digest do blob cid, em hex minusculo", ctx do

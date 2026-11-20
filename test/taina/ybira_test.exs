@@ -1,12 +1,19 @@
 defmodule Taina.YbiraTest do
   use Taina.DataCase, async: true
 
+  import Ecto.Query
   import Taina.Fixtures
 
+  alias Ecto.Adapters.SQL.Sandbox
   alias Taina.Maraca
   alias Taina.Scope
   alias Taina.Ybira
+  alias Taina.Ybira.BlobLock
+  alias Taina.Ybira.Workers.Rendition
+  alias Ypy.BlobStore.Disk
+  alias Ypy.Cid
   alias Ypy.Maraca.Tekoa
+  alias Ypy.Mural.Store
   alias Ypy.Ybira.File, as: YbiraFile
 
   describe "upload/3" do
@@ -46,6 +53,159 @@ defmodule Taina.YbiraTest do
 
       assert {:error, :enoent} = Ybira.upload(scope, "/tmp/nao_existe_#{System.unique_integer()}")
     end
+  end
+
+  describe "upload_with_success/4" do
+    test "callback writes roll back with the file, record, Mural and quota" do
+      tekoa = tekoa_fixture()
+      scope = Scope.new(active_ava_fixture(tekoa), tekoa)
+      contents = "callback transaction rollback"
+      upload_path = tmp_upload_fixture(contents, "atomic.txt")
+      cid = Cid.from_data(contents, Cid.raw())
+
+      Oban.Testing.with_testing_mode(:manual, fn ->
+        callback = fn file ->
+          assert %YbiraFile{id: id} = file
+          assert Repo.get!(YbiraFile, id)
+
+          tekoa = Repo.get!(Tekoa, scope.tekoa.id)
+          assert tekoa.storage_used_bytes == byte_size(contents)
+          assert {:ok, _tekoa} = Repo.update(Ecto.Changeset.change(tekoa, name: "temporary"))
+
+          assert {:ok, _job} =
+                   %{file_id: file.id, tekoa_public_id: scope.tekoa.public_id}
+                   |> Rendition.new()
+                   |> Oban.insert()
+
+          {:error, :completion_failed}
+        end
+
+        assert {:error, :completion_failed} =
+                 Ybira.upload_with_success(scope, upload_path, [], callback)
+
+        assert rendition_jobs() == []
+      end)
+
+      assert {:ok, %{items: []}} = Ybira.list_files(scope)
+      assert {:error, :not_found} = Disk.fetch(Taina.Blobs.new(), cid)
+
+      assert {:ok, result} =
+               Repo.with_tekoa(scope.tekoa.public_id, fn ->
+                 {:ok,
+                  %{
+                    files: Repo.aggregate(YbiraFile, :count),
+                    records: Repo.aggregate(Ypy.Ybira.Record, :count),
+                    used_bytes: Repo.get!(Tekoa, scope.tekoa.id).storage_used_bytes,
+                    mural: Store.cadeia(Repo, scope.tekoa.id)
+                  }}
+               end)
+
+      assert result == %{files: 0, records: 0, used_bytes: 0, mural: []}
+      assert Repo.get!(Tekoa, scope.tekoa.id, skip_tekoa_id: true).name != "temporary"
+    end
+
+    test "async image callback owns the single rendition enqueue" do
+      tekoa = tekoa_fixture()
+      scope = Scope.new(active_ava_fixture(tekoa), tekoa)
+      upload_path = tmp_image_fixture(width: 24, height: 16, filename: "async.jpg")
+
+      Oban.Testing.with_testing_mode(:manual, fn ->
+        callback = fn file ->
+          assert %YbiraFile{} = Repo.get!(YbiraFile, file.id)
+
+          %{file_id: file.id, tekoa_public_id: scope.tekoa.public_id}
+          |> Rendition.new()
+          |> Oban.insert()
+          |> case do
+            {:ok, _job} -> :ok
+            {:error, reason} -> {:error, reason}
+          end
+        end
+
+        assert {:ok, file} = Ybira.upload_with_success(scope, upload_path, [], callback)
+        assert file.mime == "image/jpeg"
+
+        assert [%Oban.Job{args: %{"file_id" => file_id}}] =
+                 rendition_jobs()
+
+        assert file_id == file.id
+      end)
+    end
+  end
+
+  test "callback exception rolls back the upload and removes its unreferenced blob" do
+    tekoa = tekoa_fixture()
+    scope = Scope.new(active_ava_fixture(tekoa), tekoa)
+    contents = "callback exception"
+    upload_path = tmp_upload_fixture(contents, "exception.txt")
+    cid = Cid.from_data(contents, Cid.raw())
+
+    assert_raise RuntimeError, "completion failed", fn ->
+      Ybira.upload_with_success(scope, upload_path, [], fn _file ->
+        raise "completion failed"
+      end)
+    end
+
+    assert {:error, :not_found} = Disk.fetch(Taina.Blobs.new(), cid)
+
+    assert {:ok, state} =
+             Repo.with_tekoa(scope.tekoa.public_id, fn ->
+               {:ok,
+                %{
+                  files: Repo.aggregate(YbiraFile, :count),
+                  records: Repo.aggregate(Ypy.Ybira.Record, :count),
+                  used_bytes: Repo.get!(Tekoa, scope.tekoa.id).storage_used_bytes,
+                  mural: Store.cadeia(Repo, scope.tekoa.id)
+                }}
+             end)
+
+    assert state == %{files: 0, records: 0, used_bytes: 0, mural: []}
+  end
+
+  test "blob changed after hashing removes the written CID, not the hashed CID" do
+    scope = scope_fixture()
+    original = "contents hashed before waiting for BlobLock"
+    replacement = "different contents written under the lock"
+    upload_path = tmp_upload_fixture(original, "changing.txt")
+    original_cid = Cid.from_data(original, Cid.raw())
+    replacement_cid = Cid.from_data(replacement, Cid.raw())
+    blob_store = Taina.Blobs.new()
+    assert {:ok, ^original_cid} = Disk.put(blob_store, original)
+
+    parent = self()
+
+    {pid, monitor} =
+      spawn_monitor(fn ->
+        receive do
+          :upload -> send(parent, {:upload_result, Ybira.upload(scope, upload_path)})
+        end
+      end)
+
+    :ok = Sandbox.allow(Repo, self(), pid)
+    :erlang.trace(pid, true, [:send])
+
+    BlobLock.run(Cid.to_string(original_cid), fn ->
+      send(pid, :upload)
+
+      assert_receive {:trace, ^pid, :send, {:"$gen_call", _from, {:lock, cid}}, _to}
+      assert cid == Cid.to_string(original_cid)
+
+      :ok = :file.write_file(upload_path, replacement)
+    end)
+
+    assert_receive {:upload_result, {:error, :blob_changed}}
+    assert_receive {:DOWN, ^monitor, :process, ^pid, :normal}
+    assert {:ok, ^original} = Disk.fetch(blob_store, original_cid)
+    assert {:error, :not_found} = Disk.fetch(blob_store, replacement_cid)
+    assert {:ok, %{items: []}} = Ybira.list_files(scope)
+  end
+
+  defp rendition_jobs do
+    Repo.all(
+      from(job in Oban.Job,
+        where: job.worker == ^inspect(Rendition) and job.queue == "renditions"
+      )
+    )
   end
 
   describe "get_file/2" do
