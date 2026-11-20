@@ -44,6 +44,7 @@ defmodule Taina.Ybira do
   alias Taina.Ybira.BlobLock
   alias Taina.Ybira.HashTombstone
   alias Taina.Ybira.MimeDetector
+  alias Taina.Ybira.Upload
   alias Taina.Ybira.Workers.Rendition
   alias Ypy.BlobStore.Disk
   alias Ypy.Maraca.Ava
@@ -1137,6 +1138,7 @@ defmodule Taina.Ybira do
       )
 
     with :ok <- insert_hash_tombstones(files, skip_tekoa_id: true),
+         :ok <- unlink_purged_upload_files(files, skip_tekoa_id: true),
          :ok <- delete_purged_files(files, cutoff, skip_tekoa_id: true),
          :ok <- delete_thumbnails(files, tekoa_public_ids(files, skip_tekoa_id: true)) do
       # Pastas na lixeira só guardam metadados (sem bytes nem cota), apaga em
@@ -1173,10 +1175,22 @@ defmodule Taina.Ybira do
     bytes = Enum.reduce(files, 0, &(&1.tamanho + &2))
 
     with :ok <- insert_hash_tombstones(files),
+         :ok <- unlink_purged_upload_files(files),
          {:ok, count} <- delete_owned_purge_files(tekoa_id, ids, length(files)),
          :ok <- purge_file_side_effects(tekoa_id, files, bytes) do
       {:ok, count}
     end
+  end
+
+  # Expurgo apaga o arquivo, mas mantém o histórico da fila de upload. Desfaz
+  # a ligação antes do delete para não bloquear a lixeira pela foreign key.
+  defp unlink_purged_upload_files(files, repo_opts \\ []) do
+    ids = Enum.map(files, & &1.id)
+
+    {_count, _rows} =
+      Repo.update_all(from(upload in Upload, where: upload.file_id in ^ids), [set: [file_id: nil]], repo_opts)
+
+    :ok
   end
 
   defp delete_owned_purge_files(tekoa_id, ids, expected_count) do

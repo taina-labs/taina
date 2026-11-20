@@ -136,7 +136,9 @@ defmodule Taina.Ybira.Workers.Ingest do
   defp error_code(:blob_too_large), do: :blob_too_large
   defp error_code(:mime_not_allowed), do: :invalid_mime
   defp error_code(:storage_quota_exceeded), do: :storage_quota_exceeded
+  defp error_code(:inactive_owner), do: :owner_inactive
   defp error_code(:owner_inactive), do: :owner_inactive
+  defp error_code(:not_owner), do: :folder_unavailable
   defp error_code(:not_found), do: :folder_unavailable
   defp error_code(:invalid_relative_path), do: :folder_unavailable
   defp error_code(_reason), do: nil

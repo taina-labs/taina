@@ -7,10 +7,14 @@ defmodule Taina.Ybira.Workers.IngestTest do
 
   alias Taina.Repo
   alias Taina.Scope
+  alias Taina.Ybira
+  alias Taina.Ybira.BlobLock
   alias Taina.Ybira.Upload
   alias Taina.Ybira.Uploads
   alias Taina.Ybira.Workers.Ingest
   alias Taina.Ybira.Workers.Rendition
+  alias Ypy.Cid
+  alias Ypy.Maraca.Ava
   alias Ypy.Maraca.Tekoa
   alias Ypy.Mural.Store, as: MuralStore
   alias Ypy.Ybira.File, as: YbiraFile
@@ -73,7 +77,7 @@ defmodule Taina.Ybira.Workers.IngestTest do
   end
 
   test "preserves the selected folder hierarchy", ctx do
-    {:ok, destination} = Taina.Ybira.create_folder(ctx.scope, %{name: "Destino"})
+    {:ok, destination} = Ybira.create_folder(ctx.scope, %{name: "Destino"})
 
     upload =
       stage(ctx, text_file(ctx, "junho.txt", "ata de junho"), "junho.txt", %{
@@ -83,10 +87,25 @@ defmodule Taina.Ybira.Workers.IngestTest do
 
     assert :ok = Ingest.perform(job(upload, 1))
     assert {:ok, %Upload{state: :completed}} = Uploads.fetch_for_job(upload.public_id)
-    assert {:ok, %{folders: [atas], files: []}} = Taina.Ybira.list_folder_contents(ctx.scope, destination.rkey)
-    assert {:ok, %{folders: [ano], files: []}} = Taina.Ybira.list_folder_contents(ctx.scope, atas.rkey)
-    assert {:ok, %{folders: [], files: [file]}} = Taina.Ybira.list_folder_contents(ctx.scope, ano.rkey)
+    assert {:ok, %{folders: [atas], files: []}} = Ybira.list_folder_contents(ctx.scope, destination.rkey)
+    assert {:ok, %{folders: [ano], files: []}} = Ybira.list_folder_contents(ctx.scope, atas.rkey)
+    assert {:ok, %{folders: [], files: [file]}} = Ybira.list_folder_contents(ctx.scope, ano.rkey)
     assert file.nome == "junho.txt"
+  end
+
+  test "purging a completed file preserves upload history without a foreign-key failure", ctx do
+    upload = stage(ctx, text_file(ctx, "purge.txt", "purge me"), "purge.txt")
+    assert :ok = Ingest.perform(job(upload, 1))
+
+    assert {:ok, %Upload{state: :completed, file_id: file_id} = completed} =
+             Uploads.fetch_for_job(upload.public_id)
+
+    file = Repo.get!(YbiraFile, file_id, skip_tekoa_id: true)
+    assert {:ok, _trashed} = Taina.Ybira.delete_file(ctx.scope, file.rkey)
+    assert {:ok, _purged} = Taina.Ybira.purge_trash_file(ctx.scope, file.rkey)
+
+    assert {:ok, %Upload{state: :completed, file_id: nil}} =
+             Uploads.fetch_for_job(completed.public_id)
   end
 
   test "missing staging is terminal and leaves a safe failure code", ctx do
@@ -123,6 +142,59 @@ defmodule Taina.Ybira.Workers.IngestTest do
       assert file_count(ctx.tekoa) == 0
       refute File.exists?(staged_path(upload))
     end)
+  end
+
+  test "final commit rejects an owner deactivated after the initial check", ctx do
+    contents = "deactivated between validation and commit"
+    upload = stage(ctx, text_file(ctx, "deactivated.txt", contents), "deactivated.txt")
+
+    result =
+      perform_at_final_commit(upload, contents, fn ->
+        assert {:ok, _owner} =
+                 Repo.with_tekoa(ctx.tekoa.public_id, fn ->
+                   ava = Repo.get!(Ava, ctx.owner.id)
+
+                   ava
+                   |> Ava.deactivation_changeset(DateTime.truncate(DateTime.utc_now(), :second))
+                   |> Repo.update()
+                 end)
+      end)
+
+    assert result == {:cancel, :owner_inactive}
+
+    assert {:ok, %Upload{state: :failed, error_code: :owner_inactive}} =
+             Uploads.fetch_for_job(upload.public_id)
+
+    assert file_count(ctx.tekoa) == 0
+    assert Repo.get!(Tekoa, ctx.tekoa.id, skip_tekoa_id: true).storage_used_bytes == 0
+  end
+
+  test "final commit rejects a foreign destination folder", ctx do
+    foreign_owner = active_ava_fixture(ctx.tekoa)
+
+    {:ok, folder} =
+      foreign_owner
+      |> Scope.new(ctx.tekoa)
+      |> Ybira.create_folder(%{name: "foreign"})
+
+    contents = "file for a foreign folder"
+
+    upload =
+      stage(ctx, text_file(ctx, "foreign-folder.txt", contents), "foreign-folder.txt", %{
+        folder_rkey: folder.rkey
+      })
+
+    mural_before = mural_count(ctx.tekoa)
+    result = perform_at_final_commit(upload, contents, fn -> :ok end)
+
+    assert result == {:cancel, :folder_unavailable}
+
+    assert {:ok, %Upload{state: :failed, error_code: :folder_unavailable}} =
+             Uploads.fetch_for_job(upload.public_id)
+
+    assert file_count(ctx.tekoa) == 0
+    assert mural_count(ctx.tekoa) == mural_before
+    assert Repo.get!(Tekoa, ctx.tekoa.id, skip_tekoa_id: true).storage_used_bytes == 0
   end
 
   test "transient rendition enqueue failures requeue, retain staging, then fail on the last attempt", ctx do
@@ -217,6 +289,31 @@ defmodule Taina.Ybira.Workers.IngestTest do
       attempt: attempt,
       max_attempts: 3
     }
+  end
+
+  defp perform_at_final_commit(upload, contents, while_locked) do
+    cid = contents |> Cid.from_data(Cid.raw()) |> Cid.to_string()
+    parent = self()
+    job = job(upload, 1)
+
+    {worker, monitor} =
+      spawn_monitor(fn ->
+        receive do
+          :perform -> send(parent, {:ingest_result, Ingest.perform(job)})
+        end
+      end)
+
+    :erlang.trace(worker, true, [:send])
+
+    BlobLock.run(cid, fn ->
+      send(worker, :perform)
+      assert_receive {:trace, ^worker, :send, {:"$gen_call", _from, {:lock, ^cid}}, _server}
+      while_locked.()
+    end)
+
+    assert_receive {:ingest_result, result}
+    assert_receive {:DOWN, ^monitor, :process, ^worker, :normal}
+    result
   end
 
   defp upload_job(upload), do: Repo.get!(Oban.Job, upload.oban_job_id)
