@@ -165,12 +165,7 @@ void main() {
   });
 
   group('pure transitions', () {
-    test('countLine says pessoa and pessoas', () {
-      expect(MembersModel.countLine(1), '1 pessoa');
-      expect(MembersModel.countLine(3), '3 pessoas');
-    });
-
-    test('metaFor prioritizes deactivated over the person acting', () {
+    test('metaFor shows role and the member state or join year', () {
       final Ava off = Ava(
         publicId: ana.publicId,
         username: ana.username,
@@ -180,9 +175,10 @@ void main() {
         deactivatedAt: '2026-10-14T10:00:00Z',
         createdAt: ana.createdAt,
       );
-      expect(MembersModel.metaFor(off, ana.publicId), 'Conta desativada');
-      expect(MembersModel.metaFor(ana, ana.publicId), 'Você');
-      expect(MembersModel.metaFor(joana, ana.publicId), isNull);
+      expect(MembersModel.metaFor(off), 'Zelador, conta desativada');
+      expect(MembersModel.metaFor(ana), 'Zelador, entrou em 2026');
+      expect(MembersModel.metaFor(joana), 'Morador, entrou em 2026');
+      expect(MembersModel.metaFor(pendingInvite), 'Morador, convite pendente');
     });
 
     test('isPendingInvite means no username and no activation', () {
@@ -190,12 +186,25 @@ void main() {
       expect(MembersModel.isPendingInvite(joana), isFalse);
     });
 
-    test('tintIndex is stable and within the four palette slots', () {
-      expect(MembersModel.tintIndex('Ana Souza'), inInclusiveRange(0, 3));
-      expect(
-        MembersModel.tintIndex('Ana Souza'),
-        MembersModel.tintIndex('Ana Souza'),
+    test('filterByName ignores case and accents', () {
+      expect(MembersModel.filterByName([joana], 'JOÃO'), isEmpty);
+      expect(MembersModel.filterByName([joana, ana], '  SOUZA  '), [ana]);
+      final Ava joao = Ava(
+        publicId: 'avajoao',
+        username: 'joao',
+        displayName: 'João Mendes',
+        papel: Papel.morador,
+        activatedAt: '2026-02-02T09:00:00Z',
+        deactivatedAt: null,
+        createdAt: '2026-02-02T09:00:00Z',
       );
+      expect(MembersModel.filterByName([joao], 'joao'), [joao]);
+      expect(MembersModel.filterByName([joao], 'JOÃO'), [joao]);
+    });
+
+    test('roleLabel uses the settled pt-BR labels', () {
+      expect(MembersModel.roleLabel(Papel.morador), 'Morador');
+      expect(MembersModel.roleLabel(Papel.zelador), 'Zelador');
     });
 
     test('inserting keeps zeladoras first, then the label', () {

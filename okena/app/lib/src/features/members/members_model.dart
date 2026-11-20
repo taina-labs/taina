@@ -2,11 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:okena_app/src/session/session_gateway.dart';
 import 'package:okena_core/okena_core.dart';
 
-/// The members list's state: one load, the transitions pure.
-///
-/// The zeladora's acts live here too: mint an invite and hand over its link,
-/// change a role, switch an account off and on, take a pending invite back,
-/// and mint a password link for one person.
+/// The members list's state and API transitions.
 final class MembersModel extends ChangeNotifier {
   MembersModel({required this.gateway});
 
@@ -26,8 +22,7 @@ final class MembersModel extends ChangeNotifier {
   /// The `public_id` of the person the box is acting on right now.
   String? get working => _working;
 
-  /// The person acting, when the identity is loaded: their own row reads
-  /// "Você", like the web's list.
+  /// The `public_id` of the person acting, when the identity is loaded.
   String? get mePublicId => _me?.publicId;
 
   /// The acts belong to whoever cares for the box; the server enforces it
@@ -146,27 +141,114 @@ final class MembersModel extends ChangeNotifier {
 
   // Pure transitions.
 
-  /// The count line above the list: "1 pessoa", "3 pessoas".
-  static String countLine(int count) =>
-      count == 1 ? '1 pessoa' : '$count pessoas';
+  /// The role and the row's current state, in the wording used by the board.
+  static String metaFor(Ava member) {
+    final String role = roleLabel(member.papel);
+    if (member.deactivatedAt != null) return '$role, conta desativada';
+    if (isPendingInvite(member)) return '$role, convite pendente';
 
-  /// The state line of a row, when there is one: a deactivated account wins,
-  /// then the person acting. The role is a line of its own.
-  static String? metaFor(Ava member, String? mePublicId) {
-    if (member.deactivatedAt != null) return 'Conta desativada';
-    if (member.publicId == mePublicId) return 'Você';
-    return null;
+    final String? activatedAt = member.activatedAt;
+    final int? joinedYear = activatedAt == null
+        ? null
+        : DateTime.tryParse(activatedAt)?.year;
+    return joinedYear == null ? role : '$role, entrou em $joinedYear';
   }
+
+  static String roleLabel(Papel papel) =>
+      papel == Papel.zelador ? 'Zelador' : 'Morador';
+
+  /// Locally filters by the display name, ignoring case and common accents.
+  static List<Ava> filterByName(Iterable<Ava> members, String query) {
+    final String needle = _searchKey(query.trim());
+    if (needle.isEmpty) return List<Ava>.unmodifiable(members);
+
+    return List<Ava>.unmodifiable(
+      members.where((Ava member) => _searchKey(member.label).contains(needle)),
+    );
+  }
+
+  static String _searchKey(String value) {
+    final StringBuffer normalized = StringBuffer();
+    for (final int rune in value.toLowerCase().runes) {
+      if (rune >= 0x0300 && rune <= 0x036F) continue;
+      normalized.write(_searchReplacements[rune] ?? String.fromCharCode(rune));
+    }
+    return normalized.toString();
+  }
+
+  static const Map<int, String> _searchReplacements = {
+    0x00E0: 'a',
+    0x00E1: 'a',
+    0x00E2: 'a',
+    0x00E3: 'a',
+    0x00E4: 'a',
+    0x00E5: 'a',
+    0x00E7: 'c',
+    0x00E8: 'e',
+    0x00E9: 'e',
+    0x00EA: 'e',
+    0x00EB: 'e',
+    0x00EC: 'i',
+    0x00ED: 'i',
+    0x00EE: 'i',
+    0x00EF: 'i',
+    0x00F1: 'n',
+    0x00F2: 'o',
+    0x00F3: 'o',
+    0x00F4: 'o',
+    0x00F5: 'o',
+    0x00F6: 'o',
+    0x00F9: 'u',
+    0x00FA: 'u',
+    0x00FB: 'u',
+    0x00FC: 'u',
+    0x00FD: 'y',
+    0x00FF: 'y',
+    0x0101: 'a',
+    0x0103: 'a',
+    0x0105: 'a',
+    0x0107: 'c',
+    0x010D: 'c',
+    0x010F: 'd',
+    0x0113: 'e',
+    0x0117: 'e',
+    0x0119: 'e',
+    0x011B: 'e',
+    0x011F: 'g',
+    0x0121: 'g',
+    0x012B: 'i',
+    0x012F: 'i',
+    0x013A: 'l',
+    0x013C: 'l',
+    0x013E: 'l',
+    0x0142: 'l',
+    0x0144: 'n',
+    0x0148: 'n',
+    0x014D: 'o',
+    0x0151: 'o',
+    0x0155: 'r',
+    0x0159: 'r',
+    0x015B: 's',
+    0x015F: 's',
+    0x0161: 's',
+    0x0163: 't',
+    0x0165: 't',
+    0x016B: 'u',
+    0x016F: 'u',
+    0x0171: 'u',
+    0x017A: 'z',
+    0x017C: 'z',
+    0x017E: 'z',
+    0x00DF: 'ss',
+    0x00E6: 'ae',
+    0x0153: 'oe',
+    0x00F8: 'o',
+  };
 
   /// A pending invite: the account exists only as the invitation, with no
   /// username and no activation yet.
   static bool isPendingInvite(Ava member) =>
       member.username == null && member.activatedAt == null;
-
-  /// The avatar tint: a stable sum of the name's scalars, 0 to 3, so the same
-  /// person lands on the same color.
-  static int tintIndex(String name) =>
-      name.runes.fold(0, (int sum, int rune) => sum + rune) % 4;
 
   /// The pending person joins the roster, zeladoras first, like the box orders
   /// the list. Pure.

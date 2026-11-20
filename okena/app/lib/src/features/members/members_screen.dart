@@ -1,34 +1,39 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:okena_app/src/design_system/design_system.dart';
+import 'package:okena_app/src/features/members/invite_screen.dart';
+import 'package:okena_app/src/features/members/members_clipboard.dart';
 import 'package:okena_app/src/features/members/members_model.dart';
 import 'package:okena_app/src/session/session_gateway.dart';
 import 'package:okena_core/okena_core.dart';
-import 'package:provider/provider.dart';
 
-/// The community's people, as the box lists them: zeladoras first.
-///
-/// Every morador reads; the acts of the zeladora live on this screen too, one
-/// menu per row, so she does her work from the phone. The server enforces the
-/// role again.
+/// The community's people, with zelador actions when the current person cares
+/// for the box.
 final class MembersScreen extends StatefulWidget {
-  const MembersScreen({required this.session, super.key});
+  const MembersScreen({
+    required this.session,
+    this.onInvite,
+    this.clipboard,
+    super.key,
+  });
 
   final SessionGateway session;
+  final Future<void> Function()? onInvite;
+  final MembersClipboard? clipboard;
 
   @override
   State<MembersScreen> createState() => _MembersScreenState();
 }
 
 final class _MembersScreenState extends State<MembersScreen> {
-  late final MembersModel _model;
+  late final MembersModel _model = MembersModel(gateway: widget.session);
+  late final MembersClipboard _clipboard =
+      widget.clipboard ?? const PlatformMembersClipboard();
 
   @override
   void initState() {
     super.initState();
-    _model = MembersModel(gateway: widget.session);
     unawaited(_model.load());
   }
 
@@ -40,240 +45,267 @@ final class _MembersScreenState extends State<MembersScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider<MembersModel>.value(
-      value: _model,
-      child: const _MembersView(),
+    return ListenableBuilder(
+      listenable: _model,
+      builder: (BuildContext context, Widget? child) {
+        return _MembersView(
+          model: _model,
+          clipboard: _clipboard,
+          onInvite: widget.onInvite,
+        );
+      },
     );
   }
 }
 
-final class _MembersView extends StatelessWidget {
-  const _MembersView();
+final class _MembersView extends StatefulWidget {
+  const _MembersView({
+    required this.model,
+    required this.clipboard,
+    required this.onInvite,
+  });
+
+  final MembersModel model;
+  final MembersClipboard clipboard;
+  final Future<void> Function()? onInvite;
+
+  @override
+  State<_MembersView> createState() => _MembersViewState();
+}
+
+final class _MembersViewState extends State<_MembersView> {
+  final TextEditingController _searchController = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final MembersModel model = context.watch<MembersModel>();
+    final MembersModel model = widget.model;
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Moradores'),
-        actions: [
-          if (model.isZelador)
-            IconButton(
-              onPressed: () => _openInvite(context, model),
-              icon: const Icon(Icons.person_add_alt_1),
-              tooltip: 'Convidar pessoa',
+      body: SafeArea(
+        child: Column(
+          children: [
+            PageHeader(
+              title: 'Moradores',
+              backLabel: 'Início',
+              onBack: () => Navigator.of(context).maybePop(),
+              action: model.isZelador
+                  ? TainaButton(
+                      title: 'Convidar',
+                      size: TainaButtonSize.sm,
+                      kind: TainaButtonKind.ghost,
+                      action: () => unawaited(_openInvite()),
+                    )
+                  : null,
             ),
-        ],
-      ),
-      body: SafeArea(child: _body(context, model)),
-    );
-  }
-
-  Widget _body(BuildContext context, MembersModel model) {
-    if (model.members.isEmpty) {
-      if (model.loading) return const TainaLoadingList();
-      if (model.error case final TainaError error) {
-        return _refreshable(
-          model,
-          TainaErrorState(error: error, onRetry: model.load),
-        );
-      }
-      return _refreshable(
-        model,
-        const TainaEmptyState(
-          icon: Icons.people_outline,
-          title: 'Ninguém por aqui',
-          message: 'A comunidade ainda não tem moradores.',
+            Expanded(child: _body()),
+          ],
         ),
-      );
-    }
-    return RefreshIndicator(
-      onRefresh: model.load,
-      child: ListView(
-        padding: const EdgeInsets.all(TainaSpacing.space4),
-        children: [
-          TainaText(
-            MembersModel.countLine(model.members.length),
-            style: TainaTypography.overline,
-            uppercase: true,
-            color: TainaPalette.textMuted,
-          ),
-          const SizedBox(height: TainaSpacing.space1),
-          TainaText(
-            _hint(model.isZelador),
-            style: TainaTypography.caption,
-            color: TainaPalette.textMuted,
-          ),
-          const SizedBox(height: TainaSpacing.space2),
-          for (final Ava member in model.members)
-            Padding(
-              padding: const EdgeInsets.only(bottom: TainaSpacing.space2),
-              child: _MemberRow(
-                member: member,
-                mePublicId: model.mePublicId,
-                isZelador: model.isZelador,
-                working: model.working == member.publicId,
-                onChangeRole: (Papel papel) =>
-                    _changeRole(context, model, member, papel),
-                onResetLink: () => _resetLink(context, model, member),
-                onDeactivate: () => _deactivate(context, model, member),
-                onReactivate: () => _reactivate(context, model, member),
-                onRevokeInvite: () => _revokeInvite(context, model, member),
-              ),
-            ),
-        ],
       ),
     );
   }
 
-  Widget _refreshable(MembersModel model, Widget child) {
+  Widget _body() {
+    final MembersModel model = widget.model;
+    final TainaError? error = model.error;
+    if (model.members.isEmpty && model.loading) {
+      return const TainaLoadingList(itemCount: 5);
+    }
+    if (model.members.isEmpty && error != null) {
+      return TainaErrorState(error: error, onRetry: model.load);
+    }
+
+    final List<Ava> filtered = MembersModel.filterByName(model.members, _query);
     return RefreshIndicator(
       onRefresh: model.load,
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(TainaSpacing.space4),
-        children: [child],
+        padding: const EdgeInsets.fromLTRB(
+          TainaSpacing.space4,
+          TainaSpacing.space2,
+          TainaSpacing.space4,
+          TainaSpacing.space6,
+        ),
+        children: [
+          TainaField(
+            label: 'Buscar pessoa',
+            kind: TainaFieldKind.search,
+            help: 'Busque pelo nome.',
+            controller: _searchController,
+            onChanged: (String value) => setState(() => _query = value),
+          ),
+          if (model.error case final TainaError error) ...[
+            const SizedBox(height: TainaSpacing.space3),
+            TainaToast(kind: TainaToastKind.error, text: error.message),
+          ],
+          const SizedBox(height: TainaSpacing.space3),
+          if (model.members.isEmpty)
+            const TainaEmptyState(
+              icon: Icons.people_outline,
+              title: 'Ninguém por aqui',
+              message: 'A comunidade ainda não tem moradores.',
+            )
+          else if (filtered.isEmpty)
+            const TainaEmptyState(
+              icon: Icons.folder_outlined,
+              title: 'Ninguém com esse nome',
+              message: 'Confira a escrita ou procure por outro nome.',
+            )
+          else
+            for (final Ava member in filtered)
+              TainaListRow(
+                kind: TainaListRowKind.person,
+                title: member.label,
+                meta: MembersModel.metaFor(member),
+                leadingBuilder: (BuildContext context) => TainaAvatar(
+                  name: member.label,
+                  off: member.deactivatedAt != null,
+                ),
+                trailing: _hasActions(model, member)
+                    ? TainaListRowTrailing.kebab
+                    : TainaListRowTrailing.none,
+                trailingLabel: _hasActions(model, member)
+                    ? 'Ações para ${member.label}'
+                    : null,
+                onTrailingPressed: _hasActions(model, member)
+                    ? () => _showActions(context, model, member)
+                    : null,
+              ),
+          if (model.isZelador) ...[
+            const SizedBox(height: TainaSpacing.space5),
+            const TainaBadge(kind: TainaBadgeKind.zelador),
+            const SizedBox(height: TainaSpacing.space2),
+            Text(
+              'Quem cuida da nuvem só convida pessoas. Ninguém pode mexer '
+              'nos arquivos de outra pessoa.',
+              style: TainaTypography.caption.copyWith(
+                color: TainaPalette.textMuted,
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
 
-  /// Where the acts live, said out loud: the screen is theirs when the person
-  /// is the zeladora, and a window when she is not.
-  String _hint(bool isZelador) {
-    return isZelador
-        ? 'Você cuida da comunidade: convide pelo + no topo, mude papéis e '
-              'mande o link de senha pelo menu de cada pessoa.'
-        : 'Quem cuida da comunidade convida e muda papéis. Para pedir um '
-              'convite ou uma senha nova, fale com a zeladora.';
+  bool _hasActions(MembersModel model, Ava member) {
+    return model.isZelador && member.publicId != model.mePublicId;
   }
 
-  Future<void> _changeRole(
+  Future<void> _openInvite() async {
+    final MembersModel model = widget.model;
+    if (widget.onInvite != null) {
+      await widget.onInvite!();
+    } else {
+      await Navigator.of(context).push<MemberInvite>(
+        MaterialPageRoute<MemberInvite>(
+          builder: (BuildContext context) => MembersInviteScreen(
+            session: model.gateway,
+            clipboard: widget.clipboard,
+          ),
+        ),
+      );
+    }
+    if (mounted) await model.load();
+  }
+
+  void _showActions(BuildContext context, MembersModel model, Ava member) {
+    final bool pending = MembersModel.isPendingInvite(member);
+    ActionsMenu.show(
+      context: context,
+      title: member.label,
+      actions: [
+        if (pending)
+          TainaMenuAction(
+            label: 'Cancelar convite',
+            icon: TainaIcon.trash,
+            destructive: true,
+            onSelected: () => unawaited(_cancelInvite(context, model, member)),
+          )
+        else
+          TainaMenuAction(
+            label: 'Gerar link de redefinição de senha',
+            icon: TainaIcon.restore,
+            onSelected: () =>
+                unawaited(_generateResetLink(context, model, member)),
+          ),
+      ],
+    );
+  }
+
+  Future<void> _generateResetLink(
     BuildContext context,
     MembersModel model,
     Ava member,
-    Papel papel,
   ) async {
-    final result = await model.changeRole(member.publicId, papel);
-    if (context.mounted) _showOutcome(context, result);
-  }
-
-  Future<void> _resetLink(
-    BuildContext context,
-    MembersModel model,
-    Ava member,
-  ) async {
-    final result = await model.resetLink(member.publicId);
+    final TainaResult<ResetLink> result = await model.resetLink(
+      member.publicId,
+    );
     if (!context.mounted) return;
     switch (result) {
       case Ok(:final value):
-        await _showLink(
-          context,
-          _LinkData(
-            title: 'Link de senha',
-            link: value.resetUrl,
-            message:
-                'Envie este link para ${value.ava.label}. Ela escolhe uma '
-                'senha nova e entra de novo. O link vale uma vez só.',
+        await TainaSheet.show<void>(
+          context: context,
+          title: 'Link de redefinição de senha',
+          isScrollControlled: true,
+          child: _ResetLinkContent(
+            resetLink: value,
+            clipboard: widget.clipboard,
           ),
         );
       case Err(:final error):
-        _showFailure(context, error);
+        await _showFailure(context, error);
     }
   }
 
-  Future<void> _reactivate(
+  Future<void> _cancelInvite(
     BuildContext context,
     MembersModel model,
     Ava member,
   ) async {
-    final result = await model.reactivate(member.publicId);
-    if (context.mounted) _showOutcome(context, result);
-  }
-
-  Future<void> _deactivate(
-    BuildContext context,
-    MembersModel model,
-    Ava member,
-  ) async {
-    final bool confirmed = await _confirm(
-      context,
-      title: 'Desativar conta?',
-      primary: 'Desativar',
-      message:
-          '${member.label} deixa de entrar na comunidade. O acesso volta '
-          'quando a conta for reativada.',
-    );
+    final bool confirmed = await _confirmCancelInvite(context);
     if (!confirmed || !context.mounted) return;
-    final result = await model.deactivate(member.publicId);
-    if (context.mounted) _showOutcome(context, result);
+
+    final TainaResult<void> result = await model.revokeInvite(member.publicId);
+    if (!context.mounted) return;
+    if (result case Err(:final error)) {
+      await _showFailure(context, error);
+    }
   }
 
-  Future<void> _revokeInvite(
-    BuildContext context,
-    MembersModel model,
-    Ava member,
-  ) async {
-    final bool confirmed = await _confirm(
-      context,
-      title: 'Revogar este convite?',
-      primary: 'Revogar',
-      message:
-          'O link de convite para de valer. Seria preciso convidar de novo.',
-    );
-    if (!confirmed || !context.mounted) return;
-    final result = await model.revokeInvite(member.publicId);
-    if (context.mounted) _showOutcome(context, result);
-  }
-
-  Future<void> _openInvite(BuildContext context, MembersModel model) async {
-    final MemberInvite? created = await showModalBottomSheet<MemberInvite>(
+  Future<bool> _confirmCancelInvite(BuildContext context) async {
+    final bool? confirmed = await TainaSheet.show<bool>(
       context: context,
+      title: 'Cancelar convite?',
       isScrollControlled: true,
-      builder: (BuildContext sheetContext) => _InviteSheet(model: model),
-    );
-    if (created == null || !context.mounted) return;
-    await _showLink(
-      context,
-      _LinkData(
-        title: 'Convite criado',
-        link: created.inviteUrl,
-        message:
-            'Envie este link para a pessoa. Ela abre no Tainá e escolhe o '
-            'próprio nome de usuário. O link vale uma vez só.',
-      ),
-    );
-  }
-
-  Future<void> _showLink(BuildContext context, _LinkData data) {
-    return showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (BuildContext sheetContext) => _LinkSheet(data: data),
-    );
-  }
-
-  Future<bool> _confirm(
-    BuildContext context, {
-    required String title,
-    required String primary,
-    required String message,
-  }) async {
-    final bool? confirmed = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext dialogContext) => AlertDialog(
-        title: Text(title),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Cancelar'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: Text(
-              primary,
-              style: const TextStyle(color: TainaPalette.feedbackError),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'O link para de valer. A pessoa vai precisar de um novo convite.',
+            style: TainaTypography.bodySm.copyWith(
+              color: TainaPalette.textSecondary,
             ),
+          ),
+          const SizedBox(height: TainaSpacing.space4),
+          TainaButton(
+            title: 'Cancelar convite',
+            kind: TainaButtonKind.danger,
+            size: TainaButtonSize.md,
+            action: () => Navigator.of(context).pop(true),
+          ),
+          const SizedBox(height: TainaSpacing.space2),
+          TainaButton(
+            title: 'Voltar',
+            kind: TainaButtonKind.secondary,
+            size: TainaButtonSize.md,
+            action: () => Navigator.of(context).pop(false),
           ),
         ],
       ),
@@ -281,403 +313,108 @@ final class _MembersView extends StatelessWidget {
     return confirmed ?? false;
   }
 
-  /// The one alert slot: the failure's own pt-BR sentence. Success is said by
-  /// the list itself, which already shows the new state.
-  void _showOutcome<T>(BuildContext context, TainaResult<T> result) {
-    if (result case Err(:final error)) {
-      _showFailure(context, error);
-    }
-  }
-
-  void _showFailure(BuildContext context, TainaError error) {
-    showDialog<void>(
+  Future<void> _showFailure(BuildContext context, TainaError error) {
+    return TainaSheet.show<void>(
       context: context,
-      builder: (BuildContext dialogContext) => AlertDialog(
-        title: const Text('Não deu certo'),
-        content: Text(error.message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Entendi'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-enum _MemberMenu { role, resetLink, deactivate, reactivate, revokeInvite }
-
-/// One person: the mark, the name, the role, and the state when there is one
-/// (deactivated, or the person holding the phone). The zeladora's acts sit in
-/// the menu of the row.
-final class _MemberRow extends StatelessWidget {
-  const _MemberRow({
-    required this.member,
-    required this.mePublicId,
-    required this.isZelador,
-    required this.working,
-    required this.onChangeRole,
-    required this.onResetLink,
-    required this.onDeactivate,
-    required this.onReactivate,
-    required this.onRevokeInvite,
-  });
-
-  final Ava member;
-  final String? mePublicId;
-  final bool isZelador;
-  final bool working;
-  final ValueChanged<Papel> onChangeRole;
-  final VoidCallback onResetLink;
-  final VoidCallback onDeactivate;
-  final VoidCallback onReactivate;
-  final VoidCallback onRevokeInvite;
-
-  bool get _isMe => member.publicId == mePublicId;
-
-  @override
-  Widget build(BuildContext context) {
-    final String? meta = MembersModel.metaFor(member, mePublicId);
-    return TainaRowCard(
-      child: Row(
+      title: 'Não deu certo',
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _MemberAvatar(
-            name: member.label,
-            inactive: member.deactivatedAt != null,
-          ),
-          const SizedBox(width: TainaSpacing.space3),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TainaText(
-                  member.label,
-                  style: TainaTypography.label,
-                  color: TainaPalette.textPrimary,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                TainaText(
-                  _roleLabel(member.papel),
-                  style: TainaTypography.bodySm,
-                  color: TainaPalette.textSecondary,
-                ),
-                if (meta != null)
-                  TainaText(
-                    meta,
-                    style: TainaTypography.caption,
-                    color: TainaPalette.textMuted,
-                  ),
-              ],
-            ),
-          ),
-          if (isZelador && !_isMe) _menu(),
-        ],
-      ),
-    );
-  }
-
-  Widget _menu() {
-    if (working) {
-      return const SizedBox(
-        width: TainaSizes.controlSm,
-        height: TainaSizes.controlSm,
-        child: Center(
-          child: SizedBox(
-            width: TainaSizes.controlSm / 2,
-            height: TainaSizes.controlSm / 2,
-            child: CircularProgressIndicator(
-              strokeWidth: TainaSizes.thick,
-              color: TainaPalette.textMuted,
-              semanticsLabel: 'Carregando',
-            ),
-          ),
-        ),
-      );
-    }
-    final bool pending = MembersModel.isPendingInvite(member);
-    final bool deactivated = member.deactivatedAt != null;
-    return PopupMenuButton<_MemberMenu>(
-      tooltip: 'Ações para ${member.label}',
-      icon: const Icon(Icons.more_horiz, color: TainaPalette.textMuted),
-      onSelected: (_MemberMenu value) {
-        switch (value) {
-          case _MemberMenu.role:
-            onChangeRole(
-              member.papel == Papel.zelador ? Papel.morador : Papel.zelador,
-            );
-          case _MemberMenu.resetLink:
-            onResetLink();
-          case _MemberMenu.deactivate:
-            onDeactivate();
-          case _MemberMenu.reactivate:
-            onReactivate();
-          case _MemberMenu.revokeInvite:
-            onRevokeInvite();
-        }
-      },
-      itemBuilder: (BuildContext context) {
-        if (pending) {
-          return const [
-            PopupMenuItem<_MemberMenu>(
-              value: _MemberMenu.revokeInvite,
-              child: Text('Revogar convite'),
-            ),
-          ];
-        }
-        if (deactivated) {
-          return const [
-            PopupMenuItem<_MemberMenu>(
-              value: _MemberMenu.reactivate,
-              child: Text('Reativar conta'),
-            ),
-          ];
-        }
-        return [
-          PopupMenuItem<_MemberMenu>(
-            value: _MemberMenu.role,
-            child: Text(
-              member.papel == Papel.zelador
-                  ? 'Voltar a morador'
-                  : 'Tornar zelador(a)',
-            ),
-          ),
-          const PopupMenuItem<_MemberMenu>(
-            value: _MemberMenu.resetLink,
-            child: Text('Link de senha'),
-          ),
-          const PopupMenuItem<_MemberMenu>(
-            value: _MemberMenu.deactivate,
-            child: Text('Desativar conta'),
-          ),
-        ];
-      },
-    );
-  }
-}
-
-/// The person's mark: the first letter on a deterministic tint, dimmed when
-/// the account is not active.
-final class _MemberAvatar extends StatelessWidget {
-  const _MemberAvatar({required this.name, this.inactive = false});
-
-  final String name;
-  final bool inactive;
-
-  @override
-  Widget build(BuildContext context) {
-    final String initial = name.isEmpty
-        ? ' '
-        : name.substring(0, 1).toUpperCase();
-    return Container(
-      width: TainaSizes.controlSm,
-      height: TainaSizes.controlSm,
-      decoration: BoxDecoration(color: _tint(name), shape: BoxShape.circle),
-      alignment: Alignment.center,
-      child: TainaText(
-        initial,
-        style: TainaTypography.label,
-        color: inactive ? TainaPalette.textMuted : TainaPalette.textPrimary,
-      ),
-    );
-  }
-
-  Color _tint(String value) {
-    return switch (MembersModel.tintIndex(value)) {
-      0 => TainaPalette.avatarTint0,
-      1 => TainaPalette.avatarTint1,
-      2 => TainaPalette.avatarTint2,
-      _ => TainaPalette.avatarTint3,
-    };
-  }
-}
-
-/// The invite the zeladora mints: the role of the new person, then the link.
-/// The default is morador, like the web's form.
-final class _InviteSheet extends StatefulWidget {
-  const _InviteSheet({required this.model});
-
-  final MembersModel model;
-
-  @override
-  State<_InviteSheet> createState() => _InviteSheetState();
-}
-
-final class _InviteSheetState extends State<_InviteSheet> {
-  Papel _papel = Papel.morador;
-  bool _working = false;
-  String? _failure;
-
-  Future<void> _invite() async {
-    setState(() {
-      _working = true;
-      _failure = null;
-    });
-    final result = await widget.model.invite(_papel);
-    if (!mounted) return;
-    switch (result) {
-      case Ok(:final value):
-        Navigator.of(context).pop(value);
-      case Err(:final error):
-        setState(() {
-          _working = false;
-          _failure = error.message;
-        });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(TainaSpacing.space5),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TainaText(
-              'Convidar pessoa',
-              style: TainaTypography.h3,
-              color: TainaPalette.textPrimary,
-            ),
-            const SizedBox(height: TainaSpacing.space2),
-            TainaText(
-              'A pessoa entra pelo link do convite e escolhe o próprio nome de '
-              'usuário.',
-              style: TainaTypography.bodySm,
+          Text(
+            error.message,
+            style: TainaTypography.bodySm.copyWith(
               color: TainaPalette.textSecondary,
             ),
-            const SizedBox(height: TainaSpacing.space4),
-            SegmentedButton<Papel>(
-              segments: const [
-                ButtonSegment<Papel>(
-                  value: Papel.morador,
-                  label: Text('Morador'),
-                ),
-                ButtonSegment<Papel>(
-                  value: Papel.zelador,
-                  label: Text('Zelador'),
-                ),
-              ],
-              selected: {_papel},
-              onSelectionChanged: (Set<Papel> selection) {
-                setState(() => _papel = selection.first);
-              },
-            ),
-            if (_failure case final String failure) ...[
-              const SizedBox(height: TainaSpacing.space2),
-              TainaText(
-                failure,
-                style: TainaTypography.caption,
-                color: TainaPalette.feedbackError,
-              ),
-            ],
-            const SizedBox(height: TainaSpacing.space4),
-            TainaPrimaryButton(
-              label: 'Criar convite',
-              loading: _working,
-              onPressed: _working ? null : () => unawaited(_invite()),
-            ),
-            const SizedBox(height: TainaSpacing.space2),
-            TainaSecondaryButton(
-              label: 'Cancelar',
-              onPressed: () => Navigator.of(context).pop(),
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(height: TainaSpacing.space4),
+          TainaButton(
+            title: 'Entendi',
+            size: TainaButtonSize.md,
+            action: () => Navigator.of(context).pop(),
+          ),
+        ],
       ),
     );
   }
 }
 
-final class _LinkData {
-  const _LinkData({
-    required this.title,
-    required this.link,
-    required this.message,
-  });
+final class _ResetLinkContent extends StatefulWidget {
+  const _ResetLinkContent({required this.resetLink, required this.clipboard});
 
-  final String title;
-  final String link;
-  final String message;
-}
-
-/// The sheet a minted link lands in: the link in full, the copy at one touch,
-/// and the one-time rule said out loud.
-final class _LinkSheet extends StatefulWidget {
-  const _LinkSheet({required this.data});
-
-  final _LinkData data;
+  final ResetLink resetLink;
+  final MembersClipboard? clipboard;
 
   @override
-  State<_LinkSheet> createState() => _LinkSheetState();
+  State<_ResetLinkContent> createState() => _ResetLinkContentState();
 }
 
-final class _LinkSheetState extends State<_LinkSheet> {
+final class _ResetLinkContentState extends State<_ResetLinkContent> {
+  late final MembersClipboard _clipboard =
+      widget.clipboard ?? const PlatformMembersClipboard();
   bool _copied = false;
+  bool _copyFailed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final ResetLink link = widget.resetLink;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'Envie este link para ${link.ava.label}. A pessoa escolhe uma senha '
+          'nova e entra de novo. O link vale uma vez só.',
+          style: TainaTypography.bodySm.copyWith(
+            color: TainaPalette.textSecondary,
+          ),
+        ),
+        const SizedBox(height: TainaSpacing.space3),
+        TainaCard(
+          child: SelectableText(
+            link.webUrl?.trim().isNotEmpty == true
+                ? link.webUrl!.trim()
+                : link.resetUrl,
+            style: TainaTypography.monoSm.copyWith(
+              color: TainaPalette.textPrimary,
+            ),
+          ),
+        ),
+        if (_copyFailed) ...[
+          const SizedBox(height: TainaSpacing.space3),
+          const TainaToast(
+            kind: TainaToastKind.error,
+            text: 'Não foi possível copiar o link.',
+          ),
+        ],
+        const SizedBox(height: TainaSpacing.space3),
+        TainaButton(
+          title: _copied ? 'Link copiado' : 'Copiar link',
+          size: TainaButtonSize.md,
+          action: () => unawaited(_copy()),
+        ),
+      ],
+    );
+  }
 
   Future<void> _copy() async {
-    await Clipboard.setData(ClipboardData(text: widget.data.link));
-    if (mounted) setState(() => _copied = true);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(TainaSpacing.space5),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TainaText(
-              widget.data.title,
-              style: TainaTypography.h3,
-              color: TainaPalette.textPrimary,
-            ),
-            const SizedBox(height: TainaSpacing.space2),
-            TainaText(
-              widget.data.message,
-              style: TainaTypography.bodySm,
-              color: TainaPalette.textSecondary,
-            ),
-            const SizedBox(height: TainaSpacing.space4),
-            Container(
-              width: double.infinity,
-              constraints: const BoxConstraints(
-                minHeight: TainaSizes.controlSm,
-              ),
-              padding: const EdgeInsets.all(TainaSpacing.space3),
-              decoration: const BoxDecoration(
-                color: TainaPalette.fieldBg,
-                borderRadius: TainaRadii.mdAll,
-              ),
-              child: SelectableText(
-                widget.data.link,
-                maxLines: 3,
-                style: TainaTypography.monoSm.copyWith(
-                  color: TainaPalette.textPrimary,
-                ),
-              ),
-            ),
-            const SizedBox(height: TainaSpacing.space4),
-            TainaPrimaryButton(
-              label: _copied ? 'Copiado' : 'Copiar link',
-              onPressed: () => unawaited(_copy()),
-            ),
-            const SizedBox(height: TainaSpacing.space2),
-            TainaSecondaryButton(
-              label: 'Fechar',
-              onPressed: () => Navigator.of(context).pop(),
-            ),
-          ],
-        ),
-      ),
-    );
+    final ResetLink link = widget.resetLink;
+    final String text = link.webUrl?.trim().isNotEmpty == true
+        ? link.webUrl!.trim()
+        : link.resetUrl;
+    try {
+      await _clipboard.writeText(text);
+      if (!mounted) return;
+      setState(() {
+        _copied = true;
+        _copyFailed = false;
+      });
+    } on Object {
+      if (!mounted) return;
+      setState(() {
+        _copied = false;
+        _copyFailed = true;
+      });
+    }
   }
 }
-
-String _roleLabel(Papel papel) =>
-    papel == Papel.zelador ? TainaWords.zelador : TainaWords.morador;
