@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/taina-labs/taina/compare/v0.9.0...v0.10.0) (2026-11-20)
+
+
+### Features
+
+* support folder uploads ([56e15cb](https://github.com/taina-labs/taina/commit/56e15cb01a336122cee2f1e28177d2e00d7527ec))
+
 ## [0.9.0](https://github.com/taina-labs/taina/compare/v0.8.0...v0.9.0) (2026-11-20)
 
 
