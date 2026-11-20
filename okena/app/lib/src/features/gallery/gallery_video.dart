@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:okena_app/src/design_system/design_system.dart';
 import 'package:okena_core/okena_core.dart';
 import 'package:video_player/video_player.dart';

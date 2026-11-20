@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// A [Text] that owns the two decisions a type style carries besides font
 /// metrics: the color override and the uppercase text case of the overline.

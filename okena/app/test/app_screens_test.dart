@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:okena_app/src/design_system/design_system.dart';
@@ -127,6 +127,7 @@ void main() {
       scrollable: find.byType(Scrollable).first,
     );
     await tester.tap(find.text('Rolo de câmera'));
+    await tester.pump();
     await tester.pump();
 
     expect(find.byType(MirrorScreen), findsOneWidget);

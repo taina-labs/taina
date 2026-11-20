@@ -17,6 +17,7 @@ dependencies:
   flutter_svg: ^2.5.0
   go_router: ^18.1.3
   image_picker: ^1.2.4
+  material_ui: ^1.11.1
   mobile_scanner: ^7.5.0
   okena_core:
     path: ../packages/okena_core
@@ -34,6 +35,10 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+
+dependency_overrides:
+  # 2.2.0 references LostDataStore symbols absent from file_picker 13.x.
+  android_file_picker: 2.1.4
 
 flutter:
   uses-material-design: true

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:okena_app/src/design_system/design_system.dart';
 
 /// A short explanation of how files are shared in the community.

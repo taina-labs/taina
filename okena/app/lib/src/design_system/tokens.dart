@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// Raw palette, mirroring the primitives of `design/tokens.css`.
 ///

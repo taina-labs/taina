@@ -1,6 +1,6 @@
 import 'dart:ui' show CheckedState;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:okena_app/src/design_system/components/actions.dart';
 import 'package:okena_app/src/design_system/components/forms.dart';

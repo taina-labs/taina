@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:okena_core/okena_core.dart';
 import 'package:provider/provider.dart';
 
@@ -126,9 +126,7 @@ final class _FolderScreenState extends State<FolderScreen> {
           )
         else
           ChangeNotifierProvider<FolderActionsViewModel>(
-            key: ValueKey(
-              'folder-actions-${identityHashCode(widget.session)}',
-            ),
+            key: ValueKey('folder-actions-${identityHashCode(widget.session)}'),
             create: (_) => FolderActionsViewModel(session: widget.session),
           ),
       ],
