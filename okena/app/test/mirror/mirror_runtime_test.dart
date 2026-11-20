@@ -814,6 +814,58 @@ void main() {
     });
 
     test(
+      'failed refresh invalidates the snapshot used after native completion',
+      () async {
+        final assets = <MirrorAsset>[
+          _asset(id: 'asset-a'),
+          _asset(id: 'asset-b'),
+        ];
+        final library = _FakeLibrary(assets: assets);
+        final events = StreamController<MirrorTransferEvent>.broadcast(
+          sync: true,
+        );
+        final made = _makeOwner(
+          ownerId: 'tekoa-a:ava-a',
+          library: library,
+          events: events,
+        );
+        made.owner.activate();
+
+        expect((await made.owner.reconcile()).isSuccess, isTrue);
+        expect(library.currentAccessCalls, 1);
+        expect(library.pageCalls, 1);
+
+        library.pageFailure = const Err(
+          MirrorAssetReadError('library unavailable'),
+        );
+        expect(
+          (await made.owner.reconcile(refreshLibrary: true)).isFailure,
+          isTrue,
+        );
+        expect(library.currentAccessCalls, 2);
+        expect(library.pageCalls, 2);
+
+        assets.removeWhere((asset) => asset.assetId == 'asset-b');
+        library.pageFailure = null;
+        events.add(
+          MirrorTransferCompleted(
+            assetId: 'asset-a',
+            taskId: 'task-a',
+            modificationDate: _modified,
+            file: _file(),
+          ),
+        );
+        await _waitFor(
+          () => library.currentAccessCalls == 3 && library.pageCalls == 3,
+        );
+
+        expect(library.currentAccessCalls, 3);
+        expect(library.pageCalls, 3);
+        await made.owner.dispose();
+      },
+    );
+
+    test(
       'native completion rechecks access after a refreshed snapshot is revoked',
       () async {
         for (final revokedAccess in <TainaResult<MirrorLibraryAccess>>[
@@ -1598,6 +1650,64 @@ void main() {
         await runtime.dispose();
         await ownerA!.owner.dispose();
         await ownerB!.owner.dispose();
+      },
+    );
+
+    test(
+      'reselected owner waits for its in-flight retirement before recreation',
+      () async {
+        final changes = _IdentityChanges(_identity());
+        final foreground = _ManualForeground();
+        final deactivationEntered = Completer<void>();
+        final allowDeactivation = Completer<void>();
+        final owners = <_MadeOwner>[];
+        var ownerFactoryCalls = 0;
+        var reselected = false;
+        late final MirrorRuntime runtime;
+        runtime = MirrorRuntime(
+          changes: changes,
+          identity: () => changes.value,
+          foreground: foreground,
+          ownerFactory: ({required ownerId, required identity}) async {
+            ownerFactoryCalls++;
+            final made = _makeOwner(
+              ownerId: ownerId,
+              enabled: false,
+              onDispose: ownerFactoryCalls == 1
+                  ? () async {
+                      deactivationEntered.complete();
+                      await allowDeactivation.future;
+                    }
+                  : null,
+            );
+            owners.add(made);
+            return Ok(made.owner);
+          },
+        );
+        runtime.changes.addListener(() {
+          if (runtime.currentOwner == null && !reselected) {
+            reselected = true;
+            changes.set(_identity());
+          }
+        });
+
+        runtime.attach();
+        await _waitFor(() => runtime.currentOwner != null);
+        changes.set(_identity(tekoaId: 'tekoa-b'));
+        await deactivationEntered.future;
+        await Future<void>.delayed(Duration.zero);
+
+        expect(reselected, isTrue);
+        expect(ownerFactoryCalls, 1);
+        expect(runtime.currentOwner, isNull);
+
+        allowDeactivation.complete();
+        await _waitFor(
+          () => ownerFactoryCalls == 2 && runtime.currentOwner != null,
+        );
+        expect(runtime.currentOwner, same(owners.last.owner));
+
+        await runtime.dispose();
       },
     );
 

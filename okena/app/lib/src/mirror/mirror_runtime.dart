@@ -263,7 +263,6 @@ final class MirrorRuntime {
     final ownerId = _ownerId;
     _owner = null;
     _ownerId = null;
-    if (owner != null) _notifyChanges();
     if (owner == null || ownerId == null) return;
 
     final retirement = owner.deactivate();
@@ -286,6 +285,7 @@ final class MirrorRuntime {
       },
     );
     _retirements[ownerId] = trackedRetirement;
+    _notifyChanges();
   }
 
   static String? _ownerKey(Me identity) {
@@ -521,6 +521,7 @@ final class MirrorOwnerMirror {
 
     final refreshAssets = refreshLibrary || _cachedAssets == null;
     if (refreshAssets) {
+      _cachedAssets = null;
       final access = await library.currentAccess();
       if (!_active) return _inactiveResult();
       if (!_enabled) return const Ok<void>(null);
