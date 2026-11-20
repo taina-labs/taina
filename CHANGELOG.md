@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.9.0](https://github.com/taina-labs/taina/compare/v0.8.0...v0.9.0) (2026-11-20)
+
+
+### Features
+
+* add mirror deduplication contract ([98dd6ae](https://github.com/taina-labs/taina/commit/98dd6ae8112ffb70d94b6bf460fd667f4af64161))
+* desktop ui for setup ([efcf0b8](https://github.com/taina-labs/taina/commit/efcf0b8a5108981dc5bebba4c521a114ac34629b))
+
+
+### Bug Fixes
+
+* account for physical disk space in health ([14e5f1b](https://github.com/taina-labs/taina/commit/14e5f1b6142f4efb16b91ed108ec78464af1e27a))
+* correct backup and upload state handling ([a4d80ec](https://github.com/taina-labs/taina/commit/a4d80ec51975a5342072270045d9b2bd3ab3af71))
+
+
+### Continuous Integration
+
+* remove unecessary dialyzer skips ([c44fe7f](https://github.com/taina-labs/taina/commit/c44fe7f7a42f449c4394540a86771fd4d2616462))
+
 ## [0.8.0](https://github.com/taina-labs/taina/compare/v0.7.1...v0.8.0) (2026-11-11)
 
 
