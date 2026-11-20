@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:okena_app/src/design_system/design_system.dart';
 import 'package:okena_app/src/features/files/files_logic.dart';
 import 'package:okena_core/okena_core.dart';
 
@@ -15,7 +16,12 @@ Folder _folder(String rkey, {String? parent, Zona zona = Zona.casa}) {
   );
 }
 
-FileRecord _file(String rkey, {String? folder, Zona zona = Zona.casa}) {
+FileRecord _file(
+  String rkey, {
+  String? folder,
+  Zona zona = Zona.casa,
+  String? dono,
+}) {
   return FileRecord(
     rkey: rkey,
     cid: 'cid-$rkey',
@@ -33,6 +39,7 @@ FileRecord _file(String rkey, {String? folder, Zona zona = Zona.casa}) {
     deletedAt: null,
     createdAt: '2026-03-11T09:30:00Z',
     updatedAt: '2026-03-11T09:30:00Z',
+    dono: dono,
   );
 }
 
@@ -83,6 +90,41 @@ void main() {
 
       expect(entries.folders.map((folder) => folder.rkey), ['a']);
       expect(entries.files.map((file) => file.rkey), ['f1', 'f2']);
+    });
+
+    test('client-side zone filtering keeps mixed responses isolated', () {
+      final page = FolderContents(
+        folders: [
+          _folder('casa-folder'),
+          _folder('praca-folder', zona: Zona.praca),
+        ],
+        items: [
+          _file('casa-file'),
+          _file('praca-file', zona: Zona.praca),
+        ],
+        nextCursor: 'next',
+      );
+
+      final filtered = FilesLogic.forZona(page, Zona.casa);
+
+      expect(filtered.folders.map((folder) => folder.rkey), ['casa-folder']);
+      expect(filtered.items.map((file) => file.rkey), ['casa-file']);
+      expect(filtered.nextCursor, 'next');
+    });
+
+    test('an empty filtered page is walked only while a cursor remains', () {
+      expect(
+        FilesLogic.needsAnotherPage(filteredPageEmpty: true, cursor: 'next'),
+        isTrue,
+      );
+      expect(
+        FilesLogic.needsAnotherPage(filteredPageEmpty: true, cursor: null),
+        isFalse,
+      );
+      expect(
+        FilesLogic.needsAnotherPage(filteredPageEmpty: false, cursor: 'next'),
+        isFalse,
+      );
     });
 
     test('replacing keeps the file where it was and ignores a stranger', () {
@@ -184,6 +226,72 @@ void main() {
       expect(FilesLogic.countLabel(count: 4, hasMore: false), '4 arquivos');
     });
 
+    test('document counts use loaded wording while total is unknown', () {
+      expect(
+        FilesLogic.documentCountLabel(
+          tab: TainaDocumentTab.casa,
+          count: 3,
+          hasMore: true,
+        ),
+        '3 itens carregados',
+      );
+      expect(
+        FilesLogic.documentCountLabel(
+          tab: TainaDocumentTab.praca,
+          count: 3,
+          hasMore: false,
+        ),
+        '3 itens na praça',
+      );
+    });
+
+    test('unknown ownership does not expose owner operations', () {
+      expect(FilesLogic.actionsForFile(file: _file('f1'), me: null), [
+        FileMenuAction.open,
+        FileMenuAction.download,
+      ]);
+      expect(
+        FilesLogic.actionsForFile(
+          file: _file('f1'),
+          me: null,
+          createdInSession: true,
+        ),
+        [
+          FileMenuAction.open,
+          FileMenuAction.download,
+          FileMenuAction.publish,
+          FileMenuAction.move,
+          FileMenuAction.rename,
+          FileMenuAction.remove,
+        ],
+      );
+    });
+
+    test(
+      'row metadata uses the owner when available and avoids assumptions',
+      () {
+        final file = _file('f1');
+        expect(
+          FilesLogic.rowMeta(
+            file: file,
+            me: null,
+            names: const {},
+            tab: TainaDocumentTab.casa,
+          ),
+          'Texto, 10 B, na casa',
+        );
+        expect(
+          FilesLogic.rowMeta(
+            file: _file('owned-by-maria', dono: 'owner-1'),
+            me: null,
+            names: const {'owner-1': 'Maria'},
+            tab: TainaDocumentTab.casa,
+          ),
+          'Texto, 10 B, de Maria',
+        );
+      },
+    );
+
     test('zona copy always offers the opposite of where the item is', () {
       expect(FilesLogic.zonaActionLabel(Zona.casa), 'Publicar na praça');
       expect(FilesLogic.zonaActionLabel(Zona.praca), 'Tirar da praça');
@@ -221,14 +329,14 @@ void main() {
       },
     );
 
-    test('delete titles quote the name', () {
+    test('delete titles name the item directly', () {
       expect(
         FilesLogic.deleteFileTitle('Estatuto.pdf'),
-        'Excluir "Estatuto.pdf"?',
+        'Remover Estatuto.pdf?',
       );
       expect(
         FilesLogic.deleteFolderTitle('Assembleia'),
-        'Excluir a pasta "Assembleia"?',
+        'Remover a pasta Assembleia?',
       );
     });
   });

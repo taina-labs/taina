@@ -115,45 +115,34 @@ Future<bool> showConfirm(
   required String confirmLabel,
   bool destructive = false,
 }) async {
-  final answer = await showDialog<bool>(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: Text(title),
-      content: Text(message),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(false),
-          child: const Text('Cancelar'),
-        ),
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(true),
-          style: destructive
-              ? TextButton.styleFrom(
-                  foregroundColor: TainaPalette.feedbackError,
-                )
-              : null,
-          child: Text(confirmLabel),
-        ),
-      ],
-    ),
-  );
+  final answer = destructive
+      ? await TainaDialog.destructive(
+          context: context,
+          title: title,
+          message: message,
+          confirmLabel: confirmLabel,
+        )
+      : await TainaDialog.confirm(
+          context: context,
+          title: title,
+          message: message,
+          confirmLabel: confirmLabel,
+        );
   return answer ?? false;
 }
 
 /// The one failure alert the screens show: the server's own pt-BR sentence
 /// when it has one, a local sentence otherwise.
 Future<void> showFailure(BuildContext context, String message) {
-  return showDialog<void>(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: const Text('Não deu certo'),
-      content: Text(message),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Entendi'),
-        ),
-      ],
-    ),
-  );
+  ScaffoldMessenger.maybeOf(context)
+    ?..hideCurrentSnackBar()
+    ..showSnackBar(
+      SnackBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        behavior: SnackBarBehavior.floating,
+        content: TainaToast(kind: TainaToastKind.error, text: message),
+      ),
+    );
+  return Future<void>.value();
 }

@@ -62,6 +62,28 @@ const _pedido = Pedido(
   dono: _ana,
 );
 
+FileRecord _withOwner(FileRecord file, String dono) {
+  return FileRecord(
+    rkey: file.rkey,
+    cid: file.cid,
+    blobCid: file.blobCid,
+    sha256: file.sha256,
+    name: file.name,
+    mime: file.mime,
+    size: file.size,
+    zona: file.zona,
+    folder: file.folder,
+    takenAt: file.takenAt,
+    width: file.width,
+    height: file.height,
+    rendition: file.rendition,
+    deletedAt: file.deletedAt,
+    createdAt: file.createdAt,
+    updatedAt: file.updatedAt,
+    dono: dono,
+  );
+}
+
 final class _DeniedApi implements TainaApi {
   int requests = 0;
 
@@ -147,7 +169,8 @@ void main() {
     expect(find.text(file.name), findsOneWidget);
     expect(find.text('Baixar'), findsOneWidget);
     expect(find.text('Pré-visualizar'), findsOneWidget);
-    expect(find.text('ASSINATURA DO ARQUIVO'), findsOneWidget);
+    expect(find.text('Onde'), findsOneWidget);
+    expect(find.text('Enviado por alguém da comunidade'), findsOneWidget);
 
     await tester.tap(find.text('Baixar'));
     await tester.pumpAndSettle();
@@ -163,15 +186,19 @@ void main() {
     expect(actions.openedPaths, [payload]);
   });
 
-  testWidgets('rename updates the name through the owner menu', (tester) async {
+  testWidgets('a non-owner does not see the remove action', (tester) async {
     _tall(tester);
     final api = FakeTainaApi(delay: Duration.zero);
-    final file = (await api.file(rkey: '3m7d1wyzr4c8u')).value!;
+    const me = fakeMe;
+    final file = _withOwner(
+      (await api.file(rkey: '3m7d1wyzr4c8u')).value!,
+      'another-member',
+    );
 
     await tester.pumpWidget(
       _app(
         FileDetailScreen(
-          session: FakeSessionGateway(api: api),
+          session: FakeSessionGateway(api: api, identity: me),
           actions: FakeFileActions(),
           file: file,
         ),
@@ -179,28 +206,23 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byTooltip('Mais opções'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Renomear'));
-    await tester.pumpAndSettle();
-
-    await tester.enterText(find.byType(TextField), 'Quadra nova.jpg');
-    await tester.tap(find.widgetWithText(TextButton, 'Renomear'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Quadra nova.jpg'), findsOneWidget);
+    expect(find.text('Remover'), findsNothing);
   });
 
   testWidgets('delete confirms and reports the deletion', (tester) async {
     _tall(tester);
     final api = FakeTainaApi(delay: Duration.zero);
-    final file = (await api.file(rkey: '3m7d1wyzr4c8u')).value!;
+    const me = fakeMe;
+    final file = _withOwner(
+      (await api.file(rkey: '3m7d1wyzr4c8u')).value!,
+      me.ava.publicId,
+    );
     var deleted = false;
 
     await tester.pumpWidget(
       _app(
         FileDetailScreen(
-          session: FakeSessionGateway(api: api),
+          session: FakeSessionGateway(api: api, identity: me),
           actions: FakeFileActions(),
           file: file,
           onDeleted: () => deleted = true,
@@ -209,14 +231,12 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byTooltip('Mais opções'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Excluir'));
+    await tester.tap(find.text('Remover'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Excluir "${file.name}"?'), findsOneWidget);
+    expect(find.text('Remover ${file.name}?'), findsOneWidget);
 
-    await tester.tap(find.widgetWithText(TextButton, 'Excluir'));
+    await tester.tap(find.widgetWithText(TainaButton, 'Remover').last);
     await tester.pumpAndSettle();
 
     expect(deleted, isTrue);
@@ -252,16 +272,13 @@ void main() {
     expect(find.text('Esta casa é particular'), findsOneWidget);
     expect(find.text('Baixar'), findsNothing);
 
-    await tester.tap(find.widgetWithText(TainaSecondaryButton, 'Pedir acesso'));
+    await tester.tap(find.text('Pedir acesso'));
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(TextButton, 'Pedir acesso'));
+    await tester.tap(find.widgetWithText(TainaButton, 'Pedir acesso').last);
     await tester.pumpAndSettle();
 
-    expect(find.text('Pedido enviado'), findsOneWidget);
+    expect(find.textContaining('Pedido enviado'), findsOneWidget);
     expect(denied.requests, 1);
-
-    await tester.tap(find.widgetWithText(TextButton, 'Entendi'));
-    await tester.pumpAndSettle();
     expect(requested, isTrue);
   });
 }

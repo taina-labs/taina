@@ -1,7 +1,6 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:okena_app/src/features/files/file_actions.dart';
 import 'package:okena_app/src/features/files/files_logic.dart';
 import 'package:okena_app/src/features/files/files_view_model.dart';
 import 'package:okena_app/src/features/files/folder_actions_view_model.dart';
@@ -16,6 +15,7 @@ final class _PagedFolderApi implements TainaApi {
 
   final List<TainaResult<FolderContents>> pages;
   final List<String?> cursors = [];
+  final List<Zona?> zonas = [];
 
   @override
   Future<TainaResult<FolderContents>> folderContents({
@@ -23,8 +23,10 @@ final class _PagedFolderApi implements TainaApi {
     int? limit,
     String? cursor,
     Sort? sort,
+    Zona? zona,
   }) async {
     cursors.add(cursor);
+    zonas.add(zona);
     final index = cursor == null ? 0 : int.parse(cursor);
     return pages[index];
   }
@@ -33,12 +35,12 @@ final class _PagedFolderApi implements TainaApi {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-Folder _folder(String rkey, {String? parent}) {
+Folder _folder(String rkey, {String? parent, Zona zona = Zona.casa}) {
   return Folder(
     rkey: rkey,
     cid: 'cid-$rkey',
     name: 'Pasta $rkey',
-    zona: Zona.casa,
+    zona: zona,
     folder: parent,
     deletedAt: null,
     createdAt: '2026-03-10T14:00:00Z',
@@ -46,7 +48,7 @@ Folder _folder(String rkey, {String? parent}) {
   );
 }
 
-FileRecord _file(String rkey) {
+FileRecord _file(String rkey, {Zona zona = Zona.casa}) {
   return FileRecord(
     rkey: rkey,
     cid: 'cid-$rkey',
@@ -55,7 +57,7 @@ FileRecord _file(String rkey) {
     name: 'arquivo $rkey',
     mime: 'text/plain',
     size: 10,
-    zona: Zona.casa,
+    zona: zona,
     folder: null,
     takenAt: null,
     width: null,
@@ -116,6 +118,90 @@ void main() {
   });
 
   group('pagination', () {
+    test(
+      'filters pages defensively and walks past an empty zone page',
+      () async {
+        final api = _PagedFolderApi([
+          Ok(
+            FolderContents(
+              folders: [_folder('public-folder', zona: Zona.praca)],
+              items: [_file('public-file', zona: Zona.praca)],
+              nextCursor: '1',
+            ),
+          ),
+          Ok(
+            FolderContents(
+              folders: const [],
+              items: [_file('private-file')],
+              nextCursor: null,
+            ),
+          ),
+        ]);
+        final viewModel = FilesViewModel(
+          session: FakeSessionGateway(api: api),
+          actions: FakeFileActions(),
+          zona: Zona.casa,
+          pageSize: 1,
+        );
+
+        await viewModel.load();
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+
+        expect(api.cursors, [null, '1']);
+        expect(api.zonas, [Zona.casa, Zona.casa]);
+        expect(viewModel.entries.folders, isEmpty);
+        expect(viewModel.entries.files.map((file) => file.rkey), [
+          'private-file',
+        ]);
+        expect(viewModel.nextCursor, isNull);
+      },
+    );
+
+    test(
+      'an empty filtered page keeps its cursor for retry after failure',
+      () async {
+        final api = _PagedFolderApi([
+          Ok(
+            FolderContents(
+              folders: const [],
+              items: [_file('public-file', zona: Zona.praca)],
+              nextCursor: '1',
+            ),
+          ),
+          const Err(NetworkError()),
+        ]);
+        final viewModel = FilesViewModel(
+          session: FakeSessionGateway(api: api),
+          actions: FakeFileActions(),
+          zona: Zona.casa,
+          pageSize: 1,
+        );
+
+        await viewModel.load();
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+
+        expect(viewModel.entries.isEmpty, isTrue);
+        expect(viewModel.moreError, isTrue);
+        expect(viewModel.nextCursor, '1');
+
+        api.pages[1] = Ok(
+          FolderContents(
+            folders: const [],
+            items: [_file('private-file')],
+            nextCursor: null,
+          ),
+        );
+        await viewModel.loadMore();
+
+        expect(api.cursors, [null, '1', '1']);
+        expect(viewModel.entries.files.map((file) => file.rkey), [
+          'private-file',
+        ]);
+        expect(viewModel.moreError, isFalse);
+        expect(viewModel.nextCursor, isNull);
+      },
+    );
+
     test('walks the cursor and appends the files in order', () async {
       final api = _PagedFolderApi([
         Ok(
@@ -221,95 +307,60 @@ void main() {
   });
 
   group('upload and publish', () {
-    test('uploads the picked path and keeps the one-tap publish', () async {
+    test(
+      'records a successful UploadCenter result in casa for publishing',
+      () async {
+        final path = '${temp.path}/nota.txt';
+        File(path).writeAsStringSync('oi');
+        final api = FakeTainaApi(delay: Duration.zero);
+        final uploaded = (await api.upload(
+          filePath: path,
+          name: 'nota.txt',
+          mime: FilesLogic.mimeFor('nota.txt'),
+        )).value!;
+        final viewModel = FilesViewModel(
+          session: FakeSessionGateway(api: api),
+          actions: FakeFileActions(),
+          zona: Zona.casa,
+        );
+        await viewModel.load();
+
+        viewModel.recordUpload(uploaded);
+        expect(uploaded.name, 'nota.txt');
+        expect(uploaded.mime, 'text/plain');
+        expect(uploaded.size, 2);
+        expect(viewModel.uploadedRkeys, contains(uploaded.rkey));
+        expect(viewModel.showsPublishAction(uploaded), isTrue);
+      },
+    );
+
+    test('publishing leaves the Casa list and ends the reminder', () async {
       final path = '${temp.path}/nota.txt';
       File(path).writeAsStringSync('oi');
       final api = FakeTainaApi(delay: Duration.zero);
-      final actions = FakeFileActions()
-        ..pickOutcome = PickedFileSelected(
-          PickedFile(
-            path: path,
-            name: 'nota.txt',
-            mime: FilesLogic.mimeFor('nota.txt'),
-          ),
-        );
+      final uploaded = (await api.upload(
+        filePath: path,
+        name: 'nota.txt',
+        mime: 'text/plain',
+      )).value!;
       final viewModel = FilesViewModel(
         session: FakeSessionGateway(api: api),
-        actions: actions,
+        actions: FakeFileActions(),
+        zona: Zona.casa,
       );
       await viewModel.load();
-
-      final message = await viewModel.pickAndUpload();
-
-      expect(message, isNull);
-      expect(viewModel.uploading, isFalse);
-      expect(viewModel.entries.files, hasLength(3));
-      final uploaded = viewModel.entries.files.last;
-      expect(uploaded.name, 'nota.txt');
-      expect(uploaded.mime, 'text/plain');
-      expect(uploaded.size, 2);
-      expect(viewModel.uploadedRkeys, contains(uploaded.rkey));
-      expect(viewModel.showsPublishAction(uploaded), isTrue);
-    });
-
-    test('a cancelled picker changes nothing', () async {
-      final api = FakeTainaApi(delay: Duration.zero);
-      final actions = FakeFileActions()
-        ..pickOutcome = const PickedFileCancelled();
-      final viewModel = FilesViewModel(
-        session: FakeSessionGateway(api: api),
-        actions: actions,
-      );
-      await viewModel.load();
-
-      final message = await viewModel.pickAndUpload();
-
-      expect(message, isNull);
-      expect(viewModel.entries.files, hasLength(2));
-      expect(viewModel.uploading, isFalse);
-    });
-
-    test('a picker failure surfaces its own sentence', () async {
-      final api = FakeTainaApi(delay: Duration.zero);
-      final actions = FakeFileActions()
-        ..pickOutcome = const PickedFileFailed(
-          'Não deu para abrir o seletor de arquivos.',
-        );
-      final viewModel = FilesViewModel(
-        session: FakeSessionGateway(api: api),
-        actions: actions,
-      );
-
-      final message = await viewModel.pickAndUpload();
-
-      expect(message, 'Não deu para abrir o seletor de arquivos.');
-    });
-
-    test('publishing swaps the row and ends the reminder', () async {
-      final path = '${temp.path}/nota.txt';
-      File(path).writeAsStringSync('oi');
-      final api = FakeTainaApi(delay: Duration.zero);
-      final actions = FakeFileActions()
-        ..pickOutcome = PickedFileSelected(
-          PickedFile(path: path, name: 'nota.txt', mime: 'text/plain'),
-        );
-      final viewModel = FilesViewModel(
-        session: FakeSessionGateway(api: api),
-        actions: actions,
-      );
-      await viewModel.load();
-      await viewModel.pickAndUpload();
-      final uploaded = viewModel.entries.files.last;
+      viewModel.recordUpload(uploaded);
 
       final result = await viewModel.publish(uploaded);
 
       expect(result.isSuccess, isTrue);
-      final published = viewModel.entries.files.last;
-      expect(published.rkey, uploaded.rkey);
-      expect(published.zona, Zona.praca);
+      expect(
+        viewModel.entries.files.any((file) => file.rkey == uploaded.rkey),
+        isFalse,
+      );
       expect(viewModel.uploadedRkeys, isEmpty);
       expect(viewModel.publishingRkey, isNull);
-      expect(viewModel.showsPublishAction(published), isFalse);
+      expect(viewModel.showsPublishAction(uploaded), isFalse);
     });
   });
 

@@ -20,6 +20,7 @@ final class MoveViewModel extends ChangeNotifier {
   List<Folder> _folders = const [];
   bool _loading = true;
   TainaError? _error;
+  bool _disposed = false;
 
   bool get loading => _loading;
   TainaError? get error => _error;
@@ -43,5 +44,17 @@ final class MoveViewModel extends ChangeNotifier {
     }
     _loading = false;
     notifyListeners();
+  }
+
+  @override
+  void notifyListeners() {
+    if (_disposed) return;
+    super.notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
   }
 }

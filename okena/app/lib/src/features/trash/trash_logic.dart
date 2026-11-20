@@ -36,30 +36,20 @@ abstract final class TrashLogic {
     return TrashGlyph.document;
   }
 
-  /// The row's meta line, like the web's `trash_meta/1`: deleted when, days
-  /// left before the purge, and who reads the file. Inside the warning window
-  /// the line says the purge is close.
+  /// The row's file kind, size and remaining retention window.
   static String meta(FileRecord file, {DateTime? now}) {
-    final zone = file.zona == Zona.praca ? 'Todos veem' : 'Só você';
     final deletedAt = file.deletedAt ?? '';
     final days = _deletedDaysAgo(deletedAt, now ?? DateTime.now());
+    final kind = _kind(file.mime);
+    final size = TainaFormat.bytes(file.size);
     if (days == null) {
-      return 'Apagado em ${TainaFormat.date(deletedAt)} / $zone';
+      if (deletedAt.isEmpty) return '$kind, $size';
+      return '$kind, $size, apagado em ${TainaFormat.date(deletedAt)}';
     }
     final left = math.max(retentionDays - days, 0);
-    if (left == 0) return 'Apaga hoje / $zone';
-    if (left <= warningDays) {
-      return left == 1
-          ? 'Resta 1 dia, apaga em breve / $zone'
-          : 'Restam $left dias, apaga em breve / $zone';
-    }
-    final deleted = switch (days) {
-      0 => 'Apagado hoje',
-      1 => 'Apagado ontem',
-      _ => 'Apagado há $days dias',
-    };
-    final remaining = left == 1 ? ', resta 1 dia' : ', restam $left dias';
-    return '$deleted$remaining / $zone';
+    if (left == 0) return '$kind, $size, apaga hoje';
+    final remaining = left == 1 ? 'resta 1 dia' : 'restam $left dias';
+    return '$kind, $size, $remaining';
   }
 
   /// True inside the warning window: few days left, the purge is close.
@@ -67,6 +57,15 @@ abstract final class TrashLogic {
     final days = _deletedDaysAgo(file.deletedAt ?? '', now ?? DateTime.now());
     if (days == null) return false;
     return math.max(retentionDays - days, 0) <= warningDays;
+  }
+
+  static String _kind(String mime) {
+    if (mime == 'application/pdf') return 'PDF';
+    if (mime.startsWith('image/')) return 'Imagem';
+    if (mime.startsWith('video/')) return 'Vídeo';
+    if (mime.startsWith('audio/')) return 'Áudio';
+    if (mime.startsWith('text/')) return 'Texto';
+    return 'Arquivo';
   }
 
   /// Whole days since the deletion, never negative: a clock ahead of the

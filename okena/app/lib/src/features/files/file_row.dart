@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:okena_core/okena_core.dart';
 
 import '../../design_system/design_system.dart';
+import 'files_logic.dart';
 
 /// The thumbnail, from the shared store: a placeholder while it loads and a
 /// document glyph when the file has none.
@@ -110,49 +111,35 @@ final class FileRow extends StatelessWidget {
     required this.file,
     required this.thumbnails,
     this.onTap,
+    this.onMore,
+    this.tab = TainaDocumentTab.casa,
+    this.me,
+    this.names = const {},
     super.key,
   });
 
   final FileRecord file;
   final ThumbnailStore thumbnails;
   final VoidCallback? onTap;
+  final VoidCallback? onMore;
+  final TainaDocumentTab tab;
+  final Me? me;
+  final Map<String, String> names;
 
   @override
   Widget build(BuildContext context) {
-    return TainaRowCard(
+    return TainaListRow(
+      kind: TainaListRowKind.file,
+      title: file.name,
+      meta: FilesLogic.rowMeta(file: file, me: me, names: names, tab: tab),
+      trailing: onMore == null
+          ? TainaListRowTrailing.none
+          : TainaListRowTrailing.kebab,
+      trailingLabel: 'Ações do arquivo',
+      onTrailingPressed: onMore,
       onTap: onTap,
-      child: Row(
-        children: [
+      leadingBuilder: (_) =>
           FileThumbnail(thumbnails: thumbnails, rkey: file.rkey),
-          const SizedBox(width: TainaSpacing.space3),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TainaText(
-                  file.name,
-                  style: TainaTypography.label,
-                  color: TainaPalette.textPrimary,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: TainaSpacing.space1),
-                TainaText(
-                  '${TainaFormat.bytes(file.size)} / '
-                  '${TainaFormat.relative(file.createdAt)}',
-                  style: TainaTypography.monoSm,
-                  color: TainaPalette.textMuted,
-                ),
-                if (file.zona == Zona.praca) ...[
-                  const SizedBox(height: TainaSpacing.space1),
-                  const TainaZonaBadge.praca(),
-                ],
-              ],
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

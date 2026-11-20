@@ -5,6 +5,7 @@
 /// [FileActions]; the production implementation is [PlatformFileActions].
 library;
 
+export '../../session/upload_center.dart';
 export 'browser_list.dart';
 export 'browser_scaffold.dart';
 export 'file_actions.dart';
@@ -19,3 +20,4 @@ export 'folder_screen.dart';
 export 'move_sheet.dart';
 export 'move_view_model.dart';
 export 'platform_file_actions.dart';
+export 'upload_screen.dart';

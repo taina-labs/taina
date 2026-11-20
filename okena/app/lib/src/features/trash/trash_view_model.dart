@@ -22,6 +22,7 @@ final class TrashViewModel extends ChangeNotifier {
   bool _moreError = false;
   TainaError? _error;
   String? _restoringRkey;
+  bool _disposed = false;
 
   List<FileRecord> get items => _items;
   String? get nextCursor => _nextCursor;
@@ -105,5 +106,17 @@ final class TrashViewModel extends ChangeNotifier {
       case Err():
         _moreError = true;
     }
+  }
+
+  @override
+  void notifyListeners() {
+    if (_disposed) return;
+    super.notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
   }
 }

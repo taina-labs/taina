@@ -30,11 +30,24 @@ final class FileDetailViewModel extends ChangeNotifier {
   bool _resolving = false;
   TainaError? _failure;
   String? _actionFailure;
+  String? _folderName;
+  Map<String, String> _ownerNames = const {};
   AccessTarget? _denied;
   bool _requested = false;
+  bool _disposed = false;
 
   FileRecord get file => _file;
   String? get downloadedPath => _downloadedPath;
+  String? get folderName => _folderName;
+  bool get isOwner =>
+      _file.dono != null && _file.dono == session.identity?.ava.publicId;
+  String get ownerName {
+    final ownerPublicId = _file.dono;
+    if (ownerPublicId == null) return 'alguém da comunidade';
+    if (ownerPublicId == session.identity?.ava.publicId) return 'Você';
+    return _ownerNames[ownerPublicId] ?? 'alguém da comunidade';
+  }
+
   bool get working => _working;
   bool get resolving => _resolving;
   TainaError? get failure => _failure;
@@ -44,6 +57,25 @@ final class FileDetailViewModel extends ChangeNotifier {
   /// The sentence the alert shows. API errors keep their own pt-BR message;
   /// the local share/viewer failures carry theirs.
   String? get errorMessage => _actionFailure ?? _failure?.message;
+
+  Future<void> loadMetadata() async {
+    final folderRkey = _file.folder;
+    if (folderRkey != null) {
+      final result = await session.screen(
+        await session.api.folder(rkey: folderRkey),
+      );
+      if (_disposed) return;
+      _folderName = result.value?.name;
+    }
+    if (_file.dono != null && _file.dono != session.identity?.ava.publicId) {
+      final members = await session.screen(await session.api.members());
+      if (_disposed) return;
+      if (members case Ok(:final value)) {
+        _ownerNames = FilesLogic.memberNames(value.items);
+      }
+    }
+    notifyListeners();
+  }
 
   /// Downloads the file to disk. Returns true when the file is here (or the
   /// screen turned into the access request, where there is nothing else to
@@ -205,5 +237,17 @@ final class FileDetailViewModel extends ChangeNotifier {
     }
     notifyListeners();
     return success;
+  }
+
+  @override
+  void notifyListeners() {
+    if (_disposed) return;
+    super.notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
   }
 }

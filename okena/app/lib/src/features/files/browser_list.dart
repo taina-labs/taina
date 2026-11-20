@@ -9,228 +9,207 @@ import 'file_row.dart';
 import 'files_logic.dart';
 import 'files_view_model.dart';
 
-/// The list the root and any folder show: one loading logic, the model's
-/// pure transitions, no copy between screens. The screen names where an
-/// upload lands and the freshly uploaded rows still carry the one-tap publish
-/// to the praca.
+/// The list contents inside the Documents service scroll view.
 final class BrowserList extends StatelessWidget {
   const BrowserList({
-    required this.onNewFolder,
+    required this.onUpload,
     required this.onOpenFolder,
     required this.onOpenFile,
     required this.onPublish,
+    this.onMoreFolder,
+    this.onMoreFile,
+    this.canManageFolder,
+    this.tab = TainaDocumentTab.casa,
+    this.folder,
     super.key,
   });
 
-  final VoidCallback onNewFolder;
+  final VoidCallback onUpload;
   final ValueChanged<Folder> onOpenFolder;
   final ValueChanged<FileRecord> onOpenFile;
   final Future<void> Function(FileRecord file) onPublish;
+  final ValueChanged<Folder>? onMoreFolder;
+  final ValueChanged<FileRecord>? onMoreFile;
+  final bool Function(Folder folder)? canManageFolder;
+  final TainaDocumentTab tab;
+  final Folder? folder;
+
+  bool _showsFolderMenu(Folder folder) =>
+      onMoreFolder != null && (canManageFolder?.call(folder) ?? false);
 
   @override
   Widget build(BuildContext context) {
     final model = context.watch<FilesViewModel>();
-    if (model.isEmpty) {
-      return RefreshIndicator(
-        onRefresh: model.load,
-        child: ListView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          children: [
-            const SizedBox(height: TainaSpacing.space16),
-            _state(context, model),
-          ],
+    if (model.isEmpty) return _emptyState(model);
+
+    final rows = <Widget>[
+      for (final child in model.entries.folders)
+        TainaListRow(
+          kind: TainaListRowKind.folder,
+          title: child.name,
+          meta: 'Pasta',
+          trailing: _showsFolderMenu(child)
+              ? TainaListRowTrailing.kebab
+              : TainaListRowTrailing.chevron,
+          trailingLabel: _showsFolderMenu(child) ? 'Ações da pasta' : null,
+          onTrailingPressed: _showsFolderMenu(child)
+              ? () => onMoreFolder!(child)
+              : null,
+          onTap: () => onOpenFolder(child),
+        ),
+      for (final file in model.entries.files)
+        FileRow(
+          file: file,
+          thumbnails: model.session.thumbnails,
+          tab: tab,
+          me: model.session.identity,
+          names: model.ownerNames,
+          onTap: () => onOpenFile(file),
+          onMore: onMoreFile == null ? null : () => onMoreFile!(file),
+        ),
+      for (final file in model.entries.files)
+        if (model.showsPublishAction(file))
+          TainaListRow(
+            kind: TainaListRowKind.file,
+            title: FilesLogic.zonaActionLabel(Zona.casa),
+            meta: 'Este envio está na sua casa.',
+            trailing: TainaListRowTrailing.action,
+            trailingLabel: model.publishingRkey == file.rkey
+                ? 'Publicando'
+                : 'Publicar',
+            onTrailingPressed: model.publishingRkey == file.rkey
+                ? null
+                : () => unawaited(onPublish(file)),
+            showDivider: false,
+          ),
+    ];
+
+    return SliverMainAxisGroup(
+      slivers: [
+        if (model.entries.files.isNotEmpty)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(
+                TainaSpacing.space4,
+                TainaSpacing.space2,
+                TainaSpacing.space4,
+                TainaSpacing.space2,
+              ),
+              child: TainaText(
+                folder == null
+                    ? FilesLogic.documentCountLabel(
+                        tab: tab,
+                        count:
+                            model.entries.files.length +
+                            model.entries.folders.length,
+                        hasMore: model.nextCursor != null,
+                      )
+                    : FilesLogic.folderCountLabel(
+                        count:
+                            model.entries.files.length +
+                            model.entries.folders.length,
+                        hasMore: model.nextCursor != null,
+                      ),
+                style: TainaTypography.bodySm,
+                color: TainaPalette.textSecondary,
+              ),
+            ),
+          ),
+        SliverList.builder(
+          itemCount: rows.length,
+          itemBuilder: (context, index) => rows[index],
+        ),
+        if (model.nextCursor != null)
+          SliverToBoxAdapter(
+            child: _LoadMoreSentinel(
+              model: model,
+              key: ValueKey(model.nextCursor),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _emptyState(FilesViewModel model) {
+    if (model.loading ||
+        (model.lastFilteredPageEmpty &&
+            model.nextCursor != null &&
+            !model.moreError)) {
+      return const SliverFillRemaining(
+        hasScrollBody: false,
+        child: TainaLoadingList(),
+      );
+    }
+    if (model.moreError && model.isEmpty) {
+      return SliverFillRemaining(
+        hasScrollBody: false,
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(TainaSpacing.space4),
+            child: ErrorCard(
+              title: 'Não foi possível carregar mais arquivos.',
+              body: '',
+              retry: () => unawaited(model.loadMore()),
+            ),
+          ),
         ),
       );
     }
-    final cells = _cells(context, model);
-    return RefreshIndicator(
-      onRefresh: model.load,
-      child: ListView.builder(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(TainaSpacing.space4),
-        itemCount: cells.length,
-        itemBuilder: (context, index) => cells[index],
-      ),
-    );
-  }
-
-  Widget _state(BuildContext context, FilesViewModel model) {
-    if (model.loading) {
-      return const TainaLoadingList();
-    }
     final error = model.error;
     if (error != null) {
-      return TainaErrorState(error: error, onRetry: model.load);
+      return SliverFillRemaining(
+        hasScrollBody: false,
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(TainaSpacing.space4),
+            child: ErrorCard(
+              title: 'Não conseguimos carregar os arquivos.',
+              body: error.message,
+              retry: () => unawaited(model.load()),
+            ),
+          ),
+        ),
+      );
     }
-    return TainaEmptyState(
-      icon: Icons.folder_outlined,
-      title: 'Esta pasta está vazia',
-      message:
-          'Guarde um arquivo com o botão de enviar, no topo da tela, ou crie '
-          'uma pasta para organizar. '
-          '${FilesLogic.uploadDestinationMessage()}',
-      actionLabel: 'Nova pasta',
-      onAction: onNewFolder,
-    );
-  }
 
-  List<Widget> _cells(BuildContext context, FilesViewModel model) {
-    final thumbnails = model.session.thumbnails;
-    return [
-      Padding(
-        padding: const EdgeInsets.only(bottom: TainaSpacing.space2),
-        child: TainaText(
-          FilesLogic.uploadDestinationMessage(),
-          style: TainaTypography.bodySm,
-          color: TainaPalette.textMuted,
-        ),
+    final isFolder = folder != null;
+    final (String title, String body) = switch ((isFolder, tab)) {
+      (true, _) => (
+        'Esta pasta está vazia',
+        'Envie um arquivo ou crie uma pasta para organizar.',
       ),
-      for (final folder in model.entries.folders) ...[
-        _FolderRow(folder: folder, onTap: () => onOpenFolder(folder)),
-        const SizedBox(height: TainaSpacing.space2),
-      ],
-      if (model.entries.files.isNotEmpty) ...[
-        Padding(
-          padding: const EdgeInsets.only(
-            top: TainaSpacing.space2,
-            bottom: TainaSpacing.space2,
-          ),
-          child: TainaText(
-            FilesLogic.countLabel(
-              count: model.entries.files.length,
-              hasMore: model.nextCursor != null,
-            ),
-            style: TainaTypography.overline,
-            color: TainaPalette.textMuted,
-            uppercase: true,
+      (false, TainaDocumentTab.praca) => (
+        'A praça está vazia',
+        'Quando alguém publicar um arquivo na praça, ele aparece aqui para toda a comunidade.',
+      ),
+      (false, TainaDocumentTab.casa) => (
+        'Sua casa está vazia',
+        'Envie um arquivo. Ele fica só com você até você publicar na praça.',
+      ),
+      (false, TainaDocumentTab.lixeira) => (
+        'Lixeira vazia',
+        'Nada foi apagado.',
+      ),
+    };
+    final showUploadAction = !isFolder && tab == TainaDocumentTab.casa;
+    return SliverFillRemaining(
+      hasScrollBody: false,
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(TainaSpacing.space6),
+          child: EmptyStateView(
+            icon: isFolder ? TainaIcon.folder : TainaIcon.file,
+            title: title,
+            body: body,
+            actionLabel: showUploadAction ? 'Enviar um arquivo' : null,
+            onAction: showUploadAction ? onUpload : null,
           ),
         ),
-      ],
-      for (final file in model.entries.files) ...[
-        FileRow(
-          file: file,
-          thumbnails: thumbnails,
-          onTap: () => onOpenFile(file),
-        ),
-        if (model.showsPublishAction(file))
-          Padding(
-            padding: const EdgeInsets.only(top: TainaSpacing.space2),
-            child: _PublishAction(
-              publishing: model.publishingRkey == file.rkey,
-              disabled: model.publishingRkey != null,
-              onTap: () => onPublish(file),
-            ),
-          ),
-        const SizedBox(height: TainaSpacing.space2),
-      ],
-      if (model.nextCursor != null)
-        _LoadMoreSentinel(model: model, key: ValueKey(model.nextCursor)),
-    ];
-  }
-}
-
-final class _FolderRow extends StatelessWidget {
-  const _FolderRow({required this.folder, required this.onTap});
-
-  final Folder folder;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return TainaRowCard(
-      onTap: onTap,
-      child: Row(
-        children: [
-          const Icon(
-            Icons.folder_rounded,
-            size: TainaFontSizes.xl,
-            color: TainaPalette.serviceYbira,
-          ),
-          const SizedBox(width: TainaSpacing.space3),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TainaText(
-                  folder.name,
-                  style: TainaTypography.label,
-                  color: TainaPalette.textPrimary,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                if (folder.zona == Zona.praca) ...[
-                  const SizedBox(height: TainaSpacing.space1),
-                  const TainaZonaBadge.praca(),
-                ],
-              ],
-            ),
-          ),
-          const Icon(
-            Icons.chevron_right,
-            size: TainaFontSizes.md,
-            color: TainaPalette.textFaint,
-          ),
-        ],
       ),
     );
   }
 }
 
-/// The completed upload's action, its own card under the row so the tap never
-/// shares a surface with the navigation. While the file stays in the casa,
-/// the action is the way to the praca.
-final class _PublishAction extends StatelessWidget {
-  const _PublishAction({
-    required this.publishing,
-    required this.disabled,
-    required this.onTap,
-  });
-
-  final bool publishing;
-  final bool disabled;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return TainaRowCard(
-      onTap: disabled ? null : onTap,
-      child: Row(
-        children: [
-          if (publishing)
-            const SizedBox(
-              width: TainaSizes.controlMd,
-              height: TainaSizes.controlMd,
-              child: Padding(
-                padding: EdgeInsets.all(TainaSpacing.space3),
-                child: CircularProgressIndicator(
-                  strokeWidth: TainaSizes.thick,
-                  color: TainaPalette.serviceYbira,
-                ),
-              ),
-            )
-          else
-            const Icon(
-              Icons.people_alt_rounded,
-              size: TainaFontSizes.xl,
-              color: TainaPalette.serviceYbira,
-            ),
-          const SizedBox(width: TainaSpacing.space3),
-          Expanded(
-            child: TainaText(
-              FilesLogic.zonaActionLabel(Zona.casa),
-              style: TainaTypography.label,
-              color: TainaPalette.serviceYbira,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// The next page of files: a spinner that loads on sight, or the retry when a
-/// page failed. It only exists while the server still has rows.
 final class _LoadMoreSentinel extends StatefulWidget {
   const _LoadMoreSentinel({required this.model, super.key});
 
@@ -248,10 +227,9 @@ final class _LoadMoreSentinelState extends State<_LoadMoreSentinel> {
   }
 
   void _kick() {
-    if (widget.model.moreError) return;
+    if (widget.model.moreError || widget.model.lastFilteredPageEmpty) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      unawaited(widget.model.loadMore());
+      if (mounted) unawaited(widget.model.loadMore());
     });
   }
 
@@ -259,37 +237,17 @@ final class _LoadMoreSentinelState extends State<_LoadMoreSentinel> {
   Widget build(BuildContext context) {
     if (widget.model.moreError) {
       return Padding(
-        padding: const EdgeInsets.symmetric(vertical: TainaSpacing.space4),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TainaText(
-              'Não foi possível carregar mais arquivos.',
-              style: TainaTypography.caption,
-              color: TainaPalette.textMuted,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: TainaSpacing.space2),
-            TainaSecondaryButton(
-              label: 'Tentar de novo',
-              onPressed: () => unawaited(widget.model.loadMore()),
-            ),
-          ],
+        padding: const EdgeInsets.all(TainaSpacing.space4),
+        child: ErrorCard(
+          title: 'Não foi possível carregar mais arquivos.',
+          body: '',
+          retry: () => unawaited(widget.model.loadMore()),
         ),
       );
     }
     return const Padding(
-      padding: EdgeInsets.symmetric(vertical: TainaSpacing.space4),
-      child: Center(
-        child: SizedBox(
-          width: TainaSizes.controlSm / 2,
-          height: TainaSizes.controlSm / 2,
-          child: CircularProgressIndicator(
-            strokeWidth: TainaSizes.thick,
-            color: TainaPalette.textMuted,
-          ),
-        ),
-      ),
+      padding: EdgeInsets.all(TainaSpacing.space4),
+      child: Center(child: CircularProgressIndicator()),
     );
   }
 }

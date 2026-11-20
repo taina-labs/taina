@@ -12,6 +12,7 @@ final class FolderActionsViewModel extends ChangeNotifier {
   final SessionGateway session;
 
   bool _working = false;
+  bool _disposed = false;
 
   bool get working => _working;
 
@@ -52,5 +53,17 @@ final class FolderActionsViewModel extends ChangeNotifier {
     _working = false;
     notifyListeners();
     return result;
+  }
+
+  @override
+  void notifyListeners() {
+    if (_disposed) return;
+    super.notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
   }
 }

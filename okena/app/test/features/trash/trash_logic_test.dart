@@ -56,18 +56,18 @@ void main() {
     test('today names the day and the days left', () {
       expect(
         TrashLogic.meta(_file(deletedAt: '2026-03-10T09:00:00'), now: now),
-        'Apagado hoje, restam 30 dias / Só você',
+        'Texto, 10 B, restam 30 dias',
       );
     });
 
     test('yesterday and older days read naturally', () {
       expect(
         TrashLogic.meta(_file(deletedAt: '2026-03-09T09:00:00'), now: now),
-        'Apagado ontem, restam 29 dias / Só você',
+        'Texto, 10 B, restam 29 dias',
       );
       expect(
         TrashLogic.meta(_file(deletedAt: '2026-03-07T09:00:00'), now: now),
-        'Apagado há 3 dias, restam 27 dias / Só você',
+        'Texto, 10 B, restam 27 dias',
       );
     });
 
@@ -77,37 +77,34 @@ void main() {
           _file(zona: Zona.praca, deletedAt: '2026-02-10T09:00:00'),
           now: now,
         ),
-        'Restam 2 dias, apaga em breve / Todos veem',
+        'Texto, 10 B, restam 2 dias',
       );
       expect(
         TrashLogic.meta(_file(deletedAt: '2026-02-09T09:00:00'), now: now),
-        'Resta 1 dia, apaga em breve / Só você',
+        'Texto, 10 B, resta 1 dia',
       );
     });
 
     test('the last day says it goes today', () {
       expect(
         TrashLogic.meta(_file(deletedAt: '2026-02-08T09:00:00'), now: now),
-        'Apaga hoje / Só você',
+        'Texto, 10 B, apaga hoje',
       );
     });
 
     test('a clock ahead of the box never reads negative days', () {
       expect(
         TrashLogic.meta(_file(deletedAt: '2026-03-12T09:00:00'), now: now),
-        'Apagado hoje, restam 30 dias / Só você',
+        'Texto, 10 B, restam 30 dias',
       );
     });
 
     test('an unparsable deletion falls back to the sent date', () {
       expect(
         TrashLogic.meta(_file(deletedAt: 'ontem'), now: now),
-        'Apagado em ontem / Só você',
+        'Texto, 10 B, apagado em ontem',
       );
-      expect(
-        TrashLogic.meta(_file(deletedAt: null), now: now),
-        'Apagado em  / Só você',
-      );
+      expect(TrashLogic.meta(_file(deletedAt: null), now: now), 'Texto, 10 B');
     });
   });
 

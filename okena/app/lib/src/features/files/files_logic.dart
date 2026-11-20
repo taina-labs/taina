@@ -1,5 +1,7 @@
 import 'package:okena_core/okena_core.dart';
 
+import '../../design_system/design_system.dart';
+
 /// The browser's two lists: folders come complete, only files paginate.
 final class FilesEntries {
   const FilesEntries({this.folders = const [], this.files = const []});
@@ -17,6 +19,18 @@ final class FilesEntries {
   }
 }
 
+enum FileMenuAction {
+  open,
+  download,
+  publish,
+  returnHome,
+  move,
+  rename,
+  remove,
+}
+
+enum FolderMenuAction { open, publish, returnHome, move, rename, remove }
+
 /// Pure decisions of the files feature: transitions over [FilesEntries], the
 /// move filter, every pt-BR sentence and the mime lookup. No IO, no widgets,
 /// so the screens and the ViewModels share one rule instead of repeating it.
@@ -25,7 +39,7 @@ abstract final class FilesLogic {
   static const String hashNote =
       'É como o Tainá confere que o arquivo está intacto.';
   static const String deleteFileMessage =
-      'Vai para a lixeira. Dá para restaurar em até 30 dias.';
+      'O arquivo vai para a lixeira e some de vez depois de 30 dias.';
   static const String deleteFolderMessage =
       'A pasta e o que tem dentro vão para a lixeira. A pasta volta com tudo o que tem dentro.';
   static const String accessMotivo = 'Pedido de acesso pela tela do arquivo';
@@ -52,6 +66,26 @@ abstract final class FilesLogic {
     return entries.copyWith(files: [...entries.files, ...page.items]);
   }
 
+  /// The endpoint's zona filter can be absent on an older box. Keep the
+  /// client-side check so a mixed page never leaks into the other tab.
+  static FolderContents forZona(FolderContents page, Zona? zona) {
+    if (zona == null) return page;
+    return FolderContents(
+      folders: page.folders.where((folder) => folder.zona == zona).toList(),
+      items: page.items.where((file) => file.zona == zona).toList(),
+      nextCursor: page.nextCursor,
+    );
+  }
+
+  /// A filtered-out page is not the end of a keyset list. Walk it while the
+  /// server still has a cursor so the zone tab does not look empty.
+  static bool needsAnotherPage({
+    required bool filteredPageEmpty,
+    required String? cursor,
+  }) {
+    return filteredPageEmpty && cursor != null;
+  }
+
   /// Puts the updated file where the old one was, order kept.
   static FilesEntries replacingFile(FilesEntries entries, FileRecord file) {
     final index = entries.files.indexWhere((item) => item.rkey == file.rkey);
@@ -59,6 +93,12 @@ abstract final class FilesLogic {
     final next = [...entries.files];
     next[index] = file;
     return entries.copyWith(files: next);
+  }
+
+  static FilesEntries removingFile(FilesEntries entries, String rkey) {
+    return entries.copyWith(
+      files: entries.files.where((file) => file.rkey != rkey).toList(),
+    );
   }
 
   /// The uploaded files still in the casa carry the publish action: the
@@ -155,6 +195,114 @@ abstract final class FilesLogic {
     return noun + (count == 1 ? ' carregado' : ' carregados');
   }
 
+  static String documentCountLabel({
+    required TainaDocumentTab tab,
+    required int count,
+    required bool hasMore,
+  }) {
+    if (hasMore) return '$count itens carregados';
+    return switch (tab) {
+      TainaDocumentTab.praca => '$count itens na praça',
+      TainaDocumentTab.casa => '$count itens na casa',
+      TainaDocumentTab.lixeira => '$count itens na lixeira',
+    };
+  }
+
+  static String folderCountLabel({required int count, required bool hasMore}) {
+    return hasMore ? '$count itens carregados' : '$count itens na pasta';
+  }
+
+  static Map<String, String> memberNames(Iterable<Ava> members) {
+    return {for (final member in members) member.publicId: member.label};
+  }
+
+  /// Metadata shown in a zone, using the file's owner and current member roster.
+  static String rowMeta({
+    required FileRecord file,
+    required Me? me,
+    required Map<String, String> names,
+    required TainaDocumentTab tab,
+  }) {
+    final kind = fileKind(file.mime);
+    final size = TainaFormat.bytes(file.size);
+    final ownerPublicId = file.dono;
+    final mine = ownerPublicId != null && ownerPublicId == me?.ava.publicId;
+    final owner = ownerPublicId == null ? null : names[ownerPublicId];
+
+    return switch (tab) {
+      TainaDocumentTab.praca =>
+        '$kind, $size, enviado por ${mine ? 'você' : owner ?? 'alguém'}',
+      TainaDocumentTab.casa =>
+        '$kind, $size, ${mine
+            ? 'só você'
+            : ownerPublicId == null
+            ? 'na casa'
+            : 'de ${owner ?? 'outra pessoa'}'}',
+      TainaDocumentTab.lixeira => '$kind, $size',
+    };
+  }
+
+  /// Only expose owner operations when an owner is known or this session
+  /// created the resource. Unknown ownership is deliberately not treated as
+  /// permission.
+  static bool canManage({
+    required Me? me,
+    required String? ownerPublicId,
+    bool createdInSession = false,
+  }) {
+    return createdInSession ||
+        (ownerPublicId != null && ownerPublicId == me?.ava.publicId);
+  }
+
+  static List<FileMenuAction> actionsForFile({
+    required FileRecord file,
+    required Me? me,
+    bool createdInSession = false,
+  }) {
+    final canManageFile = canManage(
+      me: me,
+      ownerPublicId: file.dono,
+      createdInSession: createdInSession,
+    );
+    return [
+      FileMenuAction.open,
+      FileMenuAction.download,
+      if (canManageFile)
+        file.zona == Zona.casa
+            ? FileMenuAction.publish
+            : FileMenuAction.returnHome,
+      if (canManageFile) ...[
+        FileMenuAction.move,
+        FileMenuAction.rename,
+        FileMenuAction.remove,
+      ],
+    ];
+  }
+
+  static List<FolderMenuAction> actionsForFolder({
+    required Folder folder,
+    required Me? me,
+    bool createdInSession = false,
+  }) {
+    final canManageFolder = canManage(
+      me: me,
+      ownerPublicId: folder.dono,
+      createdInSession: createdInSession,
+    );
+    return [
+      FolderMenuAction.open,
+      if (canManageFolder)
+        folder.zona == Zona.casa
+            ? FolderMenuAction.publish
+            : FolderMenuAction.returnHome,
+      if (canManageFolder) ...[
+        FolderMenuAction.move,
+        FolderMenuAction.rename,
+        FolderMenuAction.remove,
+      ],
+    ];
+  }
+
   static String zonaConfirmTitle(String name, Zona zona) {
     return zona == Zona.casa
         ? 'Publicar "$name" na praça?'
@@ -180,9 +328,9 @@ abstract final class FilesLogic {
     return zona == Zona.casa ? 'Publicar' : 'Tirar da praça';
   }
 
-  static String deleteFileTitle(String name) => 'Excluir "$name"?';
+  static String deleteFileTitle(String name) => 'Remover $name?';
 
-  static String deleteFolderTitle(String name) => 'Excluir a pasta "$name"?';
+  static String deleteFolderTitle(String name) => 'Remover a pasta $name?';
 
   /// The mime from the file's name, octet-stream when unknown. The picker
   /// hands a local copy and a name; the box wants the type beside the bytes.

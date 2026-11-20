@@ -1,28 +1,37 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:okena_core/okena_core.dart';
 import 'package:provider/provider.dart';
 
 import '../../design_system/design_system.dart';
 import '../../session/session_gateway.dart';
-import '../files/dialogs.dart';
 import 'trash_logic.dart';
 import 'trash_view_model.dart';
 
-/// The lixeira: what was discarded in the last 30 days, with restore.
-/// Mirrors the web's TrashLive, retention line and all.
+/// The lixeira is a Documentos route tab, not a separate global screen.
 final class TrashScreen extends StatelessWidget {
-  const TrashScreen({required this.session, this.model, super.key});
+  const TrashScreen({
+    required this.session,
+    this.model,
+    this.selectedTab = TainaDocumentTab.lixeira,
+    this.onSelectTab,
+    this.onBack,
+    super.key,
+  });
 
   final SessionGateway session;
-
-  /// An already built model, for tests and previews.
   final TrashViewModel? model;
+  final TainaDocumentTab selectedTab;
+  final ValueChanged<TainaDocumentTab>? onSelectTab;
+  final VoidCallback? onBack;
 
   @override
   Widget build(BuildContext context) {
-    const scaffold = _TrashScaffold();
+    final scaffold = _TrashScaffold(
+      selectedTab: selectedTab,
+      onSelectTab: onSelectTab,
+      onBack: onBack,
+    );
     final injected = model;
     if (injected != null) {
       return ChangeNotifierProvider<TrashViewModel>.value(
@@ -42,247 +51,187 @@ final class TrashScreen extends StatelessWidget {
 }
 
 final class _TrashScaffold extends StatelessWidget {
-  const _TrashScaffold();
+  const _TrashScaffold({
+    required this.selectedTab,
+    required this.onSelectTab,
+    required this.onBack,
+  });
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Lixeira')),
-      body: const _TrashList(),
-    );
-  }
-}
-
-final class _TrashList extends StatefulWidget {
-  const _TrashList();
-
-  @override
-  State<_TrashList> createState() => _TrashListState();
-}
-
-final class _TrashListState extends State<_TrashList> {
-  Future<void> _restore(String rkey) async {
-    final model = context.read<TrashViewModel>();
-    final result = await model.restore(rkey: rkey);
-    if (!mounted) return;
-    final error = result.error;
-    if (error != null) {
-      await showFailure(
-        context,
-        error.message.isEmpty
-            ? 'Não foi possível restaurar o arquivo.'
-            : error.message,
-      );
-    }
-  }
+  final TainaDocumentTab selectedTab;
+  final ValueChanged<TainaDocumentTab>? onSelectTab;
+  final VoidCallback? onBack;
 
   @override
   Widget build(BuildContext context) {
     final model = context.watch<TrashViewModel>();
-    if (model.items.isEmpty) {
-      return RefreshIndicator(
+    return Scaffold(
+      body: RefreshIndicator(
         onRefresh: model.load,
-        child: ListView(
+        child: CustomScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
-          children: [
-            const SizedBox(height: TainaSpacing.space16),
-            _state(model),
-          ],
-        ),
-      );
-    }
-    final cells = _cells(model);
-    return RefreshIndicator(
-      onRefresh: model.load,
-      child: ListView.builder(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(TainaSpacing.space4),
-        itemCount: cells.length,
-        itemBuilder: (context, index) => cells[index],
-      ),
-    );
-  }
-
-  Widget _state(TrashViewModel model) {
-    if (model.loading) return const TainaLoadingList();
-    final error = model.error;
-    if (error != null) {
-      return TainaErrorState(error: error, onRetry: model.load);
-    }
-    return const TainaEmptyState(
-      icon: Icons.delete_outline,
-      title: 'Lixeira vazia',
-      message: 'Nada esperando para ser apagado.',
-    );
-  }
-
-  List<Widget> _cells(TrashViewModel model) {
-    return [
-      const TainaRowCard(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(
-              Icons.schedule,
-              size: TainaFontSizes.xl,
-              color: TainaPalette.feedbackWarning,
+          slivers: [
+            ServiceHeaderSliver(
+              title: 'Documentos',
+              backLabel: 'Início',
+              onBack: onBack ?? () => Navigator.of(context).maybePop(),
             ),
-            SizedBox(width: TainaSpacing.space3),
-            Expanded(
-              child: TainaText(
-                'Itens são apagados para sempre após '
-                '${TrashLogic.retentionDays} dias na lixeira.',
-                style: TainaTypography.bodySm,
-                color: TainaPalette.textSecondary,
+            const SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(
+                  TainaSpacing.space4,
+                  TainaSpacing.space2,
+                  TainaSpacing.space4,
+                  TainaSpacing.space3,
+                ),
+                child: TainaText(
+                  'Os itens ficam 30 dias na lixeira e depois são apagados de vez.',
+                  style: TainaTypography.bodySm,
+                  color: TainaPalette.textSecondary,
+                ),
               ),
             ),
+            _TrashContents(model: model),
           ],
         ),
       ),
-      const SizedBox(height: TainaSpacing.space4),
-      TainaText(
-        TrashLogic.countLabel(
-          count: model.items.length,
-          hasMore: model.nextCursor != null,
-        ),
-        style: TainaTypography.overline,
-        color: TainaPalette.textMuted,
-        uppercase: true,
-      ),
-      const SizedBox(height: TainaSpacing.space3),
-      for (final file in model.items) ...[
-        _TrashRow(
-          file: file,
-          restoring: model.restoringRkey == file.rkey,
-          onRestore: () => unawaited(_restore(file.rkey)),
-        ),
-        const SizedBox(height: TainaSpacing.space2),
-      ],
-      if (model.nextCursor != null)
-        _LoadMoreSentinel(model: model, key: ValueKey(model.nextCursor)),
-    ];
-  }
-}
-
-/// One discarded file: the mime glyph, the name, the size and the trash meta
-/// (in warning color when the purge is close), and the restore.
-final class _TrashRow extends StatelessWidget {
-  const _TrashRow({
-    required this.file,
-    required this.restoring,
-    required this.onRestore,
-  });
-
-  final FileRecord file;
-  final bool restoring;
-  final VoidCallback onRestore;
-
-  @override
-  Widget build(BuildContext context) {
-    final warning = TrashLogic.isWarning(file);
-    return TainaRowCard(
-      child: Row(
-        children: [
-          Container(
-            width: TainaSizes.controlMd,
-            height: TainaSizes.controlMd,
-            decoration: const BoxDecoration(
-              color: TainaPalette.surfaceRaised,
-              borderRadius: TainaRadii.smAll,
-            ),
-            child: Icon(
-              _glyph(TrashLogic.glyph(file.mime)),
-              size: TainaFontSizes.xl,
-              color: TainaPalette.textFaint,
-            ),
-          ),
-          const SizedBox(width: TainaSpacing.space3),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TainaText(
-                  file.name,
-                  style: TainaTypography.label,
-                  color: TainaPalette.textPrimary,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: TainaSpacing.space1),
-                TainaText(
-                  '${TainaFormat.bytes(file.size)} / '
-                  '${TrashLogic.meta(file)}',
-                  style: TainaTypography.monoSm,
-                  color: warning
-                      ? TainaPalette.feedbackWarning
-                      : TainaPalette.textMuted,
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: TainaSpacing.space2),
-          if (restoring)
-            const SizedBox(
-              width: TainaSizes.touch,
-              height: TainaSizes.touch,
-              child: Center(
-                child: SizedBox(
-                  width: TainaSizes.controlSm / 2,
-                  height: TainaSizes.controlSm / 2,
-                  child: CircularProgressIndicator(
-                    strokeWidth: TainaSizes.thick,
-                  ),
-                ),
-              ),
-            )
-          else
-            IconButton(
-              icon: const Icon(Icons.restore),
-              tooltip: 'Restaurar',
-              color: TainaPalette.serviceYbira,
-              onPressed: onRestore,
-            ),
-        ],
+      bottomNavigationBar: ServiceTabBar.documents(
+        selected: selectedTab,
+        onSelected: (tab) {
+          if (onSelectTab != null) {
+            onSelectTab!(tab);
+          } else if (tab != TainaDocumentTab.lixeira) {
+            Navigator.of(context).maybePop();
+          }
+        },
       ),
     );
   }
-
-  static IconData _glyph(TrashGlyph glyph) {
-    return switch (glyph) {
-      TrashGlyph.photo => Icons.photo_outlined,
-      TrashGlyph.film => Icons.movie_outlined,
-      TrashGlyph.audio => Icons.graphic_eq,
-      TrashGlyph.pdf => Icons.picture_as_pdf_outlined,
-      TrashGlyph.text => Icons.description_outlined,
-      TrashGlyph.document => Icons.insert_drive_file_outlined,
-    };
-  }
 }
 
-/// The next page: a spinner that loads on sight, or the retry when a page
-/// failed. It only exists while the server still has rows.
-final class _LoadMoreSentinel extends StatefulWidget {
-  const _LoadMoreSentinel({required this.model, super.key});
+final class _TrashContents extends StatelessWidget {
+  const _TrashContents({required this.model});
 
   final TrashViewModel model;
 
   @override
-  State<_LoadMoreSentinel> createState() => _LoadMoreSentinelState();
+  Widget build(BuildContext context) {
+    if (model.items.isEmpty) {
+      if (model.loading) {
+        return const SliverFillRemaining(
+          hasScrollBody: false,
+          child: Center(child: TainaLoadingList()),
+        );
+      }
+      final error = model.error;
+      if (error != null) {
+        return SliverFillRemaining(
+          hasScrollBody: false,
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(TainaSpacing.space4),
+              child: ErrorCard(
+                title: 'Não conseguimos carregar a lixeira.',
+                body: error.message,
+                retry: () => unawaited(model.load()),
+              ),
+            ),
+          ),
+        );
+      }
+      return const SliverFillRemaining(
+        hasScrollBody: false,
+        child: Center(
+          child: EmptyStateView(
+            icon: TainaIcon.lixeira,
+            title: 'A lixeira está vazia',
+            body: 'Nada foi apagado. O que você apagar aparece aqui por 30 dias antes de sumir de vez.',
+          ),
+        ),
+      );
+    }
+
+    final rows = <Widget>[
+      SliverList.builder(
+        itemCount: model.items.length,
+        itemBuilder: (context, index) {
+          final file = model.items[index];
+          final restoring = model.restoringRkey == file.rkey;
+          return TainaListRow(
+            kind: TainaListRowKind.trash,
+            title: file.name,
+            meta: TrashLogic.meta(file),
+            trailing: TainaListRowTrailing.action,
+            trailingLabel: restoring ? 'Restaurando' : 'Restaurar',
+            trailingBuilder: restoring
+                ? (_) => Semantics(
+                    label: 'Restaurando',
+                    liveRegion: true,
+                    child: SizedBox(
+                      width: TainaSizes.touch,
+                      height: TainaSizes.touch,
+                      child: Center(child: CircularProgressIndicator()),
+                    ),
+                  )
+                : null,
+            onTrailingPressed: restoring
+                ? null
+                : () => unawaited(_restore(context, file.rkey)),
+          );
+        },
+      ),
+      if (model.nextCursor != null)
+        SliverToBoxAdapter(
+          child: _TrashLoadMoreSentinel(
+            model: model,
+            key: ValueKey(model.nextCursor),
+          ),
+        ),
+    ];
+    return SliverMainAxisGroup(slivers: rows);
+  }
+
+  Future<void> _restore(BuildContext context, String rkey) async {
+    final result = await model.restore(rkey: rkey);
+    if (!context.mounted) return;
+    final error = result.error;
+    final text = error == null
+        ? 'Arquivo restaurado.'
+        : error.message.isEmpty
+        ? 'Não foi possível restaurar o arquivo.'
+        : error.message;
+    ScaffoldMessenger.maybeOf(context)
+      ?..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          behavior: SnackBarBehavior.floating,
+          content: TainaToast(
+            kind: error == null ? TainaToastKind.info : TainaToastKind.error,
+            text: text,
+          ),
+        ),
+      );
+  }
 }
 
-final class _LoadMoreSentinelState extends State<_LoadMoreSentinel> {
+final class _TrashLoadMoreSentinel extends StatefulWidget {
+  const _TrashLoadMoreSentinel({required this.model, super.key});
+
+  final TrashViewModel model;
+
+  @override
+  State<_TrashLoadMoreSentinel> createState() => _TrashLoadMoreSentinelState();
+}
+
+final class _TrashLoadMoreSentinelState extends State<_TrashLoadMoreSentinel> {
   @override
   void initState() {
     super.initState();
-    _kick();
-  }
-
-  void _kick() {
-    if (widget.model.moreError) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      unawaited(widget.model.loadMore());
+      if (mounted && !widget.model.moreError) {
+        unawaited(widget.model.loadMore());
+      }
     });
   }
 
@@ -290,37 +239,17 @@ final class _LoadMoreSentinelState extends State<_LoadMoreSentinel> {
   Widget build(BuildContext context) {
     if (widget.model.moreError) {
       return Padding(
-        padding: const EdgeInsets.symmetric(vertical: TainaSpacing.space4),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TainaText(
-              'Não foi possível carregar mais itens.',
-              style: TainaTypography.caption,
-              color: TainaPalette.textMuted,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: TainaSpacing.space2),
-            TainaSecondaryButton(
-              label: 'Tentar de novo',
-              onPressed: () => unawaited(widget.model.loadMore()),
-            ),
-          ],
+        padding: const EdgeInsets.all(TainaSpacing.space4),
+        child: ErrorCard(
+          title: 'Não foi possível carregar mais itens.',
+          body: '',
+          retry: () => unawaited(widget.model.loadMore()),
         ),
       );
     }
     return const Padding(
-      padding: EdgeInsets.symmetric(vertical: TainaSpacing.space4),
-      child: Center(
-        child: SizedBox(
-          width: TainaSizes.controlSm / 2,
-          height: TainaSizes.controlSm / 2,
-          child: CircularProgressIndicator(
-            strokeWidth: TainaSizes.thick,
-            color: TainaPalette.textMuted,
-          ),
-        ),
-      ),
+      padding: EdgeInsets.all(TainaSpacing.space4),
+      child: Center(child: CircularProgressIndicator()),
     );
   }
 }

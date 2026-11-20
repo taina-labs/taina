@@ -10,6 +10,20 @@ Widget _app(Widget home) {
   return MaterialApp(theme: TainaTheme.data, home: home);
 }
 
+Folder _withOwner(Folder folder, String dono) {
+  return Folder(
+    rkey: folder.rkey,
+    cid: folder.cid,
+    name: folder.name,
+    zona: folder.zona,
+    folder: folder.folder,
+    deletedAt: folder.deletedAt,
+    createdAt: folder.createdAt,
+    updatedAt: folder.updatedAt,
+    dono: dono,
+  );
+}
+
 void _tall(WidgetTester tester) {
   tester.view.physicalSize = const Size(900, 1600);
   tester.view.devicePixelRatio = 1;
@@ -23,13 +37,14 @@ void main() {
   ) async {
     _tall(tester);
     final api = FakeTainaApi(delay: Duration.zero);
+    const me = fakeMe;
     final folders = (await api.listFolders()).value!;
-    final folder = folders.first;
+    final folder = _withOwner(folders.first, me.ava.publicId);
 
     await tester.pumpWidget(
       _app(
         FolderScreen(
-          session: FakeSessionGateway(api: api),
+          session: FakeSessionGateway(api: api, identity: me),
           actions: FakeFileActions(),
           folder: folder,
         ),
@@ -41,13 +56,13 @@ void main() {
     expect(find.text('Estatuto da associacao.pdf'), findsOneWidget);
     expect(find.text('Lista de presenca.pdf'), findsNothing);
 
-    await tester.tap(find.byTooltip('Mais opções'));
+    await tester.tap(find.bySemanticsLabel('Ações da pasta'));
     await tester.pumpAndSettle();
 
     expect(find.text('Publicar na praça'), findsOneWidget);
     expect(find.text('Renomear'), findsOneWidget);
     expect(find.text('Mover'), findsOneWidget);
-    expect(find.text('Excluir'), findsOneWidget);
+    expect(find.text('Remover'), findsOneWidget);
   });
 
   testWidgets('uploads in a praca folder still start in casa', (tester) async {
@@ -79,14 +94,15 @@ void main() {
   ) async {
     _tall(tester);
     final api = FakeTainaApi(delay: Duration.zero);
+    const me = fakeMe;
     final folders = (await api.listFolders()).value!;
-    final folder = folders.first;
+    final folder = _withOwner(folders.first, me.ava.publicId);
     var deleted = false;
 
     await tester.pumpWidget(
       _app(
         FolderScreen(
-          session: FakeSessionGateway(api: api),
+          session: FakeSessionGateway(api: api, identity: me),
           actions: FakeFileActions(),
           folder: folder,
           onDeleted: () => deleted = true,
@@ -95,14 +111,14 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byTooltip('Mais opções'));
+    await tester.tap(find.bySemanticsLabel('Ações da pasta'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Excluir'));
+    await tester.tap(find.text('Remover'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Excluir a pasta "${folder.name}"?'), findsOneWidget);
+    expect(find.text('Remover a pasta ${folder.name}?'), findsOneWidget);
 
-    await tester.tap(find.widgetWithText(TextButton, 'Excluir'));
+    await tester.tap(find.widgetWithText(TainaButton, 'Remover'));
     await tester.pumpAndSettle();
 
     expect(deleted, isTrue);

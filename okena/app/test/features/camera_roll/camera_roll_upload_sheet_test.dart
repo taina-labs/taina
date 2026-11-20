@@ -84,8 +84,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.byTooltip('Adicionar fotos e vídeos'), findsOneWidget);
-    await tester.tap(find.byTooltip('Adicionar fotos e vídeos'));
+    expect(find.bySemanticsLabel('Adicionar fotos e vídeos'), findsOneWidget);
+    await tester.tap(find.bySemanticsLabel('Adicionar fotos e vídeos'));
     await tester.pumpAndSettle();
 
     expect(find.text('Adicionar fotos e vídeos'), findsOneWidget);
@@ -151,7 +151,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Adicionar fotos e vídeos'));
+    await tester.tap(find.bySemanticsLabel('Adicionar fotos e vídeos'));
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Tirar foto'));
@@ -178,6 +178,6 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.byTooltip('Adicionar fotos e vídeos'), findsNothing);
+    expect(find.bySemanticsLabel('Adicionar fotos e vídeos'), findsNothing);
   });
 }

@@ -37,12 +37,12 @@ void main() {
 
     expect(find.text('Lixeira'), findsOneWidget);
     expect(
-      find.textContaining('Itens são apagados para sempre após 30 dias'),
+      find.textContaining('Os itens ficam 30 dias na lixeira'),
       findsOneWidget,
     );
     expect(find.text('Foto da quadra.jpg'), findsOneWidget);
-    expect(find.textContaining('Apagado hoje'), findsOneWidget);
-    expect(find.byTooltip('Restaurar'), findsOneWidget);
+    expect(find.textContaining('resta'), findsOneWidget);
+    expect(find.text('Restaurar'), findsOneWidget);
   });
 
   testWidgets('restoring drops the row and empties the trash', (tester) async {
@@ -54,23 +54,31 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byTooltip('Restaurar'));
+    await tester.tap(find.text('Restaurar'));
     await tester.pumpAndSettle();
 
     expect(find.text('Foto da quadra.jpg'), findsNothing);
-    expect(find.text('Lixeira vazia'), findsOneWidget);
+    expect(find.text('A lixeira está vazia'), findsOneWidget);
   });
 
   testWidgets('an empty trash says nothing is waiting', (tester) async {
     final api = FakeTainaApi(delay: Duration.zero);
+    TainaDocumentTab? selectedTab;
 
     await tester.pumpWidget(
-      _app(TrashScreen(session: FakeSessionGateway(api: api))),
+      _app(
+        TrashScreen(
+          session: FakeSessionGateway(api: api),
+          onSelectTab: (tab) => selectedTab = tab,
+        ),
+      ),
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Lixeira vazia'), findsOneWidget);
-    expect(find.text('Nada esperando para ser apagado.'), findsOneWidget);
+    expect(find.text('A lixeira está vazia'), findsOneWidget);
+    expect(find.textContaining('Nada foi apagado.'), findsOneWidget);
+    await tester.tap(find.text('Casa').last);
+    expect(selectedTab, TainaDocumentTab.casa);
   });
 
   testWidgets('a failed page shows the error and the retry', (tester) async {
