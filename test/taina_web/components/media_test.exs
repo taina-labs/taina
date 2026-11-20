@@ -27,7 +27,13 @@ defmodule TainaWeb.UI.MediaTest do
 
   defp dropzone_component(assigns) do
     ~H"""
-    <.dropzone upload={@upload} state={@state} error_href={@error_href} retry={@retry} />
+    <.dropzone
+      upload={@upload}
+      state={@state}
+      error_href={@error_href}
+      retry={@retry}
+      finalizing={@finalizing}
+    />
     """
   end
 
@@ -82,7 +88,8 @@ defmodule TainaWeb.UI.MediaTest do
         upload: build_upload([]),
         state: state,
         error_href: nil,
-        retry: nil
+        retry: nil,
+        finalizing: false
       })
 
     render_component(&dropzone_component/1, assigns)
@@ -186,6 +193,17 @@ defmodule TainaWeb.UI.MediaTest do
     assert html =~ "Guardando na casa. "
     assert html =~ "4,0 MB de 6,2 MB"
     assert html =~ "progress"
+  end
+
+  test "dropzone finalizing: Guardando is shown instead of Enviando" do
+    upload =
+      build_upload([build_entry("trilha-da-praia.jpg", 6_500_000, 100)])
+
+    html = dropzone_html("uploading", upload: upload, finalizing: true)
+
+    assert html =~ "Guardando trilha-da-praia.jpg"
+    refute html =~ "Enviando trilha-da-praia.jpg"
+    assert html =~ "Guardando na casa."
   end
 
   test "dropzone error-cota: título, copy do Ver espaço e link de armazenamento" do

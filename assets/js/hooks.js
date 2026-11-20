@@ -2,6 +2,8 @@
 // verifique se um binding nativo (phx-viewport-*, phx-drop-target, JS.*)
 // já resolve.
 
+import UploadQueueHook from "./upload_queue_hook.js";
+
 // Escrita na área de transferência. navigator.clipboard só existe em origem
 // segura e a instalação canônica é http://taina.local, então o caminho
 // moderno nem sempre está lá; sem ele, cai para o execCommand (deprecado,
@@ -142,54 +144,6 @@ const DragClass = {
       toggle(false);
     });
     this.el.addEventListener("drop", () => toggle(false));
-  },
-};
-
-// O upload em segundo plano fica para outra etapa. Por enquanto a seleção é
-// limitada antes de chegar ao LiveView, para que um décimo primeiro arquivo não
-// vire uma entrada presa em 0% no cliente.
-const UploadSelectionLimit = {
-  mounted() {
-    this.limit = Math.max(1, Number(this.el.dataset.uploadMaxEntries) || 10);
-    this.onInput = (event) => {
-      const input = event.target;
-      if (!this.fileInput(input)) return;
-      this.setFiles(input, Array.from(input.files || []));
-    };
-    this.onDrop = (event) => {
-      const files = Array.from(event.dataTransfer?.files || []);
-      if (files.length <= this.limit) return;
-
-      const target = event.target?.closest?.("[phx-drop-target]");
-      const input = target && document.getElementById(target.getAttribute("phx-drop-target"));
-      if (!this.fileInput(input)) return;
-
-      event.preventDefault();
-      event.stopPropagation();
-      this.setFiles(input, files);
-      input.dispatchEvent(new Event("input", {bubbles: true}));
-    };
-
-    this.el.addEventListener("input", this.onInput, true);
-    this.el.addEventListener("change", this.onInput, true);
-    this.el.addEventListener("drop", this.onDrop, true);
-  },
-
-  destroyed() {
-    this.el.removeEventListener("input", this.onInput, true);
-    this.el.removeEventListener("change", this.onInput, true);
-    this.el.removeEventListener("drop", this.onDrop, true);
-  },
-
-  fileInput(input) {
-    return input instanceof HTMLInputElement && input.type === "file";
-  },
-
-  setFiles(input, files) {
-    if (files.length <= this.limit) return;
-    const transfer = new DataTransfer();
-    files.slice(0, this.limit).forEach((file) => transfer.items.add(file));
-    input.files = transfer.files;
   },
 };
 
@@ -394,7 +348,7 @@ export default {
   ViewerNav,
   FullSwap,
   DragClass,
-  UploadSelectionLimit,
+  UploadQueueHook,
   VideoFallback,
   Share,
   FlashAutoDismiss,

@@ -197,6 +197,7 @@ defmodule TainaWeb.UI.Media do
   attr :error_href, :string, default: nil, doc: "destino do Ver espaço (state error-cota)"
   attr :retry, :any, default: nil, doc: "evento/JS do Tentar de novo (state error-rede)"
   attr :picker, :boolean, default: true, doc: "mantém o input do envio ativo na caixa"
+  attr :finalizing, :boolean, default: false, doc: "indica que a transferência terminou e o handoff está em andamento"
   attr :rest, :global
 
   def dropzone(%{state: "idle"} = assigns) do
@@ -215,15 +216,24 @@ defmodule TainaWeb.UI.Media do
   end
 
   def dropzone(%{state: "uploading"} = assigns) do
-    assigns = assign(assigns, :entry, entry(assigns.upload))
+    assigns =
+      assigns
+      |> assign(:entry, entry(assigns.upload))
+      |> assign(
+        :progress_label,
+        if(assigns.finalizing,
+          do: gettext("Guardando %{name}", name: entry(assigns.upload).client_name),
+          else: gettext("Enviando %{name}", name: entry(assigns.upload).client_name)
+        )
+      )
 
     ~H"""
     <div class={["dropzone", "dropzone--uploading"]} {@rest}>
       <p class="dropzone__title dropzone__title--uploading">
-        {gettext("Enviando %{name}", name: @entry.client_name)}
+        {@progress_label}
       </p>
       <p class="dropzone__percent">{@entry.progress}%</p>
-      <.progress value={@entry.progress} label={gettext("Enviando %{name}", name: @entry.client_name)} />
+      <.progress value={@entry.progress} label={@progress_label} />
       <p class="dropzone__help">
         {gettext("Guardando na casa. %{done} de %{total}",
           done: format_bytes(done_bytes(@entry)),
