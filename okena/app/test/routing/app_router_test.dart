@@ -142,7 +142,7 @@ void main() {
       AppRoutes.documentsUpload: 'upload:true',
       AppRoutes.galleryGrid: 'galeria:/galeria/grade::',
       AppRoutes.galleryTimeline: 'galeria:/galeria/linha-do-tempo::',
-      AppRoutes.galleryViewer: 'visualizador:/galeria/visualizador::',
+      AppRoutes.galleryViewer: 'galeria:/galeria/grade::',
       '/galeria/visualizador/photo-1':
           'visualizador:/galeria/visualizador/photo-1::photo-1',
       AppRoutes.mural: 'mural:/mural::',

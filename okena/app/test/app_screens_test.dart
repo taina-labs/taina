@@ -10,6 +10,7 @@ import 'package:okena_app/src/features/account/devices_screen.dart';
 import 'package:okena_app/src/features/files/upload_screen.dart';
 import 'package:okena_app/src/features/gallery/gallery_model.dart';
 import 'package:okena_app/src/features/gallery/gallery_screen.dart';
+import 'package:okena_app/src/features/gallery/gallery_viewer.dart';
 import 'package:okena_app/src/features/home/home_screen.dart';
 import 'package:okena_app/src/features/mirror/mirror_screen.dart';
 import 'package:okena_app/src/features/privacy/privacy_screen.dart';
@@ -230,6 +231,48 @@ void main() {
       router.pop();
       await tester.pumpAndSettle();
       expect(find.byType(HomeScreen), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'viewer deep link opens the requested timeline photo and returns to its tab',
+    (tester) async {
+      final SessionModel session = await readySession();
+      addTearDown(session.dispose);
+      final timeline = (await session.api.photoTimeline(
+        limit: null,
+        cursor: null,
+      )).value!;
+      final FileRecord target = timeline.items.first.photos.first;
+      final GoRouter router = createSessionRouter(
+        session: session,
+        screens: buildShellScreens(session),
+      );
+      await tester.pumpWidget(
+        MaterialApp.router(theme: TainaTheme.data, routerConfig: router),
+      );
+      await tester.pumpAndSettle();
+
+      router.go(
+        AppRoutes.galleryPhoto(target.rkey, tab: GalleryRouteTab.timeline),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(GalleryViewerScreen), findsOneWidget);
+      final GalleryViewerScreen viewer = tester.widget(
+        find.byType(GalleryViewerScreen),
+      );
+      expect(viewer.model.tab, GalleryTab.timeline);
+      expect(viewer.model.viewer?.file?.rkey, target.rkey);
+
+      await tester.tap(find.bySemanticsLabel('Fechar visualização'));
+      await tester.pumpAndSettle();
+
+      expect(
+        router.routeInformationProvider.value.uri.path,
+        AppRoutes.galleryTimeline,
+      );
+      expect(find.byType(GalleryScreen), findsOneWidget);
     },
   );
 }

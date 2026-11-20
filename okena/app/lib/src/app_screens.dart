@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:okena_app/src/design_system/design_system.dart';
@@ -12,6 +14,8 @@ import 'package:okena_app/src/features/files/upload_screen.dart';
 import 'package:okena_app/src/features/files/platform_file_actions.dart';
 import 'package:okena_app/src/features/camera_roll/platform_media_picker.dart';
 import 'package:okena_app/src/features/gallery/gallery_screen.dart';
+import 'package:okena_app/src/features/gallery/gallery_model.dart';
+import 'package:okena_app/src/features/gallery/gallery_viewer.dart';
 import 'package:okena_app/src/features/home/home_screen.dart';
 import 'package:okena_app/src/features/login/invite_paste_view.dart';
 import 'package:okena_app/src/features/members/members_screen.dart';
@@ -182,27 +186,23 @@ ShellScreens buildShellScreens(
         returnLocation: state.uri.path,
       ),
     ),
-    galleryViewer: (context, state) => GalleryScreen(
-      gateway: context.read<SessionGateway>(),
-      onShareFile: actions.share,
-      initialTab: _galleryTabFromViewer(state),
-      mediaPicker: mediaPicker,
-      uploadCenter: context.read<UploadCenter>(),
-      onNavigateTab: (tab) => context.pushReplacement(
-        serviceTabLocation(
-          tab == TainaGalleryTab.grade
-              ? ServiceTab.galleryGrid
-              : ServiceTab.galleryTimeline,
-        ),
-      ),
-      onBack: () => _routeBack(context, AppRoutes.home),
-      onOpenUpload: () => _openUpload(
-        context,
-        null,
-        backLabel: 'Galeria',
-        returnLocation: AppRoutes.galleryGrid,
-      ),
-    ),
+    galleryViewer: (context, state) {
+      final String? rkey = state.pathParameters['rkey'];
+      if (rkey == null) {
+        return GalleryScreen(
+          gateway: context.read<SessionGateway>(),
+          onShareFile: actions.share,
+        );
+      }
+      final TainaGalleryTab tab = _galleryTabFromViewer(state);
+      return _GalleryViewerRoute(
+        gateway: context.read<SessionGateway>(),
+        rkey: rkey,
+        tab: tab,
+        onShareFile: actions.share,
+        onClose: () => _routeBack(context, _galleryLocation(tab)),
+      );
+    },
     mural: (context, state) => MuralScreen(
       session: context.read<SessionGateway>(),
       onBack: () => _routeBack(context, AppRoutes.home),
@@ -339,6 +339,10 @@ TainaGalleryTab _galleryTabFromViewer(GoRouterState state) =>
     ? TainaGalleryTab.linha
     : TainaGalleryTab.grade;
 
+String _galleryLocation(TainaGalleryTab tab) => tab == TainaGalleryTab.linha
+    ? AppRoutes.galleryTimeline
+    : AppRoutes.galleryGrid;
+
 void _routeBack(BuildContext context, String fallbackLocation) {
   final GoRouter router = GoRouter.of(context);
   if (router.canPop()) {
@@ -401,6 +405,110 @@ UploadRequest? _activeUploadRequest(UploadCenter center) =>
       UploadFailed(:final request, error: _) => request,
       UploadIdle() => null,
     };
+
+final class _GalleryViewerRoute extends StatefulWidget {
+  const _GalleryViewerRoute({
+    required this.gateway,
+    required this.rkey,
+    required this.tab,
+    required this.onClose,
+    this.onShareFile,
+  });
+
+  final SessionGateway gateway;
+  final String rkey;
+  final TainaGalleryTab tab;
+  final GalleryShareFile? onShareFile;
+  final VoidCallback onClose;
+
+  @override
+  State<_GalleryViewerRoute> createState() => _GalleryViewerRouteState();
+}
+
+final class _GalleryViewerRouteState extends State<_GalleryViewerRoute> {
+  late final GalleryModel _model = GalleryModel(
+    widget.gateway,
+    initialTab: switch (widget.tab) {
+      TainaGalleryTab.grade => GalleryTab.grid,
+      TainaGalleryTab.linha => GalleryTab.timeline,
+    },
+  );
+  bool _opening = true;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_open());
+  }
+
+  @override
+  void dispose() {
+    _model.dispose();
+    super.dispose();
+  }
+
+  Future<void> _open() async {
+    if (mounted && !_opening) setState(() => _opening = true);
+    if (_model.error != null) await _model.refresh();
+    if (_model.alertMessage != null) _model.dismissAlert();
+    final bool opened = await _model.openRkey(widget.rkey);
+    if (!mounted) return;
+    setState(() => _opening = false);
+    if (!opened && _model.alertMessage != null) {
+      _model.dismissAlert();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_opening) {
+      return const Scaffold(
+        backgroundColor: TainaPalette.bgViewer,
+        body: SafeArea(child: TainaLoadingList(itemCount: 1)),
+      );
+    }
+    if (_model.viewer != null) {
+      return GalleryViewerScreen(
+        model: _model,
+        gateway: widget.gateway,
+        onShareFile: widget.onShareFile,
+        onClose: widget.onClose,
+      );
+    }
+
+    return Scaffold(
+      backgroundColor: TainaPalette.bgViewer,
+      body: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(TainaSpacing.space4),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                ErrorCard(
+                  title: 'Não conseguimos abrir esta foto.',
+                  body:
+                      _model.error?.message ??
+                      _model.alertMessage ??
+                      'Esta foto não está na Galeria.',
+                  retry: () => unawaited(_open()),
+                ),
+                const SizedBox(height: TainaSpacing.space3),
+                TainaButton(
+                  title: 'Voltar para a Galeria',
+                  icon: TainaIcon.chevL,
+                  kind: TainaButtonKind.ghost,
+                  action: widget.onClose,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 void _openFolder(
   BuildContext context,

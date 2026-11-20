@@ -40,6 +40,10 @@ void main() {
         AppRoutes.galleryTimeline,
       );
       expect(
+        AppRoutes.galleryPhoto('photo-1', tab: GalleryRouteTab.timeline),
+        '/galeria/visualizador/photo-1?tab=linha',
+      );
+      expect(
         AppRoutes.folder('abc', Zona.casa),
         '/documentos/pasta/abc?zona=casa',
       );

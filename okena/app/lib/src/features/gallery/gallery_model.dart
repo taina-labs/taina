@@ -226,6 +226,40 @@ final class GalleryModel extends ChangeNotifier {
     _notify();
   }
 
+  /// Pages through the current grid or timeline until [rkey] is visible, then
+  /// opens it at its position in that same ordered view.
+  ///
+  /// False means the item was absent or a page could not be loaded. The model
+  /// keeps the error state it already uses for ordinary gallery pagination.
+  Future<bool> openRkey(String rkey) async {
+    if (_disposed) return false;
+    await ensureLoaded();
+    if (_disposed) return false;
+
+    final Set<String> seenCursors = {};
+    while (!_disposed) {
+      final List<FileRecord> files = visiblePhotos;
+      for (final FileRecord file in files) {
+        if (file.rkey == rkey) {
+          open(file);
+          return true;
+        }
+      }
+
+      if (!canLoadMore) return false;
+      final String cursor = switch (_tab) {
+        GalleryTab.grid => _nextCursor!,
+        GalleryTab.timeline => _timelineCursor!,
+      };
+      if (!seenCursors.add(cursor)) return false;
+
+      final int pagesBefore = _loadedPageCount;
+      await loadMore();
+      if (_disposed || _loadedPageCount == pagesBefore) return false;
+    }
+    return false;
+  }
+
   void close() {
     _viewer = null;
     _video = const GalleryVideoIdle();

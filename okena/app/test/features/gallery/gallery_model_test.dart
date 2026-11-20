@@ -300,6 +300,105 @@ void main() {
   });
 
   group('viewer', () {
+    test(
+      'openRkey walks the selected grid pages and preserves their order',
+      () async {
+        final FileRecord first = sampleFile(rkey: 'first');
+        final FileRecord target = sampleFile(rkey: 'target');
+        final FileRecord after = sampleFile(rkey: 'after');
+        final _PagingApi api = _PagingApi(
+          photoPages: [
+            Page(items: [first], nextCursor: '1'),
+            Page(items: [target], nextCursor: '2'),
+            Page(items: [after], nextCursor: null),
+          ],
+        );
+        final GalleryModel model = GalleryModel(GalleryTestGateway(api: api));
+        addTearDown(model.dispose);
+
+        final bool opened = await model.openRkey(target.rkey);
+
+        expect(opened, isTrue);
+        expect(model.tab, GalleryTab.grid);
+        expect(model.viewer?.file, target);
+        expect(model.viewer?.files, [first, target]);
+        expect(model.viewer?.index, 1);
+        expect(model.canLoadMore, isTrue);
+      },
+    );
+
+    test('openRkey pages the timeline without switching its tab', () async {
+      final FileRecord first = sampleFile(rkey: 'first');
+      final FileRecord target = sampleFile(rkey: 'target');
+      final _PagingApi api = _PagingApi(
+        timelinePages: [
+          Page(
+            items: [
+              TimelineGroup(date: '2026-06-22', photos: [first]),
+            ],
+            nextCursor: '1',
+          ),
+          Page(
+            items: [
+              TimelineGroup(date: '2026-06-21', photos: [target]),
+            ],
+            nextCursor: null,
+          ),
+        ],
+      );
+      final GalleryModel model = GalleryModel(
+        GalleryTestGateway(api: api),
+        initialTab: GalleryTab.timeline,
+      );
+      addTearDown(model.dispose);
+
+      final bool opened = await model.openRkey(target.rkey);
+
+      expect(opened, isTrue);
+      expect(model.tab, GalleryTab.timeline);
+      expect(model.viewer?.files, [first, target]);
+      expect(model.viewer?.file, target);
+      expect(model.viewer?.index, 1);
+      expect(model.canLoadMore, isFalse);
+    });
+
+    test(
+      'openRkey returns false when the item is absent or a page fails',
+      () async {
+        final _PagingApi absentApi = _PagingApi(
+          photoPages: [
+            Page(items: [sampleFile(rkey: 'first')], nextCursor: null),
+          ],
+        );
+        final GalleryModel absentModel = GalleryModel(
+          GalleryTestGateway(api: absentApi),
+        );
+        addTearDown(absentModel.dispose);
+        expect(await absentModel.openRkey('missing'), isFalse);
+        expect(absentModel.viewer, isNull);
+
+        final _PagingApi failingApi = _PagingApi(
+          photoPages: [
+            Page(
+              items: [sampleFile(rkey: 'first')],
+              nextCursor: '1',
+            ),
+            Page(items: [sampleFile(rkey: 'target')], nextCursor: null),
+          ],
+        );
+        final GalleryModel failingModel = GalleryModel(
+          GalleryTestGateway(api: failingApi),
+        );
+        addTearDown(failingModel.dispose);
+        await failingModel.ensureLoaded();
+        failingApi.failNextPhotos = true;
+        expect(await failingModel.openRkey('target'), isFalse);
+        expect(failingModel.viewer, isNull);
+        expect(failingModel.alertMessage, GalleryModel.loadMoreMessage);
+        expect(failingModel.nextCursor, '1');
+      },
+    );
+
     test('open, move and close follow the visible list', () async {
       final GalleryTestGateway gateway = GalleryTestGateway();
       final GalleryModel model = GalleryModel(gateway);

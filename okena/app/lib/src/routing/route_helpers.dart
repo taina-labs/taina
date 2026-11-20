@@ -39,8 +39,13 @@ abstract final class AppRoutes {
   static String file(String rkey) =>
       '/documentos/arquivo/${Uri.encodeComponent(rkey)}';
 
-  static String galleryPhoto(String rkey) =>
-      '$galleryViewer/${Uri.encodeComponent(rkey)}';
+  static String galleryPhoto(
+    String rkey, {
+    GalleryRouteTab tab = GalleryRouteTab.grade,
+  }) {
+    final String path = '$galleryViewer/${Uri.encodeComponent(rkey)}';
+    return tab == GalleryRouteTab.timeline ? '$path?tab=linha' : path;
+  }
 }
 
 enum ServiceTab {
@@ -54,6 +59,8 @@ enum ServiceTab {
 
   final String location;
 }
+
+enum GalleryRouteTab { grade, timeline }
 
 /// Resolves a service tab as a destination, not as another item on a tab
 /// history stack. Callers should replace the current route, never push.

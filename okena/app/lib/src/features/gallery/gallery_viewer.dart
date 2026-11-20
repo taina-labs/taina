@@ -19,6 +19,7 @@ final class GalleryViewerScreen extends StatefulWidget {
     required this.model,
     required this.gateway,
     this.onShareFile,
+    this.onClose,
     this.playerFactory = defaultGalleryVideoPlayer,
     super.key,
   });
@@ -26,6 +27,7 @@ final class GalleryViewerScreen extends StatefulWidget {
   final GalleryModel model;
   final SessionGateway gateway;
   final GalleryShareFile? onShareFile;
+  final VoidCallback? onClose;
   final GalleryVideoPlayerFactory playerFactory;
 
   @override
@@ -68,7 +70,12 @@ final class _GalleryViewerScreenState extends State<GalleryViewerScreen> {
     _popping = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      Navigator.of(context).maybePop();
+      final VoidCallback? close = widget.onClose;
+      if (close != null) {
+        close();
+      } else {
+        Navigator.of(context).maybePop();
+      }
     });
   }
 

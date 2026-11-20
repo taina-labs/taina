@@ -130,15 +130,12 @@ GoRouter createSessionRouter({
           ),
           GoRoute(
             path: AppRoutes.galleryViewer,
+            redirect: (context, state) => AppRoutes.galleryGrid,
+          ),
+          GoRoute(
+            path: '/galeria/visualizador/:rkey',
             builder: (context, state) =>
                 _required(screens.galleryViewer, context, state),
-            routes: [
-              GoRoute(
-                path: ':rkey',
-                builder: (context, state) =>
-                    _required(screens.galleryViewer, context, state),
-              ),
-            ],
           ),
           GoRoute(
             path: AppRoutes.mural,
