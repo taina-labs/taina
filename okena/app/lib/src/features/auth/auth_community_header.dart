@@ -35,7 +35,7 @@ final class AuthCommunityHeader extends StatelessWidget {
             style: TainaTypography.monoSm,
             color: TainaPalette.textMuted,
           ),
-          if (host!.isCleartext) const TainaCleartextNotice(),
+          if (host!.isCleartext) const ConnectionNotice(),
         ],
       ],
     );

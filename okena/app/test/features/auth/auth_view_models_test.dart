@@ -3,6 +3,7 @@ import 'package:okena_app/src/features/auth/auth_gate.dart';
 import 'package:okena_app/src/features/auth/invite_accept_view_model.dart';
 import 'package:okena_app/src/features/auth/reset_password_view_model.dart';
 import 'package:okena_app/src/session/session_state.dart';
+import 'package:okena_core/okena_core.dart';
 
 import '../../session/support/session_support.dart';
 
@@ -31,24 +32,6 @@ void main() {
       expect(model.gate, isA<AuthDead>());
     });
 
-    test('mismatched passwords never reach the wire', () async {
-      final composed = makeSession(host: testBox(), state: _pending(_invite));
-      final model = InviteAcceptViewModel(session: composed.model);
-
-      await model.createAccount(
-        pending: _invite,
-        username: 'novo',
-        displayName: '',
-        password: 'segredo',
-        confirmation: 'outra',
-        deviceName: 'Aparelho de teste',
-      );
-
-      expect(model.mismatch, 'As duas senhas não são iguais.');
-      expect(model.creating, isFalse);
-      expect(composed.model.state, isA<SessionPendingAuth>());
-    });
-
     test('a valid form creates the account and signs in', () async {
       final composed = makeSession(host: testBox(), state: _pending(_invite));
       final model = InviteAcceptViewModel(session: composed.model);
@@ -58,7 +41,6 @@ void main() {
         username: 'novo',
         displayName: 'Pessoa Nova',
         password: 'segredo',
-        confirmation: 'segredo',
         deviceName: 'Aparelho de teste',
       );
 
@@ -67,9 +49,38 @@ void main() {
       expect(composed.store.current?.me.displayName, 'Pessoa Nova');
     });
 
-    test('confirmationMatches is the app rule, pure', () {
-      expect(InviteAcceptViewModel.confirmationMatches('a', 'a'), isTrue);
-      expect(InviteAcceptViewModel.confirmationMatches('a', 'b'), isFalse);
+    test('invitation copy uses the optional name and inviter fields', () async {
+      final api = ScriptedApi(
+        inviteOutcome: const Ok(
+          TokenStatus(
+            valid: true,
+            tekoaName: 'Quilombo do Café',
+            inviter: 'Ana',
+          ),
+        ),
+      );
+      final composed = makeSession(host: testBox(), api: api);
+      final model = InviteAcceptViewModel(session: composed.model);
+
+      await model.check(_invite);
+
+      expect(
+        model.invitationMessage,
+        'Ana convidou você para a comunidade Quilombo do Café. Crie sua '
+        'conta para entrar.',
+      );
+    });
+
+    test('invitation copy has a generic fallback', () async {
+      final composed = makeSession(host: testBox());
+      final model = InviteAcceptViewModel(session: composed.model);
+
+      await model.check(_invite);
+
+      expect(
+        model.invitationMessage,
+        'Você foi convidado para a comunidade. Crie sua conta para entrar.',
+      );
     });
   });
 
@@ -94,22 +105,6 @@ void main() {
       expect(model.gate, isA<AuthDead>());
     });
 
-    test('mismatched passwords never reach the wire', () async {
-      final composed = makeSession(host: testBox(), state: _pending(_reset));
-      final model = ResetPasswordViewModel(session: composed.model);
-
-      await model.save(
-        pending: _reset,
-        password: 'segredo',
-        confirmation: 'outra',
-        deviceName: 'Aparelho de teste',
-      );
-
-      expect(model.mismatch, 'As duas senhas não são iguais.');
-      expect(model.saving, isFalse);
-      expect(composed.model.state, isA<SessionPendingAuth>());
-    });
-
     test('a valid form defines the password and signs in', () async {
       final composed = makeSession(host: testBox(), state: _pending(_reset));
       final model = ResetPasswordViewModel(session: composed.model);
@@ -117,7 +112,6 @@ void main() {
       await model.save(
         pending: _reset,
         password: 'nova-senha',
-        confirmation: 'nova-senha',
         deviceName: 'Aparelho de teste',
       );
 

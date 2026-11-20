@@ -1,42 +1,56 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:okena_core/okena_core.dart';
 import 'package:provider/provider.dart';
 
 import '../../design_system/design_system.dart';
-import '../../session/device_name.dart';
 import '../../session/session_model.dart';
 import '../../session/session_state.dart';
-import 'auth_community_header.dart';
 import 'auth_gate.dart';
+import 'device_name.dart';
 import 'invite_accept_view_model.dart';
 
-/// The invite accept, the native mirror of the web's `InviteAcceptLive`.
-///
-/// The token is checked lightly on arrival, a dead link shows the dead end
-/// instead of the form, and the real validation stays on the submit.
+/// The invitation form and its token states.
 final class InviteAcceptView extends StatelessWidget {
   const InviteAcceptView({
     required this.session,
     required this.pending,
+    this.tekoaName,
+    this.inviter,
     super.key,
   });
 
   final SessionModel session;
   final PendingAuth pending;
+  final String? tekoaName;
+  final String? inviter;
 
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider<InviteAcceptViewModel>(
       create: (_) => InviteAcceptViewModel(session: session),
-      child: _InviteAcceptBody(session: session, pending: pending),
+      child: _InviteAcceptBody(
+        session: session,
+        pending: pending,
+        tekoaName: tekoaName,
+        inviter: inviter,
+      ),
     );
   }
 }
 
 final class _InviteAcceptBody extends StatefulWidget {
-  const _InviteAcceptBody({required this.session, required this.pending});
+  const _InviteAcceptBody({
+    required this.session,
+    required this.pending,
+    required this.tekoaName,
+    required this.inviter,
+  });
 
   final SessionModel session;
   final PendingAuth pending;
+  final String? tekoaName;
+  final String? inviter;
 
   @override
   State<_InviteAcceptBody> createState() => _InviteAcceptBodyState();
@@ -46,14 +60,17 @@ final class _InviteAcceptBodyState extends State<_InviteAcceptBody> {
   final TextEditingController _username = TextEditingController();
   final TextEditingController _displayName = TextEditingController();
   final TextEditingController _password = TextEditingController();
-  final TextEditingController _confirmation = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      context.read<InviteAcceptViewModel>().check(widget.pending);
+      context.read<InviteAcceptViewModel>().check(
+        widget.pending,
+        tekoaName: widget.tekoaName,
+        inviter: widget.inviter,
+      );
     });
   }
 
@@ -62,7 +79,6 @@ final class _InviteAcceptBodyState extends State<_InviteAcceptBody> {
     _username.dispose();
     _displayName.dispose();
     _password.dispose();
-    _confirmation.dispose();
     super.dispose();
   }
 
@@ -71,134 +87,178 @@ final class _InviteAcceptBodyState extends State<_InviteAcceptBody> {
     username: _username.text,
     displayName: _displayName.text,
     password: _password.text,
-    confirmation: _confirmation.text,
-    deviceName: DeviceName.current,
+    deviceName: authDeviceName(
+      platform: defaultTargetPlatform,
+      username: _username.text,
+    ),
   );
 
   @override
   Widget build(BuildContext context) {
     final model = context.watch<InviteAcceptViewModel>();
     return Scaffold(
-      appBar: AppBar(title: const Text('Aceitar convite')),
-      body: switch (model.gate) {
-        AuthChecking() => const TainaLoadingList(itemCount: 4),
-        AuthDead() => _deadEnd(context),
-        AuthBroken(:final error) => TainaErrorState(
-          error: error,
-          onRetry: () => model.check(widget.pending),
-        ),
-        AuthOpen() => _form(model),
-      },
+      backgroundColor: TainaPalette.bgDeep,
+      body: SafeArea(
+        child: switch (model.gate) {
+          AuthChecking() => const Center(child: TainaLoadingList(itemCount: 4)),
+          AuthDead() => _deadEnd(context),
+          AuthBroken(:final error) => _broken(model, error),
+          AuthOpen() => _form(model),
+        },
+      ),
     );
   }
 
-  /// The dead end of a token spent or expired: an honest sentence and the way
-  /// back to the login.
   Widget _deadEnd(BuildContext context) {
-    return Center(
-      child: TainaEmptyState(
-        icon: Icons.schedule,
-        title: 'Este convite expirou ou já foi usado',
-        message:
-            'Convites valem sete dias e só podem ser usados uma vez. Peça '
-            'um novo link a quem cuida da sua comunidade.',
-        actionLabel: 'Ir para o login',
-        onAction: () {
-          widget.session.leavePendingAuth();
-        },
+    return Padding(
+      padding: const EdgeInsets.all(TainaSpacing.space4),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ErrorCard(
+              title: 'Este convite não é mais válido.',
+              body: '',
+              retryLabel: 'Voltar',
+              retry: widget.session.leavePendingAuth,
+              contact: () => _showContactSheet(context),
+            ),
+            const SizedBox(height: TainaSpacing.space3),
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: TainaButton(
+                title: 'Voltar para entrar',
+                kind: TainaButtonKind.ghost,
+                size: TainaButtonSize.sm,
+                action: widget.session.leavePendingAuth,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _broken(InviteAcceptViewModel model, TainaError error) {
+    return Padding(
+      padding: const EdgeInsets.all(TainaSpacing.space4),
+      child: Center(
+        child: ErrorCard(
+          title: 'Não conseguimos validar este convite.',
+          body: error.message,
+          retry: () => model.check(
+            widget.pending,
+            tekoaName: widget.tekoaName,
+            inviter: widget.inviter,
+          ),
+        ),
       ),
     );
   }
 
   Widget _form(InviteAcceptViewModel model) {
     final formMessage = model.formMessage;
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(TainaSpacing.space5),
+    return Padding(
+      padding: const EdgeInsets.all(TainaSpacing.space4),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        spacing: TainaSpacing.space5,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          AuthCommunityHeader(instance: model.instance, host: model.host),
-          const _InviteTitle(),
-          TainaTextField(
-            label: 'Seu nome de usuário',
-            controller: _username,
-            errorMessages: model.messagesFor(const ['username']),
-            autofillHints: const [AutofillHints.username],
-            placeholder: 'ex.: joao',
-            help: 'Sem espaços. É com ele que você entra na comunidade.',
-          ),
-          TainaTextField(
-            label: 'Nome de exibição (opcional)',
-            controller: _displayName,
-            errorMessages: model.messagesFor(const ['display_name']),
-            textCapitalization: TextCapitalization.sentences,
-            autofillHints: const [AutofillHints.name],
-            placeholder: 'ex.: João Mendes',
-          ),
-          TainaTextField(
-            label: 'Senha',
-            controller: _password,
-            obscureText: true,
-            errorMessages: model.messagesFor(const ['password']),
-            autofillHints: const [AutofillHints.newPassword],
-            placeholder: 'mínimo 8 caracteres',
-          ),
-          TainaTextField(
-            label: 'Confirme a senha',
-            controller: _confirmation,
-            obscureText: true,
-            errorMessages: model.mismatch != null
-                ? [model.mismatch!]
-                : model.messagesFor(const ['password']),
-            autofillHints: const [AutofillHints.newPassword],
-            placeholder: 'a mesma senha',
-          ),
-          if (formMessage != null)
-            TainaText(
-              formMessage,
-              style: TainaTypography.bodySm,
-              color: TainaPalette.feedbackError,
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: TainaButton(
+              title: 'Entrar',
+              kind: TainaButtonKind.ghost,
+              size: TainaButtonSize.sm,
+              icon: TainaIcon.chevL,
+              action: widget.session.leavePendingAuth,
             ),
-          TainaPrimaryButton(
-            label: 'Criar conta',
+          ),
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SizedBox(height: TainaSpacing.space4),
+                  const TainaText(
+                    'Você recebeu um convite',
+                    style: TainaTypography.h1,
+                    color: TainaPalette.textPrimary,
+                  ),
+                  const SizedBox(height: TainaSpacing.space5),
+                  TainaText(
+                    model.invitationMessage,
+                    style: TainaTypography.body,
+                    color: TainaPalette.textSecondary,
+                  ),
+                  const SizedBox(height: TainaSpacing.space5),
+                  TainaField(
+                    label: 'Seu nome de usuário',
+                    controller: _username,
+                    kind: TainaFieldKind.text,
+                    placeholder: 'ex.: joao',
+                    help: 'Sem espaços. É com ele que você entra.',
+                    errorMessages: model.messagesFor(const ['username']),
+                    autofillHints: const [AutofillHints.username],
+                    textInputAction: TextInputAction.next,
+                  ),
+                  const SizedBox(height: TainaSpacing.space4),
+                  TainaField(
+                    label: 'Nome de exibição (opcional)',
+                    controller: _displayName,
+                    kind: TainaFieldKind.text,
+                    placeholder: 'ex.: João Mendes',
+                    help: 'Como seu nome aparece para a comunidade.',
+                    errorMessages: model.messagesFor(const ['display_name']),
+                    textCapitalization: TextCapitalization.words,
+                    autofillHints: const [AutofillHints.name],
+                    textInputAction: TextInputAction.next,
+                  ),
+                  const SizedBox(height: TainaSpacing.space4),
+                  TainaField(
+                    label: 'Senha',
+                    controller: _password,
+                    kind: TainaFieldKind.password,
+                    placeholder: 'mínimo 8 caracteres',
+                    help: 'Use uma frase longa que só você lembra.',
+                    errorMessages: model.messagesFor(const ['password']),
+                    autofillHints: const [AutofillHints.newPassword],
+                    textInputAction: TextInputAction.done,
+                    onSubmitted: (_) => _create(model),
+                  ),
+                  if (formMessage != null) ...[
+                    const SizedBox(height: TainaSpacing.space3),
+                    ErrorCard(title: formMessage, body: ''),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: TainaSpacing.space3),
+          TainaButton(
+            title: 'Criar conta',
+            kind: TainaButtonKind.primary,
+            size: TainaButtonSize.lg,
             loading: model.creating,
-            onPressed: () => _create(model),
+            action: () => _create(model),
           ),
         ],
       ),
     );
   }
-}
 
-final class _InviteTitle extends StatelessWidget {
-  const _InviteTitle();
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      spacing: TainaSpacing.space2,
-      children: const [
-        Icon(
-          Icons.auto_awesome,
-          size: TainaFontSizes.display,
-          color: TainaPalette.brandPrimary,
-        ),
-        TainaText(
-          'Você foi convidado!',
-          style: TainaTypography.h1,
-          color: TainaPalette.textPrimary,
-          textAlign: TextAlign.center,
-        ),
-        TainaText(
-          'Crie sua conta para entrar na nuvem da comunidade.',
+  Future<void> _showContactSheet(BuildContext context) {
+    return TainaSheet.show<void>(
+      context: context,
+      title: 'Falar com quem cuida',
+      child: const Padding(
+        padding: EdgeInsets.all(TainaSpacing.space4),
+        child: TainaText(
+          'Peça a quem cuida da sua comunidade para enviar um novo convite.',
           style: TainaTypography.body,
           color: TainaPalette.textSecondary,
-          textAlign: TextAlign.center,
         ),
-      ],
+      ),
     );
   }
 }

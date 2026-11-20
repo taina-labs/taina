@@ -13,7 +13,9 @@ Widget _app(Widget child) {
 
 void main() {
   group('invite accept', () {
-    testWidgets('a spent token shows the dead end', (tester) async {
+    testWidgets('an expired invitation shows the error and return path', (
+      tester,
+    ) async {
       const pending = PendingAuth(
         kind: PendingAuthKind.invite,
         token: 'expirado',
@@ -28,11 +30,12 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Este convite expirou ou já foi usado'), findsOneWidget);
-      expect(find.text('Ir para o login'), findsOneWidget);
+      expect(find.text('Este convite não é mais válido.'), findsOneWidget);
+      expect(find.text('Voltar para entrar'), findsOneWidget);
+      expect(find.text('Falar com quem cuida'), findsOneWidget);
     });
 
-    testWidgets('a live token opens the form with the invite copy', (
+    testWidgets('a live invitation renders its copy and one password field', (
       tester,
     ) async {
       const pending = PendingAuth(kind: PendingAuthKind.invite, token: 'tk1');
@@ -42,16 +45,33 @@ void main() {
       );
 
       await tester.pumpWidget(
-        _app(InviteAcceptView(session: composed.model, pending: pending)),
+        _app(
+          InviteAcceptView(
+            session: composed.model,
+            pending: pending,
+            tekoaName: 'Quilombo do Café',
+            inviter: 'Ana',
+          ),
+        ),
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Você foi convidado!'), findsOneWidget);
+      expect(find.text('Você recebeu um convite'), findsOneWidget);
+      expect(
+        find.text(
+          'Ana convidou você para a comunidade Quilombo do Café. Crie sua '
+          'conta para entrar.',
+        ),
+        findsOneWidget,
+      );
       expect(find.text('Seu nome de usuário'), findsOneWidget);
+      expect(find.text('Nome de exibição (opcional)'), findsOneWidget);
+      expect(find.text('Senha'), findsOneWidget);
+      expect(find.text('Confirme a senha'), findsNothing);
       expect(find.text('Criar conta'), findsOneWidget);
     });
 
-    testWidgets('mismatched passwords are the local check', (tester) async {
+    testWidgets('creating an account needs one password', (tester) async {
       const pending = PendingAuth(kind: PendingAuthKind.invite, token: 'tk1');
       final composed = makeSession(
         host: testBox(),
@@ -65,33 +85,7 @@ void main() {
 
       await tester.enterText(find.byType(TextField).at(0), 'novo');
       await tester.enterText(find.byType(TextField).at(2), 'segredo');
-      await tester.enterText(find.byType(TextField).at(3), 'outra');
       await tester.ensureVisible(find.text('Criar conta'));
-      await tester.pump();
-      await tester.tap(find.text('Criar conta'));
-      await tester.pumpAndSettle();
-
-      expect(find.text('As duas senhas não são iguais.'), findsOneWidget);
-      expect(composed.model.state, isA<SessionPendingAuth>());
-    });
-
-    testWidgets('a valid form creates the account', (tester) async {
-      const pending = PendingAuth(kind: PendingAuthKind.invite, token: 'tk1');
-      final composed = makeSession(
-        host: testBox(),
-        state: const SessionPendingAuth(pending),
-      );
-
-      await tester.pumpWidget(
-        _app(InviteAcceptView(session: composed.model, pending: pending)),
-      );
-      await tester.pumpAndSettle();
-
-      await tester.enterText(find.byType(TextField).at(0), 'novo');
-      await tester.enterText(find.byType(TextField).at(2), 'segredo');
-      await tester.enterText(find.byType(TextField).at(3), 'segredo');
-      await tester.ensureVisible(find.text('Criar conta'));
-      await tester.pump();
       await tester.tap(find.text('Criar conta'));
       await tester.pumpAndSettle();
 
@@ -100,7 +94,9 @@ void main() {
   });
 
   group('reset password', () {
-    testWidgets('a spent link shows the dead end', (tester) async {
+    testWidgets('an expired reset shows the error and return path', (
+      tester,
+    ) async {
       const pending = PendingAuth(
         kind: PendingAuthKind.reset,
         token: 'expirado',
@@ -115,10 +111,29 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Este link expirou ou já foi usado'), findsOneWidget);
+      expect(find.text('Este link expirou.'), findsOneWidget);
+      expect(find.text('Voltar para entrar'), findsOneWidget);
     });
 
-    testWidgets('a live link opens the form with the reset copy', (
+    testWidgets('a live reset has one password field', (tester) async {
+      const pending = PendingAuth(kind: PendingAuthKind.reset, token: 'tk1');
+      final composed = makeSession(
+        host: testBox(),
+        state: const SessionPendingAuth(pending),
+      );
+
+      await tester.pumpWidget(
+        _app(ResetPasswordView(session: composed.model, pending: pending)),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Redefinir senha'), findsOneWidget);
+      expect(find.text('Senha nova'), findsOneWidget);
+      expect(find.text('Confirme a senha'), findsNothing);
+      expect(find.text('Salvar nova senha'), findsOneWidget);
+    });
+
+    testWidgets('a valid reset signs in with the one password field', (
       tester,
     ) async {
       const pending = PendingAuth(kind: PendingAuthKind.reset, token: 'tk1');
@@ -132,27 +147,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Redefinir senha'), findsWidgets);
-      expect(find.text('Senha nova'), findsOneWidget);
-      expect(find.text('Salvar nova senha'), findsOneWidget);
-    });
-
-    testWidgets('a valid reset signs in', (tester) async {
-      const pending = PendingAuth(kind: PendingAuthKind.reset, token: 'tk1');
-      final composed = makeSession(
-        host: testBox(),
-        state: const SessionPendingAuth(pending),
-      );
-
-      await tester.pumpWidget(
-        _app(ResetPasswordView(session: composed.model, pending: pending)),
-      );
-      await tester.pumpAndSettle();
-
-      await tester.enterText(find.byType(TextField).at(0), 'nova-senha');
-      await tester.enterText(find.byType(TextField).at(1), 'nova-senha');
+      await tester.enterText(find.byType(TextField).first, 'nova-senha');
       await tester.ensureVisible(find.text('Salvar nova senha'));
-      await tester.pump();
       await tester.tap(find.text('Salvar nova senha'));
       await tester.pumpAndSettle();
 

@@ -4,13 +4,11 @@ import 'package:okena_core/okena_core.dart';
 import '../../session/session_model.dart';
 import '../../session/session_state.dart';
 import 'auth_gate.dart';
-import 'invite_accept_view_model.dart';
 
 /// The password reset, the native mirror of the web's `ResetPasswordLive`.
 ///
 /// The link is checked lightly on arrival, a dead link shows the dead end
-/// instead of the form, and the session is born on the submit. The two
-/// password fields are the app's own check; the wire carries one.
+/// instead of the form, and the session is born on the submit.
 final class ResetPasswordViewModel extends ChangeNotifier {
   ResetPasswordViewModel({required this.session}) {
     session.addListener(_changed);
@@ -21,7 +19,6 @@ final class ResetPasswordViewModel extends ChangeNotifier {
   AuthGate gate = const AuthChecking();
   bool saving = false;
   TainaError? failure;
-  String? mismatch;
 
   Instance? get instance => session.instance;
   InstanceAddress? get host => session.host;
@@ -34,30 +31,25 @@ final class ResetPasswordViewModel extends ChangeNotifier {
   Future<void> check(PendingAuth pending) async {
     gate = const AuthChecking();
     _notify();
-    final result = await session.checkToken(pending);
-    gate = switch (result) {
-      Ok(value: true) => const AuthOpen(),
-      Ok() => const AuthDead(),
-      Err(:final error) when error is ApiError && error.isUnauthorized =>
-        const AuthDead(),
-      Err(:final error) => AuthBroken(error),
-    };
+    final result = await session.api.resetStatus(token: pending.token);
+    final status = result.value;
+    if (status != null) {
+      gate = status.valid ? const AuthOpen() : const AuthDead();
+    } else {
+      final error = result.error ?? const InvalidResponseError('token status');
+      gate = error is ApiError && error.isUnauthorized
+          ? const AuthDead()
+          : AuthBroken(error);
+    }
     _notify();
   }
 
   Future<void> save({
     required PendingAuth pending,
     required String password,
-    required String confirmation,
     required String deviceName,
   }) async {
     failure = null;
-    if (!InviteAcceptViewModel.confirmationMatches(password, confirmation)) {
-      mismatch = 'As duas senhas não são iguais.';
-      _notify();
-      return;
-    }
-    mismatch = null;
     saving = true;
     _notify();
 

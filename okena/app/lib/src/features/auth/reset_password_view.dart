@@ -1,18 +1,16 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:okena_core/okena_core.dart';
 import 'package:provider/provider.dart';
 
 import '../../design_system/design_system.dart';
-import '../../session/device_name.dart';
 import '../../session/session_model.dart';
 import '../../session/session_state.dart';
-import 'auth_community_header.dart';
 import 'auth_gate.dart';
+import 'device_name.dart';
 import 'reset_password_view_model.dart';
 
-/// The password reset, the native mirror of the web's `ResetPasswordLive`.
-///
-/// The link is checked lightly on arrival, a dead link shows the dead end
-/// instead of the form, and the session is born on the submit.
+/// The one-field password reset and its token states.
 final class ResetPasswordView extends StatelessWidget {
   const ResetPasswordView({
     required this.session,
@@ -44,7 +42,6 @@ final class _ResetPasswordBody extends StatefulWidget {
 
 final class _ResetPasswordBodyState extends State<_ResetPasswordBody> {
   final TextEditingController _password = TextEditingController();
-  final TextEditingController _confirmation = TextEditingController();
 
   @override
   void initState() {
@@ -58,125 +55,144 @@ final class _ResetPasswordBodyState extends State<_ResetPasswordBody> {
   @override
   void dispose() {
     _password.dispose();
-    _confirmation.dispose();
     super.dispose();
   }
 
   Future<void> _save(ResetPasswordViewModel model) => model.save(
     pending: widget.pending,
     password: _password.text,
-    confirmation: _confirmation.text,
-    deviceName: DeviceName.current,
+    deviceName: authDeviceName(platform: defaultTargetPlatform),
   );
 
   @override
   Widget build(BuildContext context) {
     final model = context.watch<ResetPasswordViewModel>();
     return Scaffold(
-      appBar: AppBar(title: const Text('Redefinir senha')),
-      body: switch (model.gate) {
-        AuthChecking() => const TainaLoadingList(itemCount: 4),
-        AuthDead() => _deadEnd(context),
-        AuthBroken(:final error) => TainaErrorState(
-          error: error,
-          onRetry: () => model.check(widget.pending),
-        ),
-        AuthOpen() => _form(model),
-      },
+      backgroundColor: TainaPalette.bgDeep,
+      body: SafeArea(
+        child: switch (model.gate) {
+          AuthChecking() => const Center(child: TainaLoadingList(itemCount: 4)),
+          AuthDead() => _deadEnd(context),
+          AuthBroken(:final error) => _broken(model, error),
+          AuthOpen() => _form(model),
+        },
+      ),
     );
   }
 
-  /// The dead end of a link spent or expired: an honest sentence and the way
-  /// back to the login.
   Widget _deadEnd(BuildContext context) {
-    return Center(
-      child: TainaEmptyState(
-        icon: Icons.schedule,
-        title: 'Este link expirou ou já foi usado',
-        message:
-            'O link de redefinição vale uma hora e só pode ser usado uma vez. '
-            'Peça um novo a quem cuida da sua comunidade.',
-        actionLabel: 'Ir para o login',
-        onAction: () {
-          widget.session.leavePendingAuth();
-        },
+    return Padding(
+      padding: const EdgeInsets.all(TainaSpacing.space4),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ErrorCard(
+              title: 'Este link expirou.',
+              body: '',
+              retryLabel: 'Voltar',
+              retry: widget.session.leavePendingAuth,
+              contact: () => _showContactSheet(context),
+            ),
+            const SizedBox(height: TainaSpacing.space3),
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: TainaButton(
+                title: 'Voltar para entrar',
+                kind: TainaButtonKind.ghost,
+                size: TainaButtonSize.sm,
+                action: widget.session.leavePendingAuth,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _broken(ResetPasswordViewModel model, TainaError error) {
+    return Padding(
+      padding: const EdgeInsets.all(TainaSpacing.space4),
+      child: Center(
+        child: ErrorCard(
+          title: 'Não conseguimos validar este link.',
+          body: error.message,
+          retry: () => model.check(widget.pending),
+        ),
       ),
     );
   }
 
   Widget _form(ResetPasswordViewModel model) {
     final formMessage = model.formMessage;
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(TainaSpacing.space5),
+    return Padding(
+      padding: const EdgeInsets.all(TainaSpacing.space4),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        spacing: TainaSpacing.space5,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          AuthCommunityHeader(instance: model.instance, host: model.host),
-          const _ResetTitle(),
-          TainaTextField(
-            label: 'Senha nova',
-            controller: _password,
-            obscureText: true,
-            errorMessages: model.messagesFor(const ['password']),
-            autofillHints: const [AutofillHints.newPassword],
-            placeholder: 'mínimo 8 caracteres',
-          ),
-          TainaTextField(
-            label: 'Confirme a senha',
-            controller: _confirmation,
-            obscureText: true,
-            errorMessages: model.mismatch != null
-                ? [model.mismatch!]
-                : model.messagesFor(const ['password']),
-            autofillHints: const [AutofillHints.newPassword],
-            placeholder: 'a mesma senha',
-          ),
-          if (formMessage != null)
-            TainaText(
-              formMessage,
-              style: TainaTypography.bodySm,
-              color: TainaPalette.feedbackError,
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SizedBox(height: TainaSpacing.space5),
+                  const TainaText(
+                    'Redefinir senha',
+                    style: TainaTypography.h1,
+                    color: TainaPalette.textPrimary,
+                  ),
+                  const SizedBox(height: TainaSpacing.space2),
+                  const TainaText(
+                    'Crie uma senha nova para voltar a entrar.',
+                    style: TainaTypography.body,
+                    color: TainaPalette.textSecondary,
+                  ),
+                  const SizedBox(height: TainaSpacing.space6),
+                  TainaField(
+                    label: 'Senha nova',
+                    controller: _password,
+                    kind: TainaFieldKind.password,
+                    placeholder: 'mínimo 8 caracteres',
+                    help: 'Use uma frase longa que só você lembra.',
+                    errorMessages: model.messagesFor(const ['password']),
+                    autofillHints: const [AutofillHints.newPassword],
+                    textInputAction: TextInputAction.done,
+                    onSubmitted: (_) => _save(model),
+                  ),
+                  if (formMessage != null) ...[
+                    const SizedBox(height: TainaSpacing.space3),
+                    ErrorCard(title: formMessage, body: ''),
+                  ],
+                ],
+              ),
             ),
-          TainaPrimaryButton(
-            label: 'Salvar nova senha',
+          ),
+          const SizedBox(height: TainaSpacing.space3),
+          TainaButton(
+            title: 'Salvar nova senha',
+            kind: TainaButtonKind.primary,
+            size: TainaButtonSize.lg,
             loading: model.saving,
-            onPressed: () => _save(model),
+            action: () => _save(model),
           ),
         ],
       ),
     );
   }
-}
 
-final class _ResetTitle extends StatelessWidget {
-  const _ResetTitle();
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      spacing: TainaSpacing.space2,
-      children: const [
-        Icon(
-          Icons.shield_outlined,
-          size: TainaFontSizes.display,
-          color: TainaPalette.brandPrimary,
-        ),
-        TainaText(
-          'Redefinir senha',
-          style: TainaTypography.h1,
-          color: TainaPalette.textPrimary,
-          textAlign: TextAlign.center,
-        ),
-        TainaText(
-          'Crie uma senha nova para voltar a entrar.',
+  Future<void> _showContactSheet(BuildContext context) {
+    return TainaSheet.show<void>(
+      context: context,
+      title: 'Falar com quem cuida',
+      child: const Padding(
+        padding: EdgeInsets.all(TainaSpacing.space4),
+        child: TainaText(
+          'Peça a quem cuida da sua comunidade para enviar um novo link.',
           style: TainaTypography.body,
           color: TainaPalette.textSecondary,
-          textAlign: TextAlign.center,
         ),
-      ],
+      ),
     );
   }
 }
