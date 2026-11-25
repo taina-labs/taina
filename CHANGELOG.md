@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.10.0](https://github.com/taina-labs/taina/compare/v0.9.0...v0.10.0) (2026-11-25)
+
+
+### Features
+
+* support folder uploads ([56e15cb](https://github.com/taina-labs/taina/commit/56e15cb01a336122cee2f1e28177d2e00d7527ec))
+* **uploads:** add bounded browser transfer queue ([ceb6e40](https://github.com/taina-labs/taina/commit/ceb6e405b124c056fbd9655e0e826b552b828491))
+* **uploads:** add ingestion queues and staging maintenance ([d84431e](https://github.com/taina-labs/taina/commit/d84431e90f612912ed545ee67e2fb83457f428cd))
+* **uploads:** expose queue controls across navigation ([36e442a](https://github.com/taina-labs/taina/commit/36e442ab822e2fa61573da9d0f114944a39764d6))
+* **uploads:** hand off web uploads to Oban ([a6518eb](https://github.com/taina-labs/taina/commit/a6518eb21fb1ca8c3b2c65d917ef822455cd6256))
+* **uploads:** ingest durable staging with Oban ([9e5a438](https://github.com/taina-labs/taina/commit/9e5a4381027acfb7da5beffc873f79635cd11378))
+* **uploads:** preserve web transfers across live navigation ([b203e93](https://github.com/taina-labs/taina/commit/b203e9345f275bde1602ed1a5a7bfa2d6fa0ded6))
+* **ybira:** support atomic asynchronous uploads ([00df33f](https://github.com/taina-labs/taina/commit/00df33fd8963fffbff64c2ed5ecf34dc775d210a))
+
+
+### Bug Fixes
+
+* **backup:** exclude unfinished upload staging ([f2fbc23](https://github.com/taina-labs/taina/commit/f2fbc23656d01efb89f92a9e4d42677093a7f192))
+* resize imagens on file preview ([fc12df2](https://github.com/taina-labs/taina/commit/fc12df29e55fec6ef0377d9f01dd413ad3896d00))
+* **uploads:** handle terminal failures and file purges ([5509e49](https://github.com/taina-labs/taina/commit/5509e49f6be971e60cd57cf21e9bd811b21cac28))
+* **uploads:** reserve capacity before staging ([102b46f](https://github.com/taina-labs/taina/commit/102b46f283121d13382973c74dae9c444615b418))
+
+
+### Code Refactoring
+
+* **disk:** share physical storage probe ([2eceeea](https://github.com/taina-labs/taina/commit/2eceeeacd5ed95d6f4a71112f35e41b9ba0d9663))
+* **uploads:** bound queue retention ([4c7c569](https://github.com/taina-labs/taina/commit/4c7c5698a2ac3fd52ff2a1a81e2cb902ea3af084))
+* **uploads:** harden staging maintenance ([9951d49](https://github.com/taina-labs/taina/commit/9951d491d15c348b250803aff260f002cf0f8317))
+* **ybira:** align async upload helpers with checks ([7fa78f2](https://github.com/taina-labs/taina/commit/7fa78f2abb49a32681cfde17bbc7dc797c4ee8ae))
+
 ## [0.9.0](https://github.com/taina-labs/taina/compare/v0.8.0...v0.9.0) (2026-11-20)
 
 
