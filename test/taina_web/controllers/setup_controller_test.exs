@@ -17,6 +17,13 @@ defmodule TainaWeb.SetupControllerTest do
     }
   }
 
+  setup do
+    # Sem o diretório, `df` falha e o controller aceita qualquer cota por não
+    # conhecer o tamanho do disco. O teste do teto precisa dessa leitura.
+    File.mkdir_p!(Application.fetch_env!(:taina, :storage_root))
+    :ok
+  end
+
   test "bootstrap cria a Tekoa + zelador e já entra logado, com o disco inteiro", %{conn: conn} do
     conn = post(conn, ~p"/setup", @params)
 

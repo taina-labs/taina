@@ -28,7 +28,9 @@ defmodule Taina.ReleaseTest do
 
   test "password reader falls back to stdin when no echo input reaches eof" do
     ExUnit.CaptureIO.capture_io("new-password\nnew-password\n", fn ->
-      assert {:ok, "new-password"} = Taina.CLI.read_password()
+      ExUnit.CaptureIO.capture_io(:stderr, fn ->
+        assert {:ok, "new-password"} = Taina.CLI.read_password()
+      end)
     end)
   end
 
