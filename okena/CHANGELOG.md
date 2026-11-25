@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.3.0](https://github.com/taina-labs/taina/compare/okena-v0.2.0...okena-v0.3.0) (2026-11-25)
+
+
+### Features
+
+* **okena:** add atomic session navigation contracts ([ca179b3](https://github.com/taina-labs/taina/commit/ca179b3307dd7ac0045f2af0560f805b4f20cede))
+* **okena:** add fake visual preview entrypoint ([e7ac437](https://github.com/taina-labs/taina/commit/e7ac437d3833b130a381d3b9f3e1c435db136f08))
+* **okena:** add hub and spoke navigation ([fe45c4f](https://github.com/taina-labs/taina/commit/fe45c4fe6b6887d9c2bfdde55f326d7e9f289451))
+* **okena:** add penpot flutter design system ([e222058](https://github.com/taina-labs/taina/commit/e222058d634815801b7124cae5e2ea5c4b3615fc))
+* **okena:** add revamp core contracts ([19300b9](https://github.com/taina-labs/taina/commit/19300b9f450dd6db26eb8338bd0008a5d435e0b4))
+* **okena:** add session upload center ([c709086](https://github.com/taina-labs/taina/commit/c7090864e2e69dc6819bf29a6d8a063d0f1a5bf3))
+* **okena:** align camera roll test contracts ([c1d725f](https://github.com/taina-labs/taina/commit/c1d725f1bc1e34ccb63f30362be2534efb2b0303))
+* **okena:** align flutter tokens with penpot ([68f5a5c](https://github.com/taina-labs/taina/commit/68f5a5c759850f0ca6f52b8d08f5e23efca16997))
+* **okena:** decode file and folder owners ([8457103](https://github.com/taina-labs/taina/commit/8457103f1c358242379d92da2100e8984793e305))
+* **okena:** finish revamp navigation and icons ([34f5d93](https://github.com/taina-labs/taina/commit/34f5d9387f310e0de0497663e3fccb5a547d2589))
+* **okena:** migrate camera roll screen ([7a117a0](https://github.com/taina-labs/taina/commit/7a117a0540362612d4091e05b88b576c38287c3b))
+* **okena:** refresh flutter dependency lockfile ([26b6ac1](https://github.com/taina-labs/taina/commit/26b6ac1f0f4ddb92168805fafc8530fc3751658e))
+* **okena:** restore gallery viewer deep links ([f9cb734](https://github.com/taina-labs/taina/commit/f9cb734500e4d60dbd4bbcd35cf4e37e238f0c66))
+* **okena:** revamp account and access screens ([16e8fbf](https://github.com/taina-labs/taina/commit/16e8fbffca64ed6f81447bae7f6b88b14d850442))
+* **okena:** revamp authentication flows ([4ee1135](https://github.com/taina-labs/taina/commit/4ee11353495d2bbf224e0ffdd626158ddefac230))
+* **okena:** revamp documents and uploads ([f489f90](https://github.com/taina-labs/taina/commit/f489f90389ac5bf3e09f7c68e1aac8b82425a9be))
+* **okena:** revamp gallery and viewer ([56ac850](https://github.com/taina-labs/taina/commit/56ac850b91ecc44c3742ba044ca28fd75c2b3fe8))
+* **okena:** revamp members and invites ([1979424](https://github.com/taina-labs/taina/commit/1979424ada391390850408857274ace86a290d7b))
+* **okena:** revamp mural saude and storage ([e23cab9](https://github.com/taina-labs/taina/commit/e23cab9936cd7e3db4fd64bbe80be91191637b43))
+* **okena:** support flutter 3.50 ([4048470](https://github.com/taina-labs/taina/commit/404847064a5e568937aeaa42fa57afe6e2607007))
+
+
+### Bug Fixes
+
+* **okena:** keep android-compatible dependency lockfile ([518c566](https://github.com/taina-labs/taina/commit/518c5666fd26b045916a7456dfea2b84053b1077))
+
 ## [0.2.0](https://github.com/taina-labs/taina/compare/okena-v0.1.0...okena-v0.2.0) (2026-11-20)
 
 
